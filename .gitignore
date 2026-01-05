@@ -1,0 +1,26 @@
+# 1. 가상환경 폴더 (용량이 크고 컴퓨터마다 달라서 업로드 금지)
+venv/
+env/
+.venv/
+
+# 2. 보안 파일 (해킹 방지 - 가장 중요!)
+.env
+.env.local
+
+# 3. 파이썬 자동 생성 파일 (불필요한 쓰레기 파일)
+__pycache__/
+*.pyc
+
+# 4. 데이터베이스 및 저장소 (로컬 테스트용 데이터는 업로드 제외)
+*.db
+*.sqlite3
+# ChromaDB 저장 폴더 (기획안의 Vector DB 저장소)
+database/chroma_db/
+chroma_db/
+
+# 5. IDE 설정 파일 (내 VS Code 설정이 남에게 보이지 않게)
+.vscode/
+.idea/
+
+# 6. 맥(Mac) 운영체제 임시 파일
+.DS_Store
