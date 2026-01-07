@@ -3,7 +3,7 @@
 import google.generativeai as genai
 
 # 1. 여기에 API 키를 직접 입력하세요
-my_key = "AIzaSyBZEHhLCy1erQbk-Td4CaYyC3aHlFeQ9xo"
+my_key = ""
 
 try:
     print(f"🔑 키 확인 중: {my_key[:10]}...")
