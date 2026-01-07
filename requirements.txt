@@ -1,0 +1,22 @@
+# 1. 기초 유틸
+python-dotenv
+pandas
+requests
+beautifulsoup4
+
+# 2. [필수] 버전 고정 (CrewAI와 충돌 방지)
+tokenizers==0.20.3
+chromadb==1.1.0
+
+# 3. AI 프레임워크
+crewai
+crewai-tools
+
+# 4. LLM 및 LangChain (충돌 없는 모듈 사용)
+langchain-core
+langchain-community
+langchain-google-genai
+
+# 5. 임베딩 (로컬 무료)
+sentence-transformers
+langchain-huggingface

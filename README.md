@@ -1,4 +1,3 @@
-```markdown
 # HQA Project (Hybrid Quantitative Analyst)
 
 **AI 기반 멀티 에이전트 금융 분석 및 자동 매매 시스템**
