@@ -12,8 +12,7 @@ def get_gemini_llm():
         raise ValueError("GOOGLE_API_KEY가 .env 파일에 없습니다.")
 
     llm = ChatGoogleGenerativeAI(
-        # [수정] 사용자 목록에 있던 최신 모델로 변경!
-        model="gemini-2.5-flash", 
+        model="gemini-2.5-flash-lite", 
         verbose=True,
         temperature=0.3,
         google_api_key=api_key

@@ -2,32 +2,39 @@
 
 from crewai import Agent, Task, Crew, Process
 from src.agents.llm_config import get_gemini_llm
-from src.tools.rag_tool import RAGSearchTool # 변경된 클래스 임포트
+from src.tools.search_tool import StockReportSearchTool
 
 class AnalystAgent:
     def __init__(self):
+        # 1. Gemini 모델 불러오기
         self.llm = get_gemini_llm()
 
     def analyze_stock(self, stock_name, stock_code):
-        # 0. 도구 준비 (여기서 클래스를 인스턴스화 합니다)
-        rag_tool = RAGSearchTool()
+        # 2. 도구 준비
+        search_tool = StockReportSearchTool()
 
-        # 1. 에이전트 정의 (페르소나)
+        # 3. 에이전트 설정 (여기가 제일 중요합니다!)
         analyst = Agent(
             role='Senior Equity Analyst',
-            goal=f'{stock_name}의 기업 가치와 헤게모니(독점력)를 심층 분석',
+            goal=f'{stock_name}의 증권사 리포트를 분석하여 시장 지배력(해자)과 성장성을 평가',
             backstory="""
-                당신은 월스트리트에서 20년 경력을 가진 까다로운 주식 분석가입니다.
-                단순한 뉴스보다는 기업이 가진 '해자(Moat)'와 '독점력'을 중요하게 생각합니다.
-                증권사 리포트의 긍정적인 톤에 속지 않고 비판적으로 분석합니다.
+                당신은 여의도 증권가에서 20년 경력을 가진 베테랑 애널리스트입니다.
+                단순한 뉴스보다는 증권사 리포트의 텍스트 행간을 읽어내는 능력이 탁월합니다.
+                기업의 '경제적 해자(Moat)'와 '장기 성장성'을 중심으로 냉철하게 분석합니다.
             """,
-            tools=[rag_tool], # [변경] 도구 리스트에 인스턴스 추가
+            tools=[search_tool],
+            
+            # [핵심] 이 줄이 없으면 무조건 OpenAI로 연결하려고 시도합니다!
             llm=self.llm,
+            # [🚨핵심 추가] 도구 사용할 때도 Gemini 쓰라고 강제하기
+            function_calling_llm=self.llm,
             verbose=True,
-            allow_delegation=False
+            allow_delegation=False,
+            # [추가] 속도 조절 (분당 5회 제한)
+            max_rpm=5
         )
 
-        # 2. 태스크 정의 (해야 할 일)
+        # 4. 태스크 설정
         analysis_task = Task(
             description=f"""
                 1. '{stock_name}'와 관련된 최신 리포트를 검색 도구(Stock Report Search)를 사용해 찾아보세요.
@@ -35,7 +42,7 @@ class AnalystAgent:
                 
                 [평가 기준]
                 A. 독점력 (Pricing Power, 0~40점):
-                   - 시장 점유율이 압도적인가? 
+                   - 시장 점유율이 압도적인가?
                    - 경쟁자가 진입하기 어려운가?
                 
                 B. 성장성 (Growth, 0~30점):
@@ -48,20 +55,20 @@ class AnalystAgent:
                 # {stock_name} 헤게모니 분석 보고서
                 
                 ## 1. 리포트 요약
-                (검색된 리포트 내용 요약)
+                (검색된 리포트의 핵심 내용을 3줄 요약)
                 
                 ## 2. 핵심 지표 평가
                 * **독점력 점수:** XX / 40점
-                  - 이유: ...
+                   * **이유:** ...
                 * **성장성 점수:** XX / 30점
-                  - 이유: ...
+                   * **이유:** ...
                 
                 ## 3. 총평 (한 줄 요약)
             """,
             agent=analyst
         )
 
-        # 3. 크루 결성 및 실행
+        # 5. 크루 실행
         crew = Crew(
             agents=[analyst],
             tasks=[analysis_task],

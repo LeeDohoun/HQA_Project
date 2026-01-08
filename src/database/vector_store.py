@@ -26,9 +26,22 @@ class ReportVectorStore:
         )
 
     def save_reports(self, reports, stock_code):
-        documents = []
+        new_documents = []
+        
+        # [추가] 중복 방지 로직
         for report in reports:
-            # 검색 품질을 위해 텍스트 구성
+            # 1. DB에 이미 존재하는지 확인 (Source 링크 기준)
+            # ChromaDB의 get 기능을 사용하여 메타데이터로 조회
+            existing_docs = self.vector_store.get(
+                where={"source": report['link']}
+            )
+            
+            # 2. 이미 있으면 건너뛰기
+            if existing_docs and len(existing_docs['ids']) > 0:
+                print(f"   (중복) 이미 저장된 리포트: {report['title']}")
+                continue
+
+            # 3. 없으면 저장 리스트에 추가
             content = f"[{report['date']}] {report['title']} - {report['broker']}"
             metadata = {
                 "stock_code": stock_code,
@@ -36,13 +49,14 @@ class ReportVectorStore:
                 "source": report['link']
             }
             doc = Document(page_content=content, metadata=metadata)
-            documents.append(doc)
+            new_documents.append(doc)
         
-        if documents:
-            self.vector_store.add_documents(documents)
-            print(f"💾 ChromaDB에 {len(documents)}건 저장 완료!")
+        # 4. 새 리포트가 있을 때만 저장
+        if new_documents:
+            self.vector_store.add_documents(new_documents)
+            print(f"💾 ChromaDB에 신규 리포트 {len(new_documents)}건 저장 완료!")
         else:
-            print("⚠️ 저장할 데이터가 없습니다.")
+            print("✨ 저장할 신규 리포트가 없습니다 (모두 중복).")
 
     def search_similar_reports(self, query, k=3):
         results = self.vector_store.similarity_search(query, k=k)
