@@ -1,22 +1,117 @@
-# 1. 기초 유틸
-python-dotenv
-pandas
-requests
-beautifulsoup4
+# ==========================================
+# HQA Project - Requirements
+# ==========================================
+# Hegemony Quantitative Analyst
+# AI 기반 멀티 에이전트 주식 분석 시스템
+# ==========================================
 
-# 2. [필수] 버전 고정 (CrewAI와 충돌 방지)
-tokenizers==0.20.3
-chromadb==1.1.0
+# ------------------------------------------
+# 1. 기초 유틸리티
+# ------------------------------------------
+python-dotenv         # 환경변수 관리
+pandas>=2.0.0         # 데이터 처리
+numpy>=1.24.0         # 수치 연산
+requests>=2.28.0      # HTTP 요청
+beautifulsoup4>=4.12.0  # 웹 크롤링 (네이버 금융)
+lxml                  # HTML 파서
 
-# 3. AI 프레임워크
-crewai
-crewai-tools
+# ------------------------------------------
+# 2. AI/LLM 프레임워크
+# ------------------------------------------
+# CrewAI (멀티 에이전트)
+crewai>=0.28.0
+crewai-tools>=0.1.0
 
-# 4. LLM 및 LangChain (충돌 없는 모듈 사용)
-langchain-core
-langchain-community
-langchain-google-genai
+# LangChain (RAG, 도구)
+langchain-core>=0.1.0
+langchain-community>=0.0.20
+langchain-google-genai>=1.0.0   # Gemini LLM
 
-# 5. 임베딩 (로컬 무료)
-sentence-transformers
-langchain-huggingface
+# ------------------------------------------
+# 3. 임베딩 모델
+# ------------------------------------------
+sentence-transformers>=2.2.0    # 텍스트 임베딩 (폴백)
+langchain-huggingface>=0.0.1    # HuggingFace 연동
+
+# ------------------------------------------
+# 4. 벡터 저장소
+# ------------------------------------------
+chromadb>=0.4.0       # 벡터 DB
+tokenizers==0.20.3    # ChromaDB 호환 버전 고정
+
+# ------------------------------------------
+# 5. PaddleOCR-VL-1.5 (문서 OCR) - NEW!
+# ------------------------------------------
+# PaddlePaddle 설치 (GPU 버전 - CUDA 12.6 기준):
+#   pip install paddlepaddle-gpu==3.2.1 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
+# PaddlePaddle 설치 (CPU 버전):
+#   pip install paddlepaddle==3.2.1
+# 
+# PaddleOCR 설치 (doc-parser 포함):
+#   pip install -U "paddleocr[doc-parser]"
+#
+# 참고: PaddlePaddle과 PaddleOCR은 별도 설치 필요 (pip install -r로 설치 안 됨)
+# 공식 문서: https://www.paddleocr.ai/
+
+# ------------------------------------------
+# 6. 선택적 임베딩 (레거시/폴백용)
+# ------------------------------------------
+transformers>=4.40.0  # HuggingFace Transformers
+torch>=2.0.0          # PyTorch
+accelerate>=0.25.0    # 모델 가속화
+einops                # 텐서 연산
+
+# ------------------------------------------
+# 7. PDF/이미지 처리
+# ------------------------------------------
+PyMuPDF>=1.23.0       # PDF 처리 (레거시 폴백용)
+Pillow>=10.0.0        # 이미지 처리
+
+# ------------------------------------------
+# 8. 금융 데이터
+# ------------------------------------------
+finance-datareader>=0.9.50   # 과거 주가 데이터 (일봉 히스토리)
+# 한국투자증권 API: 공식 REST API 직접 사용 (별도 패키지 불필요)
+
+# ------------------------------------------
+# 9. 웹 검색 (실시간 뉴스)
+# ------------------------------------------
+duckduckgo-search>=4.0.0  # 무료 웹 검색
+tavily-python>=0.3.0      # Tavily API (선택, 월 1,000건 무료)
+
+# ------------------------------------------
+# 10. 대시보드
+# ------------------------------------------
+streamlit>=1.30.0       # 웹 대시보드
+plotly>=5.18.0          # 인터랙티브 차트
+
+# ==========================================
+# 설치 가이드
+# ==========================================
+#
+# 1. 기본 패키지 설치:
+#    pip install -r requirements.txt
+#
+# 2. PaddleOCR-VL-1.5 설치 (필수):
+#    # GPU 버전 (CUDA 12.6)
+#    pip install paddlepaddle-gpu==3.2.1 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
+#    # 또는 CPU 버전
+#    pip install paddlepaddle==3.2.1
+#    # PaddleOCR 설치
+#    pip install -U "paddleocr[doc-parser]"
+#
+# 3. GPU 사용 시 (PyTorch CUDA):
+#    pip install torch --index-url https://download.pytorch.org/whl/cu118
+#
+# ------------------------------------------
+# API 키 설정 (.env 파일):
+# ------------------------------------------
+#   GOOGLE_API_KEY=your_gemini_api_key     # 필수
+#   DART_API_KEY=your_dart_api_key         # DART 공시
+#   TAVILY_API_KEY=your_tavily_api_key     # 선택
+#
+# API 키 발급:
+#   Gemini: https://aistudio.google.com/
+#   DART: https://opendart.fss.or.kr/
+#   Tavily: https://tavily.com/
+# ==========================================
