@@ -236,5 +236,18 @@ class VectorStoreManager:
         """저장소 통계 반환"""
         return {
             "text_store_count": self.text_store._collection.count(),
-            "persist_dir": self.persist_dir
+            "persist_dir": self.persist_dir,
+            "total_documents": self.text_store._collection.count()
         }
+    
+    def clear(self):
+        """벡터 저장소 초기화 (모든 데이터 삭제)"""
+        try:
+            # ChromaDB 컬렉션 내 모든 문서 삭제
+            collection = self.text_store._collection
+            ids = collection.get()['ids']
+            if ids:
+                collection.delete(ids=ids)
+            print(f"✅ {len(ids)}개 문서 삭제 완료")
+        except Exception as e:
+            print(f"❌ 초기화 오류: {e}")

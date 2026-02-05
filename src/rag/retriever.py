@@ -166,6 +166,56 @@ class RAGRetriever:
         
         return result
     
+    def index_text(
+        self,
+        text: str,
+        metadata: Optional[Dict] = None,
+        chunk_text: bool = True
+    ) -> Dict:
+        """
+        텍스트를 직접 인덱싱
+        
+        Args:
+            text: 인덱싱할 텍스트
+            metadata: 추가 메타데이터
+            chunk_text: 텍스트 청킹 여부
+            
+        Returns:
+            인덱싱 결과
+        """
+        try:
+            if chunk_text:
+                # 텍스트 분할
+                from .text_splitter import TextSplitter
+                splitter = TextSplitter(chunk_size=1000, chunk_overlap=200)
+                chunks = splitter.split_text(text, metadata=metadata or {})
+                
+                # 청크 추가
+                texts = [chunk["text"] for chunk in chunks]
+                metadatas = [chunk["metadata"] for chunk in chunks]
+                
+                self.vector_store.add_texts(texts, metadatas=metadatas)
+                
+                return {
+                    "success": True,
+                    "chunks_added": len(texts)
+                }
+            else:
+                # 청킹 없이 전체 텍스트 추가
+                self.vector_store.add_texts([text], metadatas=[metadata or {}])
+                
+                return {
+                    "success": True,
+                    "chunks_added": 1
+                }
+        except Exception as e:
+            logger.exception("텍스트 인덱싱 오류")
+            return {
+                "success": False,
+                "error": str(e),
+                "chunks_added": 0
+            }
+    
     def retrieve(
         self,
         query: str,
