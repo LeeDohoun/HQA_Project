@@ -1,80 +1,388 @@
 # 파일: main.py
+"""
+HQA (Hegemony Quantitative Analyst) 메인 실행 파일
 
-import time  # [필수] 시간 지연을 위해 추가
-from src.data_pipeline.price_loader import PriceLoader
-from src.data_pipeline.crawler import ReportCrawler
-from src.database.vector_store import ReportVectorStore
-from src.agents.analyst import AnalystAgent
-from src.agents.quant import QuantAgent
+실행 모드:
+1. Interactive Mode: 자연어 쿼리 입력
+2. Single Stock Analysis: 특정 종목 전체 분석
+3. Quick Analysis: 빠른 분석 (Thinking 없음)
+4. Realtime Price: 실시간 시세 조회
 
-def run_hqa_system():
-    print("=== [HQA System] Start ===")
-    
-    # 1. 도구 초기화
-    price_loader = PriceLoader()
-    crawler = ReportCrawler()
-    vector_store = ReportVectorStore()
-    
-    analyst_agent = AnalystAgent()
-    quant_agent = QuantAgent()
+사용법:
+    python main.py                    # 대화형 모드
+    python main.py --stock 삼성전자    # 종목 분석
+    python main.py --quick 005930     # 빠른 분석
+    python main.py --price 005930     # 실시간 시세
+"""
 
-    # 2. 타겟 종목
-    target_stock = {"code": "000660", "name": "SK하이닉스"}
+import argparse
+import sys
+from typing import Optional
+
+# ==========================================
+# 지연 임포트 함수들 (시작 속도 향상)
+# ==========================================
+
+def get_supervisor():
+    """Supervisor 에이전트 로드"""
+    from src.agents import SupervisorAgent
+    return SupervisorAgent()
+
+
+def get_realtime_tool():
+    """실시간 시세 도구 로드"""
+    from src.tools.realtime_tool import KISRealtimeTool
+    return KISRealtimeTool()
+
+
+def get_stock_mapper():
+    """종목 매퍼 로드"""
+    from src.utils.stock_mapper import get_mapper
+    return get_mapper()
+
+
+# ==========================================
+# 메인 분석 함수들
+# ==========================================
+
+def run_interactive_mode():
+    """
+    대화형 모드 - 자연어로 질문하면 분석
     
-    print(f"\nPhase 1: {target_stock['name']} 데이터 수집 및 저장")
+    Example:
+        > 삼성전자 분석해줘
+        > SK하이닉스 현재가 알려줘
+        > 반도체 산업 동향은?
+        > 삼성전자랑 SK하이닉스 비교해줘
+    """
+    print("=" * 60)
+    print("🚀 HQA (Hegemony Quantitative Analyst)")
+    print("   AI 기반 멀티 에이전트 주식 분석 시스템")
+    print("=" * 60)
+    print("\n💡 사용 예시:")
+    print("   - '삼성전자 분석해줘'")
+    print("   - '005930 현재가'")
+    print("   - '반도체 산업 동향 분석'")
+    print("   - '삼성전자 SK하이닉스 비교'")
+    print("   - 'exit' 또는 'quit'로 종료\n")
+    
+    supervisor = get_supervisor()
+    
+    while True:
+        try:
+            query = input("🔍 질문> ").strip()
+            
+            if not query:
+                continue
+            
+            if query.lower() in ["exit", "quit", "q", "종료"]:
+                print("\n👋 HQA를 종료합니다.")
+                break
+            
+            print("\n" + "-" * 50)
+            
+            # Supervisor가 쿼리 분석 및 실행
+            result = supervisor.execute(query)
+            
+            print("\n" + "=" * 50)
+            print(result)
+            print("=" * 50 + "\n")
+            
+        except KeyboardInterrupt:
+            print("\n\n👋 HQA를 종료합니다.")
+            break
+        except Exception as e:
+            print(f"\n❌ 오류 발생: {e}\n")
+
+
+def run_stock_analysis(stock_input: str, quick: bool = False):
+    """
+    종목 분석 실행
+    
+    Args:
+        stock_input: 종목명 또는 종목코드
+        quick: True면 빠른 분석 (Thinking 없음)
+    """
+    # 종목 매핑
+    mapper = get_stock_mapper()
+    
+    # 종목코드인지 종목명인지 판단
+    if stock_input.isdigit() and len(stock_input) == 6:
+        stock_code = stock_input
+        stock_name = mapper.get_name(stock_code) or stock_input
+    else:
+        stock_code = mapper.get_code(stock_input)
+        stock_name = stock_input
+        
+        if not stock_code:
+            print(f"❌ '{stock_input}' 종목을 찾을 수 없습니다.")
+            return None
+    
+    print("=" * 60)
+    if quick:
+        print(f"⚡ [Quick Analysis] {stock_name}({stock_code})")
+    else:
+        print(f"🚀 [Full Analysis] {stock_name}({stock_code})")
+    print("=" * 60)
+    
+    if quick:
+        return _run_quick_analysis(stock_code, stock_name)
+    else:
+        return _run_full_analysis(stock_code, stock_name)
+
+
+def _run_full_analysis(stock_code: str, stock_name: str):
+    """전체 분석 (Thinking 모델 포함)"""
+    from src.agents import (
+        AnalystAgent, QuantAgent, ChartistAgent,
+        RiskManagerAgent, AgentScores
+    )
+    
+    analyst = AnalystAgent()
+    quant = QuantAgent()
+    chartist = ChartistAgent()
+    risk_manager = RiskManagerAgent()
+    
+    # Phase 1: Analyst (Researcher + Strategist)
+    print(f"\n🔍 Phase 1: Analyst 분석 (헤게모니)")
+    print("-" * 50)
+    analyst_score = analyst.full_analysis(stock_name, stock_code)
+    print(f"   등급: {analyst_score.hegemony_grade}")
+    print(f"   독점력: {analyst_score.moat_score}/40점")
+    print(f"   성장성: {analyst_score.growth_score}/30점")
+    print(f"   총점: {analyst_score.total_score}/70점")
+    
+    # Phase 2: Quant
+    print(f"\n📈 Phase 2: Quant 분석 (재무)")
+    print("-" * 50)
+    quant_score = quant.full_analysis(stock_name, stock_code)
+    print(f"   등급: {quant_score.grade}")
+    print(f"   밸류에이션: {quant_score.valuation_score}/25점")
+    print(f"   수익성: {quant_score.profitability_score}/25점")
+    print(f"   성장성: {quant_score.growth_score}/25점")
+    print(f"   안정성: {quant_score.stability_score}/25점")
+    print(f"   총점: {quant_score.total_score}/100점")
+    
+    # Phase 3: Chartist
+    print(f"\n📉 Phase 3: Chartist 분석 (기술적)")
+    print("-" * 50)
+    chartist_score = chartist.full_analysis(stock_name, stock_code)
+    print(f"   신호: {chartist_score.signal}")
+    print(f"   추세: {chartist_score.trend_score}/30점")
+    print(f"   모멘텀: {chartist_score.momentum_score}/30점")
+    print(f"   변동성: {chartist_score.volatility_score}/20점")
+    print(f"   거래량: {chartist_score.volume_score}/20점")
+    print(f"   총점: {chartist_score.total_score}/100점")
+    
+    # Phase 4: Risk Manager 최종 판단
+    print(f"\n🎯 Phase 4: Risk Manager 최종 판단")
     print("-" * 50)
     
-    # [Step 1] 기술적 필터링
-    is_bullish, price, ma150 = price_loader.check_technical_status(target_stock['code'], target_stock['name'])
+    agent_scores = AgentScores(
+        analyst_moat_score=analyst_score.moat_score,
+        analyst_growth_score=analyst_score.growth_score,
+        analyst_total=analyst_score.total_score,
+        analyst_grade=analyst_score.hegemony_grade,
+        analyst_opinion=analyst_score.final_opinion,
+        quant_valuation_score=quant_score.valuation_score,
+        quant_profitability_score=quant_score.profitability_score,
+        quant_growth_score=quant_score.growth_score,
+        quant_stability_score=quant_score.stability_score,
+        quant_total=quant_score.total_score,
+        quant_opinion=quant_score.opinion,
+        chartist_trend_score=chartist_score.trend_score,
+        chartist_momentum_score=chartist_score.momentum_score,
+        chartist_volatility_score=chartist_score.volatility_score,
+        chartist_volume_score=chartist_score.volume_score,
+        chartist_total=chartist_score.total_score,
+        chartist_signal=chartist_score.signal
+    )
     
-    if is_bullish:
-        print(f"✅ 추세 확인: 상승세 (현재가 {price:,.0f}원 > 이평선 {ma150:,.0f}원)")
-        
-        # [Step 2 & 3] 크롤링 및 저장
-        reports = crawler.fetch_latest_reports(target_stock['code'])
-        if reports:
-            vector_store.save_reports(reports, target_stock['code'])
-        
-        # ---------------------------------------------------------
-        # [Phase 2] Analyst 실행
-        # ---------------------------------------------------------
-        print(f"\nPhase 2: AI Analyst (리포트 분석) 시작")
-        print("-" * 50)
-        report_result = analyst_agent.analyze_stock(target_stock['name'], target_stock['code'])
-        
-        print("\n" + "="*50)
-        print("📜 [Analyst 보고서]")
-        print("="*50)
-        print(report_result)
+    final_decision = risk_manager.make_decision(stock_name, stock_code, agent_scores)
+    
+    # 최종 보고서
+    print("\n" + "=" * 60)
+    print("📜 [최종 투자 판단]")
+    print("=" * 60)
+    report = risk_manager.generate_report(final_decision)
+    print(report)
+    
+    return final_decision
 
-        # ---------------------------------------------------------
-        # [중요] RPM(분당 요청 제한) 회피를 위한 휴식
-        # ---------------------------------------------------------
-        print("\n⏳ [System] 구글 API 과부하 방지를 위해 60초간 대기합니다... (RPM 초기화)")
-        for i in range(60, 0, -10):
-            print(f"   ... {i}초 남음")
-            time.sleep(10)
-        print("✅ 대기 완료! 다음 단계 진행.")
 
-        # ---------------------------------------------------------
-        # [Phase 3] Quant 실행
-        # ---------------------------------------------------------
-        print(f"\nPhase 3: AI Quant (재무 분석) 시작")
-        print("-" * 50)
-        
-        try:
-            quant_result = quant_agent.analyze_fundamentals(target_stock['name'], target_stock['code'])
-            print("\n" + "="*50)
-            print("🔢 [Quant 보고서]")
-            print("="*50)
-            print(quant_result)
-        except Exception as e:
-            print(f"❌ Quant 분석 중 오류 발생: {e}")
-
+def _run_quick_analysis(stock_code: str, stock_name: str):
+    """빠른 분석 (Thinking 없음)"""
+    from src.agents import QuantAgent, ChartistAgent
+    
+    quant = QuantAgent()
+    chartist = ChartistAgent()
+    
+    # Quant
+    print(f"\n📈 Quant 분석...")
+    quant_score = quant.full_analysis(stock_name, stock_code)
+    print(f"   → {quant_score.total_score}/100점 ({quant_score.grade})")
+    
+    # Chartist
+    print(f"\n📉 Chartist 분석...")
+    chartist_score = chartist.full_analysis(stock_name, stock_code)
+    print(f"   → {chartist_score.total_score}/100점 ({chartist_score.signal})")
+    
+    # 간단 종합
+    avg_score = (quant_score.total_score + chartist_score.total_score) / 2
+    
+    if avg_score >= 70:
+        opinion = "긍정적 - 매수 고려"
+    elif avg_score >= 50:
+        opinion = "중립 - 관망 권고"
     else:
-        print(f"🔻 추세 하락으로 분석 중단.")
+        opinion = "부정적 - 신중한 접근 필요"
+    
+    print(f"\n🎯 빠른 판단: {opinion} (평균 {avg_score:.0f}점)")
+    
+    return {
+        "quant": quant_score,
+        "chartist": chartist_score,
+        "opinion": opinion,
+        "avg_score": avg_score
+    }
 
-    print("\n=== [HQA System] Complete ===")
+
+def show_realtime_price(stock_input: str):
+    """
+    실시간 시세 조회
+    
+    Args:
+        stock_input: 종목명 또는 종목코드
+    """
+    mapper = get_stock_mapper()
+    
+    # 종목코드 변환
+    if stock_input.isdigit() and len(stock_input) == 6:
+        stock_code = stock_input
+    else:
+        stock_code = mapper.get_code(stock_input)
+        if not stock_code:
+            print(f"❌ '{stock_input}' 종목을 찾을 수 없습니다.")
+            return
+    
+    tool = get_realtime_tool()
+    
+    if not tool.is_available:
+        print("❌ KIS API가 설정되지 않았습니다.")
+        print("   .env 파일에 KIS_APP_KEY, KIS_APP_SECRET을 설정하세요.")
+        return
+    
+    print(tool.get_quote_summary(stock_code))
+
+
+def show_help():
+    """도움말 출력"""
+    help_text = """
+═══════════════════════════════════════════════════════════════
+  HQA (Hegemony Quantitative Analyst) - 사용법
+═══════════════════════════════════════════════════════════════
+
+📌 실행 모드:
+
+  1. 대화형 모드 (기본)
+     python main.py
+     
+  2. 종목 분석 (전체)
+     python main.py --stock 삼성전자
+     python main.py --stock 005930
+     python main.py -s SK하이닉스
+     
+  3. 빠른 분석 (Quant + Chartist만)
+     python main.py --quick 삼성전자
+     python main.py -q 005930
+     
+  4. 실시간 시세
+     python main.py --price 삼성전자
+     python main.py -p 005930
+
+═══════════════════════════════════════════════════════════════
+
+📌 대화형 모드 질문 예시:
+
+  - "삼성전자 분석해줘"
+  - "005930 현재가 알려줘"  
+  - "반도체 산업 동향"
+  - "삼성전자 SK하이닉스 비교"
+  - "AI 관련 종목 추천"
+
+═══════════════════════════════════════════════════════════════
+
+📌 필수 설정 (.env 파일):
+
+  GOOGLE_API_KEY=your_gemini_api_key     # 필수
+  KIS_APP_KEY=your_kis_app_key           # 실시간 시세용
+  KIS_APP_SECRET=your_kis_app_secret     # 실시간 시세용
+  DART_API_KEY=your_dart_api_key         # 공시 조회용 (선택)
+
+═══════════════════════════════════════════════════════════════
+"""
+    print(help_text)
+
+
+# ==========================================
+# 메인 엔트리포인트
+# ==========================================
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="HQA - AI 기반 멀티 에이전트 주식 분석 시스템",
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    
+    parser.add_argument(
+        "-s", "--stock",
+        type=str,
+        help="종목 전체 분석 (종목명 또는 종목코드)"
+    )
+    
+    parser.add_argument(
+        "-q", "--quick",
+        type=str,
+        help="빠른 분석 (Quant + Chartist)"
+    )
+    
+    parser.add_argument(
+        "-p", "--price",
+        type=str,
+        help="실시간 시세 조회"
+    )
+    
+    parser.add_argument(
+        "--help-full",
+        action="store_true",
+        help="상세 도움말 표시"
+    )
+    
+    args = parser.parse_args()
+    
+    # 상세 도움말
+    if args.help_full:
+        show_help()
+        return
+    
+    # 실시간 시세
+    if args.price:
+        show_realtime_price(args.price)
+        return
+    
+    # 빠른 분석
+    if args.quick:
+        run_stock_analysis(args.quick, quick=True)
+        return
+    
+    # 전체 분석
+    if args.stock:
+        run_stock_analysis(args.stock, quick=False)
+        return
+    
+    # 기본: 대화형 모드
+    run_interactive_mode()
+
 
 if __name__ == "__main__":
-    run_hqa_system()
+    main()
