@@ -132,50 +132,55 @@ def run_stock_analysis(stock_input: str, quick: bool = False):
 
 
 def _run_full_analysis(stock_code: str, stock_name: str):
-    """전체 분석 (Thinking 모델 포함)"""
+    """전체 분석 (Thinking 모델 포함 — Analyst/Quant/Chartist 병렬 실행)"""
     from src.agents import (
         AnalystAgent, QuantAgent, ChartistAgent,
         RiskManagerAgent, AgentScores
     )
+    from src.utils.parallel import run_agents_parallel, is_error
     
     analyst = AnalystAgent()
     quant = QuantAgent()
     chartist = ChartistAgent()
     risk_manager = RiskManagerAgent()
     
-    # Phase 1: Analyst (Researcher + Strategist)
-    print(f"\n🔍 Phase 1: Analyst 분석 (헤게모니)")
+    # ── Phase 1: Analyst / Quant / Chartist 병렬 실행 ──
+    print(f"\n⚡ Phase 1: Analyst + Quant + Chartist 병렬 실행")
     print("-" * 50)
-    analyst_score = analyst.full_analysis(stock_name, stock_code)
-    print(f"   등급: {analyst_score.hegemony_grade}")
-    print(f"   독점력: {analyst_score.moat_score}/40점")
-    print(f"   성장성: {analyst_score.growth_score}/30점")
-    print(f"   총점: {analyst_score.total_score}/70점")
     
-    # Phase 2: Quant
-    print(f"\n📈 Phase 2: Quant 분석 (재무)")
-    print("-" * 50)
-    quant_score = quant.full_analysis(stock_name, stock_code)
-    print(f"   등급: {quant_score.grade}")
-    print(f"   밸류에이션: {quant_score.valuation_score}/25점")
-    print(f"   수익성: {quant_score.profitability_score}/25점")
-    print(f"   성장성: {quant_score.growth_score}/25점")
-    print(f"   안정성: {quant_score.stability_score}/25점")
-    print(f"   총점: {quant_score.total_score}/100점")
+    parallel_results = run_agents_parallel({
+        "analyst":  (analyst.full_analysis,  (stock_name, stock_code)),
+        "quant":    (quant.full_analysis,    (stock_name, stock_code)),
+        "chartist": (chartist.full_analysis, (stock_name, stock_code)),
+    })
     
-    # Phase 3: Chartist
-    print(f"\n📉 Phase 3: Chartist 분석 (기술적)")
-    print("-" * 50)
-    chartist_score = chartist.full_analysis(stock_name, stock_code)
-    print(f"   신호: {chartist_score.signal}")
-    print(f"   추세: {chartist_score.trend_score}/30점")
-    print(f"   모멘텀: {chartist_score.momentum_score}/30점")
-    print(f"   변동성: {chartist_score.volatility_score}/20점")
-    print(f"   거래량: {chartist_score.volume_score}/20점")
-    print(f"   총점: {chartist_score.total_score}/100점")
+    analyst_score  = parallel_results["analyst"]
+    quant_score    = parallel_results["quant"]
+    chartist_score = parallel_results["chartist"]
     
-    # Phase 4: Risk Manager 최종 판단
-    print(f"\n🎯 Phase 4: Risk Manager 최종 판단")
+    # 오류 처리
+    if is_error(analyst_score):
+        print(f"   ⚠️ Analyst 오류: {analyst_score}")
+        from src.agents.analyst import AnalystScore
+        analyst_score = AnalystScore(
+            moat_score=20, growth_score=15, total_score=35,
+            moat_reason="분석 오류", growth_reason="분석 오류",
+            report_summary="", image_analysis="",
+            final_opinion="오류로 인한 기본값"
+        )
+    if is_error(quant_score):
+        print(f"   ⚠️ Quant 오류: {quant_score}")
+        quant_score = quant._default_score(stock_name, str(quant_score))
+    if is_error(chartist_score):
+        print(f"   ⚠️ Chartist 오류: {chartist_score}")
+        chartist_score = chartist._default_score(stock_code, str(chartist_score))
+    
+    print(f"   → Analyst  헤게모니: {analyst_score.hegemony_grade} ({analyst_score.total_score}/70점)")
+    print(f"   → Quant    재무등급: {quant_score.grade} ({quant_score.total_score}/100점)")
+    print(f"   → Chartist 기술신호: {chartist_score.signal} ({chartist_score.total_score}/100점)")
+    
+    # ── Phase 2: Risk Manager 최종 판단 (3개 결과 의존) ──
+    print(f"\n🎯 Phase 2: Risk Manager 최종 판단")
     print("-" * 50)
     
     agent_scores = AgentScores(
