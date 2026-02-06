@@ -76,6 +76,9 @@ if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "selected_stock" not in st.session_state:
     st.session_state.selected_stock = None
+if "conversation_memory" not in st.session_state:
+    from src.utils.memory import ConversationMemory
+    st.session_state.conversation_memory = ConversationMemory(max_turns=10)
 
 
 # ==========================================
@@ -104,10 +107,10 @@ def get_realtime_tool():
 
 
 def get_supervisor():
-    """Supervisor 에이전트 로드"""
+    """Supervisor 에이전트 로드 (메모리 연동)"""
     try:
         from src.agents import SupervisorAgent
-        return SupervisorAgent()
+        return SupervisorAgent(memory=st.session_state.conversation_memory)
     except Exception as e:
         st.error(f"Supervisor 로드 실패: {e}")
         return None
@@ -294,24 +297,34 @@ def render_analysis(analysis_mode: str):
 
 
 def run_analysis(stock: dict, mode: str):
-    """분석 실행"""
+    """분석 실행 (병렬 처리)"""
     progress = st.progress(0)
     status = st.empty()
     
     try:
         if mode == "빠른 분석":
-            # 빠른 분석
+            # 빠른 분석 — Quant + Chartist 병렬
             from src.agents import QuantAgent, ChartistAgent
+            from src.utils.parallel import run_agents_parallel, is_error
             
-            status.text("📈 Quant 분석 중...")
+            status.text("⚡ Quant + Chartist 병렬 분석 중...")
             progress.progress(20)
-            quant = QuantAgent()
-            quant_score = quant.full_analysis(stock['name'], stock['code'])
             
-            status.text("📉 Chartist 분석 중...")
-            progress.progress(60)
+            quant = QuantAgent()
             chartist = ChartistAgent()
-            chartist_score = chartist.full_analysis(stock['name'], stock['code'])
+            
+            parallel_results = run_agents_parallel({
+                "quant": (quant.full_analysis, (stock['name'], stock['code'])),
+                "chartist": (chartist.full_analysis, (stock['name'], stock['code'])),
+            })
+            
+            quant_score = parallel_results["quant"]
+            chartist_score = parallel_results["chartist"]
+            
+            if is_error(quant_score):
+                quant_score = quant._default_score(stock['name'], str(quant_score))
+            if is_error(chartist_score):
+                chartist_score = chartist._default_score(stock['code'], str(chartist_score))
             
             progress.progress(100)
             status.text("✅ 분석 완료!")
@@ -325,29 +338,47 @@ def run_analysis(stock: dict, mode: str):
             }
             
         else:
-            # 전체 분석
+            # 전체 분석 — Analyst + Quant + Chartist 병렬 → Risk Manager
             from src.agents import (
                 AnalystAgent, QuantAgent, ChartistAgent,
                 RiskManagerAgent, AgentScores
             )
+            from src.utils.parallel import run_agents_parallel, is_error
             
-            status.text("🔍 Analyst 분석 중 (헤게모니)...")
+            status.text("⚡ Analyst + Quant + Chartist 병렬 분석 중...")
             progress.progress(10)
+            
             analyst = AnalystAgent()
-            analyst_score = analyst.full_analysis(stock['name'], stock['code'])
-            
-            status.text("📈 Quant 분석 중 (재무)...")
-            progress.progress(35)
             quant = QuantAgent()
-            quant_score = quant.full_analysis(stock['name'], stock['code'])
-            
-            status.text("📉 Chartist 분석 중 (기술적)...")
-            progress.progress(60)
             chartist = ChartistAgent()
-            chartist_score = chartist.full_analysis(stock['name'], stock['code'])
+            
+            parallel_results = run_agents_parallel({
+                "analyst": (analyst.full_analysis, (stock['name'], stock['code'])),
+                "quant": (quant.full_analysis, (stock['name'], stock['code'])),
+                "chartist": (chartist.full_analysis, (stock['name'], stock['code'])),
+            })
+            
+            analyst_score = parallel_results["analyst"]
+            quant_score = parallel_results["quant"]
+            chartist_score = parallel_results["chartist"]
+            
+            # 오류 처리
+            if is_error(analyst_score):
+                from src.agents.analyst import AnalystScore
+                analyst_score = AnalystScore(
+                    moat_score=20, growth_score=15, total_score=35,
+                    moat_reason="분석 오류", growth_reason="분석 오류",
+                    report_summary="", image_analysis="",
+                    final_opinion="오류로 인한 기본값"
+                )
+            if is_error(quant_score):
+                quant_score = quant._default_score(stock['name'], str(quant_score))
+            if is_error(chartist_score):
+                chartist_score = chartist._default_score(stock['code'], str(chartist_score))
+            
+            progress.progress(60)
             
             status.text("🎯 Risk Manager 최종 판단 중...")
-            progress.progress(80)
             risk_manager = RiskManagerAgent()
             
             agent_scores = AgentScores(
@@ -523,8 +554,9 @@ def display_analysis_result(result: dict):
 # 메인 콘텐츠 - 대화형 질문
 # ==========================================
 def render_chat():
-    """대화형 질문 인터페이스"""
+    """대화형 질문 인터페이스 (메모리 연동)"""
     st.markdown("## 💬 AI에게 질문하기")
+    st.caption(f"💾 대화 맥락 기억 중 ({st.session_state.conversation_memory.turn_count}턴)")
     
     # 채팅 히스토리 표시
     for msg in st.session_state.chat_history:
@@ -532,22 +564,43 @@ def render_chat():
             st.markdown(msg["content"])
     
     # 입력
-    if prompt := st.chat_input("예: 삼성전자 분석해줘, 반도체 산업 동향은?"):
+    if prompt := st.chat_input("예: 삼성전자 분석해줘, 그럼 하이닉스는?"):
         # 사용자 메시지 추가
         st.session_state.chat_history.append({"role": "user", "content": prompt})
         
         with st.chat_message("user"):
             st.markdown(prompt)
         
-        # AI 응답
+        # AI 응답 (Supervisor가 메모리를 자동으로 관리)
         with st.chat_message("assistant"):
             with st.spinner("생각 중..."):
                 supervisor = get_supervisor()
                 if supervisor:
                     try:
-                        response = supervisor.execute(prompt)
-                        st.markdown(response)
-                        st.session_state.chat_history.append({"role": "assistant", "content": response})
+                        result = supervisor.execute(prompt)
+                        
+                        # 결과에서 표시할 텍스트 추출
+                        if isinstance(result, dict):
+                            if result.get("summary"):
+                                response_text = result["summary"]
+                            elif result.get("answer"):
+                                response_text = result["answer"]
+                            elif result.get("analysis"):
+                                response_text = result["analysis"]
+                            elif result.get("message"):
+                                response_text = result["message"]
+                            elif result.get("status") == "error":
+                                response_text = f"❌ {result.get('message', '오류')}"
+                            else:
+                                response_text = str(result)
+                        else:
+                            response_text = str(result)
+                        
+                        st.markdown(response_text)
+                        st.session_state.chat_history.append({
+                            "role": "assistant",
+                            "content": response_text,
+                        })
                     except Exception as e:
                         error_msg = f"오류 발생: {e}"
                         st.error(error_msg)
