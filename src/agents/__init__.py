@@ -50,6 +50,13 @@ from .risk_manager import (
     RiskLevel,
 )
 
+# LangGraph 워크플로우
+from .graph import (
+    run_stock_analysis,
+    is_langgraph_available,
+    AnalysisState,
+)
+
 # LLM 설정
 from .llm_config import (
     get_gemini_llm,
@@ -92,4 +99,9 @@ __all__ = [
     "get_thinking_llm",
     "get_gemini_vision_llm",
     "GeminiVisionAnalyzer",
+    
+    # LangGraph
+    "run_stock_analysis",
+    "is_langgraph_available",
+    "AnalysisState",
 ]

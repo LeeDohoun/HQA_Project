@@ -338,70 +338,24 @@ def run_analysis(stock: dict, mode: str):
             }
             
         else:
-            # 전체 분석 — Analyst + Quant + Chartist 병렬 → Risk Manager
-            from src.agents import (
-                AnalystAgent, QuantAgent, ChartistAgent,
-                RiskManagerAgent, AgentScores
-            )
-            from src.utils.parallel import run_agents_parallel, is_error
+            # 전체 분석 — LangGraph 워크플로우 (폴백: 병렬 실행)
+            from src.agents.graph import run_stock_analysis
+            from src.agents import RiskManagerAgent
             
-            status.text("⚡ Analyst + Quant + Chartist 병렬 분석 중...")
+            status.text("⚡ LangGraph 워크플로우 분석 중...")
             progress.progress(10)
             
-            analyst = AnalystAgent()
-            quant = QuantAgent()
-            chartist = ChartistAgent()
-            
-            parallel_results = run_agents_parallel({
-                "analyst": (analyst.full_analysis, (stock['name'], stock['code'])),
-                "quant": (quant.full_analysis, (stock['name'], stock['code'])),
-                "chartist": (chartist.full_analysis, (stock['name'], stock['code'])),
-            })
-            
-            analyst_score = parallel_results["analyst"]
-            quant_score = parallel_results["quant"]
-            chartist_score = parallel_results["chartist"]
-            
-            # 오류 처리
-            if is_error(analyst_score):
-                from src.agents.analyst import AnalystScore
-                analyst_score = AnalystScore(
-                    moat_score=20, growth_score=15, total_score=35,
-                    moat_reason="분석 오류", growth_reason="분석 오류",
-                    report_summary="", image_analysis="",
-                    final_opinion="오류로 인한 기본값"
-                )
-            if is_error(quant_score):
-                quant_score = quant._default_score(stock['name'], str(quant_score))
-            if is_error(chartist_score):
-                chartist_score = chartist._default_score(stock['code'], str(chartist_score))
-            
-            progress.progress(60)
-            
-            status.text("🎯 Risk Manager 최종 판단 중...")
-            risk_manager = RiskManagerAgent()
-            
-            agent_scores = AgentScores(
-                analyst_moat_score=analyst_score.moat_score,
-                analyst_growth_score=analyst_score.growth_score,
-                analyst_total=analyst_score.total_score,
-                analyst_grade=analyst_score.hegemony_grade,
-                analyst_opinion=analyst_score.final_opinion,
-                quant_valuation_score=quant_score.valuation_score,
-                quant_profitability_score=quant_score.profitability_score,
-                quant_growth_score=quant_score.growth_score,
-                quant_stability_score=quant_score.stability_score,
-                quant_total=quant_score.total_score,
-                quant_opinion=quant_score.opinion,
-                chartist_trend_score=chartist_score.trend_score,
-                chartist_momentum_score=chartist_score.momentum_score,
-                chartist_volatility_score=chartist_score.volatility_score,
-                chartist_volume_score=chartist_score.volume_score,
-                chartist_total=chartist_score.total_score,
-                chartist_signal=chartist_score.signal
+            result = run_stock_analysis(
+                stock_name=stock['name'],
+                stock_code=stock['code'],
+                max_retries=1,
             )
             
-            final = risk_manager.make_decision(stock['name'], stock['code'], agent_scores)
+            scores = result.get("scores", {})
+            analyst_score = scores.get("analyst")
+            quant_score = scores.get("quant")
+            chartist_score = scores.get("chartist")
+            final = result.get("final_decision")
             
             progress.progress(100)
             status.text("✅ 분석 완료!")

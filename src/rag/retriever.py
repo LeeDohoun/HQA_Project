@@ -5,6 +5,7 @@ RAG 검색기 모듈 (텍스트 전용 + Qwen3 리랭커)
 - PaddleOCR-VL이 모든 문서를 텍스트로 변환하므로 텍스트 검색만 수행
 """
 
+import os
 from typing import List, Dict, Optional, Any
 from dataclasses import dataclass, field
 import logging
@@ -14,6 +15,7 @@ from langchain_core.documents import Document
 from .vector_store import VectorStoreManager
 from .document_loader import DocumentLoader, ProcessedDocument
 from .reranker import Qwen3Reranker, RerankerManager
+from .bm25_index import BM25IndexManager, reciprocal_rank_fusion
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +59,11 @@ class RAGRetriever:
         reranker_model: str = "default",
         reranker_task_type: str = "finance",
         reranker_instruction: Optional[str] = None,
+        # Hybrid Search 설정
+        use_hybrid: bool = True,     # BM25 하이브리드 검색 사용 여부
+        bm25_weight: float = 1.0,    # BM25 가중치 (RRF)
+        vector_weight: float = 1.0,  # 벡터 검색 가중치 (RRF)
+        bm25_persist_path: Optional[str] = None,  # BM25 인덱스 저장 경로
     ):
         """
         Args:
@@ -69,6 +76,10 @@ class RAGRetriever:
             reranker_model: 리랭커 모델 (default, small, medium, large)
             reranker_task_type: 리랭커 작업 유형 (finance, retrieval, qa, code, semantic)
             reranker_instruction: 커스텀 리랭커 Instruction
+            use_hybrid: BM25 하이브리드 검색 사용 여부
+            bm25_weight: BM25 검색 RRF 가중치
+            vector_weight: 벡터 검색 RRF 가중치
+            bm25_persist_path: BM25 인덱스 파일 경로
         """
         # 문서 로더
         self.document_loader = DocumentLoader()
@@ -93,9 +104,28 @@ class RAGRetriever:
         # 리랭커 (지연 로딩)
         self._reranker: Optional[Qwen3Reranker] = None
         
+        # ── Hybrid Search: BM25 인덱스 ──
+        self.use_hybrid = use_hybrid
+        self.bm25_weight = bm25_weight
+        self.vector_weight = vector_weight
+        
+        _bm25_path = bm25_persist_path or os.path.join(
+            persist_dir, f"{collection_name}_bm25_index.json"
+        )
+        self.bm25_index = BM25IndexManager(persist_path=_bm25_path)
+        
+        if self.use_hybrid and self.bm25_index.is_available:
+            logger.info(
+                f"Hybrid Search 활성화: BM25(w={bm25_weight}) + Vector(w={vector_weight})"
+            )
+        elif self.use_hybrid and not self.bm25_index.is_available:
+            logger.warning("rank_bm25 미설치 → Hybrid Search 비활성화, 벡터 검색만 사용")
+            self.use_hybrid = False
+        
         logger.info(
             f"RAGRetriever 초기화: retrieval_k={retrieval_k}, "
-            f"rerank_top_k={rerank_top_k}, use_reranker={use_reranker}"
+            f"rerank_top_k={rerank_top_k}, use_reranker={use_reranker}, "
+            f"hybrid={self.use_hybrid}"
         )
     
     def _get_reranker(self) -> Qwen3Reranker:
@@ -133,6 +163,23 @@ class RAGRetriever:
             chunk_text=chunk_text
         )
         
+        # BM25 인덱스에도 추가
+        if self.use_hybrid:
+            bm25_docs = []
+            for page in processed_doc.pages:
+                content = page.content or page.text_fallback
+                if content and content.strip():
+                    bm25_docs.append(Document(
+                        page_content=content,
+                        metadata={
+                            "source": processed_doc.source,
+                            "page_num": page.page_num,
+                            **(metadata or {}),
+                        }
+                    ))
+            if bm25_docs:
+                self.bm25_index.add_documents(bm25_docs)
+        
         return result
     
     def index_bytes(
@@ -163,6 +210,23 @@ class RAGRetriever:
             doc_metadata=metadata,
             chunk_text=chunk_text
         )
+        
+        # BM25 인덱스에도 추가
+        if self.use_hybrid:
+            bm25_docs = []
+            for page in processed_doc.pages:
+                content = page.content or page.text_fallback
+                if content and content.strip():
+                    bm25_docs.append(Document(
+                        page_content=content,
+                        metadata={
+                            "source": processed_doc.source,
+                            "page_num": page.page_num,
+                            **(metadata or {}),
+                        }
+                    ))
+            if bm25_docs:
+                self.bm25_index.add_documents(bm25_docs)
         
         return result
     
@@ -196,6 +260,10 @@ class RAGRetriever:
                 
                 self.vector_store.add_texts(texts, metadatas=metadatas)
                 
+                # BM25 인덱스에도 추가
+                if self.use_hybrid:
+                    self.bm25_index.add_texts(texts, metadatas=metadatas)
+                
                 return {
                     "success": True,
                     "chunks_added": len(texts)
@@ -203,6 +271,10 @@ class RAGRetriever:
             else:
                 # 청킹 없이 전체 텍스트 추가
                 self.vector_store.add_texts([text], metadatas=[metadata or {}])
+                
+                # BM25 인덱스에도 추가
+                if self.use_hybrid:
+                    self.bm25_index.add_texts([text], metadatas=[metadata or {}])
                 
                 return {
                     "success": True,
@@ -254,8 +326,36 @@ class RAGRetriever:
             k=search_k
         )
         
+        logger.info(f"벡터 검색 결과: {len(vector_results)}개")
+        
+        # 2. BM25 Hybrid Search (선택적)
+        if self.use_hybrid and self.bm25_index.is_available and self.bm25_index.corpus_size > 0:
+            logger.info(f"BM25 키워드 검색 중: query='{query[:50]}...'")
+            bm25_results = self.bm25_index.search(query, k=search_k)
+            logger.info(f"BM25 검색 결과: {len(bm25_results)}개")
+            
+            if bm25_results:
+                # RRF로 두 결과 병합
+                merged_results = reciprocal_rank_fusion(
+                    vector_results=vector_results,
+                    bm25_results=bm25_results,
+                    vector_weight=self.vector_weight,
+                    bm25_weight=self.bm25_weight,
+                )
+                logger.info(
+                    f"Hybrid 병합 완료: Vector({len(vector_results)}) + "
+                    f"BM25({len(bm25_results)}) → {len(merged_results)}개 (RRF)"
+                )
+                
+                # 병합된 결과를 vector_results 형식으로 변환
+                # RRF 점수는 순위만 반영하므로 거리 점수 대신 사용
+                vector_results = [
+                    (doc, 1.0 - min(rrf_score * 100, 1.0))  # RRF → 거리 스케일 변환
+                    for doc, rrf_score in merged_results[:search_k]
+                ]
+        
         if not vector_results:
-            logger.warning("벡터 검색 결과 없음")
+            logger.warning("검색 결과 없음 (벡터 + BM25)")
             return RetrievalResult(
                 query=query,
                 text_results=[],
@@ -263,8 +363,6 @@ class RAGRetriever:
                 is_reranked=False,
                 scores=[]
             )
-        
-        logger.info(f"벡터 검색 결과: {len(vector_results)}개")
         
         # 2. 리랭킹 (선택적)
         if should_rerank and len(vector_results) > 0:
@@ -408,6 +506,10 @@ class RAGRetriever:
             "reranker_model": self.reranker_model,
             "reranker_task_type": self.reranker_task_type,
             "reranker_instruction": self.reranker_instruction,
+            "use_hybrid": self.use_hybrid,
+            "bm25_weight": self.bm25_weight,
+            "vector_weight": self.vector_weight,
+            "bm25_corpus_size": self.bm25_index.corpus_size,
         }
     
     def set_retrieval_config(
@@ -417,6 +519,9 @@ class RAGRetriever:
         use_reranker: Optional[bool] = None,
         reranker_task_type: Optional[str] = None,
         reranker_instruction: Optional[str] = None,
+        use_hybrid: Optional[bool] = None,
+        bm25_weight: Optional[float] = None,
+        vector_weight: Optional[float] = None,
     ):
         """검색 설정 업데이트"""
         if retrieval_k is not None:
@@ -429,6 +534,12 @@ class RAGRetriever:
             self.reranker_task_type = reranker_task_type
         if reranker_instruction is not None:
             self.reranker_instruction = reranker_instruction
+        if use_hybrid is not None:
+            self.use_hybrid = use_hybrid
+        if bm25_weight is not None:
+            self.bm25_weight = bm25_weight
+        if vector_weight is not None:
+            self.vector_weight = vector_weight
     
     def delete_document(self, source: str) -> bool:
         """
@@ -440,11 +551,20 @@ class RAGRetriever:
         Returns:
             삭제 성공 여부
         """
+        # BM25 인덱스에서도 삭제
+        if self.use_hybrid:
+            self.bm25_index.delete_by_source(source)
+        
         return self.vector_store.delete_by_source(source)
     
     def get_stats(self) -> Dict:
         """저장소 통계 반환"""
-        return self.vector_store.get_stats()
+        stats = self.vector_store.get_stats()
+        stats["hybrid_search"] = {
+            "enabled": self.use_hybrid,
+            **self.bm25_index.get_stats(),
+        }
+        return stats
 
 
 # 하위 호환성을 위한 기존 인터페이스 유지

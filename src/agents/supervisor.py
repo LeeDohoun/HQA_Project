@@ -21,6 +21,7 @@ from src.agents.llm_config import get_gemini_llm
 from src.utils.stock_mapper import StockMapper, get_mapper
 from src.utils.memory import ConversationMemory
 from src.utils.parallel import run_agents_parallel, is_error
+from src.agents.graph import run_stock_analysis, is_langgraph_available
 
 
 class Intent(Enum):
@@ -467,7 +468,7 @@ JSON만 응답하세요.
         return result
     
     def _execute_stock_analysis(self, analysis: QueryAnalysis) -> Dict[str, Any]:
-        """종목 분석 실행 (전체 파이프라인 — 병렬 처리)"""
+        """종목 분석 실행 (LangGraph 워크플로우 우선, 폴백: 병렬 처리)"""
         if not analysis.stocks:
             return {"status": "error", "message": "분석할 종목을 찾을 수 없습니다."}
         
@@ -475,89 +476,51 @@ JSON만 응답하세요.
         stock_name = stock["name"]
         stock_code = stock["code"]
         
-        print(f"\n🚀 {stock_name}({stock_code}) 전체 분석 시작...")
-        print(f"   ⚡ Analyst / Quant / Chartist 병렬 실행")
+        # LangGraph 워크플로우 실행 (미설치 시 내부에서 폴백)
+        if is_langgraph_available():
+            print(f"\n🚀 {stock_name}({stock_code}) LangGraph 워크플로우 실행")
+        else:
+            print(f"\n🚀 {stock_name}({stock_code}) 전체 분석 시작...")
+            print(f"   ⚡ Analyst / Quant / Chartist 병렬 실행")
         
-        results = {"status": "success", "stock": stock, "scores": {}}
-        
-        # ── Phase 1: Analyst, Quant, Chartist 병렬 실행 ──
-        parallel_results = run_agents_parallel({
-            "analyst":  (self.agents["analyst"].full_analysis,  (stock_name, stock_code)),
-            "quant":    (self.agents["quant"].full_analysis,    (stock_name, stock_code)),
-            "chartist": (self.agents["chartist"].full_analysis, (stock_name, stock_code)),
-        })
-        
-        # 결과 수거 (오류 처리 포함)
-        analyst_score = parallel_results.get("analyst")
-        quant_score = parallel_results.get("quant")
-        chartist_score = parallel_results.get("chartist")
-        
-        if is_error(analyst_score):
-            print(f"   ⚠️ Analyst 오류: {analyst_score}")
-            from src.agents.analyst import AnalystScore
-            analyst_score = AnalystScore(
-                moat_score=20, growth_score=15, total_score=35,
-                moat_reason="분석 오류", growth_reason="분석 오류",
-                report_summary="", image_analysis="",
-                final_opinion="오류로 인한 기본값"
-            )
-        
-        if is_error(quant_score):
-            print(f"   ⚠️ Quant 오류: {quant_score}")
-            quant_score = self.agents["quant"]._default_score(stock_name, str(quant_score))
-        
-        if is_error(chartist_score):
-            print(f"   ⚠️ Chartist 오류: {chartist_score}")
-            chartist_score = self.agents["chartist"]._default_score(stock_code, str(chartist_score))
-        
-        results["scores"]["analyst"] = analyst_score
-        results["scores"]["quant"] = quant_score
-        results["scores"]["chartist"] = chartist_score
-        
-        print(f"   → Analyst  헤게모니: {analyst_score.hegemony_grade} ({analyst_score.total_score}/70점)")
-        print(f"   → Quant    재무등급: {quant_score.grade} ({quant_score.total_score}/100점)")
-        print(f"   → Chartist 기술신호: {chartist_score.signal} ({chartist_score.total_score}/100점)")
-        
-        # ── Phase 2: Risk Manager 최종 판단 (3개 결과 의존) ──
-        print(f"\n🎯 Risk Manager 최종 판단...")
-        from src.agents import AgentScores
-        agent_scores = AgentScores(
-            analyst_moat_score=analyst_score.moat_score,
-            analyst_growth_score=analyst_score.growth_score,
-            analyst_total=analyst_score.total_score,
-            analyst_grade=analyst_score.hegemony_grade,
-            analyst_opinion=analyst_score.final_opinion,
-            quant_valuation_score=quant_score.valuation_score,
-            quant_profitability_score=quant_score.profitability_score,
-            quant_growth_score=quant_score.growth_score,
-            quant_stability_score=quant_score.stability_score,
-            quant_total=quant_score.total_score,
-            quant_opinion=quant_score.opinion,
-            chartist_trend_score=chartist_score.trend_score,
-            chartist_momentum_score=chartist_score.momentum_score,
-            chartist_volatility_score=chartist_score.volatility_score,
-            chartist_volume_score=chartist_score.volume_score,
-            chartist_total=chartist_score.total_score,
-            chartist_signal=chartist_score.signal,
+        result = run_stock_analysis(
+            stock_name=stock_name,
+            stock_code=stock_code,
+            query=analysis.original_query,
+            max_retries=1,
         )
-        final_decision = self.agents["risk_manager"].make_decision(
-            stock_name, stock_code, agent_scores
-        )
-        results["final_decision"] = final_decision
+        
+        # 결과 보강
+        result["stock"] = stock
+        
+        # 에이전트 점수 출력
+        scores = result.get("scores", {})
+        analyst_score = scores.get("analyst")
+        quant_score = scores.get("quant")
+        chartist_score = scores.get("chartist")
+        
+        if analyst_score:
+            print(f"   → Analyst  헤게모니: {analyst_score.hegemony_grade} ({analyst_score.total_score}/70점)")
+        if quant_score:
+            print(f"   → Quant    재무등급: {quant_score.grade} ({quant_score.total_score}/100점)")
+        if chartist_score:
+            print(f"   → Chartist 기술신호: {chartist_score.signal} ({chartist_score.total_score}/100점)")
         
         # 결과 요약
-        results["summary"] = self._generate_summary(stock_name, results)
+        result["summary"] = self._generate_summary(stock_name, result)
         
         # 분석 결과 캐시
-        self.memory.cache_analysis(stock_name, {
-            "total_score": final_decision.total_score,
-            "action": final_decision.action.value,
-            "analyst_total": analyst_score.total_score,
-            "quant_total": quant_score.total_score,
-            "chartist_total": chartist_score.total_score,
-        })
+        final_decision = result.get("final_decision")
+        if final_decision:
+            self.memory.cache_analysis(stock_name, {
+                "total_score": final_decision.total_score,
+                "action": final_decision.action.value,
+                "analyst_total": analyst_score.total_score if analyst_score else 0,
+                "quant_total": quant_score.total_score if quant_score else 0,
+                "chartist_total": chartist_score.total_score if chartist_score else 0,
+            })
         
-        return results
+        return result
     
     def _execute_quick_analysis(self, analysis: QueryAnalysis) -> Dict[str, Any]:
         """빠른 분석 실행 (Analyst 제외)"""

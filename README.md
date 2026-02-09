@@ -4,14 +4,18 @@
 
 ## 📋 개요
 
-HQA(Hegemony Quantitative Analyst)는 Google Gemini AI와 LangGraph를 활용한 멀티 에이전트 주식 분석 시스템입니다. 4개의 전문 에이전트가 협력하여 종합적인 투자 분석을 제공합니다.
+HQA(Hegemony Quantitative Analyst)는 Google Gemini AI와 LangGraph를 활용한 멀티 에이전트 주식 분석 시스템입니다. 6개의 전문 에이전트가 협력하여 기업의 **헤게모니(시장 지배력)** 를 중심으로 종합적인 투자 분석을 제공합니다.
 
 ### ✨ 주요 특징
 
-- 🔄 **멀티 에이전트 아키텍처**: Supervisor가 조율하는 4개의 전문 에이전트
+- 🔄 **LangGraph 상태 머신**: Supervisor가 조율하는 6개 전문 에이전트 (병렬 실행 + 품질 게이트 + 피드백 루프)
+- 🔍 **Hybrid Search**: BM25 키워드 검색 + Vector 의미 검색 → RRF 병합 → Qwen3 리랭킹
 - 📊 **실시간 시세**: 한국투자증권 공식 REST API 연동
 - 📝 **PaddleOCR-VL-1.5**: 0.9B VLM 기반 문서 OCR (표/차트/수식/도장 인식)
-- 🧠 **RAG 기반 분석**: ChromaDB 벡터 스토어 + 텍스트 임베딩
+- 🧠 **RAG 기반 분석**: ChromaDB + Snowflake Arctic Korean 임베딩 (1024차원)
+- ⚡ **병렬 실행**: ThreadPoolExecutor로 Analyst/Quant/Chartist 동시 실행
+- 💾 **대화 메모리**: 10턴 컨텍스트 유지, 후속 질문 자동 감지
+- 🛡️ **데이터 품질 관리**: Plan A→B 폴백, 품질 등급(A~D) 기반 행동 강령
 - 💻 **다양한 인터페이스**: CLI + Streamlit 대시보드
 
 ## 🏗️ 시스템 아키텍처
@@ -19,78 +23,141 @@ HQA(Hegemony Quantitative Analyst)는 Google Gemini AI와 LangGraph를 활용한
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │                          User Interface                          │
-│                   (CLI / Streamlit Dashboard)                    │
+│               (CLI / Streamlit Dashboard / Chat)                 │
 └───────────────────────────────┬──────────────────────────────────┘
                                 │
                                 ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│                         🎯 Supervisor                            │
-│              (자연어 의도 분석 및 에이전트 라우팅)                 │
+│                    🎯 Supervisor (Instruct)                      │
+│          자연어 의도 분석 · 라우팅 · 대화 메모리(10턴)           │
 └───────────────────────────────┬──────────────────────────────────┘
                                 │
-        ┌───────────────┬───────┴───────┬───────────────┐
-        ▼               ▼               ▼               ▼
-┌───────────────┐ ┌───────────────┐ ┌───────────────┐ ┌───────────────┐
-│   Analyst     │ │    Quant      │ │   Chartist    │ │ Risk Manager  │
-│  (분석가)     │ │  (퀀트)       │ │  (차티스트)   │ │ (리스크관리)  │
-│               │ │               │ │               │ │               │
-│ • 시장 조사   │ │ • 재무 분석   │ │ • 차트 분석   │ │ • 위험 평가   │
-│ • 뉴스 검색   │ │ • 밸류에이션  │ │ • 기술적지표  │ │ • 포트폴리오  │
-│ • 종합 리포트 │ │ • 재무제표    │ │ • 캔들 패턴   │ │ • 최종 의견   │
-└───────────────┘ └───────────────┘ └───────────────┘ └───────────────┘
-        │               │               │               │
-        └───────────────┴───────┬───────┴───────────────┘
+                    ┌───── LangGraph 워크플로우 ─────┐
+                    │                                 │
+        ┌───────────┼───────────────┐                 │
+        ▼           ▼               ▼                 │
+┌───────────┐ ┌───────────┐ ┌───────────┐            │
+│  Analyst  │ │   Quant   │ │ Chartist  │  ← 병렬    │
+│ (Instruct │ │ (Instruct)│ │ (Instruct)│    실행    │
+│ +Thinking)│ │           │ │           │            │
+├───────────┤ ├───────────┤ ├───────────┤            │
+│Researcher │ │재무 크롤링│ │기술적 지표│            │
+│→Strategist│ │→웹 폴백   │ │RSI/MACD/BB│            │
+│(Plan A→B) │ │PER/PBR/ROE│ │Trend/Vol  │            │
+└─────┬─────┘ └─────┬─────┘ └─────┬─────┘            │
+      │             │             │                   │
+      ▼             ▼             ▼                   │
+┌──────────────────────────────────────────┐          │
+│          🔍 Quality Gate                 │          │
+│    품질 D등급 → RetryResearch (최대 1회) │          │
+└─────────────────────┬────────────────────┘          │
+                      ▼                               │
+┌──────────────────────────────────────────┐          │
+│         🎯 Risk Manager (Thinking)       │          │
+│      3개 점수 종합 → 최종 투자 판단       │          │
+└──────────────────────────────────────────┘          │
+                    └─────────────────────────────────┘
+                                │
                                 ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │                          🔧 Tools Layer                          │
-├──────────────┬──────────────┬──────────────┬────────────────────┤
-│  KIS API     │  RAG Tool    │ Chart Tools  │   Search Tool      │
-│  (실시간)    │  (벡터검색)  │  (차트생성)  │   (웹검색)         │
-└──────────────┴──────────────┴──────────────┴────────────────────┘
+├──────────────┬───────────────┬──────────────┬───────────────────┤
+│  KIS API     │  RAG Tool     │ Chart Tools  │  Search Tool      │
+│  (실시간)    │ (Hybrid검색)  │  (차트생성)  │  (Tavily/DDG)     │
+└──────────────┴───────────────┴──────────────┴───────────────────┘
+                                │
+┌──────────────────────────────────────────────────────────────────┐
+│                      💾 Storage Layer                            │
+├────────────────────┬─────────────────┬──────────────────────────┤
+│   ChromaDB         │  BM25 Index     │  대화 메모리             │
+│  (벡터 저장소)     │ (키워드 검색)   │  (10턴 + LRU 캐시)      │
+└────────────────────┴─────────────────┴──────────────────────────┘
+```
+
+### Hybrid Search 파이프라인
+
+```
+Query ──┬── Vector Search (Snowflake Arctic, k=20) ──┐
+        │                                             ├── RRF 병합 ── Qwen3 Rerank ── Top 3
+        └── BM25 Keyword Search (k=20) ──────────────┘
+```
+
+### LangGraph 워크플로우
+
+```
+START → [Analyst | Quant | Chartist] (병렬 Fan-out)
+    ↓
+Quality Gate (Fan-in)
+    ├── 품질 D등급 + 재시도 가능 → Retry Research → Quality Gate (피드백 루프)
+    └── 통과 → Risk Manager → END
 ```
 
 ## 📁 프로젝트 구조
 
 ```
 HQA_Project/
-├── main.py                 # CLI 엔트리포인트
-├── requirements.txt        # 패키지 의존성
-├── README.md              # 프로젝트 문서
-├── Report.md              # 분석 리포트 출력
+├── main.py                     # CLI 엔트리포인트
+├── pipeline_runner.py          # 데이터 파이프라인 CLI
+├── requirements.txt            # 패키지 의존성
+├── README.md                   # 프로젝트 문서
+├── Report.md                   # 분석 리포트 출력
 │
 ├── dashboard/
-│   └── app.py             # Streamlit 대시보드
+│   └── app.py                  # Streamlit 대시보드
 │
 └── src/
-    ├── __init__.py        # 패키지 초기화
+    ├── __init__.py
     │
-    ├── agents/            # AI 에이전트
+    ├── agents/                 # AI 에이전트
     │   ├── __init__.py
-    │   ├── llm_config.py  # LLM 설정 (Gemini)
-    │   ├── analyst.py     # Analyst 에이전트
-    │   ├── quant.py       # Quant 에이전트
-    │   ├── chartist.py    # Chartist 에이전트
-    │   └── risk_manager.py # Risk Manager 에이전트
+    │   ├── llm_config.py       # LLM 설정 (Gemini Instruct/Thinking/Vision)
+    │   ├── supervisor.py       # Supervisor: 쿼리 분석 · 라우팅 · 메모리
+    │   ├── analyst.py          # Analyst: Researcher + Strategist 통합 래퍼
+    │   ├── researcher.py       # Researcher (Instruct): 정보 수집 · Plan A↔B 폴백
+    │   ├── strategist.py       # Strategist (Thinking): 헤게모니 판단 · 품질 행동강령
+    │   ├── quant.py            # Quant (Instruct): 재무 분석 · 웹 폴백
+    │   ├── chartist.py         # Chartist (Instruct): 기술적 분석
+    │   ├── risk_manager.py     # Risk Manager (Thinking): 최종 투자 판단
+    │   └── graph.py            # LangGraph 상태 머신 워크플로우
     │
-    ├── data_pipeline/     # 데이터 수집
+    ├── rag/                    # RAG 파이프라인
     │   ├── __init__.py
-    │   ├── crawler.py     # 웹 크롤러 (뉴스/공시)
-    │   └── price_loader.py # 가격 데이터 로더
+    │   ├── ocr_processor.py    # PaddleOCR-VL-1.5 문서 OCR
+    │   ├── document_loader.py  # 문서 로딩 및 전처리
+    │   ├── text_splitter.py    # 텍스트 청킹 (1000자/200 오버랩)
+    │   ├── embeddings.py       # Snowflake Arctic Korean 임베딩 (1024dim)
+    │   ├── vector_store.py     # ChromaDB 벡터 저장소
+    │   ├── bm25_index.py       # BM25 키워드 검색 인덱스 (Hybrid Search)
+    │   ├── retriever.py        # 통합 검색기 (Vector + BM25 + Rerank)
+    │   └── reranker.py         # Qwen3-Reranker-0.6B 리랭커
     │
-    ├── database/          # 데이터베이스
-    │   └── vector_store.py # ChromaDB 벡터 스토어
-    │
-    ├── tools/             # 에이전트 도구
+    ├── data_pipeline/          # 데이터 수집/가공
     │   ├── __init__.py
-    │   ├── realtime_tool.py  # KIS 실시간 시세 API
-    │   ├── finance_tool.py   # 주식 코드 매핑
-    │   ├── charts_tools.py   # 차트 생성 도구
-    │   ├── rag_tool.py       # RAG 검색 도구
-    │   └── search_tool.py    # 웹 검색 도구
+    │   ├── data_ingestion.py   # 텍스트 전용 RAG 인제스션
+    │   ├── crawler.py          # 웹 크롤러 (네이버 금융)
+    │   ├── dart_collector.py   # DART 공시 수집
+    │   ├── news_crawler.py     # 뉴스 크롤러
+    │   └── price_loader.py     # 가격 데이터 로더
     │
-    └── utils/             # 유틸리티
+    ├── database/               # 데이터베이스
+    │   ├── raw_data_store.py   # 원시 데이터 저장
+    │   └── vector_store.py     # 레거시 벡터 스토어
+    │
+    ├── tools/                  # 에이전트 도구
+    │   ├── __init__.py
+    │   ├── realtime_tool.py    # KIS 실시간 시세 API
+    │   ├── web_search_tool.py  # 웹 검색 (Tavily/DuckDuckGo)
+    │   ├── finance_tool.py     # 종목 코드 매핑
+    │   ├── charts_tools.py     # 차트 생성 도구
+    │   ├── rag_tool.py         # RAG 검색 도구
+    │   └── search_tool.py      # 검색 도구
+    │
+    └── utils/                  # 유틸리티
         ├── __init__.py
-        └── kis_auth.py    # KIS API 인증 모듈
+        ├── stock_mapper.py     # 종목명 ↔ 코드 매핑
+        ├── memory.py           # 대화 메모리 (10턴, LRU 캐시)
+        ├── parallel.py         # 병렬 실행 (ThreadPoolExecutor)
+        └── kis_auth.py         # KIS API 인증 모듈
 ```
 
 ## 🚀 실행 방법
@@ -98,12 +165,27 @@ HQA_Project/
 ### 환경 설정
 
 ```bash
-# 패키지 설치
+# 기본 패키지 설치
 pip install -r requirements.txt
 
-# 환경 변수 설정 (.env 파일)
-GOOGLE_API_KEY=your_gemini_api_key
-KIS_APP_KEY=your_kis_app_key
+# LangGraph + BM25 (권장)
+pip install langgraph rank-bm25
+
+# PaddleOCR-VL-1.5 (PDF 문서 OCR)
+# GPU 버전 (CUDA 12.6)
+pip install paddlepaddle-gpu==3.2.1 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
+# 또는 CPU 버전
+pip install paddlepaddle==3.2.1
+# PaddleOCR 설치
+pip install -U "paddleocr[doc-parser]"
+```
+
+```env
+# .env 파일 설정
+GOOGLE_API_KEY=your_gemini_api_key          # 필수
+DART_API_KEY=your_dart_api_key              # DART 공시 (선택)
+TAVILY_API_KEY=your_tavily_api_key          # 웹 검색 (선택)
+KIS_APP_KEY=your_kis_app_key                # 실시간 시세 (선택)
 KIS_APP_SECRET=your_kis_app_secret
 KIS_ACCOUNT_NO=your_account_number
 KIS_ACCOUNT_PROD_CODE=01
@@ -112,114 +194,141 @@ KIS_ACCOUNT_PROD_CODE=01
 ### CLI 모드
 
 ```bash
-# 대화형 모드 (Supervisor 기반)
+# 대화형 모드 (Supervisor 기반, 메모리 유지)
 python main.py
 
-# 주식 분석 모드
+# 종목 분석 (전체 — LangGraph 워크플로우)
 python main.py -s 삼성전자
 python main.py --stock 005930
 
-# 빠른 분석 모드
+# 빠른 분석 (Quant + Chartist만)
 python main.py -q 현대차
 
-# 실시간 시세 확인
+# 실시간 시세
 python main.py -p SK하이닉스
 python main.py --price 000660
+```
+
+### 데이터 파이프라인
+
+```bash
+# PDF 문서 인덱싱
+python pipeline_runner.py ingest report.pdf --stock-code 005930
+
+# 디렉토리 일괄 인덱싱
+python pipeline_runner.py index-dir ./reports/ --stock-code 005930
+
+# RAG 검색 테스트
+python pipeline_runner.py search "삼성전자 반도체 실적"
+
+# 인덱스 상태 확인
+python pipeline_runner.py status
 ```
 
 ### 대시보드 모드
 
 ```bash
-# Streamlit 대시보드 실행
 streamlit run dashboard/app.py
 ```
 
 ## 🤖 에이전트 상세
 
-### Supervisor (조율자)
-- **역할**: 사용자 의도 분석 및 적절한 에이전트로 라우팅
-- **기능**: 자연어 질문 해석, 워크플로우 결정, 결과 통합
+### Supervisor (조율자) — `Instruct`
+- **역할**: 사용자 의도 분석 · 에이전트 라우팅 · 대화 메모리 관리
+- **기능**: 규칙 기반 빠른 분석 → LLM 상세 분석 (2단계)
+- **의도 분류**: 종목분석 · 빠른분석 · 산업분석 · 이슈분석 · 시세조회 · 종목비교 · 테마탐색 · 일반QA
+- **메모리**: 최근 10턴 대화 컨텍스트 유지, 후속 질문 자동 감지 ("그럼 하이닉스는?")
 
-### Analyst (분석가)
-- **역할**: 시장 조사 및 종합 리포트 작성
-- **도구**: 웹 검색, RAG 검색, 뉴스 크롤링
-- **출력**: 시장 동향, 기업 뉴스, 투자 환경 분석
+### Analyst (분석가) — `Instruct` + `Thinking`
+내부적으로 두 개의 하위 에이전트로 구성:
 
-### Quant (퀀트)
-- **역할**: 재무 분석 및 밸류에이션
-- **도구**: KIS API (재무제표), Finance Tool
-- **출력**: PER/PBR/ROE 분석, 적정가치 산출, 재무 건전성 평가
+#### Researcher (Instruct — 빠른 수집)
+- **역할**: 정보 수집 · 요약 · 품질 평가
+- **전략**: 모든 검색에 Plan A → Plan B 폴백
+  - 리포트: RAG → 웹검색 / 뉴스: 웹검색 → RAG / 정책: 웹검색 → RAG / 산업: RAG → 웹검색
+- **품질 관리**: `ResearchResult.evaluate_quality()` → A/B/C/D 등급, 경고 목록
+- **출력**: `ResearchResult` (report_summary, news, policy, industry, 품질 점수)
 
-### Chartist (차티스트)
-- **역할**: 기술적 분석 및 차트 패턴 인식
-- **도구**: KIS API (일봉/분봉), Chart Tools
-- **출력**: 이동평균선 분석, RSI/MACD, 지지/저항선
+#### Strategist (Thinking — 깊은 추론)
+- **역할**: 헤게모니(시장 지배력) 분석 · 독점력/성장성 평가
+- **행동 강령**: 데이터 품질 등급별 분석 톤 조정
+  - D등급: 2단계 하향, C등급: 1단계 하향, B등급: 기본+주의 문구, A등급: 확신 있는 톤
+- **출력**: `HegemonyScore` (moat 0~40 + growth 0~30 = 총 0~70점)
 
-### Risk Manager (리스크 관리자)
-- **역할**: 위험 평가 및 최종 투자 의견 제시
-- **도구**: 모든 에이전트 결과 종합
-- **출력**: 리스크 점수, 투자등급, 포지션 사이징 권고
+### Quant (퀀트) — `Instruct`
+- **역할**: 재무 지표 분석 · 밸류에이션
+- **전략**: Plan A (네이버 금융 크롤링) → Plan B (웹 검색 + LLM JSON 추출)
+- **지표**: PER/PBR/ROE/부채비율 등
+- **출력**: `QuantScore` (valuation/profitability/growth/stability 각 0~25, 총 0~100점)
 
-## 🔧 도구 (Tools)
+### Chartist (차티스트) — `Instruct`
+- **역할**: 기술적 분석 (차트 지표 기반)
+- **지표**: RSI, MACD, Bollinger Band, 이동평균선, 거래량
+- **출력**: `ChartistScore` (trend/momentum/volatility/volume, 총 0~100점)
 
-### KIS Realtime Tool (`realtime_tool.py`)
-한국투자증권 공식 REST API를 활용한 실시간 시세 조회
+### Risk Manager (리스크 관리자) — `Thinking`
+- **역할**: 3개 에이전트 결과 종합 → 최종 투자 판단
+- **입력**: `AgentScores` (Analyst 70 + Quant 100 + Chartist 100 = 270점 만점)
+- **출력**: `FinalDecision` (투자 행동, 리스크 레벨, 목표가, 손절가, 포지션 사이징)
 
-| 함수 | API ID | 설명 |
-|------|--------|------|
-| `inquire_price()` | FHKST01010100 | 현재가 조회 |
-| `inquire_asking_price()` | FHKST01010200 | 호가 조회 |
-| `inquire_daily_price()` | FHKST01010400 | 일봉 데이터 |
-| `inquire_time_itemchartprice()` | FHKST03010200 | 분봉 데이터 |
-| `inquire_ccnl()` | FHKST01010300 | 체결 내역 |
+## 🔍 Hybrid Search (BM25 + Vector)
 
-### Finance Tool (`finance_tool.py`)
-종목 코드/이름 매핑 및 유효성 검증
+벡터 검색만으로는 금융 용어(PER, EBITDA, YOY 등)나 숫자 매칭이 약합니다.
+BM25 키워드 검색을 추가하여 두 검색 결과를 Reciprocal Rank Fusion(RRF)으로 병합합니다.
 
-| 함수 | 설명 |
-|------|------|
-| `StockMapper.load_from_kis_master()` | KIS 마스터 파일 로드 |
-| `StockMapper.get_code()` | 종목명 → 코드 변환 |
-| `StockMapper.get_name()` | 코드 → 종목명 변환 |
-| `StockMapper.search()` | 종목 검색 |
+| 검색 방식 | 강점 | 예시 |
+|-----------|------|------|
+| **Vector (의미)** | 유의어·문맥 이해 | "수익성 좋은 기업" ↔ "ROE 높은 종목" |
+| **BM25 (키워드)** | 정확한 용어 매칭 | "PER 12.5배", "EBITDA 3조" |
+| **Hybrid (RRF)** | 둘 다 결합 | 의미적 유사도 + 키워드 정확도 |
 
-### KIS Auth (`kis_auth.py`)
-한국투자증권 API 인증 및 토큰 관리
+### 토크나이저 특징 (금융 특화)
+- 금융 약어 보호: `PER`, `ROE`, `EBITDA`, `EV/EBITDA` 등
+- 숫자+단위 패턴: `12.5배`, `3.2%`, `1,200억`
+- 한글 형태소 분리 (형태소 분석기 불필요)
+- 종목코드 추출: 4자리 이상 숫자
 
-| 클래스/함수 | 설명 |
-|-------------|------|
-| `KISConfig` | API 설정 (도메인, 키, 계좌) |
-| `KISToken` | 토큰 발급/캐싱/갱신 |
-| `call_api()` | 공통 REST API 호출 |
-| `get_base_headers()` | 인증 헤더 생성 |
+## ⚡ LangGraph 워크플로우
+
+기존의 순차적 에이전트 호출을 LangGraph 상태 머신으로 대체합니다.
+
+### 핵심 개선점
+| 기능 | 기존 (v0.3) | LangGraph (v0.4) |
+|------|-------------|-------------------|
+| **실행 방식** | ThreadPoolExecutor 병렬 | StateGraph Fan-out/Fan-in |
+| **에러 복구** | try/except 기본값 | 노드별 독립 에러 처리 |
+| **품질 관리** | 없음 | Quality Gate + 재시도 루프 |
+| **데이터 흐름** | 함수 리턴값 전달 | `AnalysisState` TypedDict |
+| **확장성** | 코드 수정 필요 | 노드/엣지 추가로 확장 |
+
+### Graceful Degradation
+- `langgraph` 미설치 → 자동으로 기존 병렬 실행 방식 폴백
+- `rank-bm25` 미설치 → 자동으로 벡터 검색만 사용
+- 각 에이전트 오류 → 기본값으로 대체 후 계속 진행
 
 ## 📚 기술 스택
 
-| 분류 | 기술 |
-|------|------|
-| **LLM** | Google Gemini 2.5 Flash (Lite/Preview) |
-| **에이전트 프레임워크** | LangGraph, LangChain |
-| **문서 OCR** | PaddleOCR-VL-1.5 (0.9B VLM) |
-| **벡터 DB** | ChromaDB + 텍스트 임베딩 |
-| **주식 데이터** | 한국투자증권 공식 REST API |
-| **대시보드** | Streamlit + Plotly |
-| **웹 검색** | Tavily API |
+| 분류 | 기술 | 용도 |
+|------|------|------|
+| **LLM (Instruct)** | Gemini 2.5 Flash Lite | Supervisor, Researcher, Quant, Chartist |
+| **LLM (Thinking)** | Gemini 2.5 Flash Preview | Strategist, Risk Manager |
+| **오케스트레이션** | LangGraph (선택) | 상태 머신 워크플로우, 조건부 라우팅 |
+| **병렬 실행** | ThreadPoolExecutor (폴백) | 에이전트 동시 실행 |
+| **문서 OCR** | PaddleOCR-VL-1.5 (0.9B) | PDF → Markdown 텍스트 변환 |
+| **임베딩** | Snowflake Arctic Korean | 1024차원, 8192토큰, 한국어 최적화 |
+| **벡터 DB** | ChromaDB | 벡터 유사도 검색 |
+| **키워드 검색** | rank-bm25 (선택) | BM25 Okapi 키워드 매칭 |
+| **리랭커** | Qwen3-Reranker-0.6B | 검색 결과 재순위 |
+| **결과 병합** | RRF (Reciprocal Rank Fusion) | Vector + BM25 점수 통합 |
+| **웹 검색** | Tavily (1차) / DuckDuckGo (2차) | 실시간 뉴스/정보 |
+| **주식 데이터** | 한국투자증권 REST API | 실시간 시세, 일봉/분봉 |
+| **재무 크롤링** | 네이버 금융 + 웹 폴백 | PER/PBR/ROE 수집 |
+| **대시보드** | Streamlit + Plotly | 웹 UI, 인터랙티브 차트 |
+| **대화 메모리** | ConversationMemory | 10턴 히스토리, LRU 캐시 |
 
 ## ⚙️ API 설정
 
-### 한국투자증권 API
-1. [KIS Developers](https://apiportal.koreainvestment.com/) 가입
-2. 앱 생성 후 APP KEY, APP SECRET 발급
-3. `.env` 파일에 설정
-
-```env
-KIS_APP_KEY=PSxxxxxxxxxxx
-KIS_APP_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-KIS_ACCOUNT_NO=12345678-01
-KIS_ACCOUNT_PROD_CODE=01
-```
-
-### Google Gemini API
+### Google Gemini API (필수)
 1. [Google AI Studio](https://aistudio.google.com/) 접속
 2. API Key 발급
 3. `.env` 파일에 설정
@@ -228,88 +337,105 @@ KIS_ACCOUNT_PROD_CODE=01
 GOOGLE_API_KEY=AIzaxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-### PaddleOCR-VL-1.5 설치 (문서 OCR)
+### 한국투자증권 API (선택 — 실시간 시세)
+1. [KIS Developers](https://apiportal.koreainvestment.com/) 가입
+2. 앱 생성 후 APP KEY, APP SECRET 발급
 
-```bash
-# GPU 버전 (CUDA 12.6 기준)
-pip install paddlepaddle-gpu==3.2.1 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
-
-# CPU 버전
-pip install paddlepaddle==3.2.1
-
-# PaddleOCR 설치
-pip install -U "paddleocr[doc-parser]"
+```env
+KIS_APP_KEY=PSxxxxxxxxxxx
+KIS_APP_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+KIS_ACCOUNT_NO=12345678-01
+KIS_ACCOUNT_PROD_CODE=01
 ```
 
-> **참고**: PaddleOCR-VL-1.5는 requirements.txt와 별도로 설치해야 합니다.
-> 공식 문서: https://www.paddleocr.ai/
+### Tavily API (선택 — 웹 검색)
+1. [Tavily](https://tavily.com/) 가입 (월 1,000건 무료)
+
+```env
+TAVILY_API_KEY=tvly-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+### DART API (선택 — 공시)
+1. [DART](https://opendart.fss.or.kr/) 가입
+
+```env
+DART_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
 
 ## 📝 변경 이력
 
-### v0.2.0 (2026-02) - PaddleOCR-VL 전환
+### v0.4.0 (2026-02) - LangGraph + Hybrid Search
 
 #### 🆕 새로 생성된 파일
-- `src/rag/ocr_processor.py` - PaddleOCR-VL-1.5 기반 OCR 프로세서
+- `src/agents/graph.py` — LangGraph 상태 머신 워크플로우
+- `src/rag/bm25_index.py` — BM25 키워드 검색 인덱스 (금융 특화 토크나이저)
 
 #### 🔄 주요 변경사항
 
-**문서 처리 방식 전환: Qwen3-VL → PaddleOCR-VL-1.5**
+**LangGraph 워크플로우**
+- `SupervisorAgent._execute_stock_analysis()` → `run_stock_analysis()` 위임
+- `AnalysisState` TypedDict로 상태 관리
+- 5개 노드: analyst, quant, chartist, quality_gate, risk_manager
+- 조건부 엣지: 품질 D등급 → retry_research 피드백 루프
+- `langgraph` 미설치 시 `_fallback_parallel_analysis()` 자동 폴백
 
-| 항목 | 이전 (v0.1.0) | 현재 (v0.2.0) |
-|------|--------------|---------------|
-| OCR 엔진 | PyMuPDF 텍스트 추출 | PaddleOCR-VL-1.5 |
-| 임베딩 | Qwen3-VL 멀티모달 (2B~8B) | 텍스트 임베딩 (경량) |
-| 표/차트 인식 | 이미지로 처리 | VLM이 직접 인식 |
-| 모델 크기 | 2B~8B | 0.9B |
-| 출력 형식 | 텍스트/이미지 혼합 | Markdown 구조화 |
+**Hybrid Search (BM25 + Vector)**
+- `RAGRetriever`에 `use_hybrid`, `bm25_weight`, `vector_weight` 파라미터 추가
+- 문서 인덱싱 시 ChromaDB + BM25 인덱스 동시 업데이트
+- `retrieve()`: Vector + BM25 → RRF 병합 → Qwen3 리랭킹
+- `rank-bm25` 미설치 시 벡터 검색만 사용 (graceful degradation)
+- BM25 인덱스 JSON 영속화
 
 **변경된 파일**:
-- `src/rag/document_loader.py` - PaddleOCR-VL 기반으로 재작성
-- `src/rag/__init__.py` - OCR 프로세서 export 추가
-- `requirements.txt` - PaddleOCR 설치 가이드 추가
-
-**PaddleOCR-VL-1.5 특징**:
-- ✅ 0.9B 경량 모델로 빠른 추론
-- ✅ 표, 차트, 수식, 도장 인식 SOTA
-- ✅ 스캔/기울기/왜곡/조명 왜곡 강건
-- ✅ Markdown 구조화 출력
-- ✅ 다국어 지원 (영/중/한 등)
+- `src/agents/supervisor.py` — LangGraph 통합, `_execute_stock_analysis()` 대체
+- `src/agents/__init__.py` — graph 모듈 export 추가
+- `src/rag/retriever.py` — Hybrid Search 통합, BM25 인덱스 연동
+- `src/rag/__init__.py` — BM25 모듈 export 추가
+- `main.py` — `_run_full_analysis()` → LangGraph 워크플로우 사용
+- `dashboard/app.py` — 전체 분석 → LangGraph 워크플로우 사용
+- `requirements.txt` — `langgraph>=0.2.0`, `rank-bm25>=0.2.2` 추가
 
 ---
 
-### v0.1.0 (2025-01)
+### v0.3.0 (2026-02) - 병렬 실행 · 메모리 · 품질 관리
 
 #### 🆕 새로 생성된 파일
-- `src/utils/kis_auth.py` - KIS API 인증 모듈
-- `dashboard/app.py` - Streamlit 웹 대시보드
+- `src/utils/parallel.py` — ThreadPoolExecutor 병렬 실행 유틸리티
+- `src/utils/memory.py` — ConversationMemory (10턴, LRU 캐시)
 
-#### 🔄 수정된 파일
+#### 🔄 주요 변경사항
 
-**`src/tools/realtime_tool.py`**
-- 비공식 `mojito2` 라이브러리 → 공식 KIS REST API로 전면 재작성
-- 새로운 함수: `inquire_price()`, `inquire_asking_price()`, `inquire_daily_price()`, `inquire_time_itemchartprice()`, `inquire_ccnl()`
-- 데이터 클래스: `StockPrice`, `OrderBook`, `OHLCV`, `TradeRecord`
-- 하위 호환성 유지: `RealtimeQuote = StockPrice` 별칭
+**에이전트 개선**
+- `Researcher`: 모든 검색 메서드에 Plan A → Plan B 폴백 로직 추가
+- `ResearchResult`: 품질 평가 시스템 (`evaluate_quality()`, A~D 등급)
+- `Strategist`: 데이터 품질 등급별 행동 강령 (D: 2단계 하향, A: 확신)
+- `Quant`: 네이버 금융 크롤링 → 웹 검색 폴백 (`_web_search_fallback`)
 
-**`src/tools/finance_tool.py`**
-- `import yfinance as yf` 제거 (requirements에서 삭제됨)
-- 한국 주식 전용으로 정리
+**병렬 실행**
+- Analyst + Quant + Chartist 동시 실행 (ThreadPoolExecutor)
+- 에이전트 오류 시 기본값 대체 후 계속 진행
 
-**`main.py`**
-- argparse 기반 CLI 인터페이스로 전면 재설계
-- 4가지 실행 모드: 대화형, 주식분석(-s), 빠른분석(-q), 시세확인(-p)
-- 빠른 시작을 위한 lazy import 적용
+**대화 메모리**
+- SupervisorAgent에 `ConversationMemory` 통합
+- 후속 질문 자동 감지 ("그럼", "그것은", "아까" 등)
+- 분석 결과 LRU 캐시
 
-**`requirements.txt`**
-- `mojito2>=0.2.0` 제거
-- `streamlit>=1.30.0`, `plotly>=5.18.0` 활성화
-- KIS 공식 API 직접 사용 주석 추가
+---
 
-**`src/__init__.py`**
-- 패키지 설명 문서화 추가
+### v0.2.0 (2026-02) — PaddleOCR-VL 전환
 
-**`src/utils/__init__.py`**
-- `kis_auth` 모듈 export 추가
+- PaddleOCR-VL-1.5로 문서 OCR 전환 (0.9B 경량 VLM)
+- 멀티모달 임베딩 제거, 텍스트 전용 RAG
+- Qwen3-Reranker-0.6B 리랭킹 추가
+- Snowflake Arctic Korean 임베딩 (1024dim, 8192 tokens)
+
+---
+
+### v0.1.0 (2025-01) — 초기 버전
+
+- KIS REST API 연동 (실시간 시세)
+- Streamlit 대시보드
+- 기본 멀티 에이전트 구조
 
 ## 📄 라이선스
 
