@@ -22,6 +22,13 @@ from src.tools.finance_tool import (
     FinancialAnalysisTool,
 )
 
+# 웹 검색 폴백 (선택적)
+try:
+    from src.tools.web_search_tool import search_web
+    _WEB_SEARCH_AVAILABLE = True
+except ImportError:
+    _WEB_SEARCH_AVAILABLE = False
+
 
 @dataclass
 class QuantScore:
@@ -78,6 +85,7 @@ class QuantAgent:
     def full_analysis(self, stock_name: str, stock_code: str) -> QuantScore:
         """
         전체 재무 분석 수행
+        Plan A: 네이버 금융 크롤링 → Plan B: 웹 검색 + LLM 추출
         
         Args:
             stock_name: 종목명
@@ -88,11 +96,10 @@ class QuantAgent:
         """
         print(f"📊 [Quant] {stock_name}({stock_code}) 재무 분석 중...")
         
+        # ── Plan A: 네이버 금융 크롤링 ──
         try:
-            # 1. 네이버 금융에서 데이터 수집 + 분석
             analysis: QuantitativeAnalysis = self.analyzer.analyze(stock_code)
             
-            # 2. QuantScore로 변환
             return QuantScore(
                 valuation_score=analysis.valuation_score,
                 profitability_score=analysis.profitability_score,
@@ -112,8 +119,10 @@ class QuantAgent:
             )
             
         except Exception as e:
-            print(f"❌ 재무 분석 오류: {e}")
-            return self._default_score(stock_name, str(e))
+            print(f"   ⚠️ 네이버 금융 크롤링 실패: {e} → 웹 검색 폴백")
+        
+        # ── Plan B: 웹 검색 + LLM 추출 ──
+        return self._web_search_fallback(stock_name, stock_code)
     
     def _calculate_grade(self, total_score: int) -> str:
         """점수에 따른 등급 계산"""
@@ -127,6 +136,119 @@ class QuantAgent:
             return "D"
         else:
             return "F"
+    
+    def _web_search_fallback(self, stock_name: str, stock_code: str) -> QuantScore:
+        """
+        웹 검색 폴백: 검색 결과에서 LLM으로 재무 지표를 추출하여 분석.
+        네이버 금융 크롤링이 실패했을 때 Plan B로 사용.
+        """
+        if not _WEB_SEARCH_AVAILABLE:
+            print("   ⚠️ 웹 검색 도구 미설치 → 기본값 반환")
+            return self._default_score(stock_name, "네이버 금융 + 웹 검색 모두 불가")
+        
+        print(f"   🔄 [Quant Plan B] {stock_name} 웹 검색으로 재무 지표 수집 중...")
+        
+        try:
+            # 1. 여러 쿼리로 재무 지표 수집
+            queries = [
+                f"{stock_name} PER PBR ROE 2025",
+                f"{stock_name} 부채비율 영업이익률 매출 성장률",
+            ]
+            
+            all_snippets = []
+            for q in queries:
+                results = search_web(q, max_results=3)
+                if results:
+                    for r in results:
+                        snippet = r.get("snippet") or r.get("content", "")
+                        title = r.get("title", "")
+                        if snippet:
+                            all_snippets.append(f"[{title}] {snippet}")
+            
+            if not all_snippets:
+                print("   ⚠️ 웹 검색 결과 없음 → 기본값 반환")
+                return self._default_score(stock_name, "웹 검색 결과 없음")
+            
+            combined_text = "\n".join(all_snippets[:8])  # 상위 8개
+            
+            # 2. LLM으로 지표 추출 + 채점
+            extract_prompt = f"""
+다음은 '{stock_name}'({stock_code})에 대한 웹 검색 결과입니다.
+여기에서 재무 지표를 추출하고 점수를 매기세요.
+
+[검색 결과]
+{combined_text[:3000]}
+
+아래 JSON 형식으로만 응답하세요:
+{{
+    "per": <숫자 또는 null>,
+    "pbr": <숫자 또는 null>,
+    "roe": <숫자(%) 또는 null>,
+    "debt_ratio": <숫자(%) 또는 null>,
+    "valuation_score": <0-25>,
+    "valuation_analysis": "<밸류에이션 분석 1-2문장>",
+    "profitability_score": <0-25>,
+    "profitability_analysis": "<수익성 분석 1-2문장>",
+    "growth_score": <0-25>,
+    "growth_analysis": "<성장성 분석 1-2문장>",
+    "stability_score": <0-25>,
+    "stability_analysis": "<안정성 분석 1-2문장>",
+    "opinion": "<종합 의견 1문장>"
+}}
+
+채점 기준:
+- 밸류에이션: PER 10배 이하 25점, 15배 이하 20점, 20배 이하 15점, 30배 이상 5점
+- 수익성: ROE 15%+ 25점, 10%+ 20점, 5%+ 15점, 이하 10점
+- 성장성: 매출 성장률 20%+ 25점, 10%+ 20점, 5%+ 15점, 이하 10점
+- 안정성: 부채비율 50% 이하 25점, 100% 이하 20점, 200% 이상 10점
+
+지표를 찾을 수 없으면 null로 두고, 해당 점수는 12점(중간값)으로 부여하세요.
+JSON만 출력하세요.
+"""
+            response = self.llm.invoke(extract_prompt)
+            
+            import json
+            import re
+            
+            json_match = re.search(r'\{[\s\S]*\}', response.content)
+            if not json_match:
+                raise ValueError("LLM이 JSON을 반환하지 않음")
+            
+            data = json.loads(json_match.group())
+            
+            # 점수 범위 보정
+            v = min(25, max(0, int(data.get("valuation_score", 12))))
+            p = min(25, max(0, int(data.get("profitability_score", 12))))
+            g = min(25, max(0, int(data.get("growth_score", 12))))
+            s = min(25, max(0, int(data.get("stability_score", 12))))
+            total = v + p + g + s
+            
+            disclaimer = "\n\n[데이터 출처: 웹 검색 — 네이버 금융 원본 대비 정확도 제한적]"
+            
+            score = QuantScore(
+                valuation_score=v,
+                profitability_score=p,
+                growth_score=g,
+                stability_score=s,
+                total_score=total,
+                valuation_analysis=data.get("valuation_analysis", "웹 검색 기반") + disclaimer,
+                profitability_analysis=data.get("profitability_analysis", "웹 검색 기반") + disclaimer,
+                growth_analysis=data.get("growth_analysis", "웹 검색 기반") + disclaimer,
+                stability_analysis=data.get("stability_analysis", "웹 검색 기반") + disclaimer,
+                per=data.get("per"),
+                pbr=data.get("pbr"),
+                roe=data.get("roe"),
+                debt_ratio=data.get("debt_ratio"),
+                opinion=data.get("opinion", "웹 검색 기반 분석") + disclaimer,
+                grade=self._calculate_grade(total),
+            )
+            
+            print(f"   ✅ 웹 검색 폴백 성공: {total}/100점 (등급 {score.grade})")
+            return score
+            
+        except Exception as e:
+            print(f"   ❌ 웹 검색 폴백도 실패: {e}")
+            return self._default_score(stock_name, f"네이버 금융 + 웹 검색 모두 실패: {e}")
     
     def _default_score(self, stock_name: str, error: str) -> QuantScore:
         """오류 시 기본 점수 반환"""

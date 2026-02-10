@@ -19,6 +19,9 @@ from enum import Enum
 
 from src.agents.llm_config import get_gemini_llm
 from src.utils.stock_mapper import StockMapper, get_mapper
+from src.utils.memory import ConversationMemory
+from src.utils.parallel import run_agents_parallel, is_error
+from src.agents.graph import run_stock_analysis, is_langgraph_available
 
 
 class Intent(Enum):
@@ -76,9 +79,10 @@ class SupervisorAgent:
         result = supervisor.execute("삼성전자 분석해줘")
     """
     
-    def __init__(self):
+    def __init__(self, memory: Optional[ConversationMemory] = None):
         self.llm = get_gemini_llm()
         self.stock_mapper = get_mapper()  # 분리된 StockMapper 사용
+        self.memory = memory or ConversationMemory(max_turns=10)
         
         # 에이전트 지연 로딩 (순환 임포트 방지)
         self._agents = None
@@ -246,11 +250,21 @@ class SupervisorAgent:
         return analysis
     
     def _llm_analyze(self, query: str, quick_result: QueryAnalysis) -> QueryAnalysis:
-        """LLM 기반 상세 분석"""
+        """LLM 기반 상세 분석 (대화 맥락 포함)"""
+        
+        # 대화 히스토리 및 맥락 힌트 주입
+        history_section = ""
+        history_prompt = self.memory.to_prompt()
+        context_hint = self.memory.get_context_hint(query)
+        
+        if history_prompt:
+            history_section += f"\n{history_prompt}\n"
+        if context_hint:
+            history_section += f"\n{context_hint}\n"
         
         prompt = f"""
 사용자 쿼리를 분석하세요.
-
+{history_section}
 쿼리: "{query}"
 
 다음 JSON 형식으로 응답하세요:
@@ -391,7 +405,7 @@ JSON만 응답하세요.
     
     def execute(self, query: str) -> Dict[str, Any]:
         """
-        쿼리 분석 및 실행
+        쿼리 분석 및 실행 (메모리 컨텍스트 포함)
         
         Args:
             query: 사용자 쿼리
@@ -402,9 +416,16 @@ JSON만 응답하세요.
         print("=" * 60)
         print(f"🎯 [Supervisor] 쿼리 분석 중...")
         print(f"   쿼리: {query}")
+        if self.memory.turn_count > 0:
+            print(f"   💾 대화 히스토리: {self.memory.turn_count}턴")
         print("=" * 60)
         
-        # 1. 쿼리 분석
+        # 0. 맥락 힌트 확인 (후속 질문 감지)
+        context_hint = self.memory.get_context_hint(query)
+        if context_hint:
+            print(f"   📎 맥락 감지: 이전 대화 참조")
+        
+        # 1. 쿼리 분석 (맥락 포함)
         analysis = self.analyze(query)
         
         print(f"\n📊 분석 결과:")
@@ -425,31 +446,29 @@ JSON만 응답하세요.
         
         # 3. 의도별 실행
         if analysis.intent == Intent.STOCK_ANALYSIS:
-            return self._execute_stock_analysis(analysis)
-        
+            result = self._execute_stock_analysis(analysis)
         elif analysis.intent == Intent.QUICK_ANALYSIS:
-            return self._execute_quick_analysis(analysis)
-        
+            result = self._execute_quick_analysis(analysis)
         elif analysis.intent == Intent.REALTIME_PRICE:
-            return self._execute_realtime_price(analysis)
-        
+            result = self._execute_realtime_price(analysis)
         elif analysis.intent == Intent.INDUSTRY_ANALYSIS:
-            return self._execute_industry_analysis(analysis)
-        
+            result = self._execute_industry_analysis(analysis)
         elif analysis.intent == Intent.ISSUE_ANALYSIS:
-            return self._execute_issue_analysis(analysis)
-        
+            result = self._execute_issue_analysis(analysis)
         elif analysis.intent == Intent.COMPARISON:
-            return self._execute_comparison(analysis)
-        
+            result = self._execute_comparison(analysis)
         elif analysis.intent == Intent.THEME_SCREENING:
-            return self._execute_theme_screening(analysis)
-        
+            result = self._execute_theme_screening(analysis)
         else:
-            return self._execute_general_qa(analysis)
+            result = self._execute_general_qa(analysis)
+        
+        # 4. 메모리에 기록
+        self._save_to_memory(query, result, analysis)
+        
+        return result
     
     def _execute_stock_analysis(self, analysis: QueryAnalysis) -> Dict[str, Any]:
-        """종목 분석 실행 (전체 파이프라인)"""
+        """종목 분석 실행 (LangGraph 워크플로우 우선, 폴백: 병렬 처리)"""
         if not analysis.stocks:
             return {"status": "error", "message": "분석할 종목을 찾을 수 없습니다."}
         
@@ -457,45 +476,51 @@ JSON만 응답하세요.
         stock_name = stock["name"]
         stock_code = stock["code"]
         
-        print(f"\n🚀 {stock_name}({stock_code}) 전체 분석 시작...")
+        # LangGraph 워크플로우 실행 (미설치 시 내부에서 폴백)
+        if is_langgraph_available():
+            print(f"\n🚀 {stock_name}({stock_code}) LangGraph 워크플로우 실행")
+        else:
+            print(f"\n🚀 {stock_name}({stock_code}) 전체 분석 시작...")
+            print(f"   ⚡ Analyst / Quant / Chartist 병렬 실행")
         
-        results = {"status": "success", "stock": stock, "scores": {}}
-        
-        # 1. Analyst (Researcher + Strategist)
-        print(f"\n📝 [1/4] Analyst 분석...")
-        analyst_score = self.agents["analyst"].full_analysis(stock_name, stock_code)
-        results["scores"]["analyst"] = analyst_score
-        print(f"   → 헤게모니 등급: {analyst_score.hegemony_grade} ({analyst_score.total_score}/70점)")
-        
-        # 2. Quant
-        print(f"\n📊 [2/4] Quant 분석...")
-        quant_score = self.agents["quant"].full_analysis(stock_name, stock_code)
-        results["scores"]["quant"] = quant_score
-        print(f"   → 재무 등급: {quant_score.grade} ({quant_score.total_score}/100점)")
-        
-        # 3. Chartist
-        print(f"\n📈 [3/4] Chartist 분석...")
-        chartist_score = self.agents["chartist"].full_analysis(stock_name, stock_code)
-        results["scores"]["chartist"] = chartist_score
-        print(f"   → 기술적 신호: {chartist_score.signal} ({chartist_score.total_score}/100점)")
-        
-        # 4. Risk Manager
-        print(f"\n🎯 [4/4] Risk Manager 최종 판단...")
-        from src.agents import AgentScores
-        agent_scores = AgentScores(
-            analyst_score=analyst_score,
-            quant_score=quant_score,
-            chartist_score=chartist_score,
+        result = run_stock_analysis(
+            stock_name=stock_name,
+            stock_code=stock_code,
+            query=analysis.original_query,
+            max_retries=1,
         )
-        final_decision = self.agents["risk_manager"].make_decision(
-            stock_name, stock_code, agent_scores
-        )
-        results["final_decision"] = final_decision
+        
+        # 결과 보강
+        result["stock"] = stock
+        
+        # 에이전트 점수 출력
+        scores = result.get("scores", {})
+        analyst_score = scores.get("analyst")
+        quant_score = scores.get("quant")
+        chartist_score = scores.get("chartist")
+        
+        if analyst_score:
+            print(f"   → Analyst  헤게모니: {analyst_score.hegemony_grade} ({analyst_score.total_score}/70점)")
+        if quant_score:
+            print(f"   → Quant    재무등급: {quant_score.grade} ({quant_score.total_score}/100점)")
+        if chartist_score:
+            print(f"   → Chartist 기술신호: {chartist_score.signal} ({chartist_score.total_score}/100점)")
         
         # 결과 요약
-        results["summary"] = self._generate_summary(stock_name, results)
+        result["summary"] = self._generate_summary(stock_name, result)
         
-        return results
+        # 분석 결과 캐시
+        final_decision = result.get("final_decision")
+        if final_decision:
+            self.memory.cache_analysis(stock_name, {
+                "total_score": final_decision.total_score,
+                "action": final_decision.action.value,
+                "analyst_total": analyst_score.total_score if analyst_score else 0,
+                "quant_total": quant_score.total_score if quant_score else 0,
+                "chartist_total": chartist_score.total_score if chartist_score else 0,
+            })
+        
+        return result
     
     def _execute_quick_analysis(self, analysis: QueryAnalysis) -> Dict[str, Any]:
         """빠른 분석 실행 (Analyst 제외)"""
@@ -638,17 +663,35 @@ JSON만 응답하세요.
         }
     
     def _execute_comparison(self, analysis: QueryAnalysis) -> Dict[str, Any]:
-        """종목 비교 분석"""
+        """종목 비교 분석 (병렬 처리)"""
         if len(analysis.stocks) < 2:
             return {"status": "error", "message": "비교할 종목이 2개 이상 필요합니다."}
         
-        print(f"\n🔄 종목 비교 분석 시작...")
+        print(f"\n🔄 종목 비교 분석 시작... (병렬 처리)")
+        
+        stocks_to_compare = analysis.stocks[:3]  # 최대 3개
+        
+        # 모든 종목의 quant/chartist를 한꺼번에 병렬 실행
+        parallel_tasks = {}
+        for stock in stocks_to_compare:
+            name, code = stock["name"], stock["code"]
+            parallel_tasks[f"quant_{name}"] = (self.agents["quant"].full_analysis, (name, code))
+            parallel_tasks[f"chartist_{name}"] = (self.agents["chartist"].full_analysis, (name, code))
+        
+        parallel_results = run_agents_parallel(parallel_tasks)
         
         results = {"status": "success", "stocks": analysis.stocks, "comparisons": []}
         
-        for stock in analysis.stocks[:3]:  # 최대 3개
-            quant_score = self.agents["quant"].full_analysis(stock["name"], stock["code"])
-            chartist_score = self.agents["chartist"].full_analysis(stock["name"], stock["code"])
+        for stock in stocks_to_compare:
+            name = stock["name"]
+            quant_score = parallel_results.get(f"quant_{name}")
+            chartist_score = parallel_results.get(f"chartist_{name}")
+            
+            # 오류 처리
+            if is_error(quant_score):
+                quant_score = self.agents["quant"]._default_score(name, str(quant_score))
+            if is_error(chartist_score):
+                chartist_score = self.agents["chartist"]._default_score(stock["code"], str(chartist_score))
             
             results["comparisons"].append({
                 "stock": stock,
@@ -683,14 +726,58 @@ JSON만 응답하세요.
         }
     
     def _execute_general_qa(self, analysis: QueryAnalysis) -> Dict[str, Any]:
-        """일반 질문 처리"""
-        response = self.llm.invoke(analysis.original_query)
+        """일반 질문 처리 (대화 맥락 포함)"""
+        # 대화 히스토리가 있으면 맥락으로 주입
+        history_prompt = self.memory.to_prompt()
+        context_hint = self.memory.get_context_hint(analysis.original_query)
+        
+        full_prompt = analysis.original_query
+        if history_prompt or context_hint:
+            full_prompt = f"""
+{history_prompt}
+{context_hint}
+
+현재 질문: {analysis.original_query}
+
+이전 대화 맥락을 고려하여 답변하세요.
+"""
+        
+        response = self.llm.invoke(full_prompt)
         
         return {
             "status": "success",
             "type": "general",
             "answer": response.content,
         }
+    
+    def _save_to_memory(
+        self, query: str, result: Dict[str, Any], analysis: QueryAnalysis
+    ) -> None:
+        """실행 결과를 대화 메모리에 저장"""
+        # 응답 요약 생성
+        summary = ""
+        if result.get("summary"):
+            summary = result["summary"][:300]
+        elif result.get("answer"):
+            summary = result["answer"][:300]
+        elif result.get("analysis"):
+            summary = result["analysis"][:300]
+        elif result.get("message"):
+            summary = result["message"][:300]
+        elif result.get("status") == "error":
+            summary = f"오류: {result.get('message', '')}"
+        else:
+            summary = str(result)[:300]
+        
+        # 관련 종목명 목록
+        stock_names = [s.get("name", "") for s in analysis.stocks] if analysis.stocks else []
+        
+        self.memory.add_turn(
+            query=query,
+            response_summary=summary,
+            intent=analysis.intent.value,
+            stocks=stock_names,
+        )
     
     def _generate_summary(self, stock_name: str, results: Dict) -> str:
         """결과 요약 생성"""
@@ -717,17 +804,19 @@ JSON만 응답하세요.
 # 대화형 인터페이스
 # ==========================================
 def chat():
-    """대화형 인터페이스"""
-    supervisor = SupervisorAgent()
+    """대화형 인터페이스 (메모리 포함)"""
+    memory = ConversationMemory(max_turns=10)
+    supervisor = SupervisorAgent(memory=memory)
     
     print("=" * 60)
     print("🤖 HQA 주식 분석 시스템")
+    print("   💾 대화 맥락 기억 | ⚡ 병렬 실행")
     print("=" * 60)
     print("질문을 입력하세요. 종료하려면 'quit' 또는 'exit'를 입력하세요.")
     print()
     print("예시 질문:")
     print("  - 삼성전자 분석해줘")
-    print("  - SK하이닉스 지금 가격이 얼마야?")
+    print("  - 그럼 하이닉스는 어때? (맥락 유지)")
     print("  - 반도체 산업 전망은?")
     print("  - 삼성전자 vs SK하이닉스 비교해줘")
     print("=" * 60)

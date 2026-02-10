@@ -8,7 +8,13 @@ RAG (Retrieval-Augmented Generation) 모듈 (텍스트 전용)
 - text_splitter: 텍스트 청킹
 - embeddings: 텍스트 임베딩 모델
 - vector_store: 벡터 저장소
-- retriever: 검색 및 컨텍스트 구성
+- bm25_index: BM25 키워드 검색 인덱스
+- retriever: 검색 및 컨텍스트 구성 (Hybrid Search)
+
+변경사항 (v0.3.0):
+- BM25 Hybrid Search 추가 (벡터 + 키워드 검색 병합)
+- Reciprocal Rank Fusion (RRF) 결과 병합
+- BM25 인덱스 영속화 (JSON)
 
 변경사항 (v0.2.0):
 - PaddleOCR-VL-1.5로 모든 문서를 텍스트로 변환
@@ -43,6 +49,9 @@ from .embeddings import (
 
 # 벡터 저장소
 from .vector_store import VectorStoreManager
+
+# BM25 키워드 검색
+from .bm25_index import BM25IndexManager, reciprocal_rank_fusion
 
 # 검색기
 from .retriever import RAGRetriever, RetrievalResult, ReportVectorStore
@@ -80,6 +89,9 @@ __all__ = [
     "SnowflakeArcticLangChainWrapper",
     # Vector Store
     "VectorStoreManager",
+    # BM25
+    "BM25IndexManager",
+    "reciprocal_rank_fusion",
     # Retriever
     "RAGRetriever",
     "RetrievalResult",

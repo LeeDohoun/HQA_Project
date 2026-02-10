@@ -1,0 +1,56 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.eggs
+dist
+build
+*.egg
+
+# Virtual environments
+.venv
+venv
+env
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data (런타임에 마운트)
+data/
+database/
+logs/
+output/
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Tests
+tests/
+test_*.py
+pytest.ini
+.pytest_cache
+.coverage
+htmlcov
+
+# Docs
+*.md
+LICENSE
+docs/
+
+# Node (프론트엔드)
+frontend/node_modules
+frontend/.next

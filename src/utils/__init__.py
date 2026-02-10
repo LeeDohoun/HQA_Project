@@ -4,6 +4,8 @@ HQA 유틸리티 모음
 
 - stock_mapper: 종목명 ↔ 종목코드 변환
 - kis_auth: 한국투자증권 API 인증
+- parallel: 병렬 실행 유틸리티
+- memory: 대화형 메모리
 """
 
 from .stock_mapper import (
@@ -24,6 +26,16 @@ from .kis_auth import (
     is_api_available,
 )
 
+from .parallel import (
+    run_agents_parallel,
+    is_error,
+)
+
+from .memory import (
+    ConversationMemory,
+    ConversationTurn,
+)
+
 __all__ = [
     # stock_mapper
     "StockMapper",
@@ -39,4 +51,10 @@ __all__ = [
     "call_api",
     "get_base_headers",
     "is_api_available",
+    # parallel
+    "run_agents_parallel",
+    "is_error",
+    # memory
+    "ConversationMemory",
+    "ConversationTurn",
 ]

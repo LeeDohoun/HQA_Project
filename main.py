@@ -132,80 +132,43 @@ def run_stock_analysis(stock_input: str, quick: bool = False):
 
 
 def _run_full_analysis(stock_code: str, stock_name: str):
-    """전체 분석 (Thinking 모델 포함)"""
-    from src.agents import (
-        AnalystAgent, QuantAgent, ChartistAgent,
-        RiskManagerAgent, AgentScores
+    """전체 분석 (LangGraph 워크플로우 우선, 폴백: 병렬 실행)"""
+    from src.agents.graph import run_stock_analysis, is_langgraph_available
+    from src.agents import RiskManagerAgent
+    
+    if is_langgraph_available():
+        print(f"\n⚡ LangGraph 워크플로우로 분석 실행")
+    else:
+        print(f"\n⚡ Phase 1: Analyst + Quant + Chartist 병렬 실행")
+    print("-" * 50)
+    
+    result = run_stock_analysis(
+        stock_name=stock_name,
+        stock_code=stock_code,
+        max_retries=1,
     )
     
-    analyst = AnalystAgent()
-    quant = QuantAgent()
-    chartist = ChartistAgent()
-    risk_manager = RiskManagerAgent()
+    scores = result.get("scores", {})
+    analyst_score = scores.get("analyst")
+    quant_score = scores.get("quant")
+    chartist_score = scores.get("chartist")
+    final_decision = result.get("final_decision")
     
-    # Phase 1: Analyst (Researcher + Strategist)
-    print(f"\n🔍 Phase 1: Analyst 분석 (헤게모니)")
-    print("-" * 50)
-    analyst_score = analyst.full_analysis(stock_name, stock_code)
-    print(f"   등급: {analyst_score.hegemony_grade}")
-    print(f"   독점력: {analyst_score.moat_score}/40점")
-    print(f"   성장성: {analyst_score.growth_score}/30점")
-    print(f"   총점: {analyst_score.total_score}/70점")
-    
-    # Phase 2: Quant
-    print(f"\n📈 Phase 2: Quant 분석 (재무)")
-    print("-" * 50)
-    quant_score = quant.full_analysis(stock_name, stock_code)
-    print(f"   등급: {quant_score.grade}")
-    print(f"   밸류에이션: {quant_score.valuation_score}/25점")
-    print(f"   수익성: {quant_score.profitability_score}/25점")
-    print(f"   성장성: {quant_score.growth_score}/25점")
-    print(f"   안정성: {quant_score.stability_score}/25점")
-    print(f"   총점: {quant_score.total_score}/100점")
-    
-    # Phase 3: Chartist
-    print(f"\n📉 Phase 3: Chartist 분석 (기술적)")
-    print("-" * 50)
-    chartist_score = chartist.full_analysis(stock_name, stock_code)
-    print(f"   신호: {chartist_score.signal}")
-    print(f"   추세: {chartist_score.trend_score}/30점")
-    print(f"   모멘텀: {chartist_score.momentum_score}/30점")
-    print(f"   변동성: {chartist_score.volatility_score}/20점")
-    print(f"   거래량: {chartist_score.volume_score}/20점")
-    print(f"   총점: {chartist_score.total_score}/100점")
-    
-    # Phase 4: Risk Manager 최종 판단
-    print(f"\n🎯 Phase 4: Risk Manager 최종 판단")
-    print("-" * 50)
-    
-    agent_scores = AgentScores(
-        analyst_moat_score=analyst_score.moat_score,
-        analyst_growth_score=analyst_score.growth_score,
-        analyst_total=analyst_score.total_score,
-        analyst_grade=analyst_score.hegemony_grade,
-        analyst_opinion=analyst_score.final_opinion,
-        quant_valuation_score=quant_score.valuation_score,
-        quant_profitability_score=quant_score.profitability_score,
-        quant_growth_score=quant_score.growth_score,
-        quant_stability_score=quant_score.stability_score,
-        quant_total=quant_score.total_score,
-        quant_opinion=quant_score.opinion,
-        chartist_trend_score=chartist_score.trend_score,
-        chartist_momentum_score=chartist_score.momentum_score,
-        chartist_volatility_score=chartist_score.volatility_score,
-        chartist_volume_score=chartist_score.volume_score,
-        chartist_total=chartist_score.total_score,
-        chartist_signal=chartist_score.signal
-    )
-    
-    final_decision = risk_manager.make_decision(stock_name, stock_code, agent_scores)
+    if analyst_score:
+        print(f"   → Analyst  헤게모니: {analyst_score.hegemony_grade} ({analyst_score.total_score}/70점)")
+    if quant_score:
+        print(f"   → Quant    재무등급: {quant_score.grade} ({quant_score.total_score}/100점)")
+    if chartist_score:
+        print(f"   → Chartist 기술신호: {chartist_score.signal} ({chartist_score.total_score}/100점)")
     
     # 최종 보고서
-    print("\n" + "=" * 60)
-    print("📜 [최종 투자 판단]")
-    print("=" * 60)
-    report = risk_manager.generate_report(final_decision)
-    print(report)
+    if final_decision:
+        print("\n" + "=" * 60)
+        print("📜 [최종 투자 판단]")
+        print("=" * 60)
+        risk_manager = RiskManagerAgent()
+        report = risk_manager.generate_report(final_decision)
+        print(report)
     
     return final_decision
 
