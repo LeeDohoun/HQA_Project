@@ -1,0 +1,112 @@
+# ==========================================
+# HQA - Docker Compose
+# ==========================================
+# 서비스 구성:
+#   - api: FastAPI 백엔드
+#   - redis: Task Queue 브로커 + 캐시
+#   - worker: Celery 워커 (분석 백그라운드 처리)
+#   - postgres: 프로덕션 DB (선택)
+# ==========================================
+
+services:
+  # ── FastAPI Backend ──
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hqa-api
+    ports:
+      - "${PORT:-8000}:8000"
+    env_file:
+      - .env
+    environment:
+      - ENV=production
+      - DATABASE_URL=postgresql+asyncpg://hqa:hqa_password@postgres:5432/hqa
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    volumes:
+      - hqa-data:/app/data
+      - hqa-db:/app/database
+    restart: unless-stopped
+    networks:
+      - hqa-network
+
+  # ── Celery Worker ──
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hqa-worker
+    command: >
+      celery -A backend.tasks.celery_app worker
+      --loglevel=info
+      --concurrency=2
+      --queues=default,analysis,quick
+    env_file:
+      - .env
+    environment:
+      - ENV=production
+      - DATABASE_URL=postgresql+asyncpg://hqa:hqa_password@postgres:5432/hqa
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - hqa-data:/app/data
+      - hqa-db:/app/database
+    restart: unless-stopped
+    networks:
+      - hqa-network
+
+  # ── Redis ──
+  redis:
+    image: redis:7-alpine
+    container_name: hqa-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - hqa-network
+
+  # ── PostgreSQL ──
+  postgres:
+    image: postgres:16-alpine
+    container_name: hqa-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: hqa
+      POSTGRES_USER: hqa
+      POSTGRES_PASSWORD: hqa_password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hqa"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - hqa-network
+
+volumes:
+  hqa-data:
+  hqa-db:
+  redis-data:
+  postgres-data:
+
+networks:
+  hqa-network:
+    driver: bridge

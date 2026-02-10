@@ -1,6 +1,6 @@
 # HQA Project (Hegemony Quantitative Analyst)
 
-> 🤖 **AI 멀티 에이전트 기반 한국 주식 분석 시스템**
+> 🤖 **AI 멀티 에이전트 기반 한국 주식 분석 시스템** — CLI · Streamlit · **REST API · Next.js**
 
 ## 📋 개요
 
@@ -17,6 +17,19 @@ HQA(Hegemony Quantitative Analyst)는 Google Gemini AI와 LangGraph를 활용한
 - 💾 **대화 메모리**: 10턴 컨텍스트 유지, 후속 질문 자동 감지
 - 🛡️ **데이터 품질 관리**: Plan A→B 폴백, 품질 등급(A~D) 기반 행동 강령
 - 💻 **다양한 인터페이스**: CLI + Streamlit 대시보드
+
+### 🚀 v1.0 프로덕션 기능 (NEW)
+
+- 🌐 **FastAPI REST API**: 비동기 백엔드, SSE 실시간 스트리밍
+- 📡 **SSE 실시간 진행**: 에이전트별 분석 진행 상황 실시간 전달
+- 📋 **Task Queue**: Celery + Redis 백그라운드 분석 (선택)
+- 🗄️ **PostgreSQL/SQLite**: SQLAlchemy 비동기 ORM, Alembic 마이그레이션
+- 🔌 **GPU 의존성 제거**: OCR(Upstage API), Reranker(Cohere API) 프로바이더 패턴
+- 🐳 **Docker Compose**: API + Worker + Redis + PostgreSQL 원클릭 배포
+- 🔒 **보안**: Rate Limiting, CORS, API 키 인증, AWS Secrets Manager
+- 📈 **LangSmith 모니터링**: 에이전트 트레이싱 및 성능 추적
+- 🎯 **쿼리 제안**: Answerability Check — 시스템 범위 밖 질문 교정
+- ⚛️ **Next.js 프론트엔드**: React 기반 SPA (SSE 스트리밍 연동)
 
 ## 🏗️ 시스템 아키텍처
 
@@ -98,12 +111,50 @@ Quality Gate (Fan-in)
 HQA_Project/
 ├── main.py                     # CLI 엔트리포인트
 ├── pipeline_runner.py          # 데이터 파이프라인 CLI
-├── requirements.txt            # 패키지 의존성
-├── README.md                   # 프로젝트 문서
-├── Report.md                   # 분석 리포트 출력
+├── requirements.txt            # 패키지 의존성 (개발)
+├── requirements-prod.txt       # 패키지 의존성 (프로덕션, GPU 불필요)
+├── Dockerfile                  # Docker 이미지 빌드
+├── docker-compose.yml          # 프로덕션 스택 (API+Redis+PostgreSQL)
+├── alembic.ini                 # DB 마이그레이션 설정
+│
+├── backend/                    # ★ FastAPI 프로덕션 백엔드
+│   ├── app.py                  # FastAPI 메인 + 미들웨어
+│   ├── config.py               # 환경 설정 (Pydantic Settings)
+│   ├── api/
+│   │   ├── schemas.py          # 요청/응답 Pydantic 스키마
+│   │   ├── dependencies.py     # 의존성 주입 (API 키 검증 등)
+│   │   └── routes/
+│   │       ├── health.py       # 헬스체크 엔드포인트
+│   │       ├── stocks.py       # 종목 검색 / 실시간 시세
+│   │       └── analysis.py     # 분석 요청/결과/SSE/대화/쿼리 제안
+│   ├── services/
+│   │   └── analysis_service.py # 비즈니스 로직 (인메모리 + Celery)
+│   ├── tasks/
+│   │   ├── celery_app.py       # Celery 설정
+│   │   └── analysis_tasks.py   # 백그라운드 분석 태스크
+│   ├── database/
+│   │   ├── connection.py       # SQLAlchemy Async 연결
+│   │   └── models.py           # DB 모델 (User, Analysis, Chat)
+│   └── middleware/
+│       ├── rate_limit.py       # IP 기반 Rate Limiting
+│       └── error_handler.py    # 전역 에러 핸들링
+│
+├── frontend/                   # ★ Next.js 프론트엔드
+│   ├── package.json
+│   ├── next.config.js
+│   └── src/
+│       ├── lib/api.ts          # API 클라이언트 (SSE 포함)
+│       └── app/
+│           ├── layout.tsx
+│           ├── globals.css
+│           └── page.tsx        # 메인 페이지 (검색→분석→결과)
 │
 ├── dashboard/
-│   └── app.py                  # Streamlit 대시보드
+│   └── app.py                  # Streamlit 대시보드 (내부용)
+│
+├── alembic/                    # DB 마이그레이션
+│   ├── env.py
+│   └── versions/
 │
 └── src/
     ├── __init__.py
@@ -123,13 +174,15 @@ HQA_Project/
     ├── rag/                    # RAG 파이프라인
     │   ├── __init__.py
     │   ├── ocr_processor.py    # PaddleOCR-VL-1.5 문서 OCR
+    │   ├── ocr_provider.py     # ★ OCR 프로바이더 (Local/Upstage API)
     │   ├── document_loader.py  # 문서 로딩 및 전처리
     │   ├── text_splitter.py    # 텍스트 청킹 (1000자/200 오버랩)
     │   ├── embeddings.py       # Snowflake Arctic Korean 임베딩 (1024dim)
     │   ├── vector_store.py     # ChromaDB 벡터 저장소
     │   ├── bm25_index.py       # BM25 키워드 검색 인덱스 (Hybrid Search)
     │   ├── retriever.py        # 통합 검색기 (Vector + BM25 + Rerank)
-    │   └── reranker.py         # Qwen3-Reranker-0.6B 리랭커
+    │   ├── reranker.py         # Qwen3-Reranker-0.6B 리랭커
+    │   └── reranker_provider.py # ★ Reranker 프로바이더 (Local/Cohere API)
     │
     ├── data_pipeline/          # 데이터 수집/가공
     │   ├── __init__.py
@@ -229,6 +282,71 @@ python pipeline_runner.py status
 
 ```bash
 streamlit run dashboard/app.py
+```
+
+### 🌐 프로덕션 웹 서비스 (NEW)
+
+#### 옵션 A: 로컬 개발 (Redis 없이)
+```bash
+# FastAPI 백엔드 (자동 리로드)
+uvicorn backend.app:app --reload --host 0.0.0.0 --port 8000
+
+# API 문서: http://localhost:8000/docs
+# 헬스체크: http://localhost:8000/health
+
+# Next.js 프론트엔드
+cd frontend && npm install && npm run dev
+# → http://localhost:3000
+```
+
+#### 옵션 B: Docker Compose (프로덕션)
+```bash
+# .env 파일 준비
+cp .env.example .env
+# → GOOGLE_API_KEY 등 필수 값 입력
+
+# 프로덕션 스택 시작 (API + Redis + PostgreSQL + Worker)
+docker-compose up -d
+
+# DB 마이그레이션
+docker-compose exec api alembic upgrade head
+
+# 로그 확인
+docker-compose logs -f api
+
+# 종료
+docker-compose down
+```
+
+#### 옵션 C: GPU 없이 프로덕션 (Upstage + Cohere)
+```env
+# .env
+OCR_PROVIDER=upstage
+UPSTAGE_API_KEY=your_key
+RERANKER_PROVIDER=cohere
+COHERE_API_KEY=your_key
+```
+
+#### API 사용 예시
+```bash
+# 종목 검색
+curl http://localhost:8000/api/v1/stocks/search?q=삼성전자
+
+# 분석 요청 (비동기)
+curl -X POST http://localhost:8000/api/v1/analysis \
+  -H "Content-Type: application/json" \
+  -d '{"stock_name": "삼성전자", "stock_code": "005930", "mode": "full"}'
+
+# 결과 조회
+curl http://localhost:8000/api/v1/analysis/{task_id}
+
+# SSE 스트리밍 (실시간 진행)
+curl -N http://localhost:8000/api/v1/analysis/{task_id}/stream
+
+# 대화
+curl -X POST http://localhost:8000/api/v1/analysis/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "삼성전자 분석해줘"}'
 ```
 
 ## 🤖 에이전트 상세
