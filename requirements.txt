@@ -16,7 +16,7 @@ beautifulsoup4>=4.12.0  # 웹 크롤링 (네이버 금융)
 lxml                  # HTML 파서
 
 # ------------------------------------------
-# 2. AI/LLM 프레임워크
+# 2. AI/LLM 프레임워크 (Ollama 기반)
 # ------------------------------------------
 # CrewAI (멀티 에이전트)
 crewai>=0.28.0
@@ -25,7 +25,7 @@ crewai-tools>=0.1.0
 # LangChain (RAG, 도구)
 langchain-core>=0.1.0
 langchain-community>=0.0.20
-langchain-google-genai>=1.0.0   # Gemini LLM
+langchain-ollama>=0.3.0         # Ollama LLM + Embeddings
 
 # LangGraph (상태 머신 워크플로우)
 langgraph>=0.2.0                # 에이전트 오케스트레이션
@@ -34,10 +34,14 @@ langgraph>=0.2.0                # 에이전트 오케스트레이션
 rank-bm25>=0.2.2                # BM25 알고리즘
 
 # ------------------------------------------
-# 3. 임베딩 모델
+# 3. Ollama 서버 (별도 설치 필요)
 # ------------------------------------------
-sentence-transformers>=2.2.0    # 텍스트 임베딩 (폴백)
-langchain-huggingface>=0.0.1    # HuggingFace 연동
+# 설치: https://ollama.com/download
+# 모델 다운로드:
+#   ollama pull llama3.1:8b          # Instruct (기본)
+#   ollama pull deepseek-r1:14b      # Thinking (추론)
+#   ollama pull llava:13b            # Vision (이미지)
+#   ollama pull nomic-embed-text     # Embedding
 
 # ------------------------------------------
 # 4. 벡터 저장소
@@ -60,12 +64,14 @@ tokenizers==0.20.3    # ChromaDB 호환 버전 고정
 # 공식 문서: https://www.paddleocr.ai/
 
 # ------------------------------------------
-# 6. 선택적 임베딩 (레거시/폴백용)
+# 6. 선택적 (레거시/폴백용 - Ollama 사용 시 불필요)
 # ------------------------------------------
-transformers>=4.40.0  # HuggingFace Transformers
-torch>=2.0.0          # PyTorch
-accelerate>=0.25.0    # 모델 가속화
-einops                # 텐서 연산
+# transformers>=4.40.0  # HuggingFace Transformers (Ollama로 대체)
+# torch>=2.0.0          # PyTorch (Ollama로 대체)
+# accelerate>=0.25.0    # 모델 가속화 (Ollama로 대체)
+# einops                # 텐서 연산 (Ollama로 대체)
+sentence-transformers>=2.2.0  # CrossEncoder 리랭커용
+# langchain-huggingface>=0.0.1  # HuggingFace 연동 (Ollama로 대체)
 
 # ------------------------------------------
 # 7. PDF/이미지 처리
@@ -137,14 +143,19 @@ langsmith>=0.1.0        # LangSmith 트레이싱
 #    pip install torch --index-url https://download.pytorch.org/whl/cu118
 #
 # ------------------------------------------
-# API 키 설정 (.env 파일):
+# Ollama 설정 (.env 파일):
 # ------------------------------------------
-#   GOOGLE_API_KEY=your_gemini_api_key     # 필수
+#   OLLAMA_BASE_URL=http://localhost:11434  # Ollama 서버
+#   OLLAMA_INSTRUCT_MODEL=llama3.1:8b       # Instruct 모델
+#   OLLAMA_THINKING_MODEL=deepseek-r1:14b   # Thinking 모델
+#   OLLAMA_VISION_MODEL=llava:13b           # Vision 모델
+#   OLLAMA_EMBED_MODEL=nomic-embed-text     # 임베딩 모델
+#
+# 기타 API 키:
 #   DART_API_KEY=your_dart_api_key         # DART 공시
 #   TAVILY_API_KEY=your_tavily_api_key     # 선택
 #
-# API 키 발급:
-#   Gemini: https://aistudio.google.com/
-#   DART: https://opendart.fss.or.kr/
-#   Tavily: https://tavily.com/
+# Ollama 설치: https://ollama.com/download
+# DART: https://opendart.fss.or.kr/
+# Tavily: https://tavily.com/
 # ==========================================

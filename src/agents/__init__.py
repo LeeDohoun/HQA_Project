@@ -16,11 +16,11 @@ HQA 에이전트 모음
 │  RiskManagerAgent (Thinking) ──→ 최종 투자 판단 ✅           │
 └─────────────────────────────────────────────────────────────┘
 
-LLM Config:
-- get_gemini_llm: Instruct (빠름)
-- get_thinking_llm: Thinking (깊은 추론)
-- get_gemini_vision_llm: 이미지 분석
-- GeminiVisionAnalyzer: Vision 헬퍼
+LLM Config (Ollama 기반):
+- get_gemini_llm: Instruct (빠름) → Ollama
+- get_thinking_llm: Thinking (깊은 추론) → Ollama
+- get_gemini_vision_llm: 이미지 분석 → Ollama (llava)
+- GeminiVisionAnalyzer: Vision 헬퍼 → Ollama Vision
 """
 
 # Supervisor (쿼리 분석 & 라우팅)
