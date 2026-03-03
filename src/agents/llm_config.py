@@ -1,6 +1,6 @@
 # 파일: src/agents/llm_config.py
 """
-LLM 설정 모듈
+LLM 설정 모듈 (Ollama 기반)
 
 모델 구분:
 - Instruct (빠름): 정보 수집, 요약, 패턴 인식
@@ -13,74 +13,77 @@ LLM 설정 모듈
 - Quant: Instruct (재무 분석)
 - Chartist: Instruct (기술 분석)
 - Risk Manager: Thinking (최종 판단)
+
+설정 (.env):
+- OLLAMA_BASE_URL: Ollama 서버 주소 (기본: http://localhost:11434)
+- OLLAMA_INSTRUCT_MODEL: Instruct 모델 (기본: llama3.1:8b)
+- OLLAMA_THINKING_MODEL: Thinking 모델 (기본: deepseek-r1:14b)
+- OLLAMA_VISION_MODEL: Vision 모델 (기본: llava:13b)
 """
 
 import os
 import base64
 from typing import List, Dict, Optional, Union
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage
 from dotenv import load_dotenv
 
 load_dotenv()
 
 
-def get_api_key() -> str:
-    """API 키 로드"""
-    api_key = os.getenv("GOOGLE_API_KEY")
-    if not api_key:
-        raise ValueError("GOOGLE_API_KEY가 .env 파일에 없습니다.")
-    return api_key
+def get_ollama_base_url() -> str:
+    """Ollama 서버 URL 로드"""
+    return os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
 
 def get_gemini_llm():
     """
-    일반 텍스트 분석용 Gemini LLM (Instruct)
+    일반 텍스트 분석용 Ollama LLM (Instruct)
     - Researcher, Quant, Chartist용
-    - 빠르고 저렴
+    - 빠르고 가벼움
     """
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash-lite", 
-        verbose=True,
+    model = os.getenv("OLLAMA_INSTRUCT_MODEL", "llama3.1:8b")
+    llm = ChatOllama(
+        model=model,
+        base_url=get_ollama_base_url(),
         temperature=0.3,
-        google_api_key=get_api_key()
     )
     return llm
 
 
 def get_thinking_llm():
     """
-    깊은 추론용 Thinking LLM
+    깊은 추론용 Thinking LLM (Ollama)
     - Strategist, Risk Manager용
     - 복잡한 맥락 추론, 트레이드오프 판단
     """
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash-preview-05-20",  # Thinking 지원 모델
-        verbose=True,
+    model = os.getenv("OLLAMA_THINKING_MODEL", "deepseek-r1:14b")
+    llm = ChatOllama(
+        model=model,
+        base_url=get_ollama_base_url(),
         temperature=0.5,  # 약간의 창의성 허용
-        google_api_key=get_api_key()
     )
     return llm
 
 
 def get_gemini_vision_llm():
     """
-    이미지 분석용 Gemini Vision LLM
+    이미지 분석용 Ollama Vision LLM
     - Researcher의 차트/그래프 분석에 사용
-    - 멀티모달 지원
+    - 멀티모달 지원 (llava 등)
     """
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash-lite",  # Vision 지원 모델
-        verbose=True,
+    model = os.getenv("OLLAMA_VISION_MODEL", "llava:13b")
+    llm = ChatOllama(
+        model=model,
+        base_url=get_ollama_base_url(),
         temperature=0.3,
-        google_api_key=get_api_key()
     )
     return llm
 
 
 class GeminiVisionAnalyzer:
     """
-    Gemini Vision을 사용한 이미지 분석기
+    Ollama Vision을 사용한 이미지 분석기
     - 증권 리포트의 차트/그래프 분석
     - Base64 이미지 입력 지원
     """
