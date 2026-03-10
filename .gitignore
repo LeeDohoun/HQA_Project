@@ -22,5 +22,10 @@ chroma_db/
 .vscode/
 .idea/
 
-# 6. 맥(Mac) 운영체제 임시 파일
+# 6. 프론트엔드 (Next.js)
+frontend/node_modules/
+frontend/.next/
+frontend/next-env.d.ts
+
+# 7. 맥(Mac) 운영체제 임시 파일
 .DS_Store
