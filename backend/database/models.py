@@ -35,21 +35,48 @@ def generate_uuid() -> str:
     return str(uuid.uuid4())
 
 
+import enum
+
+class UserRole(str, enum.Enum):
+    ADMIN = "admin"
+    USER = "user"
+
+
 class User(Base):
     """사용자"""
     __tablename__ = "users"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     email = Column(String(255), unique=True, nullable=True)
-    api_key = Column(String(255), unique=True, nullable=True)
     name = Column(String(100), nullable=True)
+    role = Column(Enum(UserRole), default=UserRole.USER, nullable=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
+    credentials = relationship("UserCredential", back_populates="user", uselist=False)
     analyses = relationship("AnalysisRecord", back_populates="user")
     sessions = relationship("ChatSession", back_populates="user")
+
+
+class UserCredential(Base):
+    """사용자 API 키/인증 정보"""
+    __tablename__ = "user_credentials"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey("users.id"), unique=True, nullable=False)
+
+    google_api_key = Column(String(255), nullable=True)
+    kis_app_key = Column(String(255), nullable=True)
+    kis_app_secret = Column(String(512), nullable=True)
+    kis_account_no = Column(String(50), nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    user = relationship("User", back_populates="credentials")
 
 
 class AnalysisRecord(Base):

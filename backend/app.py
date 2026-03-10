@@ -63,6 +63,10 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.info("   LangGraph: 로드 실패")
 
+    # 데이터베이스 초기화
+    from backend.database.connection import init_db
+    await init_db()
+
     yield  # 서버 실행 중
 
     logger.info("🛑 HQA API 종료")
