@@ -237,7 +237,7 @@ def cmd_status(args):
     
     # 원본 데이터 상태
     raw = stats.get("raw_data", {})
-    print(f"\n💾 원본 데이터 (SQLite)")
+    print(f"\n💾 원본 데이터 (PostgreSQL)")
     print(f"   - 리포트: {raw.get('reports', 0)}건")
     print(f"   - 뉴스: {raw.get('news', 0)}건")
     print(f"   - 공시: {raw.get('disclosures', 0)}건")

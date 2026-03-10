@@ -19,7 +19,7 @@ from backend.database import models  # noqa: F401 - 모델 등록
 config = context.config
 
 # 환경변수에서 DB URL 오버라이드
-db_url = os.getenv("DATABASE_URL", "").replace("+asyncpg", "").replace("+aiosqlite", "")
+db_url = os.getenv("DATABASE_URL", "").replace("+asyncpg", "")
 if db_url:
     config.set_main_option("sqlalchemy.url", db_url)
 

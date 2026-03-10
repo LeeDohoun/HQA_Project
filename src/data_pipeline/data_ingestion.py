@@ -10,7 +10,7 @@
 
 흐름:
 1. 데이터 수집 (크롤러, API)
-2. 원본 DB 저장 (SQLite) - 중복 체크
+2. 원본 DB 저장 (PostgreSQL) - 중복 체크
 3. RAG 벡터화 (ChromaDB) - 미처리 데이터만
 """
 
@@ -52,7 +52,7 @@ class DataIngestionPipeline:
     
     def __init__(
         self,
-        db_path: str = "./database/raw_data.db",
+        db_path: Optional[str] = None,
         files_dir: str = "./data/files",
         vector_persist_dir: str = "./database/chroma_db",
         collection_name: str = "stock_data",
@@ -64,7 +64,7 @@ class DataIngestionPipeline:
     ):
         """
         Args:
-            db_path: SQLite DB 경로
+            db_path: (무시됨) 하위 호환성용
             files_dir: PDF 등 파일 저장 경로
             vector_persist_dir: 벡터 DB 저장 경로
             collection_name: 벡터 컬렉션 이름
@@ -85,10 +85,10 @@ class DataIngestionPipeline:
         self.report_crawler = ReportCrawler(download_dir=os.path.join(files_dir, "reports"))
         print("   ✅ 크롤러 초기화 완료")
         
-        # 2. 원본 데이터 저장소 (SQLite)
+        # 2. 원본 데이터 저장소 (PostgreSQL)
         print("\n💾 [2/4] 원본 데이터 저장소 초기화...")
         self.raw_store = RawDataStore(db_path=db_path, files_dir=files_dir)
-        print(f"   ✅ SQLite DB: {db_path}")
+        print(f"   ✅ PostgreSQL DB 연결 완료")
         
         # 3. RAG 검색기 (PaddleOCR + Snowflake Arctic + Qwen3 Reranker)
         print("\n🧠 [3/4] RAG 파이프라인 초기화...")
@@ -497,7 +497,7 @@ class DataIngestionPipeline:
             print(f"   ✅ {len(disc_ids)}건 임베딩 완료")
         
         # 주가 데이터는 임베딩 제외 (구조화 데이터로 별도 분석)
-        print(f"\n💰 주가 데이터: 임베딩 제외 (SQLite에서 직접 조회)")
+        print(f"\n💰 주가 데이터: 임베딩 제외 (PostgreSQL에서 직접 조회)")
         
         print(f"\n{'='*50}")
         print(f"✅ 임베딩 완료")
@@ -517,7 +517,7 @@ class DataIngestionPipeline:
         chunk_text: bool = True
     ) -> Dict:
         """
-        PDF 파일 직접 인덱싱 (SQLite 저장 없이)
+        PDF 파일 직접 인덱싱 (DB 저장 없이)
         
         Args:
             file_path: PDF 파일 경로

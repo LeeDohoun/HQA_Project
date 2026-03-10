@@ -1,17 +1,17 @@
 # 파일: src/database/raw_data_store.py
 """
-원본 데이터 저장소 (SQLite)
+원본 데이터 저장소 (PostgreSQL)
 - 수집한 원본 데이터 보존
 - 중복 체크
 - 나중에 재처리/재임베딩 가능
 """
 
 import os
-import sqlite3
-import json
-from typing import List, Dict, Optional, Any
+import psycopg2
+import psycopg2.extras
+from typing import List, Dict, Optional
 from datetime import datetime
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -25,10 +25,10 @@ class RawReport:
     broker: str = ""
     report_date: str = ""
     link: str = ""
-    pdf_path: Optional[str] = None  # 로컬 PDF 파일 경로
-    content_text: Optional[str] = None  # 추출된 텍스트
+    pdf_path: Optional[str] = None
+    content_text: Optional[str] = None
     created_at: Optional[str] = None
-    is_embedded: bool = False  # RAG 임베딩 완료 여부
+    is_embedded: bool = False
 
 
 @dataclass
@@ -39,7 +39,7 @@ class RawNews:
     stock_name: str = ""
     title: str = ""
     summary: str = ""
-    content: Optional[str] = None  # 본문 전체
+    content: Optional[str] = None
     source: str = ""
     url: str = ""
     published_at: str = ""
@@ -58,7 +58,7 @@ class RawDisclosure:
     receipt_no: str = ""
     receipt_date: str = ""
     submitter: str = ""
-    content: Optional[str] = None  # 공시 본문
+    content: Optional[str] = None
     url: str = ""
     created_at: Optional[str] = None
     is_embedded: bool = False
@@ -81,39 +81,51 @@ class RawPriceData:
     created_at: Optional[str] = None
 
 
+def _get_default_dsn() -> str:
+    """환경변수에서 DATABASE_URL을 가져와 psycopg2 형식으로 변환"""
+    url = os.getenv("DATABASE_URL", "postgresql://postgres:password@localhost:5432/hqa")
+    url = url.replace("postgresql+asyncpg://", "postgresql://")
+    return url
+
+
 class RawDataStore:
-    """원본 데이터 SQLite 저장소"""
-    
+    """원본 데이터 PostgreSQL 저장소"""
+
     def __init__(
         self,
-        db_path: str = "./database/raw_data.db",
-        files_dir: str = "./data/files"
+        db_url: Optional[str] = None,
+        files_dir: str = "./data/files",
+        # legacy parameter - ignored, kept for backward compatibility
+        db_path: Optional[str] = None,
     ):
         """
         Args:
-            db_path: SQLite DB 파일 경로
+            db_url: PostgreSQL 연결 URL
             files_dir: PDF 등 파일 저장 디렉토리
+            db_path: (무시됨) 하위 호환성용
         """
-        self.db_path = db_path
+        self.db_url = db_url or _get_default_dsn()
         self.files_dir = Path(files_dir)
-        
+
         # 디렉토리 생성
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
         self.files_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # DB 초기화
         self._init_db()
-        print(f"📦 원본 데이터 저장소 초기화: {db_path}")
-    
+        print(f"📦 원본 데이터 저장소 초기화 (PostgreSQL)")
+
+    def _get_conn(self):
+        """PostgreSQL 연결 반환"""
+        return psycopg2.connect(self.db_url)
+
     def _init_db(self):
         """데이터베이스 테이블 생성"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_conn()
         cursor = conn.cursor()
-        
-        # 증권사 리포트 테이블
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS reports (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 stock_code TEXT NOT NULL,
                 stock_name TEXT,
                 title TEXT NOT NULL,
@@ -122,15 +134,14 @@ class RawDataStore:
                 link TEXT UNIQUE,
                 pdf_path TEXT,
                 content_text TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                is_embedded INTEGER DEFAULT 0
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_embedded BOOLEAN DEFAULT FALSE
             )
         """)
-        
-        # 뉴스 테이블
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS news (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 stock_code TEXT NOT NULL,
                 stock_name TEXT,
                 title TEXT NOT NULL,
@@ -139,15 +150,14 @@ class RawDataStore:
                 source TEXT,
                 url TEXT UNIQUE,
                 published_at TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                is_embedded INTEGER DEFAULT 0
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_embedded BOOLEAN DEFAULT FALSE
             )
         """)
-        
-        # DART 공시 테이블
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS disclosures (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 stock_code TEXT NOT NULL,
                 stock_name TEXT,
                 corp_code TEXT,
@@ -157,15 +167,14 @@ class RawDataStore:
                 submitter TEXT,
                 content TEXT,
                 url TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                is_embedded INTEGER DEFAULT 0
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_embedded BOOLEAN DEFAULT FALSE
             )
         """)
-        
-        # 주가 데이터 테이블
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS price_data (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 stock_code TEXT NOT NULL,
                 stock_name TEXT,
                 date TEXT NOT NULL,
@@ -173,45 +182,47 @@ class RawDataStore:
                 high_price REAL,
                 low_price REAL,
                 close_price REAL,
-                volume INTEGER,
+                volume BIGINT,
                 ma150 REAL,
-                is_bullish INTEGER,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                is_bullish BOOLEAN,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(stock_code, date)
             )
         """)
-        
-        # 인덱스 생성
+
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_reports_stock ON reports(stock_code)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_news_stock ON news(stock_code)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_disclosures_stock ON disclosures(stock_code)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_price_stock_date ON price_data(stock_code, date)")
-        
+
         conn.commit()
         conn.close()
-    
+
     # ==================== 리포트 ====================
-    
+
     def save_report(self, report: RawReport) -> int:
         """리포트 저장 (중복 시 무시)"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_conn()
         cursor = conn.cursor()
-        
+
         try:
             cursor.execute("""
-                INSERT OR IGNORE INTO reports 
+                INSERT INTO reports
                 (stock_code, stock_name, title, broker, report_date, link, pdf_path, content_text)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (link) DO NOTHING
+                RETURNING id
             """, (
                 report.stock_code, report.stock_name, report.title,
                 report.broker, report.report_date, report.link,
                 report.pdf_path, report.content_text
             ))
             conn.commit()
-            return cursor.lastrowid or 0
+            row = cursor.fetchone()
+            return row[0] if row else 0
         finally:
             conn.close()
-    
+
     def get_reports(
         self,
         stock_code: Optional[str] = None,
@@ -219,58 +230,61 @@ class RawDataStore:
         limit: int = 100
     ) -> List[RawReport]:
         """리포트 조회"""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        
-        query = "SELECT * FROM reports WHERE 1=1"
-        params = []
-        
+        conn = self._get_conn()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        query = "SELECT * FROM reports WHERE TRUE"
+        params: list = []
+
         if stock_code:
-            query += " AND stock_code = ?"
+            query += " AND stock_code = %s"
             params.append(stock_code)
         if not_embedded_only:
-            query += " AND is_embedded = 0"
-        
-        query += f" ORDER BY created_at DESC LIMIT {limit}"
-        
+            query += " AND is_embedded = FALSE"
+
+        query += " ORDER BY created_at DESC LIMIT %s"
+        params.append(limit)
+
         cursor.execute(query, params)
         rows = cursor.fetchall()
         conn.close()
-        
+
         return [RawReport(**dict(row)) for row in rows]
-    
+
     def is_report_exists(self, link: str) -> bool:
         """리포트 중복 체크"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_conn()
         cursor = conn.cursor()
-        cursor.execute("SELECT 1 FROM reports WHERE link = ?", (link,))
+        cursor.execute("SELECT 1 FROM reports WHERE link = %s", (link,))
         exists = cursor.fetchone() is not None
         conn.close()
         return exists
-    
+
     # ==================== 뉴스 ====================
-    
+
     def save_news(self, news: RawNews) -> int:
         """뉴스 저장 (중복 시 무시)"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_conn()
         cursor = conn.cursor()
-        
+
         try:
             cursor.execute("""
-                INSERT OR IGNORE INTO news 
+                INSERT INTO news
                 (stock_code, stock_name, title, summary, content, source, url, published_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (url) DO NOTHING
+                RETURNING id
             """, (
                 news.stock_code, news.stock_name, news.title,
                 news.summary, news.content, news.source,
                 news.url, news.published_at
             ))
             conn.commit()
-            return cursor.lastrowid or 0
+            row = cursor.fetchone()
+            return row[0] if row else 0
         finally:
             conn.close()
-    
+
     def get_news(
         self,
         stock_code: Optional[str] = None,
@@ -278,59 +292,62 @@ class RawDataStore:
         limit: int = 100
     ) -> List[RawNews]:
         """뉴스 조회"""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        
-        query = "SELECT * FROM news WHERE 1=1"
-        params = []
-        
+        conn = self._get_conn()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        query = "SELECT * FROM news WHERE TRUE"
+        params: list = []
+
         if stock_code:
-            query += " AND stock_code = ?"
+            query += " AND stock_code = %s"
             params.append(stock_code)
         if not_embedded_only:
-            query += " AND is_embedded = 0"
-        
-        query += f" ORDER BY created_at DESC LIMIT {limit}"
-        
+            query += " AND is_embedded = FALSE"
+
+        query += " ORDER BY created_at DESC LIMIT %s"
+        params.append(limit)
+
         cursor.execute(query, params)
         rows = cursor.fetchall()
         conn.close()
-        
+
         return [RawNews(**dict(row)) for row in rows]
-    
+
     def is_news_exists(self, url: str) -> bool:
         """뉴스 중복 체크"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_conn()
         cursor = conn.cursor()
-        cursor.execute("SELECT 1 FROM news WHERE url = ?", (url,))
+        cursor.execute("SELECT 1 FROM news WHERE url = %s", (url,))
         exists = cursor.fetchone() is not None
         conn.close()
         return exists
-    
+
     # ==================== 공시 ====================
-    
+
     def save_disclosure(self, disclosure: RawDisclosure) -> int:
         """공시 저장 (중복 시 무시)"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_conn()
         cursor = conn.cursor()
-        
+
         try:
             cursor.execute("""
-                INSERT OR IGNORE INTO disclosures 
-                (stock_code, stock_name, corp_code, report_name, receipt_no, 
+                INSERT INTO disclosures
+                (stock_code, stock_name, corp_code, report_name, receipt_no,
                  receipt_date, submitter, content, url)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (receipt_no) DO NOTHING
+                RETURNING id
             """, (
                 disclosure.stock_code, disclosure.stock_name, disclosure.corp_code,
                 disclosure.report_name, disclosure.receipt_no, disclosure.receipt_date,
                 disclosure.submitter, disclosure.content, disclosure.url
             ))
             conn.commit()
-            return cursor.lastrowid or 0
+            row = cursor.fetchone()
+            return row[0] if row else 0
         finally:
             conn.close()
-    
+
     def get_disclosures(
         self,
         stock_code: Optional[str] = None,
@@ -338,50 +355,60 @@ class RawDataStore:
         limit: int = 100
     ) -> List[RawDisclosure]:
         """공시 조회"""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        
-        query = "SELECT * FROM disclosures WHERE 1=1"
-        params = []
-        
+        conn = self._get_conn()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        query = "SELECT * FROM disclosures WHERE TRUE"
+        params: list = []
+
         if stock_code:
-            query += " AND stock_code = ?"
+            query += " AND stock_code = %s"
             params.append(stock_code)
         if not_embedded_only:
-            query += " AND is_embedded = 0"
-        
-        query += f" ORDER BY created_at DESC LIMIT {limit}"
-        
+            query += " AND is_embedded = FALSE"
+
+        query += " ORDER BY created_at DESC LIMIT %s"
+        params.append(limit)
+
         cursor.execute(query, params)
         rows = cursor.fetchall()
         conn.close()
-        
+
         return [RawDisclosure(**dict(row)) for row in rows]
-    
+
     # ==================== 주가 ====================
-    
+
     def save_price_data(self, price: RawPriceData) -> int:
         """주가 데이터 저장 (중복 시 업데이트)"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_conn()
         cursor = conn.cursor()
-        
+
         try:
             cursor.execute("""
-                INSERT OR REPLACE INTO price_data 
-                (stock_code, stock_name, date, open_price, high_price, 
+                INSERT INTO price_data
+                (stock_code, stock_name, date, open_price, high_price,
                  low_price, close_price, volume, ma150, is_bullish)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (stock_code, date) DO UPDATE SET
+                    open_price = EXCLUDED.open_price,
+                    high_price = EXCLUDED.high_price,
+                    low_price = EXCLUDED.low_price,
+                    close_price = EXCLUDED.close_price,
+                    volume = EXCLUDED.volume,
+                    ma150 = EXCLUDED.ma150,
+                    is_bullish = EXCLUDED.is_bullish
+                RETURNING id
             """, (
                 price.stock_code, price.stock_name, price.date,
                 price.open_price, price.high_price, price.low_price,
                 price.close_price, price.volume, price.ma150, price.is_bullish
             ))
             conn.commit()
-            return cursor.lastrowid or 0
+            row = cursor.fetchone()
+            return row[0] if row else 0
         finally:
             conn.close()
-    
+
     def get_price_data(
         self,
         stock_code: str,
@@ -390,75 +417,71 @@ class RawDataStore:
         limit: int = 365
     ) -> List[RawPriceData]:
         """주가 데이터 조회"""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        
-        query = "SELECT * FROM price_data WHERE stock_code = ?"
-        params = [stock_code]
-        
+        conn = self._get_conn()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        query = "SELECT * FROM price_data WHERE stock_code = %s"
+        params: list = [stock_code]
+
         if start_date:
-            query += " AND date >= ?"
+            query += " AND date >= %s"
             params.append(start_date)
         if end_date:
-            query += " AND date <= ?"
+            query += " AND date <= %s"
             params.append(end_date)
-        
-        query += f" ORDER BY date DESC LIMIT {limit}"
-        
+
+        query += " ORDER BY date DESC LIMIT %s"
+        params.append(limit)
+
         cursor.execute(query, params)
         rows = cursor.fetchall()
         conn.close()
-        
+
         return [RawPriceData(**dict(row)) for row in rows]
-    
+
     # ==================== 임베딩 상태 관리 ====================
-    
+
     def mark_as_embedded(self, table: str, ids: List[int]):
         """임베딩 완료 표시"""
         if not ids:
             return
-        
-        conn = sqlite3.connect(self.db_path)
+
+        conn = self._get_conn()
         cursor = conn.cursor()
-        
-        placeholders = ",".join("?" * len(ids))
-        cursor.execute(f"UPDATE {table} SET is_embedded = 1 WHERE id IN ({placeholders})", ids)
-        
+
+        placeholders = ",".join(["%s"] * len(ids))
+        cursor.execute(f"UPDATE {table} SET is_embedded = TRUE WHERE id IN ({placeholders})", ids)
+
         conn.commit()
         conn.close()
-    
+
     # ==================== 통계 ====================
-    
+
     def get_stats(self) -> Dict:
         """저장소 통계"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_conn()
         cursor = conn.cursor()
-        
+
         stats = {}
         for table in ['reports', 'news', 'disclosures', 'price_data']:
             cursor.execute(f"SELECT COUNT(*) FROM {table}")
             total = cursor.fetchone()[0]
-            
+
             if table != 'price_data':
-                cursor.execute(f"SELECT COUNT(*) FROM {table} WHERE is_embedded = 1")
+                cursor.execute(f"SELECT COUNT(*) FROM {table} WHERE is_embedded = TRUE")
                 embedded = cursor.fetchone()[0]
                 stats[table] = {"total": total, "embedded": embedded}
             else:
                 stats[table] = {"total": total}
-        
+
         conn.close()
-        
-        # DB 파일 크기
-        db_size = os.path.getsize(self.db_path) if os.path.exists(self.db_path) else 0
-        stats["db_size_mb"] = round(db_size / (1024 * 1024), 2)
-        
+
         # 파일 저장소 크기
         files_size = sum(f.stat().st_size for f in self.files_dir.rglob("*") if f.is_file())
         stats["files_size_mb"] = round(files_size / (1024 * 1024), 2)
-        
+
         return stats
-    
+
     def get_file_path(self, category: str, filename: str) -> Path:
         """파일 저장 경로 생성"""
         category_dir = self.files_dir / category
@@ -469,8 +492,7 @@ class RawDataStore:
 # 테스트
 if __name__ == "__main__":
     store = RawDataStore()
-    
-    # 테스트 데이터 저장
+
     report = RawReport(
         stock_code="005930",
         stock_name="삼성전자",
@@ -480,6 +502,5 @@ if __name__ == "__main__":
         link="https://example.com/test"
     )
     store.save_report(report)
-    
-    # 통계 확인
+
     print(store.get_stats())
