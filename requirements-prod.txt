@@ -1,0 +1,79 @@
+# ==========================================
+# HQA - 프로덕션 Python 패키지
+# ==========================================
+# GPU 의존성 제거, API 기반 프로바이더 사용
+# pip install -r requirements-prod.txt
+# ==========================================
+
+# ── 웹 프레임워크 ──
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+gunicorn>=21.2.0              # Linux 프로덕션 WSGI
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+
+# ── 비동기 ──
+httpx>=0.27.0                 # Async HTTP 클라이언트
+aiofiles>=23.0.0
+
+# ── Task Queue ──
+celery[redis]>=5.3.0
+redis>=5.0.0
+
+# ── 데이터베이스 ──
+sqlalchemy[asyncio]>=2.0.0
+aiosqlite>=0.20.0             # SQLite async (개발용)
+asyncpg>=0.29.0               # PostgreSQL async (프로덕션)
+alembic>=1.13.0               # DB 마이그레이션
+
+# ── 기초 유틸리티 ──
+python-dotenv
+pandas>=2.0.0
+numpy>=1.24.0
+requests>=2.28.0
+beautifulsoup4>=4.12.0
+lxml
+
+# ── AI/LLM ──
+langchain-core>=0.1.0
+langchain-community>=0.0.20
+langchain-google-genai>=1.0.0
+langgraph>=0.2.0
+rank-bm25>=0.2.2
+
+# ── 임베딩 (CPU 전용) ──
+sentence-transformers>=2.2.0
+langchain-huggingface>=0.0.1
+
+# ── 벡터 DB ──
+chromadb>=0.4.0
+tokenizers==0.20.3
+
+# ── PDF 처리 ──
+PyMuPDF>=1.23.0
+Pillow>=10.0.0
+
+# ── 금융 데이터 ──
+finance-datareader>=0.9.50
+
+# ── 웹 검색 ──
+duckduckgo-search>=4.0.0
+tavily-python>=0.3.0
+
+# ── 모니터링 ──
+langsmith>=0.1.0              # LangSmith 트레이싱
+
+# ── 보안 ──
+python-jose[cryptography]>=3.3.0   # JWT (향후 인증)
+passlib[bcrypt]>=1.7.0
+
+# ── 프로덕션 유틸리티 ──
+prometheus-fastapi-instrumentator>=6.0.0  # 메트릭
+
+# ==========================================
+# 참고: 아래 패키지는 프로덕션에서 불요
+# ==========================================
+# streamlit (내부용 대시보드만)
+# torch, transformers (Reranker를 Cohere API로 대체)
+# paddlepaddle, paddleocr (OCR을 Upstage API로 대체)
+# ==========================================
