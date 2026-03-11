@@ -12,6 +12,8 @@ python-dotenv         # 환경변수 관리
 pandas>=2.0.0         # 데이터 처리
 numpy>=1.24.0         # 수치 연산
 requests>=2.28.0      # HTTP 요청
+aiohttp>=3.9.0        # 비동기 HTTP 요청
+aiofiles>=23.2.1      # 비동기 파일 입출력
 beautifulsoup4>=4.12.0  # 웹 크롤링 (네이버 금융)
 lxml                  # HTML 파서
 
