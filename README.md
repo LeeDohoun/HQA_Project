@@ -278,6 +278,35 @@ python pipeline_runner.py search "삼성전자 반도체 실적"
 python pipeline_runner.py status
 ```
 
+### 🎯 데이터 수집 + RAG 구축(집중 모드)
+
+뉴스(네이버), 증시 공시(DART), SNS(네이버 종토방) 3개 소스만으로
+RAG 코퍼스를 만드는 최소 파이프라인을 제공합니다.
+
+구성 파일:
+- `src/data_pipeline/collectors.py`
+  - `NaverNewsCollector`: 네이버 뉴스 검색 수집
+  - `DartDisclosureCollector`: DART Open API 공시 목록 수집
+  - `NaverStockForumCollector`: 네이버 종토방 게시글 제목 수집
+- `src/data_pipeline/rag_builder.py`
+  - `RAGCorpusBuilder`: 수집 텍스트를 chunking 후 JSONL로 저장
+- `scripts_rag_pipeline.py`
+  - 위 3개 소스를 순차 수집해 RAG 입력 파일 생성
+
+실행 예시:
+
+```bash
+python scripts_rag_pipeline.py \
+  --stock-name 삼성전자 \
+  --stock-code 005930 \
+  --corp-code 00126380 \
+  --from-date 20250101 \
+  --to-date 20251231 \
+  --output ./data/samsung_rag.jsonl
+```
+
+> DART는 `DART_API_KEY` 환경변수가 있을 때만 수집합니다.
+
 ### 대시보드 모드
 
 ```bash
