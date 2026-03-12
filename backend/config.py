@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     KIS_APP_KEY: str = ""
     KIS_APP_SECRET: str = ""
     KIS_ACCOUNT_NO: str = ""
+    KIWOOM_APP_KEY: str = ""
+    KIWOOM_APP_SECRET: str = ""
 
     # ── OCR 프로바이더 ──
     # "local" = PaddleOCR 로컬, "upstage" = Upstage Document AI API

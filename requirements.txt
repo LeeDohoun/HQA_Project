@@ -12,6 +12,7 @@ python-dotenv         # 환경변수 관리
 pandas>=2.0.0         # 데이터 처리
 numpy>=1.24.0         # 수치 연산
 requests>=2.28.0      # HTTP 요청
+httpx>=0.25.0         # 비동기 HTTP (키움 REST API)
 beautifulsoup4>=4.12.0  # 웹 크롤링 (네이버 금융)
 lxml                  # HTML 파서
 
@@ -106,7 +107,12 @@ pydantic>=2.0.0         # 데이터 검증
 pydantic-settings>=2.0.0   # 환경변수 설정 관리
 
 # ------------------------------------------
-# 12. 비동기 & Task Queue
+# 12. 실시간 WebSocket (KIS 실시간 시세)
+# ------------------------------------------
+websockets>=12.0        # KIS WebSocket 클라이언트
+
+# ------------------------------------------
+# 13. 비동기 & Task Queue
 # ------------------------------------------
 celery[redis]>=5.3.0    # Task Queue (선택, Redis 필요)
 redis>=5.0.0            # 캐시 & 브로커 (선택)

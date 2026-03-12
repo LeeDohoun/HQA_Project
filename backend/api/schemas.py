@@ -18,6 +18,54 @@ from pydantic import BaseModel, Field
 # 공통
 # ──────────────────────────────────────────────
 
+# ──────────────────────────────────────────────
+# 표준 에러 응답
+# ──────────────────────────────────────────────
+
+class ErrorCode(str, Enum):
+    """
+    표준 에러 코드
+
+    모든 API에서 동일한 포맷의 에러 응답을 반환합니다.
+    프론트엔드는 error_code를 기반으로 사용자 메시지를 결정합니다.
+    """
+    # 공통
+    INVALID_REQUEST = "INVALID_REQUEST"           # 잘못된 요청 파라미터
+    INTERNAL_ERROR = "INTERNAL_ERROR"             # 서버 내부 오류
+    SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"   # 외부 서비스 미설정/불가
+
+    # 차트
+    CHART_LOAD_FAILED = "CHART_LOAD_FAILED"       # 차트 데이터 조회 실패
+    CHART_API_NOT_CONFIGURED = "CHART_API_NOT_CONFIGURED"  # 키움 API 미설정
+    CHART_NO_DATA = "CHART_NO_DATA"               # 해당 종목 데이터 없음
+
+    # 분석
+    ANALYSIS_FAILED = "ANALYSIS_FAILED"           # 분석 실패
+    ANALYSIS_NOT_FOUND = "ANALYSIS_NOT_FOUND"     # 분석 결과 없음
+
+    # 종목
+    STOCK_NOT_FOUND = "STOCK_NOT_FOUND"           # 종목 검색 실패
+    STOCK_INVALID_CODE = "STOCK_INVALID_CODE"     # 잘못된 종목코드
+
+
+class ErrorResponse(BaseModel):
+    """
+    표준 에러 응답 포맷
+
+    모든 API 에러는 이 형식으로 반환됩니다.
+    {
+        "success": false,
+        "error_code": "CHART_LOAD_FAILED",
+        "message": "차트 데이터 조회에 실패했습니다.",
+        "detail": "키움 API 연결 타임아웃"
+    }
+    """
+    success: bool = False
+    error_code: str
+    message: str
+    detail: Optional[str] = None
+
+
 class StockInfo(BaseModel):
     """종목 기본 정보"""
     name: str

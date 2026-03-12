@@ -10,7 +10,7 @@ https://apiportal.koreainvestment.com
 - 호가 조회 (inquire_asking_price)
 - 체결 내역 조회 (inquire_ccnl)
 - 일/주/월봉 조회 (inquire_daily_price)
-- 분봉 조회 (inquire_time_itemchartprice)
+- 일별분봉 조회 (inquire_time_dailychartprice)
 """
 
 from dataclasses import dataclass, field
@@ -329,59 +329,67 @@ def inquire_daily_price(
 
 
 # ==========================================
-# API 함수 - 분봉 조회
+# API 함수 - 주식일별분봉조회 (다일자 분봉)
 # ==========================================
-def inquire_time_itemchartprice(
+def inquire_time_dailychartprice(
     stock_code: str,
-    time_unit: int = 1,
+    target_date: str = "",
+    query_time: str = "",
     count: int = 120,
     paper: bool = False,
 ) -> List[OHLCV]:
     """
-    주식 분봉 조회
-    
-    API: FHKST03010200
-    경로: /uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice
-    
+    주식일별분봉조회 — 특정 날짜의 분봉 데이터 조회 (당일 외 과거 날짜 지원)
+
+    API: FHKST03010230
+    경로: /uapi/domestic-stock/v1/quotations/inquire-time-dailychartprice
+
     Args:
-        stock_code: 종목코드
-        time_unit: 분 단위 (1, 3, 5, 10, 15, 30, 60)
+        stock_code: 종목코드 (6자리)
+        target_date: 조회 날짜 (YYYYMMDD). 빈 문자열이면 오늘
+        query_time: 조회 시작 시간 (HHMMSS). 빈 문자열이면 자동 (장중: 현재, 장후: 153000)
         count: 조회 건수 (최대 120)
         paper: 모의투자 여부
-        
+
     Returns:
-        OHLCV 리스트
+        OHLCV 리스트 (API가 반환하는 순서, 보통 최신→과거)
     """
     if not is_api_available():
         return []
-    
-    path = "/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice"
-    tr_id = "FHKST03010200"
-    
-    # 현재 시간 (장중이면 현재, 아니면 어제 15:30)
+
+    path = "/uapi/domestic-stock/v1/quotations/inquire-time-dailychartprice"
+    tr_id = "FHKST03010230"
+
     now = datetime.now()
-    if now.hour < 9:
-        # 장 시작 전이면 전일
-        query_time = "153000"
-    else:
-        query_time = now.strftime("%H%M%S")
-    
+
+    # 날짜 기본값
+    if not target_date:
+        target_date = now.strftime("%Y%m%d")
+
+    # 시간 기본값
+    if not query_time:
+        if now.hour < 9:
+            query_time = "153000"
+        else:
+            query_time = now.strftime("%H%M%S")
+
     params = {
-        "FID_ETC_CLS_CODE": "",
         "FID_COND_MRKT_DIV_CODE": "J",
         "FID_INPUT_ISCD": stock_code,
         "FID_INPUT_HOUR_1": query_time,
-        "FID_PW_DATA_INCU_YN": "N",
+        "FID_INPUT_DATE_1": target_date,
+        "FID_PW_DATA_INCU_YN": "Y",
+        "FID_FAKE_TICK_INCU_YN": "",
     }
-    
+
     resp = call_api("GET", path, tr_id, params=params, paper=paper)
-    
+
     if resp.get("rt_cd") != "0":
-        print(f"❌ 분봉 조회 실패: {resp.get('msg1')}")
+        print(f"❌ 일별분봉 조회 실패: {resp.get('msg1')}")
         return []
-    
+
     output = resp.get("output2", [])
-    
+
     result = []
     for item in output[:count]:
         result.append(OHLCV(
@@ -393,7 +401,7 @@ def inquire_time_itemchartprice(
             close=int(item.get("stck_prpr", 0)),
             volume=int(item.get("cntg_vol", 0)),
         ))
-    
+
     return result
 
 
@@ -514,14 +522,18 @@ class KISRealtimeTool:
         """일/주/월봉 조회"""
         return inquire_daily_price(stock_code, period, count=count, paper=self.paper)
     
-    def get_minute_ohlcv(
+    def get_daily_minute_ohlcv(
         self,
         stock_code: str,
-        time_unit: int = 1,
+        target_date: str = "",
+        query_time: str = "",
         count: int = 120,
     ) -> List[OHLCV]:
-        """분봉 조회"""
-        return inquire_time_itemchartprice(stock_code, time_unit, count, paper=self.paper)
+        """일별분봉 조회 (과거 날짜 지원, query_time으로 페이징 가능)"""
+        return inquire_time_dailychartprice(
+            stock_code, target_date=target_date, query_time=query_time,
+            count=count, paper=self.paper
+        )
     
     def get_trade_records(self, stock_code: str, count: int = 30) -> List[TradeRecord]:
         """체결 내역 조회"""

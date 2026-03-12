@@ -89,6 +89,48 @@ export interface QuerySuggestion {
   reason?: string;
 }
 
+// ── 차트 관련 타입 ──
+
+export interface CandleData {
+  time: number;       // UNIX timestamp (초)
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  complete?: boolean;
+}
+
+interface CandleHistoryResponse {
+  stock_code: string;
+  timeframe: string;
+  candles: CandleData[];
+  has_more: boolean;
+}
+
+// ── 에러 타입 ──
+
+export interface ApiError {
+  success: false;
+  error_code: string;
+  message: string;
+  detail?: string;
+}
+
+export class ApiRequestError extends Error {
+  public errorCode: string;
+  public statusCode: number;
+  public detail?: string;
+
+  constructor(statusCode: number, apiError: ApiError) {
+    super(apiError.message);
+    this.name = 'ApiRequestError';
+    this.statusCode = statusCode;
+    this.errorCode = apiError.error_code;
+    this.detail = apiError.detail;
+  }
+}
+
 // ── API 함수 ──
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
@@ -97,8 +139,14 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
     ...options,
   });
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(error.detail || `API Error: ${res.status}`);
+    const body = await res.json().catch(() => null);
+    // 표준 에러 응답 포맷 감지: { success: false, error_code: "...", message: "..." }
+    if (body && body.detail && typeof body.detail === 'object' && body.detail.error_code) {
+      throw new ApiRequestError(res.status, body.detail as ApiError);
+    }
+    // 레거시 에러 포맷
+    const msg = body?.detail || body?.message || res.statusText;
+    throw new Error(typeof msg === 'string' ? msg : `API Error: ${res.status}`);
   }
   return res.json();
 }
@@ -184,4 +232,19 @@ export async function suggestQuery(query: string): Promise<QuerySuggestion> {
     method: 'POST',
     body: JSON.stringify({ query }),
   });
+}
+
+/** 과거 캔들 데이터 조회 - KIS API (페이지네이션 지원) */
+export async function getHistoricalCandles(
+  stockCode: string,
+  timeframe: string,
+  count: number = 200,
+  before?: number,
+): Promise<{ candles: CandleData[]; hasMore: boolean }> {
+  let url = `/api/v1/charts/${stockCode}/history?timeframe=${timeframe}&count=${count}`;
+  if (before !== undefined) {
+    url += `&before=${before}`;
+  }
+  const resp = await apiFetch<CandleHistoryResponse>(url);
+  return { candles: resp.candles, hasMore: resp.has_more };
 }

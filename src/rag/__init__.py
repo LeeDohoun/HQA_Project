@@ -40,11 +40,10 @@ from .text_splitter import TextSplitter, SemanticTextSplitter, TextChunk
 
 # 임베딩 (텍스트 전용)
 from .embeddings import (
-    EmbeddingManager, 
-    TextEmbedding, 
+    EmbeddingManager,
+    TextEmbedding,
     KoreanTextEmbedding,
     SnowflakeArcticEmbedding,
-    SnowflakeArcticLangChainWrapper
 )
 
 # 벡터 저장소
@@ -86,7 +85,6 @@ __all__ = [
     "TextEmbedding",
     "KoreanTextEmbedding",
     "SnowflakeArcticEmbedding",
-    "SnowflakeArcticLangChainWrapper",
     # Vector Store
     "VectorStoreManager",
     # BM25
