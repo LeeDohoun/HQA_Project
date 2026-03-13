@@ -63,7 +63,22 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.info("   LangGraph: 로드 실패")
 
+    # 데이터베이스 초기화
+    try:
+        from backend.database.connection import init_db
+        await init_db()
+    except Exception as e:
+        logger.warning(f"데이터베이스 초기화 실패 (차트 등 일부 기능은 정상 작동): {e}")
+
     yield  # 서버 실행 중
+
+    # 차트 WebSocket 매니저 종료
+    try:
+        from backend.api.routes.charts import get_chart_manager
+        chart_manager = get_chart_manager()
+        await chart_manager.shutdown()
+    except Exception as e:
+        logger.warning(f"차트 WebSocket 종료 오류: {e}")
 
     logger.info("🛑 HQA API 종료")
 
@@ -120,10 +135,12 @@ app.add_middleware(
 from backend.api.routes.health import router as health_router
 from backend.api.routes.stocks import router as stocks_router
 from backend.api.routes.analysis import router as analysis_router
+from backend.api.routes.charts import router as charts_router
 
 app.include_router(health_router)
 app.include_router(stocks_router, prefix="/api/v1")
 app.include_router(analysis_router, prefix="/api/v1")
+app.include_router(charts_router, prefix="/api/v1")
 
 
 # ──────────────────────────────────────────────

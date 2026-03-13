@@ -23,7 +23,7 @@ HQA(Hegemony Quantitative Analyst)는 Google Gemini AI와 LangGraph를 활용한
 - 🌐 **FastAPI REST API**: 비동기 백엔드, SSE 실시간 스트리밍
 - 📡 **SSE 실시간 진행**: 에이전트별 분석 진행 상황 실시간 전달
 - 📋 **Task Queue**: Celery + Redis 백그라운드 분석 (선택)
-- 🗄️ **PostgreSQL/SQLite**: SQLAlchemy 비동기 ORM, Alembic 마이그레이션
+- 🗄️ **PostgreSQL**: SQLAlchemy 비동기 ORM, Alembic 마이그레이션
 - 🔌 **GPU 의존성 제거**: OCR(Upstage API), Reranker(Cohere API) 프로바이더 패턴
 - 🐳 **Docker Compose**: API + Worker + Redis + PostgreSQL 원클릭 배포
 - 🔒 **보안**: Rate Limiting, CORS, API 키 인증, AWS Secrets Manager

@@ -1,13 +1,9 @@
 # 파일: backend/database/connection.py
 """
-데이터베이스 연결 관리 (SQLAlchemy Async)
-
-로컬 개발: SQLite (aiosqlite)
-프로덕션: PostgreSQL (asyncpg)
+데이터베이스 연결 관리 (SQLAlchemy Async + PostgreSQL)
 
 DATABASE_URL 형식:
-  - SQLite:     sqlite+aiosqlite:///./database/hqa.db
-  - PostgreSQL: postgresql+asyncpg://user:pass@host:5432/hqa
+  postgresql+asyncpg://user:pass@host:5432/hqa
 """
 
 from __future__ import annotations
@@ -37,14 +33,10 @@ def _get_engine():
     global _engine
     if _engine is None:
         settings = get_settings()
-        connect_args = {}
-        if settings.DATABASE_URL.startswith("sqlite"):
-            connect_args = {"check_same_thread": False}
 
         _engine = create_async_engine(
             settings.DATABASE_URL,
             echo=settings.DEBUG,
-            connect_args=connect_args,
             pool_pre_ping=True,
         )
     return _engine

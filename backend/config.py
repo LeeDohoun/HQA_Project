@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     KIS_APP_KEY: str = ""
     KIS_APP_SECRET: str = ""
     KIS_ACCOUNT_NO: str = ""
+    KIWOOM_APP_KEY: str = ""
+    KIWOOM_APP_SECRET: str = ""
 
     # ── OCR 프로바이더 ──
     # "local" = PaddleOCR 로컬, "upstage" = Upstage Document AI API
@@ -61,9 +63,8 @@ class Settings(BaseSettings):
     RERANKER_PROVIDER: str = "local"
     COHERE_API_KEY: str = ""
 
-    # ── 데이터베이스 ──
-    # SQLite (로컬) 또는 PostgreSQL (프로덕션)
-    DATABASE_URL: str = "sqlite+aiosqlite:///./database/hqa.db"
+    # ── 데이터베이스 (PostgreSQL) ──
+    DATABASE_URL: str = "postgresql+asyncpg://mango@localhost:5432/hqa"
 
     # ── Redis (Task Queue & Cache) ──
     REDIS_URL: str = "redis://localhost:6379/0"

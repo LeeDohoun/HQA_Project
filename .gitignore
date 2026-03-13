@@ -29,3 +29,10 @@ frontend/next-env.d.ts
 
 # 7. 맥(Mac) 운영체제 임시 파일
 .DS_Store
+
+# 8. 데이터 캐시 및 토큰 (로컬 생성 파일, 보안 위험)
+data/cache/
+data/token/
+
+# 9. 루트 package-lock.json (프론트엔드용은 frontend/에 있음)
+package-lock.json
