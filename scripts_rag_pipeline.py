@@ -1,4 +1,4 @@
-"""네이버 뉴스/DART/종토방 수집 후 RAG JSONL 생성/업데이트 스크립트."""
+"""뉴스/DART/종토방 수집 후 소스별 RAG 자산(JSONL + 벡터 스토어) 생성/업데이트 스크립트."""
 
 from __future__ import annotations
 
@@ -7,15 +7,17 @@ import csv
 import json
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, Iterable, List, Set
 
 from src.data_pipeline import (
+    CrawledDocument,
     DartDisclosureCollector,
     NaverNewsCollector,
     NaverStockForumCollector,
     RAGCorpusBuilder,
 )
-from src.rag import BM25IndexManager
+from src.rag import BM25IndexManager, SourceRAGBuilder
 
 
 @dataclass
@@ -94,7 +96,6 @@ def _load_stock_targets(args: argparse.Namespace) -> List[StockTarget]:
             "실행 대상 종목이 없습니다. --stock-name/--stock-code 또는 --stocks-file을 제공하세요."
         )
 
-    # 중복 종목코드 제거 (앞에서 들어온 우선순위 유지)
     dedup: Dict[str, StockTarget] = {}
     for target in targets:
         if target.stock_code not in dedup:
@@ -110,8 +111,8 @@ def _collect_target_docs(
     from_date: str,
     to_date: str,
     dart_api_key: str,
-) -> List:
-    docs = []
+) -> List[CrawledDocument]:
+    docs: List[CrawledDocument] = []
 
     news = NaverNewsCollector().collect(
         f"{target.stock_name} 주식",
@@ -144,13 +145,18 @@ def _collect_target_docs(
     for doc in forum:
         if not doc.stock_name:
             doc.stock_name = target.stock_name
+        if not doc.stock_code:
+            doc.stock_code = target.stock_code
     docs.extend(forum)
 
     return docs
 
 
 def _build_bm25_index(records: List[Dict]) -> BM25IndexManager:
-    bm25 = BM25IndexManager(persist_path="./data/_query_check_bm25.json", auto_save=False)
+    bm25 = BM25IndexManager(
+        persist_path="./data/_query_check_bm25.json",
+        auto_save=False,
+    )
     bm25.clear()
     bm25.add_texts(
         texts=[row.get("text", "") for row in records],
@@ -159,8 +165,23 @@ def _build_bm25_index(records: List[Dict]) -> BM25IndexManager:
     return bm25
 
 
+def _split_by_source(records: List[Dict]) -> Dict[str, List[Dict]]:
+    grouped: Dict[str, List[Dict]] = {
+        "news": [],
+        "dart": [],
+        "forum": [],
+    }
+    for row in records:
+        source_type = row.get("metadata", {}).get("source_type")
+        if source_type in grouped:
+            grouped[source_type].append(row)
+    return grouped
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Crawler -> RAG JSONL 빌더")
+    parser = argparse.ArgumentParser(
+        description="Crawler -> Source-wise RAG JSONL + Vector Store 빌더"
+    )
     parser.add_argument("--stock-name", default="")
     parser.add_argument("--stock-code", default="")
     parser.add_argument("--corp-code", default="")
@@ -171,11 +192,12 @@ def main() -> None:
     )
     parser.add_argument("--from-date", default="20250101")
     parser.add_argument("--to-date", default="20251231")
-    parser.add_argument("--output", default="./data/rag_corpus.jsonl")
+
+    parser.add_argument("--output-dir", default="./data")
+    parser.add_argument("--base-filename", default="rag_corpus")
     parser.add_argument("--max-news", type=int, default=20)
     parser.add_argument("--forum-pages", type=int, default=3)
 
-    # 기존 코퍼스 업데이트 전략
     parser.add_argument(
         "--update-mode",
         choices=["overwrite", "append-new-stocks"],
@@ -183,7 +205,6 @@ def main() -> None:
         help="overwrite: 매번 새로 생성 / append-new-stocks: 기존 코퍼스에 없는 종목만 추가",
     )
 
-    # 질의 보강(없으면 추가 수집)
     parser.add_argument("--ensure-query", default="")
     parser.add_argument("--ensure-min-results", type=int, default=1)
     parser.add_argument("--ensure-top-k", type=int, default=5)
@@ -196,18 +217,26 @@ def main() -> None:
     targets = _load_stock_targets(args)
     dart_api_key = os.getenv("DART_API_KEY", "")
 
-    existing_records = []
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    combined_jsonl = output_dir / f"{args.base_filename}.jsonl"
+
+    existing_records: List[Dict] = []
     existing_stock_codes: Set[str] = set()
 
     if args.update_mode == "append-new-stocks":
-        existing_records = _load_jsonl(args.output)
+        existing_records = _load_jsonl(str(combined_jsonl))
         existing_stock_codes = _extract_stock_codes(existing_records)
 
-    collected_docs = []
+    collected_docs: List[CrawledDocument] = []
     collected_stock_codes: Set[str] = set()
 
     for target in targets:
-        if args.update_mode == "append-new-stocks" and target.stock_code in existing_stock_codes:
+        if (
+            args.update_mode == "append-new-stocks"
+            and target.stock_code in existing_stock_codes
+        ):
             print(f"[SKIP] 기존 코퍼스에 이미 존재: {target.stock_name}({target.stock_code})")
             continue
 
@@ -228,13 +257,10 @@ def main() -> None:
 
     merged_records = existing_records + new_records
 
-    # 질의 대응 데이터 보강
     if args.ensure_query:
         bm25 = _build_bm25_index(merged_records)
         search_results = bm25.search(args.ensure_query, k=args.ensure_top_k)
-        print(
-            f"[QUERY CHECK] '{args.ensure_query}' 검색 결과: {len(search_results)}개"
-        )
+        print(f"[QUERY CHECK] '{args.ensure_query}' 검색 결과: {len(search_results)}개")
 
         needs_backfill = len(search_results) < args.ensure_min_results
         ensure_target_ready = bool(args.ensure_stock_name and args.ensure_stock_code)
@@ -246,7 +272,10 @@ def main() -> None:
                 corp_code=args.ensure_corp_code,
             )
 
-            if ensure_target.stock_code not in existing_stock_codes and ensure_target.stock_code not in collected_stock_codes:
+            if (
+                ensure_target.stock_code not in existing_stock_codes
+                and ensure_target.stock_code not in collected_stock_codes
+            ):
                 ensure_docs = _collect_target_docs(
                     target=ensure_target,
                     max_news=args.max_news,
@@ -258,20 +287,49 @@ def main() -> None:
                 ensure_records = builder.build_records(ensure_docs)
                 merged_records.extend(ensure_records)
                 print(
-                    f"[QUERY BACKFILL] 결과 부족으로 {ensure_target.stock_name}({ensure_target.stock_code}) 추가 수집: {len(ensure_docs)}개"
+                    f"[QUERY BACKFILL] 결과 부족으로 "
+                    f"{ensure_target.stock_name}({ensure_target.stock_code}) 추가 수집: "
+                    f"{len(ensure_docs)}개"
                 )
             else:
-                print("[QUERY BACKFILL] 보강 대상 종목은 이미 코퍼스에 있어 추가 수집을 생략합니다.")
+                print(
+                    "[QUERY BACKFILL] 보강 대상 종목은 이미 코퍼스에 있어 추가 수집을 생략합니다."
+                )
         elif needs_backfill and not ensure_target_ready:
-            print("[QUERY BACKFILL] 결과가 부족하지만 --ensure-stock-name/--ensure-stock-code가 없어 자동 보강을 생략합니다.")
+            print(
+                "[QUERY BACKFILL] 결과가 부족하지만 "
+                "--ensure-stock-name/--ensure-stock-code가 없어 자동 보강을 생략합니다."
+            )
 
-    written = builder.save_jsonl(merged_records, args.output)
+    grouped_records = _split_by_source(merged_records)
+
+    written_combined = builder.save_jsonl(merged_records, str(combined_jsonl))
+
+    source_jsonl_stats: Dict[str, int] = {}
+    for source_type, records in grouped_records.items():
+        source_jsonl = output_dir / f"{args.base_filename}_{source_type}.jsonl"
+        source_jsonl_stats[source_type] = builder.save_jsonl(records, str(source_jsonl))
+
+    vector_builder = SourceRAGBuilder(dimension=256)
+    vector_stats = vector_builder.build_and_save(
+        records=merged_records,
+        output_dir=str(output_dir / "vector_stores"),
+    )
 
     print(f"기존 레코드 수: {len(existing_records)}")
     print(f"신규 레코드 수: {len(new_records)}")
-    print(f"최종 RAG 레코드 수: {written}")
-    print(f"출력 파일: {args.output}")
+    print(f"최종 통합 RAG 레코드 수: {written_combined}")
+    print(f"통합 JSONL: {combined_jsonl}")
+
+    print("소스별 JSONL 레코드 수:")
+    for source_type in ("news", "dart", "forum"):
+        print(f"  - {source_type}: {source_jsonl_stats.get(source_type, 0)}")
+
+    print("소스별 벡터 스토어 레코드 수:")
+    for source_type in ("news", "dart", "forum"):
+        print(f"  - {source_type}: {vector_stats.get(source_type, 0)}")
 
 
 if __name__ == "__main__":
     main()
+ 
