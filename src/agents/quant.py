@@ -15,7 +15,7 @@ Quant Agent (퀀트 에이전트)
 from typing import Dict, Optional
 from dataclasses import dataclass
 
-from src.agents.llm_config import get_gemini_llm
+from src.agents.llm_config import get_instruct_llm
 from src.tools.finance_tool import (
     QuantitativeAnalyzer,
     QuantitativeAnalysis,
@@ -65,7 +65,7 @@ class QuantAgent:
     """
     
     def __init__(self):
-        self.llm = get_gemini_llm()
+        self.llm = get_instruct_llm()
         self.analyzer = QuantitativeAnalyzer()
     
     def analyze_fundamentals(self, stock_name: str, stock_code: str) -> str:

@@ -17,7 +17,7 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 from enum import Enum
 
-from src.agents.llm_config import get_gemini_llm
+from src.agents.llm_config import get_instruct_llm
 from src.utils.stock_mapper import StockMapper, get_mapper
 from src.utils.memory import ConversationMemory
 from src.utils.parallel import run_agents_parallel, is_error
@@ -80,7 +80,7 @@ class SupervisorAgent:
     """
     
     def __init__(self, memory: Optional[ConversationMemory] = None):
-        self.llm = get_gemini_llm()
+        self.llm = get_instruct_llm()
         self.stock_mapper = get_mapper()  # 분리된 StockMapper 사용
         self.memory = memory or ConversationMemory(max_turns=10)
         
