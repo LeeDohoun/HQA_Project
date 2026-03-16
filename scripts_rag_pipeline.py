@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List
 
 from src.data_pipeline import (
+    CrawledDocument,
     DartDisclosureCollector,
     NaverNewsCollector,
     NaverStockForumCollector,
@@ -64,8 +66,15 @@ def _load_stock_targets(args: argparse.Namespace) -> List[StockTarget]:
     return list(dedup.values())
 
 
-def _collect_docs(target: StockTarget, max_news: int, forum_pages: int, from_date: str, to_date: str, dart_api_key: str):
-    docs = []
+def _collect_docs(
+    target: StockTarget,
+    max_news: int,
+    forum_pages: int,
+    from_date: str,
+    to_date: str,
+    dart_api_key: str,
+) -> List[CrawledDocument]:
+    docs: List[CrawledDocument] = []
 
     news = NaverNewsCollector().collect(f"{target.stock_name} 주식", max_items=max_news)
     for doc in news:
@@ -84,7 +93,10 @@ def _collect_docs(target: StockTarget, max_news: int, forum_pages: int, from_dat
             doc.stock_code = target.stock_code
         docs.extend(dart)
 
-    forum = NaverStockForumCollector().collect(stock_code=target.stock_code, pages=forum_pages)
+    forum = NaverStockForumCollector().collect(
+        stock_code=target.stock_code,
+        pages=forum_pages,
+    )
     for doc in forum:
         doc.stock_name = target.stock_name
         doc.stock_code = target.stock_code
@@ -107,7 +119,11 @@ def main() -> None:
     parser.add_argument("--stock-name", default="")
     parser.add_argument("--stock-code", default="")
     parser.add_argument("--corp-code", default="")
-    parser.add_argument("--stocks-file", default="", help="CSV 파일 경로 (stock_name,stock_code,corp_code)")
+    parser.add_argument(
+        "--stocks-file",
+        default="",
+        help="CSV 파일 경로 (stock_name,stock_code,corp_code)",
+    )
     parser.add_argument("--from-date", default="20250101")
     parser.add_argument("--to-date", default="20251231")
     parser.add_argument("--max-news", type=int, default=20)
@@ -116,12 +132,10 @@ def main() -> None:
     parser.add_argument("--base-filename", default="rag_corpus")
     args = parser.parse_args()
 
-    import os
-
     targets = _load_stock_targets(args)
     dart_api_key = os.getenv("DART_API_KEY", "")
 
-    all_docs = []
+    all_docs: List[CrawledDocument] = []
     for target in targets:
         target_docs = _collect_docs(
             target=target,
@@ -158,6 +172,7 @@ def main() -> None:
     print(f"총 수집 문서 수: {len(all_docs)}")
     print(f"통합 RAG 레코드 수: {len(all_records)}")
     print(f"통합 JSONL: {combined_jsonl}")
+
     print("소스별 JSONL 레코드 수:")
     for source_type in ("news", "dart", "forum"):
         print(f"  - {source_type}: {source_jsonl_stats.get(source_type, 0)}")

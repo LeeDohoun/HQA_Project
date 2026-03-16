@@ -14,7 +14,7 @@ HQA_Project/
     │   ├── collectors.py            # 네이버 뉴스 / DART / 종토방 수집기
     │   └── rag_builder.py           # 청크 + JSONL 빌더
     └── rag/
-        ├── __init__.py
+        ├── __init__.py              # RAG 모듈 export
         ├── bm25_index.py            # BM25 인덱스
         └── vector_store.py          # 소스별 경량 벡터 스토어
 ```
