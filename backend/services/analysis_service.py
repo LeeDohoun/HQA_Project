@@ -433,9 +433,9 @@ class AnalysisService:
 
     def _suggest_sync(self, query: str) -> QuerySuggestion:
         """동기 쿼리 제안"""
-        from src.agents.llm_config import get_gemini_llm
+        from src.agents.llm_config import get_instruct_llm
 
-        llm = get_gemini_llm()
+        llm = get_instruct_llm()
 
         prompt = f"""당신은 주식 분석 AI 시스템의 쿼리 검증 모듈입니다.
 

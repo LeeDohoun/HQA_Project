@@ -16,11 +16,11 @@ HQA 에이전트 모음
 │  RiskManagerAgent (Thinking) ──→ 최종 투자 판단 ✅           │
 └─────────────────────────────────────────────────────────────┘
 
-LLM Config (Ollama 기반):
-- get_gemini_llm: Instruct (빠름) → Ollama
-- get_thinking_llm: Thinking (깊은 추론) → Ollama
-- get_gemini_vision_llm: 이미지 분석 → Ollama (llava)
-- GeminiVisionAnalyzer: Vision 헬퍼 → Ollama Vision
+LLM Config (Provider 패턴 — Ollama / Gemini 전환 가능):
+- get_instruct_llm: Instruct (빠름) → Ollama 또는 Gemini
+- get_thinking_llm: Thinking (깊은 추론) → Ollama 또는 Gemini
+- get_vision_llm: 이미지 분석 → Ollama (llava) 또는 Gemini
+- VisionAnalyzer: Vision 헬퍼 → 자동 Provider 선택
 """
 
 # Supervisor (쿼리 분석 & 라우팅)
@@ -59,8 +59,13 @@ from .graph import (
 
 # LLM 설정
 from .llm_config import (
-    get_gemini_llm,
+    get_instruct_llm,
     get_thinking_llm,
+    get_vision_llm,
+    VisionAnalyzer,
+    get_llm_info,
+    # 하위 호환 별칭
+    get_gemini_llm,
     get_gemini_vision_llm,
     GeminiVisionAnalyzer,
 )
@@ -94,9 +99,14 @@ __all__ = [
     "InvestmentAction",
     "RiskLevel",
     
-    # LLM
-    "get_gemini_llm",
+    # LLM (Provider 패턴)
+    "get_instruct_llm",
     "get_thinking_llm",
+    "get_vision_llm",
+    "VisionAnalyzer",
+    "get_llm_info",
+    # LLM (하위 호환)
+    "get_gemini_llm",
     "get_gemini_vision_llm",
     "GeminiVisionAnalyzer",
     

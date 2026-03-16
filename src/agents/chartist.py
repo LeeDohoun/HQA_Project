@@ -15,7 +15,7 @@ from typing import Dict, Optional
 from dataclasses import dataclass
 
 from crewai import Agent, Task, Crew, Process
-from src.agents.llm_config import get_gemini_llm
+from src.agents.llm_config import get_instruct_llm
 from src.tools.charts_tools import (
     TechnicalAnalysisTool,
     RSIAnalysisTool,
@@ -63,7 +63,7 @@ class ChartistAgent:
     """기술적 분석 에이전트"""
     
     def __init__(self):
-        self.llm = get_gemini_llm()
+        self.llm = get_instruct_llm()
         
         # 기술적 분석 도구들
         self.tools = [
