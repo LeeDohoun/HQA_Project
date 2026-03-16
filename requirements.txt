@@ -72,7 +72,7 @@ tokenizers==0.20.3    # ChromaDB 호환 버전 고정
 # accelerate>=0.25.0    # 모델 가속화 (Ollama로 대체)
 # einops                # 텐서 연산 (Ollama로 대체)
 sentence-transformers>=2.2.0  # CrossEncoder 리랭커용
-# langchain-huggingface>=0.0.1  # HuggingFace 연동 (Ollama로 대체)
+langchain-huggingface>=0.0.1  # HuggingFace 연동 (Jina 임베딩 등에 필수)
 
 # ------------------------------------------
 # 7. PDF/이미지 처리
