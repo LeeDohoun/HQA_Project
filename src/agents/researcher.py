@@ -17,7 +17,7 @@ from datetime import datetime
 
 from crewai import Agent, Task, Crew, Process
 
-from src.agents.llm_config import get_gemini_llm, GeminiVisionAnalyzer
+from src.agents.llm_config import get_instruct_llm, VisionAnalyzer
 
 # RAG 검색 도구 (리랭킹 포함)
 from src.tools.rag_tool import RAGSearchTool, search_documents, get_retriever
@@ -158,8 +158,8 @@ class ResearcherAgent:
     """
     
     def __init__(self):
-        self.llm = get_gemini_llm()
-        self.vision_analyzer = GeminiVisionAnalyzer()
+        self.llm = get_instruct_llm()
+        self.vision_analyzer = VisionAnalyzer()
         
         # RAG 도구 인스턴스
         self.rag_tool = RAGSearchTool(top_k=5)
