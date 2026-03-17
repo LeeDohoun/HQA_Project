@@ -18,10 +18,10 @@ BASE_URL = "https://www.tossinvest.com"
 COMMUNITY_URL_TEMPLATE = BASE_URL + "/stocks/{stock_code}/community"
 
 # ============================================================
-# DATE RANGE  (last 1 year by default)
+# DATE RANGE
 # ============================================================
 END_DATE = datetime.now()
-START_DATE = END_DATE - timedelta(days=365)
+START_DATE = datetime(2025, 3, 1)  # Crawl back to March 1, 2025
 
 # ============================================================
 # KOSPI TOP-N SETTINGS
@@ -56,8 +56,8 @@ RETRY_BACKOFF_BASE = 10  # seconds, exponential backoff
 # ============================================================
 # CONCURRENCY
 # ============================================================
-MAX_CONCURRENT_REQUESTS = 3  # Parallel API requests
-BATCH_SIZE = 10  # Process stocks in batches
+CONCURRENT_STOCKS = 10  # Number of stocks to crawl simultaneously
+MAX_CONCURRENT_REQUESTS = 20  # Max parallel HTTP connections (>= CONCURRENT_STOCKS)
 
 # ============================================================
 # OUTPUT
@@ -65,9 +65,11 @@ BATCH_SIZE = 10  # Process stocks in batches
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-OUTPUT_CSV = os.path.join(OUTPUT_DIR, "tossinvest_community_data.csv")
-OUTPUT_EXCEL = os.path.join(OUTPUT_DIR, "tossinvest_community_data.xlsx")
-OUTPUT_JSON = os.path.join(OUTPUT_DIR, "tossinvest_community_data.json")
+# Per-stock CSV directory: output/by_stock/A005930.csv, etc.
+PER_STOCK_DIR = os.path.join(OUTPUT_DIR, "by_stock")
+os.makedirs(PER_STOCK_DIR, exist_ok=True)
+
+# (Per-stock CSVs only — no combined output file)
 CHECKPOINT_FILE = os.path.join(OUTPUT_DIR, "checkpoint.json")
 STOCK_LIST_CACHE = os.path.join(OUTPUT_DIR, "kospi_top500_stocks.csv")
 

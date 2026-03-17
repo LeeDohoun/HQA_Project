@@ -403,16 +403,29 @@ async def crawl_stock_community(
     stock_name: str,
     isin: str,
     on_auth_error: callable,
+    on_page_done: callable = None,
+    resume_cursor: int | None = None,
+    resume_count: int = 0,
 ) -> list[dict]:
     """
     Crawl all community comments for a single stock.
     If auth error occurs, calls on_auth_error() to refresh cookies
     and retries the failed page.
+
+    Args:
+        on_page_done: async callback(stock_code, last_comment_id, comment_count)
+                      called after each page is written — used to save cursor progress.
+        resume_cursor: if resuming a partial crawl, the lastCommentId to start from.
+        resume_count: if resuming, the number of comments already collected.
     """
-    logger.info(f"Crawling: {stock_name} ({stock_code}) ISIN={isin}")
+    if resume_cursor:
+        logger.info(f"Resuming: {stock_name} ({stock_code}) ISIN={isin} from cursor={resume_cursor}, already have {resume_count} comments")
+    else:
+        logger.info(f"Crawling: {stock_name} ({stock_code}) ISIN={isin}")
 
     all_comments = []
-    last_comment_id = None
+    last_comment_id = resume_cursor
+    total_collected = resume_count
     page_num = 0
     reached_date_limit = False
     auth_retries = 0
@@ -459,15 +472,20 @@ async def crawl_stock_community(
             parsed = parse_comment(comment, stock_code, stock_name)
             page_parsed.append(parsed)
 
-        # Write this page to CSV immediately
+        # Write this page to CSV immediately (async lock for concurrency safety)
         if page_parsed:
-            append_results(page_parsed)
+            await append_results(page_parsed, stock_code)
             all_comments.extend(page_parsed)
+            total_collected += len(page_parsed)
 
         logger.info(
             f"  Page {page_num}: saved {len(page_parsed)} comments to CSV "
-            f"(total collected: {len(all_comments)}, total on server: {total_count})"
+            f"(total collected: {total_collected}, total on server: {total_count})"
         )
+
+        # Save cursor progress after each successful page
+        if on_page_done and next_key is not None:
+            await on_page_done(stock_code, next_key, total_collected, isin)
 
         if reached_date_limit:
             logger.info(f"  Reached date limit ({config.START_DATE.date()}), stopping")
@@ -480,58 +498,200 @@ async def crawl_stock_community(
         auth_retries = 0  # Reset after successful page
         await human_delay()
 
-    logger.info(f"  Done: {len(all_comments)} comments for {stock_name}")
+    logger.info(f"  Done: {total_collected} comments for {stock_name}")
     return all_comments
 
 
 # ============================================================
 # CHECKPOINT / RESUME
 # ============================================================
-def load_checkpoint() -> set:
+# Checkpoint structure:
+# {
+#   "completed_stocks": ["A005930", ...],
+#   "in_progress": {
+#       "A000660": {"last_comment_id": 12345, "comment_count": 340, "isin": "KR7000660001"}
+#   },
+#   "last_updated": "2026-03-17T..."
+# }
+
+def load_checkpoint() -> tuple[set, dict]:
+    """
+    Returns:
+        (completed_stocks, in_progress)
+        - completed_stocks: set of stock codes fully crawled
+        - in_progress: dict of {stock_code: {last_comment_id, comment_count, isin}}
+    """
     if os.path.exists(config.CHECKPOINT_FILE):
         with open(config.CHECKPOINT_FILE, "r") as f:
             data = json.load(f)
-            return set(data.get("completed_stocks", []))
-    return set()
+            completed = set(data.get("completed_stocks", []))
+            in_progress = data.get("in_progress", {})
+            return completed, in_progress
+    return set(), {}
 
 
-def save_checkpoint(completed_stocks: set):
+def save_checkpoint(completed_stocks: set, in_progress: dict = None):
     with open(config.CHECKPOINT_FILE, "w") as f:
         json.dump({
             "completed_stocks": list(completed_stocks),
+            "in_progress": in_progress or {},
             "last_updated": datetime.now().isoformat(),
         }, f, indent=2)
 
 
-def append_results(comments: list[dict]):
+# Lock for thread-safe CSV writes from concurrent tasks
+_csv_lock = asyncio.Lock()
+
+
+async def append_results(comments: list[dict], stock_code: str):
+    """Write comments to per-stock CSV: output/by_stock/{stock_code}.csv"""
     if not comments:
         return
-    df = pd.DataFrame(comments)
-    file_exists = os.path.exists(config.OUTPUT_CSV)
-    df.to_csv(
-        config.OUTPUT_CSV,
-        mode="a",
-        header=not file_exists,
-        index=False,
-        encoding="utf-8-sig",
-    )
+    async with _csv_lock:
+        df = pd.DataFrame(comments)
+        per_stock_path = os.path.join(config.PER_STOCK_DIR, f"{stock_code}.csv")
+        per_stock_exists = os.path.exists(per_stock_path)
+        df.to_csv(
+            per_stock_path,
+            mode="a",
+            header=not per_stock_exists,
+            index=False,
+            encoding="utf-8-sig",
+        )
+
+
+# Lock for thread-safe checkpoint writes
+_checkpoint_lock = asyncio.Lock()
+
+
+async def save_checkpoint_async(completed_stocks: set, in_progress: dict = None):
+    async with _checkpoint_lock:
+        save_checkpoint(completed_stocks, in_progress)
 
 
 # ============================================================
-# MAIN RUNNER
+# CRAWL A SINGLE STOCK (wrapper with ISIN resolution + retries)
+# ============================================================
+async def crawl_one_stock(
+    session: aiohttp.ClientSession,
+    stock_code: str,
+    stock_name: str,
+    refresh_cookies: callable,
+    completed: set,
+    in_progress: dict,
+    total_stocks: int,
+) -> int:
+    """
+    Crawl a single stock end-to-end: resolve ISIN, fetch all comments.
+    Supports resuming partial crawls via in_progress cursor tracking.
+    Returns the number of comments collected.
+    """
+    try:
+        # Check if we have a saved cursor from a previous partial crawl
+        resume_info = in_progress.get(stock_code)
+        resume_cursor = None
+        resume_count = 0
+        isin = None
+
+        if resume_info:
+            resume_cursor = resume_info.get("last_comment_id")
+            resume_count = resume_info.get("comment_count", 0)
+            isin = resume_info.get("isin")
+            logger.info(
+                f"  [{stock_code}] Resuming partial crawl: "
+                f"cursor={resume_cursor}, already have {resume_count} comments"
+            )
+
+        # Resolve ISIN if we don't have one from checkpoint
+        if not isin:
+            for isin_attempt in range(config.MAX_RETRIES):
+                isin = await resolve_isin(session, stock_code)
+                if isin:
+                    break
+                logger.warning(f"  [{stock_code}] ISIN resolve attempt {isin_attempt + 1}/{config.MAX_RETRIES} failed")
+                if isin_attempt < config.MAX_RETRIES - 1:
+                    logger.info(f"  [{stock_code}] Refreshing cookies and retrying ISIN resolution...")
+                    await refresh_cookies()
+                    await human_delay(2, 5)
+
+        if not isin:
+            logger.error(f"  [{stock_code}] Could not resolve ISIN after {config.MAX_RETRIES} attempts, skipping")
+            return 0
+
+        await human_delay(0.5, 1.5)
+
+        # Callback: save cursor progress after each page
+        async def on_page_done(sc, cursor, count, resolved_isin):
+            in_progress[sc] = {
+                "last_comment_id": cursor,
+                "comment_count": count,
+                "isin": resolved_isin,
+            }
+            await save_checkpoint_async(completed, in_progress)
+
+        # Crawl comments (with resume support)
+        comments = await crawl_stock_community(
+            session, stock_code, stock_name, isin,
+            on_auth_error=refresh_cookies,
+            on_page_done=on_page_done,
+            resume_cursor=resume_cursor,
+            resume_count=resume_count,
+        )
+
+        # Mark as completed, remove from in_progress
+        completed.add(stock_code)
+        in_progress.pop(stock_code, None)
+        await save_checkpoint_async(completed, in_progress)
+
+        count = resume_count + (len(comments) if comments else 0)
+        progress = len(completed) / total_stocks * 100
+        logger.info(
+            f"  [{stock_code}] DONE: {count} comments | "
+            f"Progress: {len(completed)}/{total_stocks} ({progress:.1f}%)"
+        )
+        return count
+
+    except Exception as e:
+        import traceback
+        logger.error(f"  [{stock_code}] Failed: {e}")
+        logger.error(traceback.format_exc())
+        # in_progress cursor is already saved from on_page_done callbacks,
+        # so next run will resume from the last successful page
+        return 0
+
+
+# ============================================================
+# MAIN RUNNER (concurrent batches)
 # ============================================================
 async def run_crawler(stock_df: pd.DataFrame, resume: bool = True):
     """
     Main entry point:
     1. Bootstrap cookies via Playwright
     2. Create aiohttp session with those cookies
-    3. Crawl all stocks using the API
+    3. Crawl stocks concurrently in batches of CONCURRENT_STOCKS
     4. On auth errors, re-bootstrap cookies and continue
     """
-    completed = load_checkpoint() if resume else set()
+    completed, in_progress = load_checkpoint() if resume else (set(), {})
+
+    # Fresh start: wipe old per-stock CSVs and checkpoint to avoid duplicates
+    if not resume:
+        import glob as glob_mod
+        old_csvs = glob_mod.glob(os.path.join(config.PER_STOCK_DIR, "*.csv"))
+        if old_csvs:
+            logger.info(f"Fresh start: removing {len(old_csvs)} old per-stock CSV files")
+            for f in old_csvs:
+                os.remove(f)
+        if os.path.exists(config.CHECKPOINT_FILE):
+            os.remove(config.CHECKPOINT_FILE)
+
+    # Stocks to crawl: not yet completed (in_progress stocks ARE included — they need to resume)
     remaining = stock_df[~stock_df["stock_code"].isin(completed)]
 
-    logger.info(f"Total stocks: {len(stock_df)}, Already done: {len(completed)}, Remaining: {len(remaining)}")
+    resuming_count = sum(1 for sc in in_progress if sc in set(remaining["stock_code"]))
+    logger.info(
+        f"Total stocks: {len(stock_df)}, Already done: {len(completed)}, "
+        f"Resuming partial: {resuming_count}, Remaining: {len(remaining)}"
+    )
 
     if remaining.empty:
         logger.info("All stocks already crawled! Delete checkpoint.json to re-crawl.")
@@ -545,21 +705,20 @@ async def run_crawler(stock_df: pd.DataFrame, resume: bool = True):
 
     # Step 2: Create session with cookies
     cookie_jar = cookies_to_jar(cookies)
-    # Use AsyncResolver (aiodns) to fix DNS timeout issues on macOS
     try:
         resolver = aiohttp.AsyncResolver()
     except Exception:
         resolver = aiohttp.DefaultResolver()
         logger.warning("aiodns not available, using default resolver (may be slow)")
     connector = aiohttp.TCPConnector(
-        limit=config.MAX_CONCURRENT_REQUESTS,
+        limit=config.MAX_CONCURRENT_REQUESTS * 2,  # Allow enough connections
         resolver=resolver,
-        ttl_dns_cache=300,  # Cache DNS for 5 minutes
+        ttl_dns_cache=300,
     )
     timeout = aiohttp.ClientTimeout(total=30)
 
-    consecutive_errors = 0
     total_comments = 0
+    batch_size = config.CONCURRENT_STOCKS
 
     async with aiohttp.ClientSession(
         connector=connector,
@@ -568,83 +727,68 @@ async def run_crawler(stock_df: pd.DataFrame, resume: bool = True):
     ) as session:
 
         # Callback for auth errors: re-bootstrap and update session cookies
+        _refresh_lock = asyncio.Lock()
+
         async def refresh_cookies():
             nonlocal cookies
-            new_cookies = await bootstrap_cookies()
-            if new_cookies:
-                cookies = new_cookies
-                # Update the session's cookie jar
-                new_jar = cookies_to_jar(new_cookies)
-                session._cookie_jar = new_jar
-                logger.info("  Session cookies refreshed successfully")
-            else:
-                logger.error("  Failed to refresh cookies!")
-
-        for idx, row in remaining.iterrows():
-            stock_code = row["stock_code"]
-            stock_name = row["stock_name"]
-
-            # Error threshold cooldown
-            if consecutive_errors >= config.MAX_CONSECUTIVE_ERRORS:
-                logger.warning(
-                    f"Hit {consecutive_errors} consecutive errors. "
-                    f"Refreshing cookies and pausing {config.ERROR_PAUSE_SECONDS}s..."
-                )
-                await refresh_cookies()
-                await asyncio.sleep(config.ERROR_PAUSE_SECONDS)
-                consecutive_errors = 0
-
-            try:
-                # Resolve ISIN (with retries + cookie refresh)
-                isin = None
-                for isin_attempt in range(config.MAX_RETRIES):
-                    isin = await resolve_isin(session, stock_code)
-                    if isin:
-                        break
-                    logger.warning(f"  ISIN resolve attempt {isin_attempt + 1}/{config.MAX_RETRIES} failed for {stock_code}")
-                    if isin_attempt < config.MAX_RETRIES - 1:
-                        logger.info("  Refreshing cookies and retrying ISIN resolution...")
-                        await refresh_cookies()
-                        await human_delay(2, 5)
-
-                if not isin:
-                    logger.error(f"  Could not resolve ISIN for {stock_code} after {config.MAX_RETRIES} attempts, skipping")
-                    consecutive_errors += 1
-                    continue
-
-                await human_delay(0.5, 1.5)
-
-                # Crawl comments (with auth retry callback)
-                comments = await crawl_stock_community(
-                    session, stock_code, stock_name, isin,
-                    on_auth_error=refresh_cookies,
-                )
-
-                if comments:
-                    # CSV already written per-page inside crawl_stock_community
-                    total_comments += len(comments)
-                    consecutive_errors = 0
+            # Only one task refreshes at a time
+            async with _refresh_lock:
+                new_cookies = await bootstrap_cookies()
+                if new_cookies:
+                    cookies = new_cookies
+                    new_jar = cookies_to_jar(new_cookies)
+                    session._cookie_jar = new_jar
+                    logger.info("  Session cookies refreshed successfully")
                 else:
-                    logger.warning(f"  No comments found for {stock_name}")
+                    logger.error("  Failed to refresh cookies!")
 
-                # Mark as completed
-                completed.add(stock_code)
-                save_checkpoint(completed)
+        # Process stocks in concurrent batches
+        remaining_list = list(remaining.iterrows())
+        for batch_start in range(0, len(remaining_list), batch_size):
+            batch = remaining_list[batch_start:batch_start + batch_size]
+            batch_num = batch_start // batch_size + 1
+            total_batches = (len(remaining_list) + batch_size - 1) // batch_size
 
-                progress = len(completed) / len(stock_df) * 100
-                logger.info(
-                    f"Progress: {len(completed)}/{len(stock_df)} ({progress:.1f}%) "
-                    f"| Total comments: {total_comments}"
+            stock_names = [row["stock_name"] for _, row in batch]
+            logger.info(
+                f"\n{'='*60}\n"
+                f"Batch {batch_num}/{total_batches}: "
+                f"crawling {len(batch)} stocks concurrently: {stock_names}\n"
+                f"{'='*60}"
+            )
+
+            # Launch all stocks in this batch concurrently
+            tasks = [
+                crawl_one_stock(
+                    session=session,
+                    stock_code=row["stock_code"],
+                    stock_name=row["stock_name"],
+                    refresh_cookies=refresh_cookies,
+                    completed=completed,
+                    in_progress=in_progress,
+                    total_stocks=len(stock_df),
                 )
+                for _, row in batch
+            ]
 
-            except Exception as e:
-                import traceback
-                logger.error(f"Failed to crawl {stock_code} ({stock_name}): {e}")
-                logger.error(traceback.format_exc())
-                consecutive_errors += 1
+            results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            # Delay between stocks
-            await human_delay(config.MIN_STOCK_DELAY, config.MAX_STOCK_DELAY)
+            # Tally results
+            for result in results:
+                if isinstance(result, int):
+                    total_comments += result
+                elif isinstance(result, Exception):
+                    logger.error(f"  Batch task exception: {result}")
 
-    logger.info(f"Crawling complete! Total comments collected: {total_comments}")
-    logger.info(f"Data saved to: {config.OUTPUT_CSV}")
+            logger.info(
+                f"Batch {batch_num} complete | "
+                f"Total comments so far: {total_comments} | "
+                f"Stocks done: {len(completed)}/{len(stock_df)}"
+            )
+
+            # Delay between batches
+            if batch_start + batch_size < len(remaining_list):
+                await human_delay(config.MIN_STOCK_DELAY, config.MAX_STOCK_DELAY)
+
+    logger.info(f"\nCrawling complete! Total comments collected: {total_comments}")
+    logger.info(f"Per-stock CSVs saved to: {config.PER_STOCK_DIR}/")

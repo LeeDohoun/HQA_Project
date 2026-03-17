@@ -59,45 +59,26 @@ def setup_logging():
     root_logger.addHandler(console_handler)
 
 
-def export_to_excel():
-    """Convert CSV output to Excel with formatting."""
-    if not os.path.exists(config.OUTPUT_CSV):
-        print(f"No data file found at {config.OUTPUT_CSV}")
+def export_summary():
+    """Print summary of per-stock CSV files."""
+    per_stock_files = [f for f in os.listdir(config.PER_STOCK_DIR) if f.endswith(".csv")]
+    if not per_stock_files:
+        print("No per-stock CSV files found.")
         return
 
-    print(f"Loading data from {config.OUTPUT_CSV}...")
-    df = pd.read_csv(config.OUTPUT_CSV, encoding="utf-8-sig")
-    print(f"Loaded {len(df)} rows")
+    print(f"\nPer-stock CSV files: {len(per_stock_files)} in {config.PER_STOCK_DIR}/")
 
-    # Clean and format
-    if "created_at" in df.columns:
-        df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce")
+    total_rows = 0
+    for f in sorted(per_stock_files):
+        path = os.path.join(config.PER_STOCK_DIR, f)
+        try:
+            df = pd.read_csv(path, encoding="utf-8-sig")
+            total_rows += len(df)
+            print(f"  {f}: {len(df)} comments")
+        except Exception:
+            print(f"  {f}: (error reading)")
 
-    # Drop raw_json for Excel (too large)
-    excel_df = df.drop(columns=["raw_json"], errors="ignore")
-
-    # Save to Excel
-    print(f"Saving to {config.OUTPUT_EXCEL}...")
-    with pd.ExcelWriter(config.OUTPUT_EXCEL, engine="openpyxl") as writer:
-        excel_df.to_excel(writer, sheet_name="Community Comments", index=False)
-
-        # Summary sheet
-        if "stock_code" in df.columns:
-            summary = df.groupby(["stock_code", "stock_name"]).agg(
-                comment_count=("comment_id", "count"),
-                avg_likes=("like_count", "mean"),
-                avg_replies=("reply_count", "mean"),
-                avg_reads=("read_count", "mean"),
-                earliest=("created_at", "min"),
-                latest=("created_at", "max"),
-            ).reset_index().sort_values("comment_count", ascending=False)
-            summary.to_excel(writer, sheet_name="Summary by Stock", index=False)
-
-    print(f"Excel file saved: {config.OUTPUT_EXCEL}")
-
-    # Also save JSON (without raw_json)
-    print(f"Saving JSON to {config.OUTPUT_JSON}...")
-    excel_df.to_json(config.OUTPUT_JSON, orient="records", force_ascii=False, indent=2)
+    print(f"\nTotal comments across all stocks: {total_rows}")
     print("Done!")
 
 
@@ -110,7 +91,7 @@ def main():
     parser.add_argument("--fresh", action="store_true",
                        help="Ignore checkpoint and start fresh")
     parser.add_argument("--export-only", action="store_true",
-                       help="Only export existing CSV to Excel/JSON")
+                       help="Only print summary of per-stock CSV files")
     parser.add_argument("--sort", type=str, default=None,
                        choices=["POPULAR", "RECENT"],
                        help="Comment sort type (default: LATEST)")
@@ -125,7 +106,7 @@ def main():
 
     # Export only mode
     if args.export_only:
-        export_to_excel()
+        export_summary()
         return
 
     # Single stock mode
@@ -153,9 +134,9 @@ def main():
     # Run crawler
     asyncio.run(run_crawler(stock_df, resume=not args.fresh))
 
-    # Export to Excel after crawling
-    logger.info("\nExporting to Excel...")
-    export_to_excel()
+    # Print summary of collected data
+    logger.info("\nExport summary:")
+    export_summary()
 
     logger.info("\nAll done!")
 
