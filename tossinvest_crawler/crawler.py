@@ -680,9 +680,17 @@ async def run_crawler(stock_df: pd.DataFrame, resume: bool = True):
         if old_csvs:
             logger.info(f"Fresh start: removing {len(old_csvs)} old per-stock CSV files")
             for f in old_csvs:
-                os.remove(f)
+                try:
+                    os.remove(f)
+                except OSError:
+                    # If delete fails, truncate the file instead
+                    open(f, "w").close()
         if os.path.exists(config.CHECKPOINT_FILE):
-            os.remove(config.CHECKPOINT_FILE)
+            try:
+                os.remove(config.CHECKPOINT_FILE)
+            except OSError:
+                # Overwrite with empty checkpoint
+                save_checkpoint(set(), {})
 
     # Stocks to crawl: not yet completed (in_progress stocks ARE included — they need to resume)
     remaining = stock_df[~stock_df["stock_code"].isin(completed)]
@@ -742,24 +750,15 @@ async def run_crawler(stock_df: pd.DataFrame, resume: bool = True):
                 else:
                     logger.error("  Failed to refresh cookies!")
 
-        # Process stocks in concurrent batches
-        remaining_list = list(remaining.iterrows())
-        for batch_start in range(0, len(remaining_list), batch_size):
-            batch = remaining_list[batch_start:batch_start + batch_size]
-            batch_num = batch_start // batch_size + 1
-            total_batches = (len(remaining_list) + batch_size - 1) // batch_size
+        # Worker pool: always keep CONCURRENT_STOCKS slots busy.
+        # As soon as one stock finishes, the next one starts immediately.
+        semaphore = asyncio.Semaphore(batch_size)
+        _total_comments_lock = asyncio.Lock()
 
-            stock_names = [row["stock_name"] for _, row in batch]
-            logger.info(
-                f"\n{'='*60}\n"
-                f"Batch {batch_num}/{total_batches}: "
-                f"crawling {len(batch)} stocks concurrently: {stock_names}\n"
-                f"{'='*60}"
-            )
-
-            # Launch all stocks in this batch concurrently
-            tasks = [
-                crawl_one_stock(
+        async def worker(row):
+            nonlocal total_comments
+            async with semaphore:
+                result = await crawl_one_stock(
                     session=session,
                     stock_code=row["stock_code"],
                     stock_name=row["stock_name"],
@@ -768,27 +767,26 @@ async def run_crawler(stock_df: pd.DataFrame, resume: bool = True):
                     in_progress=in_progress,
                     total_stocks=len(stock_df),
                 )
-                for _, row in batch
-            ]
-
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-
-            # Tally results
-            for result in results:
                 if isinstance(result, int):
-                    total_comments += result
-                elif isinstance(result, Exception):
-                    logger.error(f"  Batch task exception: {result}")
+                    async with _total_comments_lock:
+                        total_comments += result
+                # Small delay before releasing the slot
+                await human_delay(1.0, 3.0)
 
-            logger.info(
-                f"Batch {batch_num} complete | "
-                f"Total comments so far: {total_comments} | "
-                f"Stocks done: {len(completed)}/{len(stock_df)}"
-            )
+        remaining_list = list(remaining.iterrows())
+        logger.info(
+            f"Starting worker pool: {batch_size} concurrent slots, "
+            f"{len(remaining_list)} stocks queued"
+        )
 
-            # Delay between batches
-            if batch_start + batch_size < len(remaining_list):
-                await human_delay(config.MIN_STOCK_DELAY, config.MAX_STOCK_DELAY)
+        # Launch ALL stocks at once — the semaphore limits concurrency
+        tasks = [worker(row) for _, row in remaining_list]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Log any unexpected exceptions
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.error(f"  Worker exception: {result}")
 
     logger.info(f"\nCrawling complete! Total comments collected: {total_comments}")
     logger.info(f"Per-stock CSVs saved to: {config.PER_STOCK_DIR}/")
