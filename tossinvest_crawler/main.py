@@ -128,7 +128,7 @@ def main():
     logger.info(f"  Stocks to crawl: {len(stock_df)}")
     logger.info(f"  Date range: {config.START_DATE.date()} ~ {config.END_DATE.date()}")
     logger.info(f"  Sort type: {config.COMMENT_SORT_TYPE}")
-    logger.info(f"  Output: {config.OUTPUT_CSV}")
+    logger.info(f"  Output: {config.PER_STOCK_DIR}/")
     logger.info(f"{'='*60}\n")
 
     # Run crawler
