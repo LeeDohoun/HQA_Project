@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""네이버 뉴스 / DART / 네이버 종토방 수집기."""
+"""네이버 뉴스 / DART / 네이버 종토방 / 네이버 테마 종목 수집기."""
 
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -34,6 +34,15 @@ class CrawledDocument:
     stock_code: Optional[str] = None
     published_at: Optional[str] = None
     metadata: Dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class ThemeStock:
+    """테마 기반으로 찾은 종목 정보."""
+
+    theme_name: str
+    stock_name: str
+    stock_code: str
 
 
 class BaseCollector:
@@ -187,6 +196,95 @@ class NaverStockForumCollector(BaseCollector):
                     )
                 )
         return docs
+
+
+class NaverThemeStockCollector(BaseCollector):
+    """네이버 금융 테마 페이지에서 종목 목록을 수집."""
+
+    THEME_LIST_URL = "https://finance.naver.com/sise/theme.naver"
+
+    def collect(
+        self,
+        theme_keyword: str,
+        max_stocks: int = 30,
+        max_pages: int = 10,
+    ) -> List[ThemeStock]:
+        if BeautifulSoup is None:
+            raise ImportError("beautifulsoup4가 필요합니다. pip install beautifulsoup4")
+
+        theme_links = self._find_theme_links(theme_keyword=theme_keyword, max_pages=max_pages)
+        stocks: List[ThemeStock] = []
+        seen_codes = set()
+
+        for theme_name, detail_url in theme_links:
+            try:
+                response = self.session.get(detail_url, timeout=self.timeout)
+                response.raise_for_status()
+            except requests.RequestException:
+                continue
+
+            soup = BeautifulSoup(response.text, "html.parser")
+            for a_tag in soup.select("a[href*='item/main.naver?code=']"):
+                href = a_tag.get("href", "")
+                code_match = re.search(r"code=(\d{6})", href)
+                if not code_match:
+                    continue
+
+                stock_code = code_match.group(1)
+                if stock_code in seen_codes:
+                    continue
+
+                stock_name = a_tag.get_text(" ", strip=True)
+                if not stock_name:
+                    continue
+
+                seen_codes.add(stock_code)
+                stocks.append(
+                    ThemeStock(
+                        theme_name=theme_name,
+                        stock_name=stock_name,
+                        stock_code=stock_code,
+                    )
+                )
+
+                if len(stocks) >= max_stocks:
+                    return stocks
+
+        return stocks
+
+    def _find_theme_links(self, theme_keyword: str, max_pages: int) -> List[tuple[str, str]]:
+        links: List[tuple[str, str]] = []
+        normalized_keyword = theme_keyword.strip().lower()
+
+        for page in range(1, max_pages + 1):
+            params = {"page": page}
+            try:
+                response = self.session.get(self.THEME_LIST_URL, params=params, timeout=self.timeout)
+                response.raise_for_status()
+            except requests.RequestException:
+                continue
+
+            soup = BeautifulSoup(response.text, "html.parser")
+            for a_tag in soup.select("a[href*='theme_detail.naver?no=']"):
+                theme_name = a_tag.get_text(" ", strip=True)
+                if not theme_name:
+                    continue
+
+                if normalized_keyword not in theme_name.lower():
+                    continue
+
+                href = a_tag.get("href", "")
+                detail_url = (
+                    f"https://finance.naver.com{href}" if href.startswith("/") else href
+                )
+                links.append((theme_name, detail_url))
+
+        # 중복 링크 제거
+        dedup = {}
+        for theme_name, detail_url in links:
+            dedup[detail_url] = theme_name
+
+        return [(name, url) for url, name in dedup.items()]
 
 
 def _clean_forum_title(text: str) -> str:
