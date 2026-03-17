@@ -29,3 +29,6 @@ frontend/next-env.d.ts
 
 # 7. 맥(Mac) 운영체제 임시 파일
 .DS_Store
+
+# 8. 크롤링 결과
+tossinvest_crawler/output/
