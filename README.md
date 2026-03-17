@@ -18,14 +18,14 @@
 
 ```text
 HQA_Project/
-├── scripts_rag_pipeline.py
+├── scripts_rag_pipeline.py          # 배치 수집 + 코퍼스/인덱스 생성
 ├── requirements.txt
 └── src/
     ├── data_pipeline/
     │   ├── __init__.py
-    │   ├── collectors.py
-    │   └── rag_builder.py
+    │   ├── collectors.py            # 네이버 뉴스 / DART / 종토방 / 테마 종목 수집기
+    │   └── rag_builder.py           # 청크 + JSONL 코퍼스 생성
     └── rag/
         ├── __init__.py
-        ├── bm25_index.py
-        └── vector_store.py
+        ├── bm25_index.py            # BM25 인덱스
+        └── vector_store.py          # 소스별 벡터 스토어

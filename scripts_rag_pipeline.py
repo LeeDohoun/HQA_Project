@@ -15,6 +15,7 @@ from src.data_pipeline import (
     DartDisclosureCollector,
     NaverNewsCollector,
     NaverStockForumCollector,
+    NaverThemeStockCollector,
     RAGCorpusBuilder,
 )
 from src.rag import BM25IndexManager, SourceRAGBuilder
@@ -54,6 +55,28 @@ def _extract_stock_codes(records: Iterable[Dict]) -> Set[str]:
 def _load_stock_targets(args: argparse.Namespace) -> List[StockTarget]:
     targets: List[StockTarget] = []
 
+    # 1) 테마 기반 자동 수집
+    if args.theme:
+        theme_collector = NaverThemeStockCollector()
+        theme_stocks = theme_collector.collect(
+            theme_keyword=args.theme,
+            max_stocks=args.theme_max_stocks,
+            max_pages=args.theme_max_pages,
+        )
+        for item in theme_stocks:
+            targets.append(
+                StockTarget(
+                    stock_name=item.stock_name,
+                    stock_code=item.stock_code,
+                    corp_code="",
+                )
+            )
+
+        print(
+            f"[THEME] '{args.theme}' 테마에서 {len(theme_stocks)}개 종목을 자동 선택했습니다."
+        )
+
+    # 2) CSV 배치
     if args.stocks_file:
         with open(args.stocks_file, "r", encoding="utf-8") as f:
             reader = csv.DictReader(f)
@@ -73,6 +96,7 @@ def _load_stock_targets(args: argparse.Namespace) -> List[StockTarget]:
                     )
                 )
 
+    # 3) 단일 종목
     if args.stock_name and args.stock_code:
         targets.append(
             StockTarget(
@@ -82,6 +106,7 @@ def _load_stock_targets(args: argparse.Namespace) -> List[StockTarget]:
             )
         )
 
+    # 4) ensure용 종목
     if args.ensure_stock_name and args.ensure_stock_code:
         targets.append(
             StockTarget(
@@ -93,7 +118,8 @@ def _load_stock_targets(args: argparse.Namespace) -> List[StockTarget]:
 
     if not targets:
         raise ValueError(
-            "실행 대상 종목이 없습니다. --stock-name/--stock-code 또는 --stocks-file을 제공하세요."
+            "실행 대상 종목이 없습니다. "
+            "--theme 또는 --stock-name/--stock-code 또는 --stocks-file을 제공하세요."
         )
 
     dedup: Dict[str, StockTarget] = {}
@@ -182,6 +208,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Crawler -> Source-wise RAG JSONL + Vector Store 빌더"
     )
+
+    parser.add_argument("--theme", default="", help="테마 키워드 (예: 2차전지, 반도체)")
+    parser.add_argument("--theme-max-stocks", type=int, default=30)
+    parser.add_argument("--theme-max-pages", type=int, default=10)
+
     parser.add_argument("--stock-name", default="")
     parser.add_argument("--stock-code", default="")
     parser.add_argument("--corp-code", default="")
@@ -316,6 +347,7 @@ def main() -> None:
         output_dir=str(output_dir / "vector_stores"),
     )
 
+    print(f"총 수집 대상 종목 수: {len(targets)}")
     print(f"기존 레코드 수: {len(existing_records)}")
     print(f"신규 레코드 수: {len(new_records)}")
     print(f"최종 통합 RAG 레코드 수: {written_combined}")
@@ -332,4 +364,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
- 
