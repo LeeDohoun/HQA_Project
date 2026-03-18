@@ -1,10 +1,10 @@
 """
-Fetch KOSPI top 500 stocks by market cap.
+Fetch KOSPI + KOSDAQ stocks by market cap via Naver Finance API.
 
-Priority:
-  1. Cached CSV (if exists and has enough rows)
-  2. Naver Finance API (public, no auth required)
-  3. pykrx library (if installed)
+- KOSPI: all stocks (0 = fetch all, or set TOP_N_KOSPI to limit)
+- KOSDAQ: top N stocks by market cap (default 100)
+
+Falls back to pykrx if Naver fails.
 """
 import os
 import logging
@@ -19,50 +19,75 @@ import config
 logger = logging.getLogger(__name__)
 
 
-def get_kospi_top_stocks(top_n: int = config.TOP_N_STOCKS) -> pd.DataFrame:
+def get_stock_list() -> pd.DataFrame:
     """
-    Returns a DataFrame with columns: [stock_code, krx_code, stock_name, market_cap]
-    sorted by market_cap descending, limited to top_n.
+    Returns a combined DataFrame of KOSPI + KOSDAQ stocks with columns:
+        [stock_code, krx_code, stock_name, market_cap, market]
 
-    The stock_code is in Toss Invest format: 'A' + 6-digit code (e.g., 'A005930')
+    - KOSPI: all stocks (or top N if TOP_N_KOSPI > 0)
+    - KOSDAQ: top TOP_N_KOSDAQ stocks
+    - market column: "KOSPI" or "KOSDAQ"
+    - stock_code is in Toss Invest format: 'A' + 6-digit code (e.g., 'A005930')
     """
     # Check cache first
     if os.path.exists(config.STOCK_LIST_CACHE):
         logger.info(f"Loading cached stock list from {config.STOCK_LIST_CACHE}")
         df = pd.read_csv(config.STOCK_LIST_CACHE, dtype={"stock_code": str, "krx_code": str})
-        if len(df) >= top_n:
-            return df.head(top_n)
+        if len(df) > 0:
+            return df
 
-    # Try Naver Finance API first (most reliable, no dependencies)
-    logger.info("Fetching KOSPI stock list from Naver Finance API...")
-    df = _fetch_via_naver(top_n)
+    # Fetch KOSPI
+    logger.info("Fetching KOSPI stocks from Naver Finance API...")
+    kospi_df = _fetch_via_naver("KOSPI", config.TOP_N_KOSPI)
 
-    if df is not None and len(df) > 0:
-        df.to_csv(config.STOCK_LIST_CACHE, index=False)
-        logger.info(f"Cached {len(df)} stocks to {config.STOCK_LIST_CACHE}")
-        return df
+    if kospi_df is None or len(kospi_df) == 0:
+        logger.warning("Naver KOSPI failed, trying pykrx fallback...")
+        kospi_df = _fetch_via_pykrx(config.TOP_N_KOSPI)
 
-    # Fallback: pykrx
-    logger.warning("Naver API failed, trying pykrx...")
-    df = _fetch_via_pykrx(top_n)
+    if kospi_df is None or len(kospi_df) == 0:
+        raise RuntimeError("Failed to fetch KOSPI stock list from all sources.")
 
-    if df is not None and len(df) > 0:
-        df.to_csv(config.STOCK_LIST_CACHE, index=False)
-        logger.info(f"Cached {len(df)} stocks to {config.STOCK_LIST_CACHE}")
-        return df
+    kospi_df["market"] = "KOSPI"
+    logger.info(f"KOSPI: {len(kospi_df)} stocks")
 
-    raise RuntimeError("Failed to fetch KOSPI stock list from all sources.")
+    # Fetch KOSDAQ
+    kosdaq_df = None
+    if config.TOP_N_KOSDAQ > 0:
+        logger.info(f"Fetching top {config.TOP_N_KOSDAQ} KOSDAQ stocks from Naver Finance API...")
+        kosdaq_df = _fetch_via_naver("KOSDAQ", config.TOP_N_KOSDAQ)
+
+        if kosdaq_df is not None and len(kosdaq_df) > 0:
+            kosdaq_df["market"] = "KOSDAQ"
+            logger.info(f"KOSDAQ: {len(kosdaq_df)} stocks")
+        else:
+            logger.warning("Failed to fetch KOSDAQ stocks")
+
+    # Combine
+    if kosdaq_df is not None and len(kosdaq_df) > 0:
+        combined = pd.concat([kospi_df, kosdaq_df], ignore_index=True)
+    else:
+        combined = kospi_df
+
+    # Cache
+    combined.to_csv(config.STOCK_LIST_CACHE, index=False)
+    logger.info(f"Cached {len(combined)} total stocks to {config.STOCK_LIST_CACHE}")
+
+    return combined
 
 
-def _fetch_via_naver(top_n: int) -> pd.DataFrame | None:
+# Keep old name as alias for backward compatibility
+def get_kospi_top_stocks(top_n: int = None) -> pd.DataFrame:
+    """Backward-compatible wrapper. Ignores top_n, uses config values."""
+    return get_stock_list()
+
+
+def _fetch_via_naver(market: str, top_n: int) -> pd.DataFrame | None:
     """
-    Fetch KOSPI stocks sorted by market cap from Naver Finance mobile API.
-    Public endpoint, no auth required.
+    Fetch stocks sorted by market cap from Naver Finance mobile API.
 
-    API: https://m.stock.naver.com/api/stocks/marketValue/KOSPI?page={page}&pageSize={size}
-
-    Returns stocks with: itemCode, stockName, marketValue, etc.
-    Only returns actual stocks (filters out ETFs and other non-stock items).
+    Args:
+        market: "KOSPI" or "KOSDAQ"
+        top_n: number of stocks to fetch (0 = all)
     """
     try:
         headers = {
@@ -72,18 +97,18 @@ def _fetch_via_naver(top_n: int) -> pd.DataFrame | None:
 
         all_stocks = []
         page_size = 100
-        # Fetch more than needed since we'll filter out ETFs
-        pages_needed = math.ceil((top_n * 1.5) / page_size)
+        fetch_all = (top_n is None or top_n <= 0)
+        max_pages = 100 if fetch_all else math.ceil((top_n * 1.5) / page_size)
 
-        for page in range(1, pages_needed + 1):
+        for page in range(1, max_pages + 1):
             url = (
-                f"https://m.stock.naver.com/api/stocks/marketValue/KOSPI"
+                f"https://m.stock.naver.com/api/stocks/marketValue/{market}"
                 f"?page={page}&pageSize={page_size}"
             )
             resp = requests.get(url, headers=headers, timeout=15)
 
             if resp.status_code != 200:
-                logger.warning(f"Naver API returned {resp.status_code} on page {page}")
+                logger.warning(f"Naver API returned {resp.status_code} on {market} page {page}")
                 break
 
             data = resp.json()
@@ -93,7 +118,7 @@ def _fetch_via_naver(top_n: int) -> pd.DataFrame | None:
                 break
 
             for s in stocks:
-                # Filter: only actual stocks (stockEndType == "stock")
+                # Filter: only actual stocks (skip ETFs, etc.)
                 if s.get("stockEndType") != "stock":
                     continue
 
@@ -101,7 +126,6 @@ def _fetch_via_naver(top_n: int) -> pd.DataFrame | None:
                 name = s.get("stockName", "")
                 market_value = s.get("marketValue", "0")
 
-                # Parse market value (comes as formatted string like "11,649,847")
                 try:
                     mv_numeric = int(str(market_value).replace(",", ""))
                 except (ValueError, TypeError):
@@ -114,38 +138,40 @@ def _fetch_via_naver(top_n: int) -> pd.DataFrame | None:
                     "market_cap": mv_numeric,
                 })
 
-            logger.info(f"  Naver page {page}: got {len(stocks)} items, {len(all_stocks)} stocks total")
+            logger.info(
+                f"  Naver {market} page {page}: got {len(stocks)} items, "
+                f"{len(all_stocks)} stocks total"
+            )
 
-            if len(all_stocks) >= top_n:
+            if not fetch_all and len(all_stocks) >= top_n:
                 break
 
         if not all_stocks:
-            logger.warning("Naver API returned no stock data")
+            logger.warning(f"Naver API returned no {market} stock data")
             return None
 
         df = pd.DataFrame(all_stocks)
-        # Already sorted by market cap from API, but ensure it
-        df = df.sort_values("market_cap", ascending=False).head(top_n).reset_index(drop=True)
-        logger.info(f"Successfully fetched top {len(df)} KOSPI stocks via Naver Finance API")
+        df = df.sort_values("market_cap", ascending=False).reset_index(drop=True)
+        if not fetch_all:
+            df = df.head(top_n)
+        logger.info(f"Successfully fetched {len(df)} {market} stocks via Naver Finance API")
         return df
 
     except Exception as e:
         import traceback
-        logger.error(f"Naver API error: {e}")
+        logger.error(f"Naver API error ({market}): {e}")
         logger.debug(traceback.format_exc())
         return None
 
 
 def _fetch_via_pykrx(top_n: int) -> pd.DataFrame | None:
-    """Use pykrx library to get KOSPI market cap data."""
+    """Use pykrx library to get KOSPI market cap data (fallback)."""
     try:
         from pykrx import stock as pykrx_stock
 
-        # Use a recent trading day
         today = datetime.now()
         date_str = today.strftime("%Y%m%d")
 
-        # Try last 7 days in case today is not a trading day
         tickers = []
         for offset in range(7):
             try_date = (today - timedelta(days=offset)).strftime("%Y%m%d")
@@ -160,16 +186,13 @@ def _fetch_via_pykrx(top_n: int) -> pd.DataFrame | None:
 
         logger.info(f"Found {len(tickers)} KOSPI tickers for date {date_str}")
 
-        # Get market cap for all KOSPI stocks
         market_cap_df = pykrx_stock.get_market_cap_by_ticker(date_str, market="KOSPI")
-
         if market_cap_df.empty:
             return None
 
         market_cap_df = market_cap_df.reset_index()
         market_cap_df.columns = [c.strip() for c in market_cap_df.columns]
 
-        # Rename columns
         col_map = {}
         if "티커" in market_cap_df.columns:
             col_map["티커"] = "krx_code"
@@ -183,7 +206,6 @@ def _fetch_via_pykrx(top_n: int) -> pd.DataFrame | None:
 
         market_cap_df = market_cap_df.rename(columns=col_map)
 
-        # Get stock names
         names = {}
         for ticker in market_cap_df["krx_code"].tolist():
             try:
@@ -196,8 +218,12 @@ def _fetch_via_pykrx(top_n: int) -> pd.DataFrame | None:
         market_cap_df = market_cap_df.sort_values("market_cap", ascending=False)
         market_cap_df["stock_code"] = "A" + market_cap_df["krx_code"].astype(str).str.zfill(6)
 
-        result = market_cap_df[["stock_code", "krx_code", "stock_name", "market_cap"]].head(top_n).reset_index(drop=True)
-        logger.info(f"Successfully fetched top {len(result)} stocks via pykrx")
+        fetch_all = (top_n is None or top_n <= 0)
+        result = market_cap_df[["stock_code", "krx_code", "stock_name", "market_cap"]]
+        if not fetch_all:
+            result = result.head(top_n)
+        result = result.reset_index(drop=True)
+        logger.info(f"Successfully fetched {len(result)} stocks via pykrx")
         return result
 
     except ImportError:
@@ -210,5 +236,10 @@ def _fetch_via_pykrx(top_n: int) -> pd.DataFrame | None:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    df = get_kospi_top_stocks(10)
-    print(df.to_string())
+    df = get_stock_list()
+    print(f"\nTotal stocks: {len(df)}")
+    kospi = df[df["market"] == "KOSPI"]
+    kosdaq = df[df["market"] == "KOSDAQ"]
+    print(f"KOSPI: {len(kospi)}, KOSDAQ: {len(kosdaq)}")
+    print(f"\nTop 5 KOSPI:\n{kospi.head().to_string()}")
+    print(f"\nTop 5 KOSDAQ:\n{kosdaq.head().to_string()}")

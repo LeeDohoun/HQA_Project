@@ -24,9 +24,11 @@ END_DATE = datetime.now()
 START_DATE = datetime(2025, 3, 1)  # Crawl back to March 1, 2025
 
 # ============================================================
-# KOSPI TOP-N SETTINGS
+# STOCK SETTINGS
 # ============================================================
-TOP_N_STOCKS = 500  # Number of top KOSPI stocks by market cap
+TOP_N_STOCKS = 0  # Legacy — kept for CLI compatibility
+TOP_N_KOSPI = 0   # 0 = fetch ALL KOSPI stocks, or set a number to limit
+TOP_N_KOSDAQ = 100  # Top 100 KOSDAQ stocks by market cap
 
 # ============================================================
 # COMMENT SORT TYPE
@@ -71,7 +73,7 @@ os.makedirs(PER_STOCK_DIR, exist_ok=True)
 
 # (Per-stock CSVs only — no combined output file)
 CHECKPOINT_FILE = os.path.join(OUTPUT_DIR, "checkpoint.json")
-STOCK_LIST_CACHE = os.path.join(OUTPUT_DIR, "kospi_top500_stocks.csv")
+STOCK_LIST_CACHE = os.path.join(OUTPUT_DIR, "stock_list_cache.csv")
 
 # ============================================================
 # LOGGING

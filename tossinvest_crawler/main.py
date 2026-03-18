@@ -34,7 +34,7 @@ import sys
 import pandas as pd
 
 import config
-from stock_codes import get_kospi_top_stocks
+from stock_codes import get_stock_list
 from crawler import run_crawler
 
 
@@ -85,7 +85,7 @@ def export_summary():
 def main():
     parser = argparse.ArgumentParser(description="Toss Invest Community Crawler")
     parser.add_argument("--top", type=int, default=config.TOP_N_STOCKS,
-                       help=f"Number of top KOSPI stocks to crawl (default: {config.TOP_N_STOCKS})")
+                       help=f"Number of top KOSPI stocks to crawl (0 = all, default: {config.TOP_N_STOCKS})")
     parser.add_argument("--stock", type=str, default=None,
                        help="Crawl a single stock code (e.g., A005930)")
     parser.add_argument("--fresh", action="store_true",
@@ -115,12 +115,15 @@ def main():
             "stock_code": args.stock,
             "stock_name": args.stock,
             "market_cap": 0,
+            "market": "unknown",
         }])
     else:
-        # Fetch KOSPI top stocks
-        logger.info(f"Fetching top {args.top} KOSPI stocks...")
-        stock_df = get_kospi_top_stocks(args.top)
-        logger.info(f"Got {len(stock_df)} stocks. Top 5:")
+        # Fetch KOSPI + KOSDAQ stocks
+        logger.info("Fetching stock list (KOSPI + KOSDAQ)...")
+        stock_df = get_stock_list()
+        kospi_count = len(stock_df[stock_df["market"] == "KOSPI"])
+        kosdaq_count = len(stock_df[stock_df["market"] == "KOSDAQ"])
+        logger.info(f"Got {len(stock_df)} stocks (KOSPI: {kospi_count}, KOSDAQ: {kosdaq_count}). Top 5:")
         logger.info(stock_df.head().to_string())
 
     logger.info(f"\n{'='*60}")
