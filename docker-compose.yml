@@ -2,14 +2,14 @@
 # HQA - Docker Compose
 # ==========================================
 # 서비스 구성:
-#   - api: FastAPI 백엔드
-#   - redis: Task Queue 브로커 + 캐시
-#   - worker: Celery 워커 (분석 백그라운드 처리)
+#   - api:    FastAPI 백엔드 (port 8000) - 경량 API 게이트웨이
+#   - ai:     AI 서버 (port 8001)        - LLM/RAG/에이전트 (CPU 집약적)
+#   - redis:  Task Queue 브로커 + 캐시
 #   - postgres: 프로덕션 DB (선택)
 # ==========================================
 
 services:
-  # ── FastAPI Backend ──
+  # ── FastAPI Backend (경량 API 게이트웨이) ──
   api:
     build:
       context: .
@@ -23,10 +23,13 @@ services:
       - ENV=production
       - DATABASE_URL=postgresql+asyncpg://hqa:hqa_password@postgres:5432/hqa
       - REDIS_URL=redis://redis:6379/0
+      - AI_SERVER_URL=http://ai:8001
     depends_on:
       redis:
         condition: service_healthy
       postgres:
+        condition: service_healthy
+      ai:
         condition: service_healthy
     volumes:
       - hqa-data:/app/data
@@ -35,22 +38,18 @@ services:
     networks:
       - hqa-network
 
-  # ── Celery Worker ──
-  worker:
+  # ── AI Server (LLM/RAG/에이전트 전용) ──
+  ai:
     build:
       context: .
-      dockerfile: Dockerfile
-    container_name: hqa-worker
-    command: >
-      celery -A backend.tasks.celery_app worker
-      --loglevel=info
-      --concurrency=2
-      --queues=default,analysis,quick
+      dockerfile: ai_server/Dockerfile
+    container_name: hqa-ai
+    ports:
+      - "8001:8001"
     env_file:
       - .env
     environment:
       - ENV=production
-      - DATABASE_URL=postgresql+asyncpg://hqa:hqa_password@postgres:5432/hqa
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       redis:
