@@ -22,11 +22,7 @@ class VectorRecord:
 
 
 class SimpleVectorStore:
-    """고정 차원 해시 임베딩 기반 벡터 스토어.
-
-    외부 모델 의존성을 줄이기 위해 텍스트를 토큰화한 뒤
-    해시 버킷에 누적하여 고정 크기 벡터를 만듭니다.
-    """
+    """고정 차원 해시 임베딩 기반 벡터 스토어."""
 
     def __init__(self, dimension: int = _DIMENSION):
         self.dimension = dimension
@@ -58,6 +54,66 @@ class SimpleVectorStore:
         with path.open("w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False)
         return len(self.records)
+
+    @classmethod
+    def load(cls, input_path: str) -> "SimpleVectorStore":
+        path = Path(input_path)
+        store = cls()
+
+        if not path.exists():
+            return store
+
+        with path.open("r", encoding="utf-8") as f:
+            payload = json.load(f)
+
+        store.dimension = int(payload.get("dimension", _DIMENSION))
+        store.records = [
+            VectorRecord(
+                text=row.get("text", ""),
+                metadata=row.get("metadata", {}),
+                vector=row.get("vector", []),
+            )
+            for row in payload.get("records", [])
+        ]
+        return store
+
+    def upsert_texts(
+        self,
+        texts: Iterable[str],
+        metadatas: Iterable[Dict],
+    ) -> int:
+        """
+        doc_id 기준으로 중복 없이 추가한다.
+        이미 존재하는 doc_id는 건너뛴다.
+        """
+        existing_ids = {
+            _make_doc_id(record.metadata, record.text)
+            for record in self.records
+        }
+
+        added = 0
+        for text, metadata in zip(texts, metadatas):
+            doc_id = _make_doc_id(metadata, text)
+            if doc_id in existing_ids:
+                continue
+
+            vector = self._embed(text)
+            self.records.append(VectorRecord(text=text, metadata=metadata, vector=vector))
+            existing_ids.add(doc_id)
+            added += 1
+
+        return added
+
+    def remove_by_theme(self, theme_key: str) -> int:
+        """
+        해당 테마에서 유입된 문서만 제거한다.
+        """
+        before = len(self.records)
+        self.records = [
+            r for r in self.records
+            if (r.metadata or {}).get("theme_key", "") != theme_key
+        ]
+        return before - len(self.records)
 
     def search(self, query: str, top_k: int = 5) -> List[Tuple[Dict, float]]:
         query_vec = self._embed(query)
@@ -96,12 +152,22 @@ class SimpleVectorStore:
 
 
 class SourceRAGBuilder:
-    """소스(news/dart/forum)별 벡터 스토어 파일을 생성."""
+    """
+    뉴스 / DART / 종토방별 단일 vector store를 유지한다.
+    - append: 새 문서만 dedupe 후 추가
+    - overwrite: 해당 theme_key 문서만 제거 후 새 문서 추가
+    """
 
     def __init__(self, dimension: int = _DIMENSION):
         self.dimension = dimension
 
-    def build_and_save(self, records: List[Dict], output_dir: str) -> Dict[str, int]:
+    def upsert_by_source(
+        self,
+        records: List[Dict],
+        output_dir: str,
+        mode: str = "append",
+        theme_key: str = "",
+    ) -> Dict[str, int]:
         sources = {"news": [], "dart": [], "forum": []}
         for row in records:
             metadata = row.get("metadata", {})
@@ -114,13 +180,22 @@ class SourceRAGBuilder:
         base.mkdir(parents=True, exist_ok=True)
 
         for source, rows in sources.items():
-            store = SimpleVectorStore(dimension=self.dimension)
-            store.add_texts(
+            output_file = base / f"{source}_vector_store.json"
+            store = SimpleVectorStore.load(str(output_file))
+            store.dimension = self.dimension
+
+            if mode == "overwrite" and theme_key:
+                removed = store.remove_by_theme(theme_key)
+                print(f"[VECTOR][{source}] removed by theme='{theme_key}': {removed}")
+
+            added = store.upsert_texts(
                 texts=[r.get("text", "") for r in rows],
                 metadatas=[r.get("metadata", {}) for r in rows],
             )
-            output_file = base / f"{source}_vector_store.json"
-            output_stats[source] = store.save(str(output_file))
+            total = store.save(str(output_file))
+
+            print(f"[VECTOR][{source}] added={added}, total={total}")
+            output_stats[source] = total
 
         return output_stats
 
@@ -138,3 +213,25 @@ def _cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
     if norm1 == 0 or norm2 == 0:
         return 0.0
     return dot / (norm1 * norm2)
+
+
+def _make_doc_id(metadata: Dict, text: str) -> str:
+    """
+    소스별 문서 고유키 생성.
+    """
+    metadata = metadata or {}
+    source_type = str(metadata.get("source_type", "")).strip()
+    url = str(metadata.get("url", "")).strip()
+    rcept_no = str(metadata.get("rcept_no", "")).strip()
+    stock_code = str(metadata.get("stock_code", "")).strip()
+    title = str(metadata.get("title", "")).strip()
+    published_at = str(metadata.get("published_at", "")).strip()
+
+    if source_type == "dart" and rcept_no:
+        base = f"{source_type}|{rcept_no}"
+    elif url:
+        base = f"{source_type}|{url}"
+    else:
+        base = f"{source_type}|{stock_code}|{title}|{published_at}|{text[:120]}"
+
+    return hashlib.md5(base.encode("utf-8")).hexdigest()

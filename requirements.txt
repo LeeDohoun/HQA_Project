@@ -3,3 +3,6 @@ beautifulsoup4>=4.12.0
 lxml
 langchain-core>=0.1.0
 rank-bm25>=0.2.2
+python-dotenv>=1.0.0
+selenium>=4.20.0
+webdriver-manager>=4.0.1
