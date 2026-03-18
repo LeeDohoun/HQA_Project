@@ -69,6 +69,9 @@ class Settings(BaseSettings):
     # ── Redis (Task Queue & Cache) ──
     REDIS_URL: str = "redis://localhost:6379/0"
 
+    # ── AI 서버 ──
+    AI_SERVER_URL: str = "http://localhost:8001"
+
     # ── 벡터 DB ──
     # "chroma" = 로컬 ChromaDB, "pinecone" = Pinecone 관리형
     VECTOR_DB_PROVIDER: str = "chroma"
