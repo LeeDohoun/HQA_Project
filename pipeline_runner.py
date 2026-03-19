@@ -34,6 +34,11 @@ from datetime import datetime
 # 프로젝트 루트를 Python 경로에 추가
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# .env-data 우선 로드, 없으면 .env fallback
+from dotenv import load_dotenv
+_root = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(_root, ".env-data")) or load_dotenv(os.path.join(_root, ".env"))
+
 
 def get_pipeline():
     """파이프라인 인스턴스 반환"""
