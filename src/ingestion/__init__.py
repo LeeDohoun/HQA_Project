@@ -1,4 +1,3 @@
-
 from .types import CollectRequest, DocumentRecord, MarketRecord, StockTarget
 from .naver_theme import NaverThemeStockCollector, ThemeStock
 from .naver_news import NaverNewsCollector

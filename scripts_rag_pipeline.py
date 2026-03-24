@@ -11,7 +11,6 @@ import json
 import os
 import re
 import sys
-import hashlib
 import xml.etree.ElementTree as ET
 from dataclasses import asdict
 from io import BytesIO
@@ -23,7 +22,6 @@ import requests
 
 sys.path.insert(0, os.path.abspath("."))
 
-from src.data_pipeline.rag_builder import RAGCorpusBuilder
 from src.ingestion import (
     CollectRequest,
     DocumentRecord,
@@ -32,10 +30,8 @@ from src.ingestion import (
     StockTarget,
 )
 from src.rag import BM25IndexManager
-from src.rag.vector_store import SourceRAGBuilder
+from src.rag.raw_layer2_builder import RawLayer2Builder
 
-
-SUPPORTED_SOURCE_TYPES = ("news", "general_news", "dart", "forum", "chart")
 
 
 def _make_theme_key(theme: str, base_filename: str) -> str:
@@ -229,58 +225,6 @@ def _load_stock_targets(args: argparse.Namespace) -> List[StockTarget]:
     return list(dedup.values())
 
 
-def _make_record_doc_id(row: Dict) -> str:
-    """
-    JSONL record 단위 dedupe용 ID 생성.
-    vector_store의 doc_id 규칙과 최대한 유사하게 맞춘다.
-    """
-    metadata = row.get("metadata", {}) or {}
-    text = row.get("text", "") or ""
-
-    source_type = str(metadata.get("source_type", "")).strip()
-    url = str(metadata.get("url", "")).strip()
-    rcept_no = str(metadata.get("rcept_no", "")).strip()
-    stock_code = str(metadata.get("stock_code", "")).strip()
-    title = str(metadata.get("title", "")).strip()
-    published_at = str(metadata.get("published_at", "")).strip()
-
-    if source_type == "dart" and rcept_no:
-        base = f"{source_type}|{rcept_no}"
-    elif url:
-        base = f"{source_type}|{url}"
-    else:
-        base = f"{source_type}|{stock_code}|{title}|{published_at}|{text[:120]}"
-
-    return hashlib.md5(base.encode("utf-8")).hexdigest()
-
-
-def _merge_records_dedup(existing_records: List[Dict], new_records: List[Dict]) -> List[Dict]:
-    """
-    기존 + 신규 레코드를 합치되 문서 단위로 dedupe.
-    기존 것을 먼저 유지하고, 없는 문서만 신규 추가.
-    """
-    merged: List[Dict] = []
-    seen_ids: Set[str] = set()
-
-    for row in existing_records:
-        doc_id = _make_record_doc_id(row)
-        if doc_id in seen_ids:
-            continue
-        seen_ids.add(doc_id)
-        merged.append(row)
-
-    added = 0
-    for row in new_records:
-        doc_id = _make_record_doc_id(row)
-        if doc_id in seen_ids:
-            continue
-        seen_ids.add(doc_id)
-        merged.append(row)
-        added += 1
-
-    print(f"[MERGE] existing={len(existing_records)}, new={len(new_records)}, added_after_dedup={added}, merged={len(merged)}")
-    return merged
-
 
 def _build_bm25_index(records: List[Dict]) -> BM25IndexManager:
     bm25 = BM25IndexManager(
@@ -294,14 +238,6 @@ def _build_bm25_index(records: List[Dict]) -> BM25IndexManager:
     )
     return bm25
 
-
-def _split_by_source(records: List[Dict]) -> Dict[str, List[Dict]]:
-    grouped: Dict[str, List[Dict]] = {source: [] for source in SUPPORTED_SOURCE_TYPES}
-    for row in records:
-        source_type = row.get("metadata", {}).get("source_type")
-        if source_type in grouped:
-            grouped[source_type].append(row)
-    return grouped
 
 
 def main() -> None:
@@ -371,13 +307,6 @@ def main() -> None:
     corpus_dir = output_dir / "corpora" / theme_key
     corpus_dir.mkdir(parents=True, exist_ok=True)
 
-    combined_jsonl = corpus_dir / "combined.jsonl"
-    news_jsonl = corpus_dir / "news.jsonl"
-    general_news_jsonl = corpus_dir / "general_news.jsonl"
-    dart_jsonl = corpus_dir / "dart.jsonl"
-    forum_jsonl = corpus_dir / "forum.jsonl"
-    chart_jsonl = corpus_dir / "chart.jsonl"
-
     existing_records: List[Dict] = []
     existing_stock_codes: Set[str] = set()
 
@@ -434,27 +363,9 @@ def main() -> None:
         collected_docs.extend(general_news_docs)
         print(f"[GENERAL NEWS] 수집 문서 수: {len(general_news_docs)}")
 
-    general_news_keywords = [
-        keyword.strip() for keyword in args.general_news_keywords.split(",") if keyword.strip()
-    ]
-    general_news_docs = ingestion_service.collect_general_news(
-        keywords=general_news_keywords,
-        max_items=args.max_general_news,
-        from_date=args.from_date,
-        to_date=args.to_date,
-        theme_key=theme_key,
-    )
-    if general_news_docs:
-        collected_docs.extend(general_news_docs)
-        print(f"[GENERAL NEWS] 수집 문서 수: {len(general_news_docs)}")
-
-    builder = RAGCorpusBuilder(chunk_size=700, chunk_overlap=100)
-    new_records = builder.build_records(collected_docs)
-
-    if args.update_mode == "overwrite":
-        merged_records = new_records
-    else:
-        merged_records = _merge_records_dedup(existing_records, new_records)
+    layer2_builder = RawLayer2Builder(data_dir=str(output_dir))
+    layer2_result = layer2_builder.rebuild_theme(theme_key=theme_key, update_mode=args.update_mode)
+    merged_records = layer2_result["records"]
 
     if args.ensure_query:
         bm25 = _build_bm25_index(merged_records)
@@ -470,9 +381,6 @@ def main() -> None:
                 stock_code=args.ensure_stock_code,
                 corp_code=args.ensure_corp_code,
             )
-
-            # ensure는 이미 코퍼스에 있어도 재수집 가능하게 두고,
-            # 최종적으로 record-level dedupe로 중복 제거.
             ensure_docs = ingestion_service.collect_target_documents(
                 CollectRequest(
                     target=ensure_target,
@@ -487,14 +395,11 @@ def main() -> None:
                     raw_output_dir=str(raw_output_dir),
                 )
             )
-            ensure_records = builder.build_records(ensure_docs.documents)
             if ensure_docs.report:
                 run_reports.append(asdict(ensure_docs.report))
 
-            if args.update_mode == "overwrite":
-                merged_records.extend(ensure_records)
-            else:
-                merged_records = _merge_records_dedup(merged_records, ensure_records)
+            layer2_result = layer2_builder.rebuild_theme(theme_key=theme_key, update_mode=args.update_mode)
+            merged_records = layer2_result["records"]
 
             print(
                 f"[QUERY BACKFILL] 결과 부족으로 "
@@ -502,49 +407,73 @@ def main() -> None:
                 f"{len(ensure_docs.documents)}개"
             )
 
-    grouped_records = _split_by_source(merged_records)
-
-    written_combined = builder.save_jsonl(merged_records, str(combined_jsonl))
-
-    source_jsonl_stats: Dict[str, int] = {}
-    source_to_path = {
-        "news": news_jsonl,
-        "general_news": general_news_jsonl,
-        "dart": dart_jsonl,
-        "forum": forum_jsonl,
-        "chart": chart_jsonl,
-    }
-
-    for source_type, records in grouped_records.items():
-        source_jsonl_stats[source_type] = builder.save_jsonl(
-            records,
-            str(source_to_path[source_type]),
-        )
-
-    vector_store_dir = output_dir / "vector_stores"
-    vector_builder = SourceRAGBuilder()
-
-    vector_stats = vector_builder.upsert_by_source(
-        records=merged_records,
-        output_dir=str(vector_store_dir),
-        mode=args.update_mode,
-        theme_key=theme_key,
-    )
+    source_jsonl_stats: Dict[str, int] = layer2_result["document_source_counts"]
+    vector_stats: Dict[str, int] = layer2_result["vector_stats"]
+    market_data_stats: Dict[str, int] = layer2_result["market_stats"]
+    written_combined = layer2_result["combined_count"]
 
     print(f"테마 키: {theme_key}")
     print(f"총 수집 대상 종목 수: {len(targets)}")
     print(f"기존 레코드 수: {len(existing_records)}")
-    print(f"신규 레코드 수: {len(new_records)}")
+    print(f"신규 수집 문서 수: {len(collected_docs)}")
     print(f"최종 통합 RAG 레코드 수: {written_combined}")
-    print(f"통합 JSONL: {combined_jsonl}")
+    print(f"통합 JSONL: {output_dir / 'corpora' / theme_key / 'combined.jsonl'}")
 
     print("소스별 JSONL 레코드 수:")
-    for source_type in SUPPORTED_SOURCE_TYPES:
-        print(f"  - {source_type}: {source_jsonl_stats.get(source_type, 0)}")
+    for source_type, count in sorted(source_jsonl_stats.items()):
+        print(f"  - {source_type}: {count}")
 
     print("소스별 VectorDB 레코드 수:")
-    for source_type in SUPPORTED_SOURCE_TYPES:
-        print(f"  - {source_type}: {vector_stats.get(source_type, 0)}")
+    for source_type, count in sorted(vector_stats.items()):
+        print(f"  - {source_type}: {count}")
+
+    print("시계열 market_data 저장 건수:")
+    for source_type, count in sorted(market_data_stats.items()):
+        print(f"  - {source_type}: {count}")
+
+    dedup_added = max(0, len(merged_records) - len(existing_records))
+    missing_stocks = [
+        r["stock_name"]
+        for r in run_reports
+        if sum(r.get("source_counts", {}).values()) == 0
+    ]
+    summary_report = {
+        "theme_key": theme_key,
+        "stock_count": len(targets),
+        "enabled_sources": enabled_sources,
+        "source_success": {
+            source: sum(1 for r in run_reports if r.get("source_success", {}).get(source))
+            for source in enabled_sources
+        },
+        "source_fail": {
+            source: sum(1 for r in run_reports if source in r.get("failures", {}))
+            for source in enabled_sources
+        },
+        "collected_docs_count": len(collected_docs),
+        "raw_saved_count": sum(
+            sum((r.get("raw_saved_counts") or {}).values())
+            for r in run_reports
+        ),
+        "records_before_dedup": len(existing_records) + len(collected_docs),
+        "records_after_dedup": len(merged_records),
+        "dedup_added_count": dedup_added,
+        "missing_stocks": missing_stocks,
+        "per_stock_reports": run_reports,
+    }
+
+    report_dir = output_dir / "reports"
+    report_dir.mkdir(parents=True, exist_ok=True)
+    report_path = report_dir / f"{theme_key}_ingestion_report.json"
+    with report_path.open("w", encoding="utf-8") as f:
+        json.dump(summary_report, f, ensure_ascii=False, indent=2)
+
+    print("[INGESTION REPORT]")
+    print(f"  - report_path: {report_path}")
+    print(f"  - raw_saved_count: {summary_report['raw_saved_count']}")
+    print(f"  - records_before_dedup: {summary_report['records_before_dedup']}")
+    print(f"  - records_after_dedup: {summary_report['records_after_dedup']}")
+    if missing_stocks:
+        print(f"  - missing_stocks: {', '.join(missing_stocks)}")
 
     dedup_added = max(0, len(merged_records) - len(existing_records))
     missing_stocks = [

@@ -10,6 +10,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
+from .dedupe import make_document_id
+from .source_registry import is_document_source
+
 
 _DIMENSION = 256
 _SUPPORTED_SOURCES = ("news", "general_news", "dart", "forum", "chart")
@@ -78,15 +81,7 @@ class SimpleVectorStore:
         ]
         return store
 
-    def upsert_texts(
-        self,
-        texts: Iterable[str],
-        metadatas: Iterable[Dict],
-    ) -> int:
-        """
-        doc_id 기준으로 중복 없이 추가한다.
-        이미 존재하는 doc_id는 건너뛴다.
-        """
+    def upsert_texts(self, texts: Iterable[str], metadatas: Iterable[Dict]) -> int:
         existing_ids = {
             _make_doc_id(record.metadata, record.text)
             for record in self.records
@@ -106,9 +101,6 @@ class SimpleVectorStore:
         return added
 
     def remove_by_theme(self, theme_key: str) -> int:
-        """
-        해당 테마에서 유입된 문서만 제거한다.
-        """
         before = len(self.records)
         self.records = [
             r for r in self.records
@@ -122,15 +114,7 @@ class SimpleVectorStore:
         scored: List[Tuple[Dict, float]] = []
         for record in self.records:
             score = _cosine_similarity(query_vec, record.vector)
-            scored.append(
-                (
-                    {
-                        "text": record.text,
-                        "metadata": record.metadata,
-                    },
-                    score,
-                )
-            )
+            scored.append(({"text": record.text, "metadata": record.metadata}, score))
 
         scored.sort(key=lambda x: x[1], reverse=True)
         return scored[:top_k]
@@ -153,12 +137,6 @@ class SimpleVectorStore:
 
 
 class SourceRAGBuilder:
-    """
-    소스별 단일 vector store를 유지한다.
-    - append-new-stocks: 새 문서만 dedupe 후 추가
-    - overwrite: 해당 theme_key 문서만 제거 후 새 문서 추가
-    """
-
     def __init__(self, dimension: int = _DIMENSION):
         self.dimension = dimension
 
@@ -169,12 +147,13 @@ class SourceRAGBuilder:
         mode: str = "append-new-stocks",
         theme_key: str = "",
     ) -> Dict[str, int]:
-        sources = {source: [] for source in _SUPPORTED_SOURCES}
+        sources: Dict[str, List[Dict]] = {}
         for row in records:
             metadata = row.get("metadata", {})
-            source_type = metadata.get("source_type", "")
-            if source_type in sources:
-                sources[source_type].append(row)
+            source_type = str(metadata.get("source_type", "")).strip().lower()
+            if not is_document_source(source_type):
+                continue
+            sources.setdefault(source_type, []).append(row)
 
         output_stats: Dict[str, int] = {}
         base = Path(output_dir)
@@ -217,22 +196,5 @@ def _cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
 
 
 def _make_doc_id(metadata: Dict, text: str) -> str:
-    """
-    소스별 문서 고유키 생성.
-    """
-    metadata = metadata or {}
-    source_type = str(metadata.get("source_type", "")).strip()
-    url = str(metadata.get("url", "")).strip()
-    rcept_no = str(metadata.get("rcept_no", "")).strip()
-    stock_code = str(metadata.get("stock_code", "")).strip()
-    title = str(metadata.get("title", "")).strip()
-    published_at = str(metadata.get("published_at", "")).strip()
-
-    if source_type == "dart" and rcept_no:
-        base = f"{source_type}|{rcept_no}"
-    elif url:
-        base = f"{source_type}|{url}"
-    else:
-        base = f"{source_type}|{stock_code}|{title}|{published_at}|{text[:120]}"
-
-    return hashlib.md5(base.encode("utf-8")).hexdigest()
+    source_type = str((metadata or {}).get("source_type", "")).strip().lower()
+    return make_document_id(source_type=source_type, metadata=metadata or {}, text=text or "")
