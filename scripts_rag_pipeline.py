@@ -434,6 +434,20 @@ def main() -> None:
         collected_docs.extend(general_news_docs)
         print(f"[GENERAL NEWS] 수집 문서 수: {len(general_news_docs)}")
 
+    general_news_keywords = [
+        keyword.strip() for keyword in args.general_news_keywords.split(",") if keyword.strip()
+    ]
+    general_news_docs = ingestion_service.collect_general_news(
+        keywords=general_news_keywords,
+        max_items=args.max_general_news,
+        from_date=args.from_date,
+        to_date=args.to_date,
+        theme_key=theme_key,
+    )
+    if general_news_docs:
+        collected_docs.extend(general_news_docs)
+        print(f"[GENERAL NEWS] 수집 문서 수: {len(general_news_docs)}")
+
     builder = RAGCorpusBuilder(chunk_size=700, chunk_overlap=100)
     new_records = builder.build_records(collected_docs)
 
