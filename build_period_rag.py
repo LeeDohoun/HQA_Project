@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from src.rag.dedupe import make_record_id
+from src.rag.source_registry import is_document_source
 from src.rag.vector_store import SourceRAGBuilder
 
 
@@ -118,21 +120,9 @@ def dedupe_rows(rows: List[Dict]) -> List[Dict]:
     out = []
 
     for row in rows:
-        metadata = row.get("metadata", {})
-        source_type = metadata.get("source_type", "")
-        url = metadata.get("url", "")
-        title = metadata.get("title", "")
-        stock_code = metadata.get("stock_code", "")
-        published_at = metadata.get("published_at", "")
-
-        if url:
-            key = f"{source_type}|{url}"
-        else:
-            key = f"{source_type}|{stock_code}|{title}|{published_at}"
-
+        key = make_record_id(row)
         if key in seen:
             continue
-
         seen.add(key)
         out.append(row)
 
@@ -145,7 +135,7 @@ def main() -> None:
     parser.add_argument("--theme-key", default="", help="예: 2차전지, 정유. 비우면 전체 테마")
     parser.add_argument("--from-date", required=True, help="YYYYMMDD")
     parser.add_argument("--to-date", required=True, help="YYYYMMDD")
-    parser.add_argument("--source-type", default="", choices=["", "news", "dart", "forum"])
+    parser.add_argument("--source-type", default="")
     parser.add_argument("--output-name", default="period_rag")
     parser.add_argument("--build-vector", action="store_true")
 
@@ -174,11 +164,12 @@ def main() -> None:
     combined_path = out_dir / "combined.jsonl"
     save_jsonl(filtered, combined_path)
 
-    grouped = {"news": [], "dart": [], "forum": []}
+    grouped: Dict[str, List[Dict]] = {}
     for row in filtered:
-        source_type = row.get("metadata", {}).get("source_type", "")
-        if source_type in grouped:
-            grouped[source_type].append(row)
+        source_type = str(row.get("metadata", {}).get("source_type", "")).strip().lower()
+        if not is_document_source(source_type):
+            continue
+        grouped.setdefault(source_type, []).append(row)
 
     for source, rows in grouped.items():
         save_jsonl(rows, out_dir / f"{source}.jsonl")
@@ -196,8 +187,8 @@ def main() -> None:
             theme_key="",  # 기간 RAG는 별도 출력 폴더에 새로 생성하므로 theme_key 불필요
         )
         print("[PERIOD RAG] vector stats:")
-        for source in ("news", "dart", "forum"):
-            print(f"  - {source}: {stats.get(source, 0)}")
+        for source, count in sorted(stats.items()):
+            print(f"  - {source}: {count}")
 
 
 if __name__ == "__main__":
