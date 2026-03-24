@@ -7,6 +7,8 @@ from typing import Dict, List, Optional
 
 from src.rag.vector_store import SourceRAGBuilder
 
+SUPPORTED_SOURCE_TYPES = ("news", "general_news", "dart", "forum", "chart")
+
 
 def load_jsonl(path: Path) -> List[Dict]:
     if not path.exists():
@@ -145,7 +147,7 @@ def main() -> None:
     parser.add_argument("--theme-key", default="", help="예: 2차전지, 정유. 비우면 전체 테마")
     parser.add_argument("--from-date", required=True, help="YYYYMMDD")
     parser.add_argument("--to-date", required=True, help="YYYYMMDD")
-    parser.add_argument("--source-type", default="", choices=["", "news", "dart", "forum"])
+    parser.add_argument("--source-type", default="", choices=["", *SUPPORTED_SOURCE_TYPES])
     parser.add_argument("--output-name", default="period_rag")
     parser.add_argument("--build-vector", action="store_true")
 
@@ -174,7 +176,7 @@ def main() -> None:
     combined_path = out_dir / "combined.jsonl"
     save_jsonl(filtered, combined_path)
 
-    grouped = {"news": [], "dart": [], "forum": []}
+    grouped = {source: [] for source in SUPPORTED_SOURCE_TYPES}
     for row in filtered:
         source_type = row.get("metadata", {}).get("source_type", "")
         if source_type in grouped:
@@ -196,7 +198,7 @@ def main() -> None:
             theme_key="",  # 기간 RAG는 별도 출력 폴더에 새로 생성하므로 theme_key 불필요
         )
         print("[PERIOD RAG] vector stats:")
-        for source in ("news", "dart", "forum"):
+        for source in SUPPORTED_SOURCE_TYPES:
             print(f"  - {source}: {stats.get(source, 0)}")
 
 

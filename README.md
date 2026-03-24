@@ -1,5 +1,5 @@
 #  Stock RAG Pipeline  
-뉴스 / DART / 종토방 기반 주도주 분석 시스템
+뉴스 / 일반뉴스 / DART / 종토방 / 차트 기반 주도주 분석 시스템
 
 ---
 
@@ -12,8 +12,8 @@
 ###  목표
 
 - 테마 기반 종목 자동 수집  
-- 뉴스 / 공시 / 종토방 데이터 통합  
-- 소스별 RAG 구축 (news / dart / forum)  
+- 뉴스 / 일반뉴스 / 공시 / 종토방 / 차트 데이터 통합  
+- 소스별 RAG 구축 (news / general_news / dart / forum / chart)  
 - 기간 기반 RAG 재구성  
 - 주도주 탐색 및 분석  
 
@@ -27,9 +27,11 @@
 테마 → 종목 리스트 수집
    ↓
 각 종목별 데이터 수집
-   - 뉴스
+   - 종목 뉴스
+   - 일반 뉴스
    - DART 공시
    - 종토방
+   - 일봉 차트
    ↓
 Raw Corpus 저장 (JSONL)
    ↓
@@ -62,13 +64,17 @@ HQA_Project/
 │   │   ├── 2차전지/
 │   │   │   ├── combined.jsonl
 │   │   │   ├── news.jsonl
+│   │   │   ├── general_news.jsonl
 │   │   │   ├── dart.jsonl
 │   │   │   └── forum.jsonl
+│   │   │   └── chart.jsonl
 │   │
 │   ├── vector_stores/
 │   │   ├── news_vector_store.json
+│   │   │   ├── general_news_vector_store.json
 │   │   │   ├── dart_vector_store.json
 │   │   │   └── forum_vector_store.json
+│   │   │   └── chart_vector_store.json
 │   │
 │
 ├── corp_codes.csv
@@ -108,8 +114,10 @@ DART_API_KEY=your_api_key
 ```
 python scripts_rag_pipeline.py \
   --theme "2차전지" \
+  --general-news-keywords "코스피,금리,원달러환율" \
   --theme-max-stocks 20 \
   --theme-max-pages 10 \
+  --chart-pages 5 \
   --output-dir ./data \
   --base-filename rag_corpus_secondary_battery \
   --update-mode overwrite
@@ -147,8 +155,10 @@ python scripts_rag_pipeline.py \
 ## 9. VectorDB
 
 - news_vector_store.json  
+- general_news_vector_store.json  
 - dart_vector_store.json  
 - forum_vector_store.json  
+- chart_vector_store.json  
 
 ---
 
