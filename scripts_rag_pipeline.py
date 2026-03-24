@@ -475,6 +475,50 @@ def main() -> None:
     if missing_stocks:
         print(f"  - missing_stocks: {', '.join(missing_stocks)}")
 
+    dedup_added = max(0, len(merged_records) - len(existing_records))
+    missing_stocks = [
+        r["stock_name"]
+        for r in run_reports
+        if sum(r.get("source_counts", {}).values()) == 0
+    ]
+    summary_report = {
+        "theme_key": theme_key,
+        "stock_count": len(targets),
+        "enabled_sources": enabled_sources,
+        "source_success": {
+            source: sum(1 for r in run_reports if r.get("source_success", {}).get(source))
+            for source in enabled_sources
+        },
+        "source_fail": {
+            source: sum(1 for r in run_reports if source in r.get("failures", {}))
+            for source in enabled_sources
+        },
+        "collected_docs_count": len(collected_docs),
+        "raw_saved_count": sum(
+            sum((r.get("raw_saved_counts") or {}).values())
+            for r in run_reports
+        ),
+        "records_before_dedup": len(existing_records) + len(new_records),
+        "records_after_dedup": len(merged_records),
+        "dedup_added_count": dedup_added,
+        "missing_stocks": missing_stocks,
+        "per_stock_reports": run_reports,
+    }
+
+    report_dir = output_dir / "reports"
+    report_dir.mkdir(parents=True, exist_ok=True)
+    report_path = report_dir / f"{theme_key}_ingestion_report.json"
+    with report_path.open("w", encoding="utf-8") as f:
+        json.dump(summary_report, f, ensure_ascii=False, indent=2)
+
+    print("[INGESTION REPORT]")
+    print(f"  - report_path: {report_path}")
+    print(f"  - raw_saved_count: {summary_report['raw_saved_count']}")
+    print(f"  - records_before_dedup: {summary_report['records_before_dedup']}")
+    print(f"  - records_after_dedup: {summary_report['records_after_dedup']}")
+    if missing_stocks:
+        print(f"  - missing_stocks: {', '.join(missing_stocks)}")
+
 
 if __name__ == "__main__":
     main()

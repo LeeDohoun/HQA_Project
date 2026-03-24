@@ -9,6 +9,8 @@ from src.rag.dedupe import make_record_id
 from src.rag.source_registry import is_document_source
 from src.rag.vector_store import SourceRAGBuilder
 
+SUPPORTED_SOURCE_TYPES = ("news", "general_news", "dart", "forum", "chart")
+
 
 def load_jsonl(path: Path) -> List[Dict]:
     if not path.exists():

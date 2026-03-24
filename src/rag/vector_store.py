@@ -15,6 +15,7 @@ from .source_registry import is_document_source
 
 
 _DIMENSION = 256
+_SUPPORTED_SOURCES = ("news", "general_news", "dart", "forum", "chart")
 
 
 @dataclass
