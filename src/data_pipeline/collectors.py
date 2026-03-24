@@ -50,7 +50,7 @@ class ThemeStock:
 
 
 class BaseCollector:
-    def __init__(self, timeout: int = 10):
+    def __init__(self, timeout: int = 20):
         self.session = requests.Session()
         self.session.headers.update(
             {
@@ -68,9 +68,6 @@ class BaseCollector:
         in_formats: List[str],
         default_time: str = "00:00:00",
     ) -> str:
-        """
-        다양한 날짜 문자열을 ISO datetime(YYYY-MM-DDTHH:MM:SS)으로 변환.
-        """
         if not value:
             return ""
 
@@ -78,7 +75,6 @@ class BaseCollector:
         for fmt in in_formats:
             try:
                 dt = datetime.strptime(raw, fmt)
-                # 시간 정보가 없는 포맷이면 기본 시간 부여
                 if "%H" not in fmt and "%M" not in fmt and "%S" not in fmt:
                     hh, mm, ss = map(int, default_time.split(":"))
                     dt = dt.replace(hour=hh, minute=mm, second=ss)
@@ -92,7 +88,7 @@ class BaseCollector:
 class NaverNewsCollector(BaseCollector):
     SEARCH_URL = "https://search.naver.com/search.naver"
 
-    def __init__(self, timeout: int = 10):
+    def __init__(self, timeout: int = 20):
         super().__init__(timeout=timeout)
         self.session.headers.update({"Referer": "https://search.naver.com/"})
 
@@ -102,6 +98,7 @@ class NaverNewsCollector(BaseCollector):
         max_items: int = 20,
         from_date: str = "",
         to_date: str = "",
+        max_pages: int = 100,
         **kwargs,
     ) -> List[CrawledDocument]:
         if BeautifulSoup is None:
@@ -110,8 +107,11 @@ class NaverNewsCollector(BaseCollector):
         docs: List[CrawledDocument] = []
         seen_urls = set()
         start = 1
+        page_no = 0
 
-        while len(docs) < max_items:
+        while len(docs) < max_items and page_no < max_pages:
+            page_no += 1
+
             params = {
                 "where": "news",
                 "query": keyword,
@@ -119,24 +119,35 @@ class NaverNewsCollector(BaseCollector):
                 "sort": 1,
             }
 
-            try:
-                response = self.session.get(
-                    self.SEARCH_URL,
-                    params=params,
-                    timeout=self.timeout,
-                )
+            response = None
+            last_error = None
 
-                if response.status_code == 403:
-                    print(f"[WARN][NEWS] 403 blocked for keyword='{keyword}', start={start}")
+            for attempt in range(3):
+                try:
+                    response = self.session.get(
+                        self.SEARCH_URL,
+                        params=params,
+                        timeout=self.timeout,
+                    )
+
+                    if response.status_code == 403:
+                        print(f"[WARN][NEWS] 403 blocked for keyword='{keyword}', start={start}")
+                        return docs
+
+                    response.raise_for_status()
                     break
 
-                response.raise_for_status()
+                except HTTPError as e:
+                    last_error = e
+                    print(f"[WARN][NEWS] HTTP error for keyword='{keyword}', start={start}, attempt={attempt + 1}: {e}")
+                    time.sleep(1.0)
+                except requests.RequestException as e:
+                    last_error = e
+                    print(f"[WARN][NEWS] Request failed for keyword='{keyword}', start={start}, attempt={attempt + 1}: {e}")
+                    time.sleep(1.0)
 
-            except HTTPError as e:
-                print(f"[WARN][NEWS] HTTP error for keyword='{keyword}', start={start}: {e}")
-                break
-            except requests.RequestException as e:
-                print(f"[WARN][NEWS] Request failed for keyword='{keyword}', start={start}: {e}")
+            if response is None:
+                print(f"[WARN][NEWS] give up for keyword='{keyword}', start={start}: {last_error}")
                 break
 
             soup = BeautifulSoup(response.text, "html.parser")
@@ -159,7 +170,8 @@ class NaverNewsCollector(BaseCollector):
                 print(f"[DEBUG][NEWS] no items for keyword='{keyword}', start={start}")
                 break
 
-            before_count = len(docs)
+            page_dates: List[str] = []
+            page_seen_any_date = False
 
             for item in items:
                 if len(docs) >= max_items:
@@ -196,18 +208,19 @@ class NaverNewsCollector(BaseCollector):
                 info_nodes = item.select("span.info")
                 raw_date_text = self._extract_news_date_text(info_nodes)
 
-                # info에서 못 찾으면 press 문자열에서도 한 번 더 시도
                 if not raw_date_text and press_el is not None:
                     press_text = press_el.get_text(" ", strip=True)
                     raw_date_text = self._extract_news_date_text_from_text(press_text)
 
                 normalized_date = self._normalize_news_date(raw_date_text)
 
-                # 날짜가 없으면 제외: 기간 필터 신뢰성 확보
                 if not normalized_date:
                     continue
 
                 compact = normalized_date[:10].replace("-", "")
+                page_dates.append(compact)
+                page_seen_any_date = True
+
                 if from_date and compact < from_date:
                     continue
                 if to_date and compact > to_date:
@@ -230,7 +243,16 @@ class NaverNewsCollector(BaseCollector):
                     )
                 )
 
-            if len(docs) == before_count:
+            # 중요:
+            # "이번 페이지에서 필터 후 추가 0건"만으로는 멈추면 안 됨.
+            # 최신 페이지가 전부 2025이고, 우리가 2024를 찾는 경우 더 뒤 페이지로 가야 함.
+            #
+            # 따라서 아래 조건에서만 중단:
+            # - 페이지 안의 날짜를 실제로 읽었고
+            # - 그 날짜들이 모두 from_date보다 과거인 경우
+            #   => 이후 페이지는 더 과거이므로 중단 가능
+            if page_seen_any_date and from_date and page_dates and all(d < from_date for d in page_dates):
+                print(f"[DEBUG][NEWS] stop by from_date reached for keyword='{keyword}', start={start}")
                 break
 
             start += 10
@@ -258,7 +280,6 @@ class NaverNewsCollector(BaseCollector):
             return ""
 
         text = text.strip()
-
         patterns = [
             r"\d{4}\.\d{1,2}\.\d{1,2}\.?",
             r"\d+\s*분\s*전",
@@ -313,7 +334,7 @@ class NaverNewsCollector(BaseCollector):
 class DartDisclosureCollector(BaseCollector):
     LIST_URL = "https://opendart.fss.or.kr/api/list.json"
 
-    def __init__(self, api_key: str, timeout: int = 10):
+    def __init__(self, api_key: str, timeout: int = 20):
         super().__init__(timeout=timeout)
         self.api_key = api_key
 
@@ -371,7 +392,13 @@ class DartDisclosureCollector(BaseCollector):
 
 
 class NaverStockForumCollector(BaseCollector):
-    def collect(self, stock_code: str, pages: int = 3) -> List[CrawledDocument]:
+    def collect(
+        self,
+        stock_code: str,
+        pages: int = 3,
+        from_date: str = "",
+        to_date: str = "",
+    ) -> List[CrawledDocument]:
         if BeautifulSoup is None:
             raise ImportError("beautifulsoup4가 필요합니다. pip install beautifulsoup4")
 
@@ -379,11 +406,28 @@ class NaverStockForumCollector(BaseCollector):
 
         for page in range(1, pages + 1):
             url = f"https://finance.naver.com/item/board.naver?code={stock_code}&page={page}"
-            response = self.session.get(url, timeout=self.timeout)
-            response.raise_for_status()
+            response = None
+            last_error = None
+
+            for attempt in range(3):
+                try:
+                    response = self.session.get(url, timeout=self.timeout)
+                    response.raise_for_status()
+                    break
+                except requests.RequestException as e:
+                    last_error = e
+                    print(f"[WARN][FORUM][{stock_code}] page={page} request failed attempt={attempt + 1}: {e}")
+                    time.sleep(1.0)
+
+            if response is None:
+                raise requests.RequestException(last_error)
 
             soup = BeautifulSoup(response.text, "html.parser")
             rows = soup.select("table.type2 tr")
+
+            page_dates: List[str] = []
+            page_seen_any_date = False
+            page_added = 0
 
             for row in rows:
                 title_el = row.select_one("td.title a")
@@ -406,6 +450,18 @@ class NaverStockForumCollector(BaseCollector):
                     default_time="00:00:00",
                 )
 
+                if not published_at:
+                    continue
+
+                compact = published_at[:10].replace("-", "")
+                page_dates.append(compact)
+                page_seen_any_date = True
+
+                if from_date and compact < from_date:
+                    continue
+                if to_date and compact > to_date:
+                    continue
+
                 docs.append(
                     CrawledDocument(
                         source_type="forum",
@@ -420,6 +476,17 @@ class NaverStockForumCollector(BaseCollector):
                         },
                     )
                 )
+                page_added += 1
+
+            # 중요:
+            # 이 페이지에서 추가가 0건이어도 바로 중단하지 않음.
+            # 다만 페이지의 날짜들이 모두 from_date보다 과거면
+            # 이후 페이지는 더 과거이므로 중단.
+            if page_seen_any_date and from_date and page_dates and all(d < from_date for d in page_dates):
+                print(f"[DEBUG][FORUM][{stock_code}] stop by from_date reached at page={page}")
+                break
+
+            time.sleep(0.2)
 
         return docs
 

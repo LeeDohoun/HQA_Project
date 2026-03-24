@@ -154,7 +154,7 @@ class SimpleVectorStore:
 class SourceRAGBuilder:
     """
     뉴스 / DART / 종토방별 단일 vector store를 유지한다.
-    - append: 새 문서만 dedupe 후 추가
+    - append-new-stocks: 새 문서만 dedupe 후 추가
     - overwrite: 해당 theme_key 문서만 제거 후 새 문서 추가
     """
 
@@ -165,7 +165,7 @@ class SourceRAGBuilder:
         self,
         records: List[Dict],
         output_dir: str,
-        mode: str = "append",
+        mode: str = "append-new-stocks",
         theme_key: str = "",
     ) -> Dict[str, int]:
         sources = {"news": [], "dart": [], "forum": []}

@@ -11,6 +11,7 @@ import json
 import os
 import re
 import sys
+import hashlib
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from io import BytesIO
@@ -50,9 +51,6 @@ def _make_theme_key(theme: str, base_filename: str) -> str:
 
 
 def _download_corp_codes_csv(api_key: str, save_path: str = "./corp_codes.csv") -> Dict[str, str]:
-    """
-    OpenDART 고유번호 ZIP(XML)에서 stock_code -> corp_code 매핑을 생성하고 CSV로 저장한다.
-    """
     if not api_key:
         print("[WARN][DART] DART_API_KEY가 없어 corp_codes.csv를 자동 생성할 수 없습니다.")
         return {}
@@ -264,8 +262,62 @@ def _attach_stock_info(
         doc.metadata["url"] = doc.url or ""
         doc.metadata["title"] = doc.title or ""
         doc.metadata["published_at"] = doc.published_at or ""
+        doc.metadata["source_type"] = doc.source_type or ""
 
     return docs
+
+
+def _make_record_doc_id(row: Dict) -> str:
+    """
+    JSONL record 단위 dedupe용 ID 생성.
+    vector_store의 doc_id 규칙과 최대한 유사하게 맞춘다.
+    """
+    metadata = row.get("metadata", {}) or {}
+    text = row.get("text", "") or ""
+
+    source_type = str(metadata.get("source_type", "")).strip()
+    url = str(metadata.get("url", "")).strip()
+    rcept_no = str(metadata.get("rcept_no", "")).strip()
+    stock_code = str(metadata.get("stock_code", "")).strip()
+    title = str(metadata.get("title", "")).strip()
+    published_at = str(metadata.get("published_at", "")).strip()
+
+    if source_type == "dart" and rcept_no:
+        base = f"{source_type}|{rcept_no}"
+    elif url:
+        base = f"{source_type}|{url}"
+    else:
+        base = f"{source_type}|{stock_code}|{title}|{published_at}|{text[:120]}"
+
+    return hashlib.md5(base.encode("utf-8")).hexdigest()
+
+
+def _merge_records_dedup(existing_records: List[Dict], new_records: List[Dict]) -> List[Dict]:
+    """
+    기존 + 신규 레코드를 합치되 문서 단위로 dedupe.
+    기존 것을 먼저 유지하고, 없는 문서만 신규 추가.
+    """
+    merged: List[Dict] = []
+    seen_ids: Set[str] = set()
+
+    for row in existing_records:
+        doc_id = _make_record_doc_id(row)
+        if doc_id in seen_ids:
+            continue
+        seen_ids.add(doc_id)
+        merged.append(row)
+
+    added = 0
+    for row in new_records:
+        doc_id = _make_record_doc_id(row)
+        if doc_id in seen_ids:
+            continue
+        seen_ids.add(doc_id)
+        merged.append(row)
+        added += 1
+
+    print(f"[MERGE] existing={len(existing_records)}, new={len(new_records)}, added_after_dedup={added}, merged={len(merged)}")
+    return merged
 
 
 def _collect_target_docs(
@@ -319,6 +371,8 @@ def _collect_target_docs(
         forum = NaverStockForumCollector().collect(
             stock_code=target.stock_code,
             pages=forum_pages,
+            from_date=from_date,
+            to_date=to_date,
         )
         forum = _attach_stock_info(forum, target.stock_name, target.stock_code, theme_key)
     except Exception as e:
@@ -383,7 +437,7 @@ def main() -> None:
         "--update-mode",
         choices=["overwrite", "append-new-stocks"],
         default="append-new-stocks",
-        help="overwrite: 해당 테마 코퍼스 재생성 + vectorDB 내 해당 테마 문서 교체 / append-new-stocks: 새 문서만 추가",
+        help="overwrite: 해당 테마 코퍼스 재생성 + vectorDB 내 해당 테마 문서 교체 / append-new-stocks: 기존 종목도 포함해 신규 기간/문서를 dedupe append",
     )
 
     parser.add_argument("--ensure-query", default="")
@@ -395,7 +449,10 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    
+    print("[DEBUG] NaverNewsCollector file =", inspect.getfile(NaverNewsCollector))
+    print("[DEBUG] NaverNewsCollector.collect sig =", inspect.signature(NaverNewsCollector.collect))
+    print("[DEBUG] NaverStockForumCollector.collect sig =", inspect.signature(NaverStockForumCollector.collect))
+
     theme_key = _make_theme_key(args.theme, args.base_filename)
     targets = _load_stock_targets(args)
     dart_api_key = os.getenv("DART_API_KEY", "")
@@ -422,13 +479,8 @@ def main() -> None:
     collected_stock_codes: Set[str] = set()
 
     for target in targets:
-        if (
-            args.update_mode == "append-new-stocks"
-            and target.stock_code in existing_stock_codes
-        ):
-            print(f"[SKIP] 기존 테마 코퍼스에 이미 존재: {target.stock_name}({target.stock_code})")
-            continue
-
+        # 기존 종목이어도 skip하지 않는다.
+        # append-new-stocks는 이제 "새 기간/새 문서 dedupe append" 모드로 사용.
         target_docs = _collect_target_docs(
             target=target,
             max_news=args.max_news,
@@ -448,7 +500,7 @@ def main() -> None:
     if args.update_mode == "overwrite":
         merged_records = new_records
     else:
-        merged_records = existing_records + new_records
+        merged_records = _merge_records_dedup(existing_records, new_records)
 
     if args.ensure_query:
         bm25 = _build_bm25_index(merged_records)
@@ -465,32 +517,28 @@ def main() -> None:
                 corp_code=args.ensure_corp_code,
             )
 
-            if (
-                ensure_target.stock_code not in existing_stock_codes
-                and ensure_target.stock_code not in collected_stock_codes
-            ):
-                ensure_docs = _collect_target_docs(
-                    target=ensure_target,
-                    max_news=args.max_news,
-                    forum_pages=args.forum_pages,
-                    from_date=args.from_date,
-                    to_date=args.to_date,
-                    dart_api_key=dart_api_key,
-                    theme_key=theme_key,
-                )
-                ensure_records = builder.build_records(ensure_docs)
+            # ensure는 이미 코퍼스에 있어도 재수집 가능하게 두고,
+            # 최종적으로 record-level dedupe로 중복 제거.
+            ensure_docs = _collect_target_docs(
+                target=ensure_target,
+                max_news=args.max_news,
+                forum_pages=args.forum_pages,
+                from_date=args.from_date,
+                to_date=args.to_date,
+                dart_api_key=dart_api_key,
+                theme_key=theme_key,
+            )
+            ensure_records = builder.build_records(ensure_docs)
+
+            if args.update_mode == "overwrite":
                 merged_records.extend(ensure_records)
-                print(
-                    f"[QUERY BACKFILL] 결과 부족으로 "
-                    f"{ensure_target.stock_name}({ensure_target.stock_code}) 추가 수집: "
-                    f"{len(ensure_docs)}개"
-                )
             else:
-                print("[QUERY BACKFILL] 보강 대상 종목은 이미 코퍼스에 있어 추가 수집을 생략합니다.")
-        elif needs_backfill and not ensure_target_ready:
+                merged_records = _merge_records_dedup(merged_records, ensure_records)
+
             print(
-                "[QUERY BACKFILL] 결과가 부족하지만 "
-                "--ensure-stock-name/--ensure-stock-code가 없어 자동 보강을 생략합니다."
+                f"[QUERY BACKFILL] 결과 부족으로 "
+                f"{ensure_target.stock_name}({ensure_target.stock_code}) 추가 수집: "
+                f"{len(ensure_docs)}개"
             )
 
     grouped_records = _split_by_source(merged_records)
