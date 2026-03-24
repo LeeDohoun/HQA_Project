@@ -13,34 +13,29 @@ import re
 import sys
 import hashlib
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from dataclasses import asdict
 from io import BytesIO
 from pathlib import Path
 from typing import Dict, Iterable, List, Set
 from zipfile import ZipFile
 
 import requests
-import inspect
 
 sys.path.insert(0, os.path.abspath("."))
 
-from src.data_pipeline.collectors import (
-    CrawledDocument,
-    DartDisclosureCollector,
-    NaverNewsCollector,
-    NaverStockForumCollector,
-    NaverThemeStockCollector,
-)
 from src.data_pipeline.rag_builder import RAGCorpusBuilder
+from src.ingestion import (
+    CollectRequest,
+    DocumentRecord,
+    IngestionService,
+    NaverThemeStockCollector,
+    StockTarget,
+)
 from src.rag import BM25IndexManager
 from src.rag.vector_store import SourceRAGBuilder
 
 
-@dataclass
-class StockTarget:
-    stock_name: str
-    stock_code: str
-    corp_code: str = ""
+SUPPORTED_SOURCE_TYPES = ("news", "general_news", "dart", "forum", "chart")
 
 
 def _make_theme_key(theme: str, base_filename: str) -> str:
@@ -234,39 +229,6 @@ def _load_stock_targets(args: argparse.Namespace) -> List[StockTarget]:
     return list(dedup.values())
 
 
-def _build_news_keyword(stock_name: str, stock_code: str) -> str:
-    name = stock_name.strip()
-
-    if len(name) <= 2:
-        return f"{name} 주가"
-
-    return f"{stock_name} {stock_code} 주식"
-
-
-def _attach_stock_info(
-    docs: List[CrawledDocument],
-    stock_name: str,
-    stock_code: str,
-    theme_key: str,
-) -> List[CrawledDocument]:
-    for doc in docs:
-        if not doc.stock_name:
-            doc.stock_name = stock_name
-        if not doc.stock_code:
-            doc.stock_code = stock_code
-
-        doc.metadata = doc.metadata or {}
-        doc.metadata["stock_name"] = stock_name
-        doc.metadata["stock_code"] = stock_code
-        doc.metadata["theme_key"] = theme_key
-        doc.metadata["url"] = doc.url or ""
-        doc.metadata["title"] = doc.title or ""
-        doc.metadata["published_at"] = doc.published_at or ""
-        doc.metadata["source_type"] = doc.source_type or ""
-
-    return docs
-
-
 def _make_record_doc_id(row: Dict) -> str:
     """
     JSONL record 단위 dedupe용 ID 생성.
@@ -320,71 +282,6 @@ def _merge_records_dedup(existing_records: List[Dict], new_records: List[Dict]) 
     return merged
 
 
-def _collect_target_docs(
-    target: StockTarget,
-    max_news: int,
-    forum_pages: int,
-    from_date: str,
-    to_date: str,
-    dart_api_key: str,
-    theme_key: str,
-) -> List[CrawledDocument]:
-    docs: List[CrawledDocument] = []
-
-    news: List[CrawledDocument] = []
-    dart: List[CrawledDocument] = []
-    forum: List[CrawledDocument] = []
-
-    news_keyword = _build_news_keyword(target.stock_name, target.stock_code)
-
-    try:
-        collector = NaverNewsCollector()
-        sig = inspect.signature(collector.collect)
-
-        kwargs = {"max_items": max_news}
-        if "from_date" in sig.parameters:
-            kwargs["from_date"] = from_date
-        if "to_date" in sig.parameters:
-            kwargs["to_date"] = to_date
-
-        news = collector.collect(news_keyword, **kwargs)
-        news = _attach_stock_info(news, target.stock_name, target.stock_code, theme_key)
-    except Exception as e:
-        print(f"[WARN][{target.stock_name}] news collect failed: {e}")
-
-    if not target.corp_code:
-        print(f"[WARN][DART] corp_code 없음: {target.stock_name}({target.stock_code})")
-    elif not dart_api_key:
-        print("[WARN][DART] DART_API_KEY 없음")
-    else:
-        try:
-            dart = DartDisclosureCollector(api_key=dart_api_key).collect(
-                corp_code=target.corp_code,
-                bgn_de=from_date,
-                end_de=to_date,
-            )
-            dart = _attach_stock_info(dart, target.stock_name, target.stock_code, theme_key)
-        except Exception as e:
-            print(f"[WARN][{target.stock_name}] dart collect failed: {e}")
-
-    try:
-        forum = NaverStockForumCollector().collect(
-            stock_code=target.stock_code,
-            pages=forum_pages,
-            from_date=from_date,
-            to_date=to_date,
-        )
-        forum = _attach_stock_info(forum, target.stock_name, target.stock_code, theme_key)
-    except Exception as e:
-        print(f"[WARN][{target.stock_name}] forum collect failed: {e}")
-
-    docs.extend(news)
-    docs.extend(dart)
-    docs.extend(forum)
-
-    return docs
-
-
 def _build_bm25_index(records: List[Dict]) -> BM25IndexManager:
     bm25 = BM25IndexManager(
         persist_path="./data/_query_check_bm25.json",
@@ -399,11 +296,7 @@ def _build_bm25_index(records: List[Dict]) -> BM25IndexManager:
 
 
 def _split_by_source(records: List[Dict]) -> Dict[str, List[Dict]]:
-    grouped: Dict[str, List[Dict]] = {
-        "news": [],
-        "dart": [],
-        "forum": [],
-    }
+    grouped: Dict[str, List[Dict]] = {source: [] for source in SUPPORTED_SOURCE_TYPES}
     for row in records:
         source_type = row.get("metadata", {}).get("source_type")
         if source_type in grouped:
@@ -431,7 +324,19 @@ def main() -> None:
     parser.add_argument("--base-filename", default="rag_corpus")
 
     parser.add_argument("--max-news", type=int, default=20)
+    parser.add_argument("--max-general-news", type=int, default=20)
     parser.add_argument("--forum-pages", type=int, default=3)
+    parser.add_argument("--chart-pages", type=int, default=5)
+    parser.add_argument(
+        "--enabled-sources",
+        default="news,dart,forum",
+        help="수집 소스 목록(쉼표 구분). 예: news,dart,forum 또는 news,dart,forum,chart",
+    )
+    parser.add_argument(
+        "--general-news-keywords",
+        default="",
+        help="쉼표(,)로 구분한 일반 뉴스 키워드. 예: 코스피,금리,원달러환율",
+    )
 
     parser.add_argument(
         "--update-mode",
@@ -449,24 +354,29 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    print("[DEBUG] NaverNewsCollector file =", inspect.getfile(NaverNewsCollector))
-    print("[DEBUG] NaverNewsCollector.collect sig =", inspect.signature(NaverNewsCollector.collect))
-    print("[DEBUG] NaverStockForumCollector.collect sig =", inspect.signature(NaverStockForumCollector.collect))
-
     theme_key = _make_theme_key(args.theme, args.base_filename)
     targets = _load_stock_targets(args)
     dart_api_key = os.getenv("DART_API_KEY", "")
+    ingestion_service = IngestionService()
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    raw_output_dir = output_dir / "raw"
+    raw_output_dir.mkdir(parents=True, exist_ok=True)
+    for source in ("news", "dart", "forum", "theme_targets", "chart"):
+        source_dir = raw_output_dir / source
+        source_dir.mkdir(parents=True, exist_ok=True)
+        (source_dir / f"{theme_key}.jsonl").touch(exist_ok=True)
 
     corpus_dir = output_dir / "corpora" / theme_key
     corpus_dir.mkdir(parents=True, exist_ok=True)
 
     combined_jsonl = corpus_dir / "combined.jsonl"
     news_jsonl = corpus_dir / "news.jsonl"
+    general_news_jsonl = corpus_dir / "general_news.jsonl"
     dart_jsonl = corpus_dir / "dart.jsonl"
     forum_jsonl = corpus_dir / "forum.jsonl"
+    chart_jsonl = corpus_dir / "chart.jsonl"
 
     existing_records: List[Dict] = []
     existing_stock_codes: Set[str] = set()
@@ -475,24 +385,54 @@ def main() -> None:
         existing_records = _load_jsonl(str(combined_jsonl))
         existing_stock_codes = _extract_stock_codes(existing_records)
 
-    collected_docs: List[CrawledDocument] = []
+    collected_docs: List[DocumentRecord] = []
     collected_stock_codes: Set[str] = set()
+    run_reports: List[Dict] = []
+    enabled_sources = [s.strip() for s in args.enabled_sources.split(",") if s.strip()]
+
+    theme_target_raw_dir = raw_output_dir / "theme_targets"
+    theme_target_raw_dir.mkdir(parents=True, exist_ok=True)
+    with (theme_target_raw_dir / f"{theme_key}.jsonl").open("a", encoding="utf-8") as f:
+        for t in targets:
+            f.write(json.dumps(asdict(t), ensure_ascii=False) + "\n")
 
     for target in targets:
         # 기존 종목이어도 skip하지 않는다.
         # append-new-stocks는 이제 "새 기간/새 문서 dedupe append" 모드로 사용.
-        target_docs = _collect_target_docs(
-            target=target,
-            max_news=args.max_news,
-            forum_pages=args.forum_pages,
-            from_date=args.from_date,
-            to_date=args.to_date,
-            dart_api_key=dart_api_key,
-            theme_key=theme_key,
+        target_docs = ingestion_service.collect_target_documents(
+            CollectRequest(
+                target=target,
+                max_news=args.max_news,
+                forum_pages=args.forum_pages,
+                chart_pages=args.chart_pages,
+                from_date=args.from_date,
+                to_date=args.to_date,
+                dart_api_key=dart_api_key,
+                theme_key=theme_key,
+                enabled_sources=enabled_sources,
+                raw_output_dir=str(raw_output_dir),
+            )
         )
-        collected_docs.extend(target_docs)
+        collected_docs.extend(target_docs.documents)
+        if target_docs.report:
+            run_reports.append(asdict(target_docs.report))
         collected_stock_codes.add(target.stock_code)
-        print(f"[{target.stock_name}({target.stock_code})] 수집 문서 수: {len(target_docs)}")
+        print(f"[{target.stock_name}({target.stock_code})] 수집 문서 수: {len(target_docs.documents)}")
+
+    general_news_keywords = [
+        keyword.strip() for keyword in args.general_news_keywords.split(",") if keyword.strip()
+    ]
+    general_news_docs = ingestion_service.collect_general_news(
+        keywords=general_news_keywords,
+        max_items=args.max_general_news,
+        from_date=args.from_date,
+        to_date=args.to_date,
+        theme_key=theme_key,
+        raw_output_dir=str(raw_output_dir),
+    )
+    if general_news_docs:
+        collected_docs.extend(general_news_docs)
+        print(f"[GENERAL NEWS] 수집 문서 수: {len(general_news_docs)}")
 
     builder = RAGCorpusBuilder(chunk_size=700, chunk_overlap=100)
     new_records = builder.build_records(collected_docs)
@@ -519,16 +459,23 @@ def main() -> None:
 
             # ensure는 이미 코퍼스에 있어도 재수집 가능하게 두고,
             # 최종적으로 record-level dedupe로 중복 제거.
-            ensure_docs = _collect_target_docs(
-                target=ensure_target,
-                max_news=args.max_news,
-                forum_pages=args.forum_pages,
-                from_date=args.from_date,
-                to_date=args.to_date,
-                dart_api_key=dart_api_key,
-                theme_key=theme_key,
+            ensure_docs = ingestion_service.collect_target_documents(
+                CollectRequest(
+                    target=ensure_target,
+                    max_news=args.max_news,
+                    forum_pages=args.forum_pages,
+                    chart_pages=args.chart_pages,
+                    from_date=args.from_date,
+                    to_date=args.to_date,
+                    dart_api_key=dart_api_key,
+                    theme_key=theme_key,
+                    enabled_sources=enabled_sources,
+                    raw_output_dir=str(raw_output_dir),
+                )
             )
-            ensure_records = builder.build_records(ensure_docs)
+            ensure_records = builder.build_records(ensure_docs.documents)
+            if ensure_docs.report:
+                run_reports.append(asdict(ensure_docs.report))
 
             if args.update_mode == "overwrite":
                 merged_records.extend(ensure_records)
@@ -538,7 +485,7 @@ def main() -> None:
             print(
                 f"[QUERY BACKFILL] 결과 부족으로 "
                 f"{ensure_target.stock_name}({ensure_target.stock_code}) 추가 수집: "
-                f"{len(ensure_docs)}개"
+                f"{len(ensure_docs.documents)}개"
             )
 
     grouped_records = _split_by_source(merged_records)
@@ -548,8 +495,10 @@ def main() -> None:
     source_jsonl_stats: Dict[str, int] = {}
     source_to_path = {
         "news": news_jsonl,
+        "general_news": general_news_jsonl,
         "dart": dart_jsonl,
         "forum": forum_jsonl,
+        "chart": chart_jsonl,
     }
 
     for source_type, records in grouped_records.items():
@@ -576,12 +525,56 @@ def main() -> None:
     print(f"통합 JSONL: {combined_jsonl}")
 
     print("소스별 JSONL 레코드 수:")
-    for source_type in ("news", "dart", "forum"):
+    for source_type in SUPPORTED_SOURCE_TYPES:
         print(f"  - {source_type}: {source_jsonl_stats.get(source_type, 0)}")
 
     print("소스별 VectorDB 레코드 수:")
-    for source_type in ("news", "dart", "forum"):
+    for source_type in SUPPORTED_SOURCE_TYPES:
         print(f"  - {source_type}: {vector_stats.get(source_type, 0)}")
+
+    dedup_added = max(0, len(merged_records) - len(existing_records))
+    missing_stocks = [
+        r["stock_name"]
+        for r in run_reports
+        if sum(r.get("source_counts", {}).values()) == 0
+    ]
+    summary_report = {
+        "theme_key": theme_key,
+        "stock_count": len(targets),
+        "enabled_sources": enabled_sources,
+        "source_success": {
+            source: sum(1 for r in run_reports if r.get("source_success", {}).get(source))
+            for source in enabled_sources
+        },
+        "source_fail": {
+            source: sum(1 for r in run_reports if source in r.get("failures", {}))
+            for source in enabled_sources
+        },
+        "collected_docs_count": len(collected_docs),
+        "raw_saved_count": sum(
+            sum((r.get("raw_saved_counts") or {}).values())
+            for r in run_reports
+        ),
+        "records_before_dedup": len(existing_records) + len(new_records),
+        "records_after_dedup": len(merged_records),
+        "dedup_added_count": dedup_added,
+        "missing_stocks": missing_stocks,
+        "per_stock_reports": run_reports,
+    }
+
+    report_dir = output_dir / "reports"
+    report_dir.mkdir(parents=True, exist_ok=True)
+    report_path = report_dir / f"{theme_key}_ingestion_report.json"
+    with report_path.open("w", encoding="utf-8") as f:
+        json.dump(summary_report, f, ensure_ascii=False, indent=2)
+
+    print("[INGESTION REPORT]")
+    print(f"  - report_path: {report_path}")
+    print(f"  - raw_saved_count: {summary_report['raw_saved_count']}")
+    print(f"  - records_before_dedup: {summary_report['records_before_dedup']}")
+    print(f"  - records_after_dedup: {summary_report['records_after_dedup']}")
+    if missing_stocks:
+        print(f"  - missing_stocks: {', '.join(missing_stocks)}")
 
 
 if __name__ == "__main__":
