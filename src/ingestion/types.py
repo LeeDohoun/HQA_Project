@@ -33,5 +33,21 @@ class CollectRequest:
     to_date: str
     dart_api_key: str
     theme_key: str
+    enabled_sources: List[str] = field(default_factory=lambda: ["news", "dart", "forum"])
     general_news_keywords: Optional[List[str]] = None
     max_general_news: int = 20
+    raw_output_dir: str = "./data/raw"
+
+
+@dataclass
+class MarketRecord:
+    source_type: str
+    stock_name: str
+    stock_code: str
+    timestamp: str
+    open: str
+    high: str
+    low: str
+    close: str
+    volume: str
+    metadata: Dict[str, str] = field(default_factory=dict)

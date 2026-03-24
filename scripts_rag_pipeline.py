@@ -13,6 +13,7 @@ import re
 import sys
 import hashlib
 import xml.etree.ElementTree as ET
+from dataclasses import asdict
 from io import BytesIO
 from pathlib import Path
 from typing import Dict, Iterable, List, Set
@@ -327,6 +328,11 @@ def main() -> None:
     parser.add_argument("--forum-pages", type=int, default=3)
     parser.add_argument("--chart-pages", type=int, default=5)
     parser.add_argument(
+        "--enabled-sources",
+        default="news,dart,forum",
+        help="수집 소스 목록(쉼표 구분). 예: news,dart,forum 또는 news,dart,forum,chart",
+    )
+    parser.add_argument(
         "--general-news-keywords",
         default="",
         help="쉼표(,)로 구분한 일반 뉴스 키워드. 예: 코스피,금리,원달러환율",
@@ -355,6 +361,12 @@ def main() -> None:
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    raw_output_dir = output_dir / "raw"
+    raw_output_dir.mkdir(parents=True, exist_ok=True)
+    for source in ("news", "dart", "forum", "theme_targets", "chart"):
+        source_dir = raw_output_dir / source
+        source_dir.mkdir(parents=True, exist_ok=True)
+        (source_dir / f"{theme_key}.jsonl").touch(exist_ok=True)
 
     corpus_dir = output_dir / "corpora" / theme_key
     corpus_dir.mkdir(parents=True, exist_ok=True)
@@ -375,6 +387,14 @@ def main() -> None:
 
     collected_docs: List[DocumentRecord] = []
     collected_stock_codes: Set[str] = set()
+    run_reports: List[Dict] = []
+    enabled_sources = [s.strip() for s in args.enabled_sources.split(",") if s.strip()]
+
+    theme_target_raw_dir = raw_output_dir / "theme_targets"
+    theme_target_raw_dir.mkdir(parents=True, exist_ok=True)
+    with (theme_target_raw_dir / f"{theme_key}.jsonl").open("a", encoding="utf-8") as f:
+        for t in targets:
+            f.write(json.dumps(asdict(t), ensure_ascii=False) + "\n")
 
     for target in targets:
         # 기존 종목이어도 skip하지 않는다.
@@ -389,11 +409,30 @@ def main() -> None:
                 to_date=args.to_date,
                 dart_api_key=dart_api_key,
                 theme_key=theme_key,
+                enabled_sources=enabled_sources,
+                raw_output_dir=str(raw_output_dir),
             )
         )
-        collected_docs.extend(target_docs)
+        collected_docs.extend(target_docs.documents)
+        if target_docs.report:
+            run_reports.append(asdict(target_docs.report))
         collected_stock_codes.add(target.stock_code)
-        print(f"[{target.stock_name}({target.stock_code})] 수집 문서 수: {len(target_docs)}")
+        print(f"[{target.stock_name}({target.stock_code})] 수집 문서 수: {len(target_docs.documents)}")
+
+    general_news_keywords = [
+        keyword.strip() for keyword in args.general_news_keywords.split(",") if keyword.strip()
+    ]
+    general_news_docs = ingestion_service.collect_general_news(
+        keywords=general_news_keywords,
+        max_items=args.max_general_news,
+        from_date=args.from_date,
+        to_date=args.to_date,
+        theme_key=theme_key,
+        raw_output_dir=str(raw_output_dir),
+    )
+    if general_news_docs:
+        collected_docs.extend(general_news_docs)
+        print(f"[GENERAL NEWS] 수집 문서 수: {len(general_news_docs)}")
 
     general_news_keywords = [
         keyword.strip() for keyword in args.general_news_keywords.split(",") if keyword.strip()
@@ -444,9 +483,13 @@ def main() -> None:
                     to_date=args.to_date,
                     dart_api_key=dart_api_key,
                     theme_key=theme_key,
+                    enabled_sources=enabled_sources,
+                    raw_output_dir=str(raw_output_dir),
                 )
             )
-            ensure_records = builder.build_records(ensure_docs)
+            ensure_records = builder.build_records(ensure_docs.documents)
+            if ensure_docs.report:
+                run_reports.append(asdict(ensure_docs.report))
 
             if args.update_mode == "overwrite":
                 merged_records.extend(ensure_records)
@@ -456,7 +499,7 @@ def main() -> None:
             print(
                 f"[QUERY BACKFILL] 결과 부족으로 "
                 f"{ensure_target.stock_name}({ensure_target.stock_code}) 추가 수집: "
-                f"{len(ensure_docs)}개"
+                f"{len(ensure_docs.documents)}개"
             )
 
     grouped_records = _split_by_source(merged_records)
@@ -502,6 +545,50 @@ def main() -> None:
     print("소스별 VectorDB 레코드 수:")
     for source_type in SUPPORTED_SOURCE_TYPES:
         print(f"  - {source_type}: {vector_stats.get(source_type, 0)}")
+
+    dedup_added = max(0, len(merged_records) - len(existing_records))
+    missing_stocks = [
+        r["stock_name"]
+        for r in run_reports
+        if sum(r.get("source_counts", {}).values()) == 0
+    ]
+    summary_report = {
+        "theme_key": theme_key,
+        "stock_count": len(targets),
+        "enabled_sources": enabled_sources,
+        "source_success": {
+            source: sum(1 for r in run_reports if r.get("source_success", {}).get(source))
+            for source in enabled_sources
+        },
+        "source_fail": {
+            source: sum(1 for r in run_reports if source in r.get("failures", {}))
+            for source in enabled_sources
+        },
+        "collected_docs_count": len(collected_docs),
+        "raw_saved_count": sum(
+            sum((r.get("raw_saved_counts") or {}).values())
+            for r in run_reports
+        ),
+        "records_before_dedup": len(existing_records) + len(new_records),
+        "records_after_dedup": len(merged_records),
+        "dedup_added_count": dedup_added,
+        "missing_stocks": missing_stocks,
+        "per_stock_reports": run_reports,
+    }
+
+    report_dir = output_dir / "reports"
+    report_dir.mkdir(parents=True, exist_ok=True)
+    report_path = report_dir / f"{theme_key}_ingestion_report.json"
+    with report_path.open("w", encoding="utf-8") as f:
+        json.dump(summary_report, f, ensure_ascii=False, indent=2)
+
+    print("[INGESTION REPORT]")
+    print(f"  - report_path: {report_path}")
+    print(f"  - raw_saved_count: {summary_report['raw_saved_count']}")
+    print(f"  - records_before_dedup: {summary_report['records_before_dedup']}")
+    print(f"  - records_after_dedup: {summary_report['records_after_dedup']}")
+    if missing_stocks:
+        print(f"  - missing_stocks: {', '.join(missing_stocks)}")
 
 
 if __name__ == "__main__":

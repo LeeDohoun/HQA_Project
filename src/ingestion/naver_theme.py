@@ -9,12 +9,6 @@ try:
 except ImportError:
     BeautifulSoup = None
 
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-
 from .base import BaseCollector, USER_AGENT
 
 
@@ -28,7 +22,12 @@ class ThemeStock:
 class NaverThemeStockCollector(BaseCollector):
     THEME_LIST_URL = "https://finance.naver.com/sise/theme.naver"
 
-    def _build_driver(self) -> webdriver.Chrome:
+    def _build_driver(self):
+        from selenium import webdriver
+        from selenium.webdriver.chrome.options import Options
+        from selenium.webdriver.chrome.service import Service
+        from webdriver_manager.chrome import ChromeDriverManager
+
         options = Options()
         options.add_argument("--headless=new")
         options.add_argument("--disable-gpu")
@@ -51,6 +50,8 @@ class NaverThemeStockCollector(BaseCollector):
 
             for theme_name, detail_url in theme_links:
                 driver.get(detail_url)
+                from selenium.webdriver.support.ui import WebDriverWait
+
                 WebDriverWait(driver, 10).until(lambda d: "code=" in d.page_source or "item/main" in d.page_source)
                 soup = BeautifulSoup(driver.page_source, "html.parser")
 
@@ -79,12 +80,14 @@ class NaverThemeStockCollector(BaseCollector):
         finally:
             driver.quit()
 
-    def _find_theme_links_selenium(self, driver: webdriver.Chrome, theme_keyword: str, max_pages: int) -> List[Tuple[str, str]]:
+    def _find_theme_links_selenium(self, driver, theme_keyword: str, max_pages: int) -> List[Tuple[str, str]]:
         normalized_keyword = theme_keyword.strip().lower()
         links: List[Tuple[str, str]] = []
 
         for page in range(1, max_pages + 1):
             driver.get(f"{self.THEME_LIST_URL}?page={page}")
+            from selenium.webdriver.support.ui import WebDriverWait
+
             WebDriverWait(driver, 10).until(lambda d: "테마별 시세" in d.page_source or "type=theme" in d.page_source)
 
             soup = BeautifulSoup(driver.page_source, "html.parser")

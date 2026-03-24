@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List
+import time
+from typing import Dict, List, Optional
 
 import requests
 
@@ -13,7 +14,7 @@ USER_AGENT = (
 
 
 class BaseCollector:
-    def __init__(self, timeout: int = 20):
+    def __init__(self, timeout: int = 20, max_retries: int = 3, backoff_seconds: float = 1.0):
         self.session = requests.Session()
         self.session.headers.update(
             {
@@ -24,6 +25,38 @@ class BaseCollector:
             }
         )
         self.timeout = timeout
+        self.max_retries = max_retries
+        self.backoff_seconds = backoff_seconds
+
+    def get_with_retry(
+        self,
+        url: str,
+        *,
+        params: Optional[Dict] = None,
+        headers: Optional[Dict] = None,
+        timeout: Optional[int] = None,
+        log_prefix: str = "COLLECT",
+    ) -> requests.Response:
+        response = None
+        for attempt in range(self.max_retries):
+            try:
+                response = self.session.get(
+                    url,
+                    params=params,
+                    headers=headers,
+                    timeout=timeout or self.timeout,
+                )
+                response.raise_for_status()
+                return response
+            except requests.RequestException as e:
+                print(
+                    f"[WARN][{log_prefix}] GET failed "
+                    f"attempt={attempt + 1}/{self.max_retries} url={url} error={e}"
+                )
+                if attempt < self.max_retries - 1:
+                    time.sleep(self.backoff_seconds * (attempt + 1))
+
+        raise requests.RequestException(f"[{log_prefix}] GET failed after retries: {url}")
 
     @staticmethod
     def to_iso_datetime(

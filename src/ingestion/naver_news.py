@@ -5,9 +5,6 @@ import re
 import time
 from typing import List
 
-import requests
-from requests import HTTPError
-
 try:
     from bs4 import BeautifulSoup
 except ImportError:
@@ -45,23 +42,13 @@ class NaverNewsCollector(BaseCollector):
             page_no += 1
             params = {"where": "news", "query": keyword, "start": start, "sort": 1}
 
-            response = None
-            for attempt in range(3):
-                try:
-                    response = self.session.get(self.SEARCH_URL, params=params, timeout=self.timeout)
-                    if response.status_code == 403:
-                        print(f"[WARN][NEWS] 403 blocked for keyword='{keyword}', start={start}")
-                        return docs
-                    response.raise_for_status()
-                    break
-                except HTTPError as e:
-                    print(f"[WARN][NEWS] HTTP error for keyword='{keyword}', start={start}, attempt={attempt + 1}: {e}")
-                    time.sleep(1.0)
-                except requests.RequestException as e:
-                    print(f"[WARN][NEWS] Request failed for keyword='{keyword}', start={start}, attempt={attempt + 1}: {e}")
-                    time.sleep(1.0)
-
-            if response is None:
+            try:
+                response = self.get_with_retry(
+                    self.SEARCH_URL,
+                    params=params,
+                    log_prefix=f"NEWS:{keyword}",
+                )
+            except Exception:
                 break
 
             soup = BeautifulSoup(response.text, "html.parser")

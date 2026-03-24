@@ -20,7 +20,7 @@ class DartDisclosureCollector(BaseCollector):
         end_de: str,
         page_count: int = 100,
     ) -> List[DocumentRecord]:
-        response = self.session.get(
+        response = self.get_with_retry(
             self.LIST_URL,
             params={
                 "crtfc_key": self.api_key,
@@ -30,8 +30,8 @@ class DartDisclosureCollector(BaseCollector):
                 "page_count": page_count,
             },
             timeout=self.timeout,
+            log_prefix=f"DART:{corp_code}",
         )
-        response.raise_for_status()
         payload = response.json()
 
         if payload.get("status") != "000":

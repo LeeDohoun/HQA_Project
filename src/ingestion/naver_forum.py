@@ -4,8 +4,6 @@ import re
 import time
 from typing import List
 
-import requests
-
 try:
     from bs4 import BeautifulSoup
 except ImportError:
@@ -29,19 +27,7 @@ class NaverStockForumCollector(BaseCollector):
         docs: List[DocumentRecord] = []
         for page in range(1, pages + 1):
             url = f"https://finance.naver.com/item/board.naver?code={stock_code}&page={page}"
-            response = None
-            last_error = None
-            for attempt in range(3):
-                try:
-                    response = self.session.get(url, timeout=self.timeout)
-                    response.raise_for_status()
-                    break
-                except requests.RequestException as e:
-                    last_error = e
-                    print(f"[WARN][FORUM][{stock_code}] page={page} request failed attempt={attempt + 1}: {e}")
-                    time.sleep(1.0)
-            if response is None:
-                raise requests.RequestException(last_error)
+            response = self.get_with_retry(url, log_prefix=f"FORUM:{stock_code}:{page}")
 
             soup = BeautifulSoup(response.text, "html.parser")
             rows = soup.select("table.type2 tr")
@@ -104,8 +90,7 @@ class NaverStockChartCollector(BaseCollector):
         docs: List[DocumentRecord] = []
         for page in range(1, pages + 1):
             url = f"https://finance.naver.com/item/sise_day.naver?code={stock_code}&page={page}"
-            response = self.session.get(url, timeout=self.timeout)
-            response.raise_for_status()
+            response = self.get_with_retry(url, log_prefix=f"CHART:{stock_code}:{page}")
 
             soup = BeautifulSoup(response.text, "html.parser")
             rows = soup.select("table.type2 tr")
