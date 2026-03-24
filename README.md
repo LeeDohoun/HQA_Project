@@ -1,241 +1,121 @@
-#  Stock RAG Pipeline  
-뉴스 / 일반뉴스 / DART / 종토방 / 차트 기반 주도주 분석 시스템
+# HQA Project (Layer 1 + Layer 2)
+
+네이버/공시 기반 수집(Layer 1)과 raw 기반 RAG 재빌드/검색(Layer 2)을 분리한 프로젝트입니다.
 
 ---
 
-## 1. 프로젝트 개요
+## 현재 핵심 구조
 
-본 프로젝트는 네이버 금융 및 DART 데이터를 기반으로  
-테마 → 종목 → 데이터 수집 → RAG 구성 → 분석을 통해  
-주도주 (hegemony stock)를 도출하는 시스템입니다.
-
-###  목표
-
-- 테마 기반 종목 자동 수집  
-- 뉴스 / 일반뉴스 / 공시 / 종토방 / 차트 데이터 통합  
-- 소스별 RAG 구축 (news / general_news / dart / forum / chart)  
-- 기간 기반 RAG 재구성  
-- 주도주 탐색 및 분석  
-
----
-
-## 2. 전체 구조
-
-```
-[테마 입력]
-   ↓
-테마 → 종목 리스트 수집
-   ↓
-각 종목별 데이터 수집
-   - 종목 뉴스
-   - 일반 뉴스
-   - DART 공시
-   - 종토방
-   - 일봉 차트
-   ↓
-Raw Corpus 저장 (JSONL)
-   ↓
-VectorDB 생성 (소스별 3개)
-   ↓
-기간 필터 기반 RAG 재구성
-   ↓
-분석 → 주도주 도출
-```
-
----
-
-## 3. 디렉토리 구조
-
-```
-HQA_Project/
-│
+```text
+.
+├── scripts_rag_pipeline.py          # Layer 1 수집 실행 + Layer 2 raw 재빌드 트리거
+├── build_period_rag.py              # 기간 필터 RAG 재구성
+├── requirements.txt
 ├── src/
-│   ├── data_pipeline/
-│   │   ├── collectors.py
-|   |   ├── rag_builders.py
-│   │   └── __init__.py
-│   │
-│   └── rag/
-|       ├── bm25_index.py
-│       └── vector_store.py
-│
-├── data/
-│   ├── corpora/
-│   │   ├── 2차전지/
-│   │   │   ├── combined.jsonl
-│   │   │   ├── news.jsonl
-│   │   │   ├── general_news.jsonl
-│   │   │   ├── dart.jsonl
-│   │   │   └── forum.jsonl
-│   │   │   └── chart.jsonl
-│   │
-│   ├── vector_stores/
-│   │   ├── news_vector_store.json
-│   │   │   ├── general_news_vector_store.json
-│   │   │   ├── dart_vector_store.json
-│   │   │   └── forum_vector_store.json
-│   │   │   └── chart_vector_store.json
-│   │
-│
-├── corp_codes.csv
-├── scripts_rag_pipeline.py
-├── build_period_rag.py
-└── README.md
+│   ├── ingestion/                   # Layer 1 collectors/service
+│   ├── data_pipeline/               # corpus builder + 호환 shim
+│   ├── rag/                         # dedupe/raw builder/vector/bm25
+│   └── retrieval/                   # RetrievalService(vector+BM25+RRF)
+└── data/
+    ├── raw/                         # 수집 원본 landing zone
+    ├── corpora/                     # 문서형 RAG corpus
+    ├── market_data/                 # 시계열(chart/quote/krx/fdr)
+    ├── vector_stores/               # source별 vector store
+    ├── bm25/                        # BM25 인덱스
+    └── reports/                     # 실행 리포트
 ```
 
 ---
 
-## 4. 설치
+## 설치
 
-```
+```bash
 pip install -r requirements.txt
 ```
 
-### 필수 패키지
+---
 
-- requests  
-- beautifulsoup4  
-- selenium  
-- webdriver-manager  
-- python-dotenv  
+## 환경변수
+
+`.env` 예시:
+
+```bash
+DART_API_KEY=YOUR_DART_KEY
+
+# (옵션) KIS chart 사용 시
+KIS_APP_KEY=...
+KIS_APP_SECRET=...
+KIS_BASE_URL=https://openapi.koreainvestment.com:9443
+```
 
 ---
 
-## 5. 환경 변수
+## 실행 방법
 
-```
-DART_API_KEY=your_api_key
-```
+## 1) 수집 + raw 저장 + Layer 2 빌드
 
----
+> 기본 소스: `news,dart,forum`
 
-## 6. 데이터 수집
-
-```
+```bash
 python scripts_rag_pipeline.py \
-  --theme "2차전지" \
-  --general-news-keywords "코스피,금리,원달러환율" \
+  --theme "풍력에너지" \
+  --from-date 20240101 \
+  --to-date 20241231 \
   --theme-max-stocks 20 \
-  --theme-max-pages 10 \
-  --chart-pages 5 \
-  --output-dir ./data \
-  --base-filename rag_corpus_secondary_battery \
-  --update-mode overwrite
+  --max-news 100 \
+  --forum-pages 500 \
+  --update-mode append-new-stocks
 ```
 
----
+chart까지 포함하려면:
 
-## 7. 업데이트 모드
-
-### overwrite
-기존 데이터 삭제 후 재수집
-
-### append-new-stocks
-신규 종목만 추가
-
----
-
-## 8. Raw Corpus 구조
-
-```
-{
-  "text": "...",
-  "metadata": {
-    "source_type": "news",
-    "stock_name": "삼성SDI",
-    "stock_code": "006400",
-    "theme_key": "2차전지",
-    "published_at": "2025-12-19T00:00:00"
-  }
-}
+```bash
+python scripts_rag_pipeline.py \
+  --theme "풍력에너지" \
+  --from-date 20240101 \
+  --to-date 20241231 \
+  --enabled-sources news,dart,forum,chart \
+  --chart-pages 5
 ```
 
----
-
-## 9. VectorDB
-
-- news_vector_store.json  
-- general_news_vector_store.json  
-- dart_vector_store.json  
-- forum_vector_store.json  
-- chart_vector_store.json  
+### 산출물
+- 문서형: `data/corpora/<theme_key>/*.jsonl`
+- 시계열: `data/market_data/<theme_key>/*.jsonl`
+- 벡터: `data/vector_stores/*_vector_store.json`
+- BM25: `data/bm25/<theme_key>_bm25.json`
 
 ---
 
-## 10. 핵심 개념
+## 2) 기간 RAG 재구성
 
-- Raw Corpus: 원본 데이터  
-- VectorDB: 검색용  
-- Period RAG: 기간 필터 결과  
-
----
-
-## 11. 기간 RAG 생성
-
-```
+```bash
 python build_period_rag.py \
   --data-dir ./data \
-  --theme-key 2차전지 \
-  --from-date 20230101 \
-  --to-date 20230630 \
-  --output-name battery_2023H1 \
+  --theme-key 풍력에너지 \
+  --from-date 20240101 \
+  --to-date 20240630 \
+  --output-name wind_2024H1 \
   --build-vector
 ```
 
----
-
-## 12. 지원 RAG 유형
-
-- 기간  
-- 누적  
-- 테마+기간  
-- 소스별  
+`--source-type`은 고정 목록이 아니라 문자열로 필터됩니다.
 
 ---
 
-## 13. 데이터 특성
+## 3) RetrievalService 사용 예시
 
-### DART
-- 정확한 날짜 필터
+```python
+from src.retrieval import RetrievalService
 
-### 뉴스
-- 최신순 탐색
-
-### 종토방
-- 페이지 기반 역순 수집
-
----
-
-## 14. 운영 전략
-
-- 수집: scripts_rag_pipeline  
-- 분석: build_period_rag  
+svc = RetrievalService(data_dir="./data", theme_key="풍력에너지")
+results = svc.search("풍력 수주와 실적", source_types=["news", "dart"], top_k=20)
+for row in results[:3]:
+    print(row["source_type"], row["rrf_score"], row["metadata"].get("title", ""))
+```
 
 ---
 
-## 15. 설계 원칙
+## 참고
 
-- Raw는 삭제하지 않음  
-- 분석은 기간 기반  
-
----
-
-## 16. 워크플로우
-
-STEP 1 수집  
-STEP 2 기간 RAG  
-STEP 3 누적 RAG  
-STEP 4 분석  
-
----
-
-## 17. 확장
-
-- LLM 분석  
-- scoring  
-
----
-
-## 결론
-
-수집은 넓게, 분석은 정밀하게
+- `main.py`는 현재 코드베이스에서 사용되지 않아 제거되었습니다.
+- Layer 2는 ingestion 결과 메모리를 직접 받지 않고 `data/raw`를 기준으로 재빌드합니다.

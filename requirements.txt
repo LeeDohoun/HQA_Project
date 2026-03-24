@@ -1,16 +1,12 @@
-requests>=2.28.0,<3.0.0
+requests>=2.31.0,<3.0.0
 beautifulsoup4>=4.12.0
 lxml>=4.9.0
-
-langchain-core>=0.1.0
-rank-bm25>=0.2.2
 python-dotenv>=1.0.0
 
+# Retrieval / indexing
+langchain-core>=0.1.0
+rank-bm25>=0.2.2
+
+# Theme collector (Selenium)
 selenium>=4.20.0,<5.0.0
 webdriver-manager>=4.0.1
-
-
-urllib3>=1.26.0,<2.4.0
-packaging<25
-protobuf<6
-pillow<11
