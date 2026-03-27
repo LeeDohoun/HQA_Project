@@ -46,11 +46,8 @@ LangGraph 기반 분석 워크플로우
 """
 
 import logging
-import time
 from typing import Dict, Any, Optional, List, TypedDict, Annotated
 from dataclasses import asdict
-
-from src.tracing.agent_tracer import AgentTracer
 
 logger = logging.getLogger(__name__)
 
@@ -97,9 +94,6 @@ class AnalysisState(TypedDict, total=False):
     # ── 에러 추적 ──
     errors: Dict[str, str]    # {"agent_name": "error msg"}
     
-    # ── 트레이싱 ──
-    tracer: Any               # AgentTracer 인스턴스
-    
     # ── 메타 ──
     status: str               # "running" | "completed" | "error"
 
@@ -117,76 +111,45 @@ def _analyst_node(state: AnalysisState) -> dict:
     """
     stock_name = state["stock_name"]
     stock_code = state["stock_code"]
-    tracer: Optional[AgentTracer] = state.get("tracer")
     
     print(f"🔍 [LangGraph:Analyst] {stock_name} 분석 시작...")
     
     try:
-        from src.agents.analyst import AnalystAgent, AnalystScore
+        from src.agents.analyst import AnalystAgent
         agent = AnalystAgent()
         
-        if tracer:
-            with tracer.trace_agent("analyst", f"{stock_name}({stock_code})") as span:
-                # Researcher 실행
-                research_result = agent.researcher.research(stock_name, stock_code)
-                research_result.evaluate_quality()
-                quality_grade = research_result.quality_grade
-                quality_warnings = research_result.quality_warnings
-                
-                print(f"   📊 리서치 품질: {quality_grade}등급 ({research_result.quality_score}/100)")
-                
-                # Strategist 실행
-                hegemony = agent.strategist.analyze_hegemony(research_result)
-                
-                analyst_score = AnalystScore(
-                    moat_score=hegemony.moat_score,
-                    growth_score=hegemony.growth_score,
-                    total_score=hegemony.total_score,
-                    moat_reason=hegemony.moat_analysis,
-                    growth_reason=hegemony.growth_analysis,
-                    report_summary=research_result.report_summary[:500],
-                    image_analysis=research_result.chart_analysis[:500],
-                    final_opinion=hegemony.final_opinion,
-                    hegemony_grade=hegemony.hegemony_grade,
-                    competitive_advantage=hegemony.competitive_advantage,
-                    risk_factors=hegemony.risk_factors,
-                    policy_impact=hegemony.policy_impact,
-                    detailed_reasoning=hegemony.detailed_reasoning,
-                )
-                
-                span.set_output(
-                    f"{hegemony.hegemony_grade}등급 ({hegemony.total_score}/70) "
-                    f"리서치품질:{quality_grade}"
-                )
-                span.set_reasoning(
-                    hegemony.final_opinion[:200] if hegemony.final_opinion else "",
-                    raw=hegemony.detailed_reasoning,
-                )
-                
-                print(f"   ✅ Analyst 완료: {hegemony.hegemony_grade}등급 ({hegemony.total_score}/70)")
-        else:
-            # tracer 없이 기존 로직
-            research_result = agent.researcher.research(stock_name, stock_code)
-            research_result.evaluate_quality()
-            quality_grade = research_result.quality_grade
-            quality_warnings = research_result.quality_warnings
-            hegemony = agent.strategist.analyze_hegemony(research_result)
-            analyst_score = AnalystScore(
-                moat_score=hegemony.moat_score,
-                growth_score=hegemony.growth_score,
-                total_score=hegemony.total_score,
-                moat_reason=hegemony.moat_analysis,
-                growth_reason=hegemony.growth_analysis,
-                report_summary=research_result.report_summary[:500],
-                image_analysis=research_result.chart_analysis[:500],
-                final_opinion=hegemony.final_opinion,
-                hegemony_grade=hegemony.hegemony_grade,
-                competitive_advantage=hegemony.competitive_advantage,
-                risk_factors=hegemony.risk_factors,
-                policy_impact=hegemony.policy_impact,
-                detailed_reasoning=hegemony.detailed_reasoning,
-            )
-            print(f"   ✅ Analyst 완료: {hegemony.hegemony_grade}등급 ({hegemony.total_score}/70)")
+        # Researcher 실행
+        research_result = agent.researcher.research(stock_name, stock_code)
+        
+        # 품질 평가
+        research_result.evaluate_quality()
+        quality_grade = research_result.quality_grade
+        quality_warnings = research_result.quality_warnings
+        
+        print(f"   📊 리서치 품질: {quality_grade}등급 ({research_result.quality_score}/100)")
+        
+        # Strategist 실행
+        hegemony = agent.strategist.analyze_hegemony(research_result)
+        
+        # AnalystScore로 변환
+        from src.agents.analyst import AnalystScore
+        analyst_score = AnalystScore(
+            moat_score=hegemony.moat_score,
+            growth_score=hegemony.growth_score,
+            total_score=hegemony.total_score,
+            moat_reason=hegemony.moat_analysis,
+            growth_reason=hegemony.growth_analysis,
+            report_summary=research_result.report_summary[:500],
+            image_analysis=research_result.chart_analysis[:500],
+            final_opinion=hegemony.final_opinion,
+            hegemony_grade=hegemony.hegemony_grade,
+            competitive_advantage=hegemony.competitive_advantage,
+            risk_factors=hegemony.risk_factors,
+            policy_impact=hegemony.policy_impact,
+            detailed_reasoning=hegemony.detailed_reasoning,
+        )
+        
+        print(f"   ✅ Analyst 완료: {hegemony.hegemony_grade}등급 ({hegemony.total_score}/70)")
         
         return {
             "analyst_score": analyst_score,
@@ -197,10 +160,6 @@ def _analyst_node(state: AnalysisState) -> dict:
     except Exception as e:
         logger.exception(f"Analyst 노드 오류: {e}")
         print(f"   ⚠️ Analyst 오류: {e}")
-        
-        if tracer:
-            with tracer.trace_agent("analyst", f"{stock_name}({stock_code}) [에러복구]") as span:
-                span.set_error(str(e), error_type=type(e).__name__)
         
         from src.agents.analyst import AnalystScore
         return {
@@ -220,34 +179,21 @@ def _quant_node(state: AnalysisState) -> dict:
     """Quant 노드: 재무 분석"""
     stock_name = state["stock_name"]
     stock_code = state["stock_code"]
-    tracer: Optional[AgentTracer] = state.get("tracer")
     
     print(f"📈 [LangGraph:Quant] {stock_name} 재무 분석 시작...")
     
     try:
         from src.agents.quant import QuantAgent
         agent = QuantAgent()
-        
-        if tracer:
-            with tracer.trace_agent("quant", f"{stock_name}({stock_code})") as span:
-                quant_score = agent.full_analysis(stock_name, stock_code)
-                span.set_output(
-                    f"{quant_score.grade} ({quant_score.total_score}/100)"
-                )
-                span.set_reasoning(quant_score.opinion[:200] if quant_score.opinion else "")
-        else:
-            quant_score = agent.full_analysis(stock_name, stock_code)
+        quant_score = agent.full_analysis(stock_name, stock_code)
         
         print(f"   ✅ Quant 완료: {quant_score.grade} ({quant_score.total_score}/100)")
+        
         return {"quant_score": quant_score}
         
     except Exception as e:
         logger.exception(f"Quant 노드 오류: {e}")
         print(f"   ⚠️ Quant 오류: {e}")
-        
-        if tracer:
-            with tracer.trace_agent("quant", f"{stock_name}({stock_code}) [에러복구]") as span:
-                span.set_error(str(e), error_type=type(e).__name__)
         
         from src.agents.quant import QuantAgent
         agent = QuantAgent()
@@ -261,37 +207,21 @@ def _chartist_node(state: AnalysisState) -> dict:
     """Chartist 노드: 기술적 분석"""
     stock_name = state["stock_name"]
     stock_code = state["stock_code"]
-    tracer: Optional[AgentTracer] = state.get("tracer")
     
     print(f"📊 [LangGraph:Chartist] {stock_name} 기술적 분석 시작...")
     
     try:
         from src.agents.chartist import ChartistAgent
         agent = ChartistAgent()
-        
-        if tracer:
-            with tracer.trace_agent("chartist", f"{stock_name}({stock_code})") as span:
-                chartist_score = agent.full_analysis(stock_name, stock_code)
-                span.set_output(
-                    f"{chartist_score.signal} ({chartist_score.total_score}/100)"
-                )
-                span.set_reasoning(
-                    f"trend:{chartist_score.trend_score} momentum:{chartist_score.momentum_score} "
-                    f"volatility:{chartist_score.volatility_score} volume:{chartist_score.volume_score}"
-                )
-        else:
-            chartist_score = agent.full_analysis(stock_name, stock_code)
+        chartist_score = agent.full_analysis(stock_name, stock_code)
         
         print(f"   ✅ Chartist 완료: {chartist_score.signal} ({chartist_score.total_score}/100)")
+        
         return {"chartist_score": chartist_score}
         
     except Exception as e:
         logger.exception(f"Chartist 노드 오류: {e}")
         print(f"   ⚠️ Chartist 오류: {e}")
-        
-        if tracer:
-            with tracer.trace_agent("chartist", f"{stock_name}({stock_code}) [에러복구]") as span:
-                span.set_error(str(e), error_type=type(e).__name__)
         
         from src.agents.chartist import ChartistAgent
         agent = ChartistAgent()
@@ -311,24 +241,8 @@ def _quality_gate(state: AnalysisState) -> dict:
     quality = state.get("research_quality", "C")
     retry_count = state.get("retry_count", 0)
     max_retries = state.get("max_retries", 1)
-    tracer: Optional[AgentTracer] = state.get("tracer")
     
     print(f"🔍 [LangGraph:QualityGate] 품질 검증: {quality}등급 (재시도: {retry_count}/{max_retries})")
-    
-    # 이벤트 기록
-    if tracer:
-        if quality == "D" and retry_count < max_retries:
-            tracer.add_event(
-                "quality_gate_failed",
-                f"{quality}등급 → 리서치 재시도 ({retry_count + 1}/{max_retries})",
-                "quality_gate",
-            )
-        else:
-            tracer.add_event(
-                "quality_gate_passed",
-                f"{quality}등급 통과 (재시도: {retry_count}/{max_retries})",
-                "quality_gate",
-            )
     
     return {"status": "quality_checked"}
 
@@ -342,87 +256,41 @@ def _retry_research(state: AnalysisState) -> dict:
     stock_name = state["stock_name"]
     stock_code = state["stock_code"]
     retry_count = state.get("retry_count", 0) + 1
-    tracer: Optional[AgentTracer] = state.get("tracer")
-    
-    # 이전 analyst의 agent_id 추적 (retry 흐름 연결)
-    previous_analyst_id = None
-    if tracer and tracer._trace:
-        for at in reversed(tracer._trace.agent_traces):
-            if at.agent_name == "analyst":
-                previous_analyst_id = at.agent_id
-                break
     
     print(f"🔄 [LangGraph:Retry] {stock_name} 리서치 재시도 ({retry_count}회차)...")
     print(f"   📎 이전 품질: {state.get('research_quality', '?')}등급")
     print(f"   📎 이전 경고: {state.get('quality_warnings', [])}")
     
-    if tracer:
-        tracer.add_event(
-            "retry_started",
-            f"리서치 재시도 {retry_count}회차 (이전 품질: {state.get('research_quality', '?')})",
-            "retry_research",
-        )
-    
     try:
         from src.agents.analyst import AnalystAgent, AnalystScore
         agent = AnalystAgent()
         
-        if tracer:
-            with tracer.trace_agent("analyst_retry", f"{stock_name}({stock_code}) 재시도{retry_count}") as span:
-                if previous_analyst_id:
-                    span.set_retry_from(previous_analyst_id)
-                
-                research_result = agent.researcher.research(stock_name, stock_code)
-                research_result.evaluate_quality()
-                new_quality = research_result.quality_grade
-                
-                hegemony = agent.strategist.analyze_hegemony(research_result)
-                
-                analyst_score = AnalystScore(
-                    moat_score=hegemony.moat_score,
-                    growth_score=hegemony.growth_score,
-                    total_score=hegemony.total_score,
-                    moat_reason=hegemony.moat_analysis,
-                    growth_reason=hegemony.growth_analysis,
-                    report_summary=research_result.report_summary[:500],
-                    image_analysis=research_result.chart_analysis[:500],
-                    final_opinion=hegemony.final_opinion,
-                    hegemony_grade=hegemony.hegemony_grade,
-                    competitive_advantage=hegemony.competitive_advantage,
-                    risk_factors=hegemony.risk_factors,
-                    policy_impact=hegemony.policy_impact,
-                    detailed_reasoning=hegemony.detailed_reasoning,
-                )
-                
-                span.set_output(
-                    f"재시도 결과: {new_quality}등급 ({hegemony.total_score}/70)"
-                )
-                span.set_reasoning(
-                    hegemony.final_opinion[:200] if hegemony.final_opinion else "",
-                    raw=hegemony.detailed_reasoning,
-                )
-        else:
-            research_result = agent.researcher.research(stock_name, stock_code)
-            research_result.evaluate_quality()
-            new_quality = research_result.quality_grade
-            hegemony = agent.strategist.analyze_hegemony(research_result)
-            analyst_score = AnalystScore(
-                moat_score=hegemony.moat_score,
-                growth_score=hegemony.growth_score,
-                total_score=hegemony.total_score,
-                moat_reason=hegemony.moat_analysis,
-                growth_reason=hegemony.growth_analysis,
-                report_summary=research_result.report_summary[:500],
-                image_analysis=research_result.chart_analysis[:500],
-                final_opinion=hegemony.final_opinion,
-                hegemony_grade=hegemony.hegemony_grade,
-                competitive_advantage=hegemony.competitive_advantage,
-                risk_factors=hegemony.risk_factors,
-                policy_impact=hegemony.policy_impact,
-                detailed_reasoning=hegemony.detailed_reasoning,
-            )
+        # 재시도 시 웹 검색에 더 높은 가중치
+        # (Researcher의 fallback 전략이 자동으로 작동)
+        research_result = agent.researcher.research(stock_name, stock_code)
+        research_result.evaluate_quality()
         
+        new_quality = research_result.quality_grade
         print(f"   📊 재시도 리서치 품질: {new_quality}등급 ({research_result.quality_score}/100)")
+        
+        # 재시도에서도 품질이 낮으면 그냥 진행 (무한 루프 방지)
+        hegemony = agent.strategist.analyze_hegemony(research_result)
+        
+        analyst_score = AnalystScore(
+            moat_score=hegemony.moat_score,
+            growth_score=hegemony.growth_score,
+            total_score=hegemony.total_score,
+            moat_reason=hegemony.moat_analysis,
+            growth_reason=hegemony.growth_analysis,
+            report_summary=research_result.report_summary[:500],
+            image_analysis=research_result.chart_analysis[:500],
+            final_opinion=hegemony.final_opinion,
+            hegemony_grade=hegemony.hegemony_grade,
+            competitive_advantage=hegemony.competitive_advantage,
+            risk_factors=hegemony.risk_factors,
+            policy_impact=hegemony.policy_impact,
+            detailed_reasoning=hegemony.detailed_reasoning,
+        )
         
         return {
             "analyst_score": analyst_score,
@@ -434,11 +302,6 @@ def _retry_research(state: AnalysisState) -> dict:
     except Exception as e:
         logger.exception(f"리서치 재시도 오류: {e}")
         print(f"   ⚠️ 재시도 오류: {e}")
-        
-        if tracer:
-            with tracer.trace_agent("analyst_retry", f"{stock_name}({stock_code}) 재시도{retry_count} [에러]") as span:
-                span.set_error(str(e), error_type=type(e).__name__)
-        
         return {
             "retry_count": retry_count,
             "errors": {**state.get("errors", {}), "retry_research": str(e)[:200]},
@@ -453,7 +316,6 @@ def _risk_manager_node(state: AnalysisState) -> dict:
     """
     stock_name = state["stock_name"]
     stock_code = state["stock_code"]
-    tracer: Optional[AgentTracer] = state.get("tracer")
     
     analyst_score = state.get("analyst_score")
     quant_score = state.get("quant_score")
@@ -485,25 +347,7 @@ def _risk_manager_node(state: AnalysisState) -> dict:
         )
         
         agent = RiskManagerAgent()
-        
-        if tracer:
-            input_detail = (
-                f"Analyst:{analyst_score.total_score}/70 "
-                f"Quant:{quant_score.total_score}/100 "
-                f"Chartist:{chartist_score.total_score}/100"
-            )
-            with tracer.trace_agent("risk_manager", input_detail) as span:
-                final_decision = agent.make_decision(stock_name, stock_code, agent_scores)
-                span.set_output(
-                    f"{final_decision.action.value} ({final_decision.total_score}/270) "
-                    f"리스크:{final_decision.risk_level.value}"
-                )
-                span.set_reasoning(
-                    final_decision.summary[:200] if final_decision.summary else "",
-                    raw=final_decision.summary,
-                )
-        else:
-            final_decision = agent.make_decision(stock_name, stock_code, agent_scores)
+        final_decision = agent.make_decision(stock_name, stock_code, agent_scores)
         
         print(f"   ✅ 최종 판단: {final_decision.action.value} "
               f"(종합 {final_decision.total_score}/270점)")
@@ -517,11 +361,6 @@ def _risk_manager_node(state: AnalysisState) -> dict:
     except Exception as e:
         logger.exception(f"Risk Manager 노드 오류: {e}")
         print(f"   ⚠️ Risk Manager 오류: {e}")
-        
-        if tracer:
-            with tracer.trace_agent("risk_manager", f"{stock_name} [에러]") as span:
-                span.set_error(str(e), error_type=type(e).__name__)
-        
         return {
             "status": "error",
             "errors": {**state.get("errors", {}), "risk_manager": str(e)[:200]},
@@ -631,7 +470,6 @@ def run_stock_analysis(
     stock_code: str,
     query: str = "",
     max_retries: int = 1,
-    debug_trace: bool = False,
 ) -> Dict[str, Any]:
     """
     LangGraph 워크플로우로 종목 분석 실행
@@ -647,23 +485,15 @@ def run_stock_analysis(
     Returns:
         분석 결과 딕셔너리 (supervisor.execute() 호환 형식)
     """
-    # 트레이서 생성
-    tracer = AgentTracer(debug=debug_trace)
-    
     graph = get_analysis_graph()
     
     if graph is None:
         # LangGraph 미설치 → 폴백
-        tracer.start_trace(stock_name, stock_code, "fallback_parallel", query)
-        tracer.set_fallback_reason("langgraph 미설치")
-        return _fallback_parallel_analysis(stock_name, stock_code, tracer=tracer)
+        return _fallback_parallel_analysis(stock_name, stock_code)
     
     print(f"\n🚀 [LangGraph] {stock_name}({stock_code}) 분석 워크플로우 시작")
     print(f"   ⚡ Analyst / Quant / Chartist 병렬 분기")
     print(f"   🔄 품질 게이트 활성 (최대 재시도: {max_retries}회)")
-    
-    # 트레이스 시작
-    tracer.start_trace(stock_name, stock_code, "langgraph", query)
     
     # 초기 상태
     initial_state: AnalysisState = {
@@ -675,7 +505,6 @@ def run_stock_analysis(
         "errors": {},
         "status": "running",
         "quality_warnings": [],
-        "tracer": tracer,
     }
     
     try:
@@ -707,53 +536,22 @@ def run_stock_analysis(
         if final_state.get("errors"):
             result["warnings"] = final_state["errors"]
         
-        # 트레이스 종료
-        final_decision = final_state.get("final_decision")
-        final_summary = ""
-        if final_decision:
-            final_summary = (
-                f"{final_decision.action.value} ({final_decision.total_score}/270) "
-                f"리스크:{final_decision.risk_level.value}"
-            )
-        
-        saved_path = tracer.finish_trace(
-            final_result_summary=final_summary,
-            research_quality=final_state.get("research_quality", "?"),
-            retry_count=final_state.get("retry_count", 0),
-        )
-        
-        # 트레이스 결과 첨부
-        result["trace"] = tracer.to_dict()
-        if saved_path:
-            result["trace_file"] = saved_path
-            print(f"📝 [Tracer] 트레이스 저장: {saved_path}")
-        
         return result
         
     except Exception as e:
         logger.exception(f"LangGraph 워크플로우 오류: {e}")
         print(f"⚠️ LangGraph 오류 → 기존 방식으로 폴백: {e}")
-        
-        tracer.set_fallback_reason(f"LangGraph 오류: {str(e)[:200]}")
-        tracer.finish_trace(status="error")
-        
-        # 폴백 시 새 tracer 생성
-        fallback_tracer = AgentTracer(debug=debug_trace)
-        fallback_tracer.start_trace(stock_name, stock_code, "fallback_parallel", query)
-        fallback_tracer.set_fallback_reason(f"LangGraph 오류: {str(e)[:100]}")
-        return _fallback_parallel_analysis(stock_name, stock_code, tracer=fallback_tracer)
+        return _fallback_parallel_analysis(stock_name, stock_code)
 
 
 def _fallback_parallel_analysis(
     stock_name: str,
     stock_code: str,
-    tracer: Optional[AgentTracer] = None,
 ) -> Dict[str, Any]:
     """
     LangGraph 미설치 시 기존 병렬 실행 방식 (폴백)
     
     src.utils.parallel.run_agents_parallel 을 사용합니다.
-    tracer가 주입되면 각 에이전트 실행 전후로 타이밍을 기록합니다.
     """
     from src.utils.parallel import run_agents_parallel, is_error
     from src.agents import (
@@ -769,61 +567,17 @@ def _fallback_parallel_analysis(
         "chartist": ChartistAgent(),
     }
     
-    # Phase 1: 병렬 실행 (타이밍 측정)
-    t0 = time.time()
+    # Phase 1: 병렬 실행
     parallel_results = run_agents_parallel({
         "analyst":  (agents["analyst"].full_analysis,  (stock_name, stock_code)),
         "quant":    (agents["quant"].full_analysis,    (stock_name, stock_code)),
         "chartist": (agents["chartist"].full_analysis, (stock_name, stock_code)),
     })
-    parallel_elapsed = time.time() - t0
     
     analyst_score = parallel_results.get("analyst")
     quant_score = parallel_results.get("quant")
     chartist_score = parallel_results.get("chartist")
     
-    # 트레이싱: 병렬 실행 결과 기록
-    if tracer:
-        # Analyst
-        if is_error(analyst_score):
-            with tracer.trace_agent("analyst", f"{stock_name}({stock_code}) [fallback]") as span:
-                span.set_error(str(analyst_score), error_type="parallel_error")
-        else:
-            with tracer.trace_agent("analyst", f"{stock_name}({stock_code}) [fallback]") as span:
-                span.set_output(
-                    f"{analyst_score.hegemony_grade}등급 ({analyst_score.total_score}/70)"
-                )
-                span.set_reasoning(
-                    analyst_score.final_opinion[:200] if analyst_score.final_opinion else ""
-                )
-        
-        # Quant
-        if is_error(quant_score):
-            with tracer.trace_agent("quant", f"{stock_name}({stock_code}) [fallback]") as span:
-                span.set_error(str(quant_score), error_type="parallel_error")
-        else:
-            with tracer.trace_agent("quant", f"{stock_name}({stock_code}) [fallback]") as span:
-                span.set_output(
-                    f"{quant_score.grade} ({quant_score.total_score}/100)"
-                )
-                span.set_reasoning(quant_score.opinion[:200] if quant_score.opinion else "")
-        
-        # Chartist
-        if is_error(chartist_score):
-            with tracer.trace_agent("chartist", f"{stock_name}({stock_code}) [fallback]") as span:
-                span.set_error(str(chartist_score), error_type="parallel_error")
-        else:
-            with tracer.trace_agent("chartist", f"{stock_name}({stock_code}) [fallback]") as span:
-                span.set_output(
-                    f"{chartist_score.signal} ({chartist_score.total_score}/100)"
-                )
-                span.set_reasoning(
-                    f"trend:{chartist_score.trend_score} momentum:{chartist_score.momentum_score}"
-                )
-        
-        tracer.set_metadata("parallel_elapsed_seconds", round(parallel_elapsed, 3))
-    
-    # 에러 복구
     if is_error(analyst_score):
         analyst_score = AnalystScore(
             moat_score=20, growth_score=15, total_score=35,
@@ -868,38 +622,8 @@ def _fallback_parallel_analysis(
     )
     
     risk_manager = RiskManagerAgent()
-    
-    if tracer:
-        input_detail = (
-            f"Analyst:{analyst_score.total_score}/70 "
-            f"Quant:{quant_score.total_score}/100 "
-            f"Chartist:{chartist_score.total_score}/100"
-        )
-        with tracer.trace_agent("risk_manager", input_detail) as span:
-            final_decision = risk_manager.make_decision(stock_name, stock_code, agent_scores)
-            span.set_output(
-                f"{final_decision.action.value} ({final_decision.total_score}/270) "
-                f"리스크:{final_decision.risk_level.value}"
-            )
-            span.set_reasoning(
-                final_decision.summary[:200] if final_decision.summary else ""
-            )
-    else:
-        final_decision = risk_manager.make_decision(stock_name, stock_code, agent_scores)
-    
+    final_decision = risk_manager.make_decision(stock_name, stock_code, agent_scores)
     results["final_decision"] = final_decision
-    
-    # 트레이스 종료
-    if tracer:
-        final_summary = (
-            f"{final_decision.action.value} ({final_decision.total_score}/270) "
-            f"리스크:{final_decision.risk_level.value}"
-        )
-        saved_path = tracer.finish_trace(final_result_summary=final_summary)
-        results["trace"] = tracer.to_dict()
-        if saved_path:
-            results["trace_file"] = saved_path
-            print(f"📝 [Tracer] 트레이스 저장: {saved_path}")
     
     return results
 

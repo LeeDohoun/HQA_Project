@@ -7,16 +7,12 @@ HQA (Hegemony Quantitative Analyst) 메인 실행 파일
 2. Single Stock Analysis: 특정 종목 전체 분석
 3. Quick Analysis: 빠른 분석 (Thinking 없음)
 4. Realtime Price: 실시간 시세 조회
-5. Autonomous Mode: 설정 기반 자동 분석 + 매매
 
 사용법:
     python main.py                    # 대화형 모드
     python main.py --stock 삼성전자    # 종목 분석
     python main.py --quick 005930     # 빠른 분석
     python main.py --price 005930     # 실시간 시세
-    python main.py --auto             # 자율 에이전트 (1회 실행)
-    python main.py --auto --loop      # 자율 에이전트 (반복 실행)
-    python main.py --auto --dry-run   # 매매 시뮬레이션
 """
 
 import argparse
@@ -267,12 +263,6 @@ def show_help():
      python main.py --price 삼성전자
      python main.py -p 005930
 
-  5. 자율 에이전트 모드
-     python main.py --auto             # 감시 목록 1회 분석
-     python main.py --auto --loop      # 스케줄 반복 실행
-     python main.py --auto --dry-run   # 매매 시뮬레이션만
-     python main.py --auto --config config/watchlist.yaml
-
 ═══════════════════════════════════════════════════════════════
 
 📌 대화형 모드 질문 예시:
@@ -295,36 +285,6 @@ def show_help():
 ═══════════════════════════════════════════════════════════════
 """
     print(help_text)
-
-
-# ==========================================
-# 자율 에이전트 모드
-# ==========================================
-
-def run_autonomous_mode(
-    config_path: str = "config/watchlist.yaml",
-    loop: bool = False,
-    dry_run: bool = False,
-):
-    """
-    자율 에이전트 모드 — 설정 기반 자동 분석 + 매매
-
-    Args:
-        config_path: YAML 설정 파일 경로
-        loop: True면 스케줄 반복 실행
-        dry_run: True면 매매 시뮬레이션
-    """
-    from src.runner.autonomous_runner import AutonomousRunner
-
-    runner = AutonomousRunner(
-        config_path=config_path,
-        dry_run_override=True if dry_run else None,
-    )
-
-    if loop:
-        runner.run_loop()
-    else:
-        runner.run_once()
 
 
 # ==========================================
@@ -356,31 +316,6 @@ def main():
     )
     
     parser.add_argument(
-        "--auto",
-        action="store_true",
-        help="자율 에이전트 모드 (config/watchlist.yaml 기반)"
-    )
-    
-    parser.add_argument(
-        "--loop",
-        action="store_true",
-        help="[--auto와 함께] 스케줄 반복 실행"
-    )
-    
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="[--auto와 함께] 매매 시뮬레이션 (실제 주문 안 함)"
-    )
-    
-    parser.add_argument(
-        "--config",
-        type=str,
-        default="config/watchlist.yaml",
-        help="자율 에이전트 설정 파일 경로 (기본: config/watchlist.yaml)"
-    )
-    
-    parser.add_argument(
         "--help-full",
         action="store_true",
         help="상세 도움말 표시"
@@ -391,15 +326,6 @@ def main():
     # 상세 도움말
     if args.help_full:
         show_help()
-        return
-    
-    # 자율 에이전트 모드
-    if args.auto:
-        run_autonomous_mode(
-            config_path=args.config,
-            loop=args.loop,
-            dry_run=args.dry_run,
-        )
         return
     
     # 실시간 시세
