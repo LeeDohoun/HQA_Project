@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import re
 import time
-from typing import List
+from typing import List, Tuple
+from urllib.parse import urlencode
 
 try:
     from bs4 import BeautifulSoup
@@ -15,6 +16,14 @@ from .types import DocumentRecord
 
 class DartDisclosureCollector(BaseCollector):
     LIST_URL = "https://opendart.fss.or.kr/api/list.json"
+    WRAPPER_TEXT_TOKENS = [
+        "잠시만 기다려주세요",
+        "현재목차",
+        "본문선택",
+        "첨부선택",
+        "문서목차",
+        "인쇄 닫기",
+    ]
 
     IMPORTANT_REPORT_KEYWORDS = [
         "사업보고서",
@@ -92,8 +101,9 @@ class DartDisclosureCollector(BaseCollector):
                 default_time="00:00:00",
             )
 
-            detail_excerpt = self._fetch_detail_excerpt(url) if url else ""
-            has_body = bool(detail_excerpt)
+            detail_excerpt, body_source, wrapper_text_detected = self._fetch_detail_excerpt(url) if url else ("", "none", False)
+            body_extracted = self._is_valid_body_text(detail_excerpt, wrapper_text_detected)
+            has_body = body_extracted
 
             # raw/event 용으로는 남기되, 본문 성공 여부를 표시
             content = detail_excerpt if has_body else f"{corp_name} 공시: {title}"
@@ -112,7 +122,9 @@ class DartDisclosureCollector(BaseCollector):
                         "rcept_no": rcept_no,
                         "report_nm": title,
                         "has_body": has_body,
-                        "body_source": "dart_detail" if has_body else "title_fallback",
+                        "body_source": body_source if has_body else "title_fallback",
+                        "body_extracted": body_extracted,
+                        "wrapper_text_detected": wrapper_text_detected,
                         "importance": "high",
                     },
                 )
@@ -125,48 +137,138 @@ class DartDisclosureCollector(BaseCollector):
     def _is_important_report(self, title: str) -> bool:
         return any(keyword in title for keyword in self.IMPORTANT_REPORT_KEYWORDS)
 
-    def _fetch_detail_excerpt(self, url: str) -> str:
+    def _fetch_detail_excerpt(self, url: str) -> Tuple[str, str, bool]:
         if BeautifulSoup is None:
-            return ""
+            return "", "none", False
 
         try:
-            response = self.session.get(url, timeout=self.timeout)
+            response = self.get_with_retry(
+                url,
+                timeout=self.timeout,
+                log_prefix="DART:DETAIL",
+                headers={"Referer": "https://dart.fss.or.kr/"},
+            )
             response.raise_for_status()
         except Exception:
-            return ""
+            return "", "main_failed", False
 
         soup = BeautifulSoup(response.text, "html.parser")
+        viewer_url = self._extract_viewer_url(response.text)
+        if viewer_url:
+            viewer_body = self._fetch_viewer_body(viewer_url)
+            if viewer_body:
+                wrapper_detected_raw = self._contains_wrapper_tokens(viewer_body)
+                cleaned = self._sanitize_body_text(viewer_body)
+                wrapper_detected = wrapper_detected_raw or self._contains_wrapper_tokens(cleaned)
+                if cleaned:
+                    return cleaned[:2000], "viewer", wrapper_detected
 
         candidates = []
 
         meta_desc = soup.select_one("meta[property='og:description'], meta[name='description']")
         if meta_desc and meta_desc.get("content"):
-            text = self._clean_text(meta_desc.get("content", ""))
+            text = self._sanitize_body_text(meta_desc.get("content", ""))
             if len(text) >= 30:
                 candidates.append(text)
 
         title_node = soup.select_one("title")
         if title_node:
-            text = self._clean_text(title_node.get_text(" ", strip=True))
+            text = self._sanitize_body_text(title_node.get_text(" ", strip=True))
             if len(text) >= 20:
                 candidates.append(text)
 
         body = soup.select_one("body")
         if body:
-            body_text = self._clean_text(body.get_text(" ", strip=True))
-            body_text = self._remove_noise(body_text)
+            body_text = self._sanitize_body_text(body.get_text(" ", strip=True))
             if len(body_text) >= 80:
                 candidates.append(body_text[:1500])
 
         if not candidates:
-            return ""
+            return "", "main_fallback_empty", False
 
         best = max(candidates, key=len)
-        best = self._clean_text(best)
+        best = self._sanitize_body_text(best)
+        wrapper_detected = self._contains_wrapper_tokens(max(candidates, key=len)) or self._contains_wrapper_tokens(best)
         if len(best) < 30:
+            return "", "main_too_short", wrapper_detected
+
+        return best[:1200], "main_fallback", wrapper_detected
+
+    def _extract_viewer_url(self, html: str) -> str:
+        m = re.search(r"viewDoc\((?P<args>.*?)\)", html, flags=re.DOTALL)
+        if not m:
+            return ""
+        args_raw = m.group("args")
+        parts = [p.strip() for p in args_raw.split(",")]
+        if len(parts) < 6:
             return ""
 
-        return best[:1200]
+        def _normalize(part: str) -> str:
+            part = part.strip()
+            if part.lower() == "null":
+                return ""
+            if part.startswith("'") and part.endswith("'"):
+                return part[1:-1]
+            return part.strip("'\"")
+
+        params = {
+            "rcpNo": _normalize(parts[0]),
+            "dcmNo": _normalize(parts[1]),
+            "eleId": _normalize(parts[2]),
+            "offset": _normalize(parts[3]),
+            "length": _normalize(parts[4]),
+            "dtd": _normalize(parts[5]),
+        }
+        if not params["rcpNo"] or not params["dcmNo"]:
+            return ""
+        return f"https://dart.fss.or.kr/report/viewer.do?{urlencode(params)}"
+
+    def _fetch_viewer_body(self, viewer_url: str) -> str:
+        if BeautifulSoup is None:
+            return ""
+        try:
+            response = self.get_with_retry(
+                viewer_url,
+                timeout=self.timeout,
+                log_prefix="DART:VIEWER",
+                headers={"Referer": "https://dart.fss.or.kr/"},
+            )
+        except Exception:
+            return ""
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        selectors = [
+            "div#XFormD1_Form0",
+            "body",
+            "div#viewerContents",
+            "div.xforms",
+            "table",
+        ]
+        for selector in selectors:
+            node = soup.select_one(selector)
+            if node:
+                text = self._clean_text(node.get_text(" ", strip=True))
+                if len(text) >= 80:
+                    return text
+        return ""
+
+    def _sanitize_body_text(self, text: str) -> str:
+        text = self._clean_text(text)
+        text = self._remove_noise(text)
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
+
+    def _contains_wrapper_tokens(self, text: str) -> bool:
+        if not text:
+            return False
+        return any(token in text for token in self.WRAPPER_TEXT_TOKENS)
+
+    def _is_valid_body_text(self, text: str, wrapper_text_detected: bool) -> bool:
+        if not text:
+            return False
+        if wrapper_text_detected:
+            return False
+        return len(text) >= 120
 
     @staticmethod
     def _remove_noise(text: str) -> str:
@@ -178,6 +280,12 @@ class DartDisclosureCollector(BaseCollector):
             r"이전 다음",
             r"검색어 입력",
             r"다운로드",
+            r"잠시만 기다려주세요",
+            r"현재목차",
+            r"본문선택",
+            r"첨부선택",
+            r"문서목차",
+            r"인쇄 닫기",
         ]
         for pattern in noise_patterns:
             text = re.sub(pattern, " ", text, flags=re.IGNORECASE)
