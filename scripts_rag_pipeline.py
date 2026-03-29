@@ -515,9 +515,10 @@ def main() -> None:
     for source_type, count in sorted(market_data_stats.items()):
         print(f"  - {source_type}: {count}")
 
-    final_records_count = len(merged_records)
-    built_records_count = layer2_result["combined_count"]
-    raw_docs_count = len(collected_docs)
+    final_records_count = layer2_result.get("final_records_count", len(merged_records))
+    built_records_count = layer2_result.get("built_records_count", layer2_result["combined_count"])
+    raw_docs_count = layer2_result.get("raw_docs_count", len(collected_docs))
+    skipped_invalid_count_by_source = layer2_result.get("skipped_invalid_count_by_source", {})
     dedup_added = max(0, final_records_count - len(existing_records))
     missing_stocks = [
         r["stock_name"]
@@ -541,6 +542,7 @@ def main() -> None:
             sum((r.get("raw_saved_counts") or {}).values())
             for r in run_reports
         ),
+        "skipped_invalid_count_by_source": skipped_invalid_count_by_source,
         "built_records_count": built_records_count,
         "final_records_count": final_records_count,
         "dedup_added_count": dedup_added,
@@ -558,6 +560,7 @@ def main() -> None:
     print(f"  - report_path: {report_path}")
     print(f"  - raw_saved_count: {summary_report['raw_saved_count']}")
     print(f"  - raw_docs_count: {summary_report['raw_docs_count']}")
+    print(f"  - skipped_invalid_count_by_source: {summary_report['skipped_invalid_count_by_source']}")
     print(f"  - built_records_count: {summary_report['built_records_count']}")
     print(f"  - final_records_count: {summary_report['final_records_count']}")
     if missing_stocks:
