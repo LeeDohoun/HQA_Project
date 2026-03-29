@@ -30,6 +30,7 @@ from src.ingestion import (
     StockTarget,
 )
 from src.rag import BM25IndexManager
+from src.rag.dedupe import make_document_id
 from src.rag.raw_layer2_builder import RawLayer2Builder
 
 
@@ -121,6 +122,69 @@ def _load_jsonl(path: str) -> List[Dict]:
                 continue
             records.append(json.loads(line))
     return records
+
+
+def _remove_file_if_exists(path: Path, *, log_label: str) -> bool:
+    if path.exists():
+        path.unlink()
+        print(f"[OVERWRITE] removed {log_label}: {path}")
+        return True
+    print(f"[OVERWRITE] not_found {log_label}: {path}")
+    return False
+
+
+def _collect_theme_doc_ids(records: Iterable[Dict]) -> Set[str]:
+    ids: Set[str] = set()
+    for row in records:
+        metadata = row.get("metadata", {}) or {}
+        source_type = str(row.get("source_type") or metadata.get("source_type") or "").strip().lower()
+        text = str(row.get("text", "") or "")
+        if not source_type:
+            continue
+        ids.add(make_document_id(source_type=source_type, metadata=metadata, text=text))
+    return ids
+
+
+def _remove_vector_records_by_doc_ids(vector_root: Path, doc_ids: Set[str]) -> Dict[str, int]:
+    removed_stats: Dict[str, int] = {}
+    if not vector_root.exists():
+        return removed_stats
+
+    for vector_path in sorted(vector_root.glob("*_vector_store.json")):
+        try:
+            with vector_path.open("r", encoding="utf-8") as f:
+                payload = json.load(f)
+        except Exception as exc:
+            print(f"[WARN][OVERWRITE] vector 로드 실패: {vector_path}, error={exc}")
+            continue
+
+        records = payload.get("records", []) if isinstance(payload, dict) else []
+        if not isinstance(records, list):
+            continue
+
+        kept = []
+        removed = 0
+        for rec in records:
+            metadata = rec.get("metadata", {}) if isinstance(rec, dict) else {}
+            text = rec.get("text", "") if isinstance(rec, dict) else ""
+            source_type = str((metadata or {}).get("source_type", "")).strip().lower()
+            rec_doc_id = make_document_id(source_type=source_type, metadata=metadata or {}, text=text or "")
+            if rec_doc_id in doc_ids:
+                removed += 1
+            else:
+                kept.append(rec)
+
+        if removed > 0:
+            payload["records"] = kept
+            payload["size"] = len(kept)
+            with vector_path.open("w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False)
+
+        source = vector_path.stem.replace("_vector_store", "")
+        removed_stats[source] = removed
+        print(f"[OVERWRITE] removed vector {source} records: {removed}")
+
+    return removed_stats
 
 
 def _extract_stock_codes(records: Iterable[Dict]) -> Set[str]:
@@ -291,6 +355,8 @@ def main() -> None:
     args = parser.parse_args()
 
     theme_key = _make_theme_key(args.theme, args.base_filename)
+    enabled_sources = [s.strip() for s in args.enabled_sources.split(",") if s.strip()]
+    overwrite_policy = "theme_full_reset" if args.update_mode == "overwrite" else "append_new_stocks"
     targets = _load_stock_targets(args)
     dart_api_key = os.getenv("DART_API_KEY", "")
     ingestion_service = IngestionService()
@@ -306,9 +372,28 @@ def main() -> None:
 
     corpus_dir = output_dir / "corpora" / theme_key
     corpus_dir.mkdir(parents=True, exist_ok=True)
+    combined_jsonl = corpus_dir / "combined.jsonl"
 
     existing_records: List[Dict] = []
     existing_stock_codes: Set[str] = set()
+
+    if args.update_mode == "overwrite":
+        print(f"[OVERWRITE] policy: {overwrite_policy} (enabled_sources={enabled_sources})")
+        old_theme_records = _load_jsonl(str(combined_jsonl))
+        old_doc_ids = _collect_theme_doc_ids(old_theme_records)
+
+        # theme 전체 raw/corpora 리셋 (news-only여도 일관된 overwrite semantics 유지)
+        for source in ("news", "dart", "forum"):
+            _remove_file_if_exists(raw_output_dir / source / f"{theme_key}.jsonl", log_label=f"raw {source} file")
+        for source in ("news", "dart", "forum", "combined"):
+            _remove_file_if_exists(corpus_dir / f"{source}.jsonl", log_label=f"corpus {source} file")
+
+        vector_removed_stats = _remove_vector_records_by_doc_ids(output_dir / "vector_stores", old_doc_ids)
+        print(f"[OVERWRITE] vector removed summary: {vector_removed_stats}")
+
+        # 파일 삭제 이후 다음 저장 단계를 위해 빈 파일 재생성
+        for source in ("news", "dart", "forum"):
+            (raw_output_dir / source / f"{theme_key}.jsonl").touch(exist_ok=True)
 
     if args.update_mode == "append-new-stocks":
         existing_records = _load_jsonl(str(combined_jsonl))
@@ -317,7 +402,6 @@ def main() -> None:
     collected_docs: List[DocumentRecord] = []
     collected_stock_codes: Set[str] = set()
     run_reports: List[Dict] = []
-    enabled_sources = [s.strip() for s in args.enabled_sources.split(",") if s.strip()]
 
     theme_target_raw_dir = raw_output_dir / "theme_targets"
     theme_target_raw_dir.mkdir(parents=True, exist_ok=True)
@@ -431,7 +515,11 @@ def main() -> None:
     for source_type, count in sorted(market_data_stats.items()):
         print(f"  - {source_type}: {count}")
 
-    dedup_added = max(0, len(merged_records) - len(existing_records))
+    final_records_count = layer2_result.get("final_records_count", len(merged_records))
+    built_records_count = layer2_result.get("built_records_count", layer2_result["combined_count"])
+    raw_docs_count = layer2_result.get("raw_docs_count", len(collected_docs))
+    skipped_invalid_count_by_source = layer2_result.get("skipped_invalid_count_by_source", {})
+    dedup_added = max(0, final_records_count - len(existing_records))
     missing_stocks = [
         r["stock_name"]
         for r in run_reports
@@ -449,13 +537,14 @@ def main() -> None:
             source: sum(1 for r in run_reports if source in r.get("failures", {}))
             for source in enabled_sources
         },
-        "collected_docs_count": len(collected_docs),
+        "raw_docs_count": raw_docs_count,
         "raw_saved_count": sum(
             sum((r.get("raw_saved_counts") or {}).values())
             for r in run_reports
         ),
-        "records_before_dedup": len(existing_records) + len(collected_docs),
-        "records_after_dedup": len(merged_records),
+        "skipped_invalid_count_by_source": skipped_invalid_count_by_source,
+        "built_records_count": built_records_count,
+        "final_records_count": final_records_count,
         "dedup_added_count": dedup_added,
         "missing_stocks": missing_stocks,
         "per_stock_reports": run_reports,
@@ -470,8 +559,10 @@ def main() -> None:
     print("[INGESTION REPORT]")
     print(f"  - report_path: {report_path}")
     print(f"  - raw_saved_count: {summary_report['raw_saved_count']}")
-    print(f"  - records_before_dedup: {summary_report['records_before_dedup']}")
-    print(f"  - records_after_dedup: {summary_report['records_after_dedup']}")
+    print(f"  - raw_docs_count: {summary_report['raw_docs_count']}")
+    print(f"  - skipped_invalid_count_by_source: {summary_report['skipped_invalid_count_by_source']}")
+    print(f"  - built_records_count: {summary_report['built_records_count']}")
+    print(f"  - final_records_count: {summary_report['final_records_count']}")
     if missing_stocks:
         print(f"  - missing_stocks: {', '.join(missing_stocks)}")
 
