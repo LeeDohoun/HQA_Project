@@ -182,7 +182,7 @@ class IngestionService:
             rows = self._attach_stock_info(rows, request.target.stock_name, request.target.stock_code, request.theme_key)
             docs.extend(rows)
 
-            market_rows = [
+            naver_market_rows = [
                 MarketRecord(
                     source_type="chart",
                     stock_name=request.target.stock_name,
@@ -197,9 +197,10 @@ class IngestionService:
                 )
                 for r in rows
             ]
-            market_records.extend(market_rows)
 
-            # KIS 환경변수가 존재하면 KIS 데이터도 함께 수집 시도
+            current_market_rows = list(naver_market_rows)
+            market_records.extend(naver_market_rows)
+
             if os.getenv("KIS_APP_KEY") and os.getenv("KIS_APP_SECRET"):
                 try:
                     kis_rows = KISChartCollector().collect_daily(
@@ -208,6 +209,7 @@ class IngestionService:
                         from_date=request.from_date,
                         to_date=request.to_date,
                     )
+                    current_market_rows.extend(kis_rows)
                     market_records.extend(kis_rows)
                 except Exception as e:
                     print(f"[WARN][{request.target.stock_name}] KIS chart collect skipped: {e}")
@@ -215,7 +217,7 @@ class IngestionService:
             report.source_success["chart"] = True
             report.source_counts["chart"] = len(rows)
             report.raw_saved_counts["chart"] = self._save_raw_market_records(
-                market_records,
+                current_market_rows,
                 request.raw_output_dir,
                 request.theme_key,
             )
@@ -232,6 +234,7 @@ class IngestionService:
         theme_key: str,
     ) -> List[DocumentRecord]:
         collected_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
+
         for doc in docs:
             if not doc.stock_name:
                 doc.stock_name = stock_name
@@ -239,13 +242,13 @@ class IngestionService:
                 doc.stock_code = stock_code
 
             doc.metadata = doc.metadata or {}
-            doc.metadata["stock_name"] = stock_name
-            doc.metadata["stock_code"] = stock_code
+
+            if "stock_name" not in doc.metadata:
+                doc.metadata["stock_name"] = doc.stock_name or stock_name
+            if "stock_code" not in doc.metadata:
+                doc.metadata["stock_code"] = doc.stock_code or stock_code
+
             doc.metadata["theme_key"] = theme_key
-            doc.metadata["url"] = doc.url or ""
-            doc.metadata["title"] = doc.title or ""
-            doc.metadata["published_at"] = doc.published_at or ""
-            doc.metadata["source_type"] = doc.source_type or ""
             doc.metadata["collected_at"] = collected_at
 
         return docs

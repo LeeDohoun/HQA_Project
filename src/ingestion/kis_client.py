@@ -8,9 +8,12 @@ import requests
 
 class KISClient:
     def __init__(self):
-        self.app_key = os.getenv("KIS_APP_KEY", "")
-        self.app_secret = os.getenv("KIS_APP_SECRET", "")
-        self.base_url = os.getenv("KIS_BASE_URL", "https://openapi.koreainvestment.com:9443")
+        self.app_key = os.getenv("KIS_APP_KEY", "").strip()
+        self.app_secret = os.getenv("KIS_APP_SECRET", "").strip()
+        self.base_url = os.getenv(
+            "KIS_BASE_URL",
+            "https://openapi.koreainvestment.com:9443",
+        ).rstrip("/")
         self.session = requests.Session()
         self._access_token = ""
 
@@ -20,11 +23,13 @@ class KISClient:
     def issue_token(self) -> str:
         if self._access_token:
             return self._access_token
+
         if not self.app_key or not self.app_secret:
             raise ValueError("KIS_APP_KEY/KIS_APP_SECRET 환경변수가 필요합니다.")
 
         response = self.session.post(
             self._token_url(),
+            headers={"content-type": "application/json; charset=utf-8"},
             json={
                 "grant_type": "client_credentials",
                 "appkey": self.app_key,
@@ -33,10 +38,12 @@ class KISClient:
             timeout=20,
         )
         response.raise_for_status()
+
         payload = response.json()
-        self._access_token = payload.get("access_token", "")
+        self._access_token = payload.get("access_token", "").strip()
         if not self._access_token:
-            raise ValueError("KIS access token 발급 실패")
+            raise ValueError(f"KIS access token 발급 실패: {payload}")
+
         return self._access_token
 
     def build_headers(self, tr_id: str) -> Dict[str, str]:

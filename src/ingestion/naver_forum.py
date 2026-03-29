@@ -40,7 +40,7 @@ class NaverStockForumCollector(BaseCollector):
                 if title_el is None:
                     continue
 
-                title = title_el.get_text(" ", strip=True)
+                title = _clean_text(title_el.get_text(" ", strip=True))
                 href = title_el.get("href", "")
                 full_url = f"https://finance.naver.com{href}" if href.startswith("/") else href
                 raw_date = date_el.get_text(strip=True) if date_el else ""
@@ -56,11 +56,13 @@ class NaverStockForumCollector(BaseCollector):
                 if to_date and compact > to_date:
                     continue
 
+                body = self._fetch_forum_body(full_url) or title
+
                 docs.append(
                     DocumentRecord(
                         source_type="forum",
                         title=title,
-                        content=_clean_forum_title(title),
+                        content=body,
                         url=full_url,
                         stock_code=stock_code,
                         published_at=published_at,
@@ -74,6 +76,37 @@ class NaverStockForumCollector(BaseCollector):
             time.sleep(0.2)
 
         return docs
+
+    def _fetch_forum_body(self, url: str) -> str:
+        if BeautifulSoup is None:
+            return ""
+
+        try:
+            response = self.get_with_retry(url, log_prefix="FORUM:READ")
+        except Exception:
+            return ""
+
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        selectors = [
+            "div.view_se",
+            "div#body",
+            "td.view_cnt",
+            "div.article",
+        ]
+        for selector in selectors:
+            node = soup.select_one(selector)
+            if node:
+                text = _clean_text(node.get_text(" ", strip=True))
+                if len(text) >= 10:
+                    return text[:4000]
+
+        paragraphs = [_clean_text(p.get_text(" ", strip=True)) for p in soup.select("p")]
+        paragraphs = [p for p in paragraphs if len(p) >= 10]
+        if paragraphs:
+            return " ".join(paragraphs[:8])[:4000]
+
+        return ""
 
 
 class NaverStockChartCollector(BaseCollector):
@@ -147,5 +180,5 @@ class NaverStockChartCollector(BaseCollector):
         return docs
 
 
-def _clean_forum_title(text: str) -> str:
-    return re.sub(r"\s+", " ", text).strip()
+def _clean_text(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "")).strip()

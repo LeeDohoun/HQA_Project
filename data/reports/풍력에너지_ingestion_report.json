@@ -1,0 +1,633 @@
+{
+  "theme_key": "풍력에너지",
+  "stock_count": 20,
+  "enabled_sources": [
+    "news",
+    "dart",
+    "forum",
+    "chart",
+    "quote"
+  ],
+  "source_success": {
+    "news": 20,
+    "dart": 20,
+    "forum": 20,
+    "chart": 20,
+    "quote": 0
+  },
+  "source_fail": {
+    "news": 0,
+    "dart": 0,
+    "forum": 0,
+    "chart": 0,
+    "quote": 0
+  },
+  "collected_docs_count": 8088,
+  "raw_saved_count": 9688,
+  "records_before_dedup": 8088,
+  "records_after_dedup": 8084,
+  "dedup_added_count": 8084,
+  "missing_stocks": [],
+  "per_stock_reports": [
+    {
+      "stock_code": "115530",
+      "stock_name": "씨엔플러스",
+      "enabled_sources": [
+        "news",
+        "dart",
+        "forum",
+        "chart",
+        "quote"
+      ],
+      "source_success": {
+        "news": true,
+        "dart": true,
+        "forum": true,
+        "chart": true
+      },
+      "source_counts": {
+        "news": 2,
+        "dart": 30,
+        "forum": 377,
+        "chart": 0
+      },
+      "raw_saved_counts": {
+        "news": 2,
+        "dart": 30,
+        "forum": 377,
+        "chart": 100
+      },
+      "failures": {}
+    },
+    {
+      "stock_code": "101170",
+      "stock_name": "우림피티에스",
+      "enabled_sources": [
+        "news",
+        "dart",
+        "forum",
+        "chart",
+        "quote"
+      ],
+      "source_success": {
+        "news": true,
+        "dart": true,
+        "forum": true,
+        "chart": true
+      },
+      "source_counts": {
+        "news": 0,
+        "dart": 28,
+        "forum": 0,
+        "chart": 0
+      },
+      "raw_saved_counts": {
+        "news": 0,
+        "dart": 28,
+        "forum": 0,
+        "chart": 100
+      },
+      "failures": {}
+    },
+    {
+      "stock_code": "005160",
+      "stock_name": "동국산업",
+      "enabled_sources": [
+        "news",
+        "dart",
+        "forum",
+        "chart",
+        "quote"
+      ],
+      "source_success": {
+        "news": true,
+        "dart": true,
+        "forum": true,
+        "chart": true
+      },
+      "source_counts": {
+        "news": 0,
+        "dart": 15,
+        "forum": 1483,
+        "chart": 0
+      },
+      "raw_saved_counts": {
+        "news": 0,
+        "dart": 15,
+        "forum": 1483,
+        "chart": 100
+      },
+      "failures": {}
+    },
+    {
+      "stock_code": "389260",
+      "stock_name": "대명에너지",
+      "enabled_sources": [
+        "news",
+        "dart",
+        "forum",
+        "chart",
+        "quote"
+      ],
+      "source_success": {
+        "news": true,
+        "dart": true,
+        "forum": true,
+        "chart": true
+      },
+      "source_counts": {
+        "news": 2,
+        "dart": 18,
+        "forum": 0,
+        "chart": 0
+      },
+      "raw_saved_counts": {
+        "news": 2,
+        "dart": 18,
+        "forum": 0,
+        "chart": 100
+      },
+      "failures": {}
+    },
+    {
+      "stock_code": "044490",
+      "stock_name": "태웅",
+      "enabled_sources": [
+        "news",
+        "dart",
+        "forum",
+        "chart",
+        "quote"
+      ],
+      "source_success": {
+        "news": true,
+        "dart": true,
+        "forum": true,
+        "chart": true
+      },
+      "source_counts": {
+        "news": 2,
+        "dart": 18,
+        "forum": 0,
+        "chart": 0
+      },
+      "raw_saved_counts": {
+        "news": 2,
+        "dart": 18,
+        "forum": 0,
+        "chart": 100
+      },
+      "failures": {}
+    },
+    {
+      "stock_code": "032820",
+      "stock_name": "우리기술",
+      "enabled_sources": [
+        "news",
+        "dart",
+        "forum",
+        "chart",
+        "quote"
+      ],
+      "source_success": {
+        "news": true,
+        "dart": true,
+        "forum": true,
+        "chart": true
+      },
+      "source_counts": {
+        "news": 5,
+        "dart": 22,
+        "forum": 0,
+        "chart": 0
+      },
+      "raw_saved_counts": {
+        "news": 5,
+        "dart": 22,
+        "forum": 0,
+        "chart": 100
+      },
+      "failures": {}
+    },
+    {
+      "stock_code": "024880",
+      "stock_name": "케이피에프",
+      "enabled_sources": [
+        "news",
+        "dart",
+        "forum",
+        "chart",
+        "quote"
+      ],
+      "source_success": {
+        "news": true,
+        "dart": true,
+        "forum": true,
+        "chart": true
+      },
+      "source_counts": {
+        "news": 0,
+        "dart": 19,
+        "forum": 368,
+        "chart": 0
+      },
+      "raw_saved_counts": {
+        "news": 0,
+        "dart": 19,
+        "forum": 368,
+        "chart": 0
+      },
+      "failures": {}
+    },
+    {
+      "stock_code": "068790",
+      "stock_name": "DMS",
+      "enabled_sources": [
+        "news",
+        "dart",
+        "forum",
+        "chart",
+        "quote"
+      ],
+      "source_success": {
+        "news": true,
+        "dart": true,
+        "forum": true,
+        "chart": true
+      },
+      "source_counts": {
+        "news": 2,
+        "dart": 44,
+        "forum": 808,
+        "chart": 0
+      },
+      "raw_saved_counts": {
+        "news": 2,
+        "dart": 44,
+        "forum": 808,
+        "chart": 100
+      },
+      "failures": {}
+    },
+    {
+      "stock_code": "229640",
+      "stock_name": "LS에코에너지",
+      "enabled_sources": [
+        "news",
+        "dart",
+        "forum",
+        "chart",
+        "quote"
+      ],
+      "source_success": {
+        "news": true,
+        "dart": true,
+        "forum": true,
+        "chart": true
+      },
+      "source_counts": {
+        "news": 6,
+        "dart": 100,
+        "forum": 0,
+        "chart": 0
+      },
+      "raw_saved_counts": {
+        "news": 6,
+        "dart": 100,
+        "forum": 0,
+        "chart": 100
+      },
+      "failures": {}
+    },
+    {
+      "stock_code": "003070",
+      "stock_name": "코오롱글로벌",
+      "enabled_sources": [
+        "news",
+        "dart",
+        "forum",
+        "chart",
+        "quote"
+      ],
+      "source_success": {
+        "news": true,
+        "dart": true,
+        "forum": true,
+        "chart": true
+      },
+      "source_counts": {
+        "news": 4,
+        "dart": 100,
+        "forum": 1401,
+        "chart": 0
+      },
+      "raw_saved_counts": {
+        "news": 4,
+        "dart": 100,
+        "forum": 1401,
+        "chart": 100
+      },
+      "failures": {}
+    },
+    {
+      "stock_code": "119500",
+      "stock_name": "포메탈",
+      "enabled_sources": [
+        "news",
+        "dart",
+        "forum",
+        "chart",
+        "quote"
+      ],
+      "source_success": {
+        "news": true,
+        "dart": true,
+        "forum": true,
+        "chart": true
+      },
+      "source_counts": {
+        "news": 0,
+        "dart": 13,
+        "forum": 0,
+        "chart": 0
+      },
+      "raw_saved_counts": {
+        "news": 0,
+        "dart": 13,
+        "forum": 0,
+        "chart": 100
+      },
+      "failures": {}
+    },
+    {
+      "stock_code": "100130",
+      "stock_name": "동국S&C",
+      "enabled_sources": [
+        "news",
+        "dart",
+        "forum",
+        "chart",
+        "quote"
+      ],
+      "source_success": {
+        "news": true,
+        "dart": true,
+        "forum": true,
+        "chart": true
+      },
+      "source_counts": {
+        "news": 0,
+        "dart": 17,
+        "forum": 277,
+        "chart": 0
+      },
+      "raw_saved_counts": {
+        "news": 0,
+        "dart": 17,
+        "forum": 277,
+        "chart": 0
+      },
+      "failures": {}
+    },
+    {
+      "stock_code": "003030",
+      "stock_name": "세아제강지주",
+      "enabled_sources": [
+        "news",
+        "dart",
+        "forum",
+        "chart",
+        "quote"
+      ],
+      "source_success": {
+        "news": true,
+        "dart": true,
+        "forum": true,
+        "chart": true
+      },
+      "source_counts": {
+        "news": 2,
+        "dart": 59,
+        "forum": 76,
+        "chart": 0
+      },
+      "raw_saved_counts": {
+        "news": 2,
+        "dart": 59,
+        "forum": 76,
+        "chart": 0
+      },
+      "failures": {}
+    },
+    {
+      "stock_code": "013810",
+      "stock_name": "스페코",
+      "enabled_sources": [
+        "news",
+        "dart",
+        "forum",
+        "chart",
+        "quote"
+      ],
+      "source_success": {
+        "news": true,
+        "dart": true,
+        "forum": true,
+        "chart": true
+      },
+      "source_counts": {
+        "news": 2,
+        "dart": 23,
+        "forum": 781,
+        "chart": 0
+      },
+      "raw_saved_counts": {
+        "news": 2,
+        "dart": 23,
+        "forum": 781,
+        "chart": 100
+      },
+      "failures": {}
+    },
+    {
+      "stock_code": "054540",
+      "stock_name": "삼영엠텍",
+      "enabled_sources": [
+        "news",
+        "dart",
+        "forum",
+        "chart",
+        "quote"
+      ],
+      "source_success": {
+        "news": true,
+        "dart": true,
+        "forum": true,
+        "chart": true
+      },
+      "source_counts": {
+        "news": 0,
+        "dart": 32,
+        "forum": 0,
+        "chart": 0
+      },
+      "raw_saved_counts": {
+        "news": 0,
+        "dart": 32,
+        "forum": 0,
+        "chart": 100
+      },
+      "failures": {}
+    },
+    {
+      "stock_code": "004440",
+      "stock_name": "삼일씨엔에스",
+      "enabled_sources": [
+        "news",
+        "dart",
+        "forum",
+        "chart",
+        "quote"
+      ],
+      "source_success": {
+        "news": true,
+        "dart": true,
+        "forum": true,
+        "chart": true
+      },
+      "source_counts": {
+        "news": 0,
+        "dart": 52,
+        "forum": 118,
+        "chart": 0
+      },
+      "raw_saved_counts": {
+        "news": 0,
+        "dart": 52,
+        "forum": 118,
+        "chart": 0
+      },
+      "failures": {}
+    },
+    {
+      "stock_code": "100660",
+      "stock_name": "서암기계공업",
+      "enabled_sources": [
+        "news",
+        "dart",
+        "forum",
+        "chart",
+        "quote"
+      ],
+      "source_success": {
+        "news": true,
+        "dart": true,
+        "forum": true,
+        "chart": true
+      },
+      "source_counts": {
+        "news": 0,
+        "dart": 11,
+        "forum": 1060,
+        "chart": 0
+      },
+      "raw_saved_counts": {
+        "news": 0,
+        "dart": 11,
+        "forum": 1060,
+        "chart": 100
+      },
+      "failures": {}
+    },
+    {
+      "stock_code": "297090",
+      "stock_name": "씨에스베어링",
+      "enabled_sources": [
+        "news",
+        "dart",
+        "forum",
+        "chart",
+        "quote"
+      ],
+      "source_success": {
+        "news": true,
+        "dart": true,
+        "forum": true,
+        "chart": true
+      },
+      "source_counts": {
+        "news": 0,
+        "dart": 31,
+        "forum": 398,
+        "chart": 0
+      },
+      "raw_saved_counts": {
+        "news": 0,
+        "dart": 31,
+        "forum": 398,
+        "chart": 100
+      },
+      "failures": {}
+    },
+    {
+      "stock_code": "005490",
+      "stock_name": "POSCO홀딩스",
+      "enabled_sources": [
+        "news",
+        "dart",
+        "forum",
+        "chart",
+        "quote"
+      ],
+      "source_success": {
+        "news": true,
+        "dart": true,
+        "forum": true,
+        "chart": true
+      },
+      "source_counts": {
+        "news": 100,
+        "dart": 100,
+        "forum": 0,
+        "chart": 0
+      },
+      "raw_saved_counts": {
+        "news": 100,
+        "dart": 100,
+        "forum": 0,
+        "chart": 100
+      },
+      "failures": {}
+    },
+    {
+      "stock_code": "475150",
+      "stock_name": "SK이터닉스",
+      "enabled_sources": [
+        "news",
+        "dart",
+        "forum",
+        "chart",
+        "quote"
+      ],
+      "source_success": {
+        "news": true,
+        "dart": true,
+        "forum": true,
+        "chart": true
+      },
+      "source_counts": {
+        "news": 11,
+        "dart": 71,
+        "forum": 0,
+        "chart": 0
+      },
+      "raw_saved_counts": {
+        "news": 11,
+        "dart": 71,
+        "forum": 0,
+        "chart": 100
+      },
+      "failures": {}
+    }
+  ]
+}

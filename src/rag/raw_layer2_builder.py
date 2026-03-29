@@ -76,9 +76,11 @@ class RawLayer2Builder:
         for source_dir in self.raw_dir.iterdir():
             if not source_dir.is_dir():
                 continue
+
             source = source_dir.name
             if source == "theme_targets" or source in DEFAULT_MARKET_SOURCES:
                 continue
+
             file_path = source_dir / f"{theme_key}.jsonl"
             if not file_path.exists():
                 continue
@@ -87,6 +89,13 @@ class RawLayer2Builder:
                 source_type = str(row.get("source_type", source)).strip().lower()
                 if not is_document_source(source_type):
                     continue
+
+                merged_metadata = self._normalize_document_metadata(row, source_type)
+
+                # DART는 본문이 있는 문서만 corpus/BM25/vector 대상으로 사용
+                if source_type == "dart" and not merged_metadata.get("has_body", False):
+                    continue
+
                 docs.append(
                     DocumentRecord(
                         source_type=source_type,
@@ -96,9 +105,10 @@ class RawLayer2Builder:
                         stock_name=row.get("stock_name"),
                         stock_code=row.get("stock_code"),
                         published_at=row.get("published_at"),
-                        metadata=row.get("metadata") or {},
+                        metadata=merged_metadata,
                     )
                 )
+
         return docs
 
     def _load_raw_market_records(self, theme_key: str) -> List[Dict]:
@@ -111,6 +121,7 @@ class RawLayer2Builder:
             file_path = source_dir / f"{theme_key}.jsonl"
             if not file_path.exists():
                 continue
+
             for row in self._iter_jsonl(file_path):
                 source_type = str(row.get("source_type", source)).strip().lower()
                 if not is_market_source(source_type):
@@ -118,6 +129,7 @@ class RawLayer2Builder:
                 row["source_type"] = source_type
                 row["metadata"] = row.get("metadata") or {}
                 rows.append(row)
+
         return rows
 
     def _save_market_data(self, theme_key: str, rows: List[Dict]) -> Dict[str, int]:
@@ -154,6 +166,26 @@ class RawLayer2Builder:
             seen.add(record_id)
             deduped.append(row)
         return deduped
+
+    @staticmethod
+    def _normalize_document_metadata(row: Dict, source_type: str) -> Dict:
+        raw_meta = row.get("metadata") or {}
+        nested_meta = raw_meta.get("metadata") if isinstance(raw_meta.get("metadata"), dict) else {}
+
+        merged = {}
+        merged.update(nested_meta)
+        merged.update(raw_meta)
+
+        merged.pop("metadata", None)
+
+        merged["source_type"] = source_type
+        merged["title"] = row.get("title", "") or merged.get("title", "")
+        merged["url"] = row.get("url", "") or merged.get("url", "")
+        merged["stock_name"] = row.get("stock_name", "") or merged.get("stock_name", "")
+        merged["stock_code"] = row.get("stock_code", "") or merged.get("stock_code", "")
+        merged["published_at"] = row.get("published_at", "") or merged.get("published_at", "")
+
+        return merged
 
     @staticmethod
     def _group_by_source(rows: List[Dict]) -> Dict[str, List[Dict]]:

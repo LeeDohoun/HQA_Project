@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import re
 import time
 from typing import List
+from urllib.parse import urlparse
 
 try:
     from bs4 import BeautifulSoup
@@ -19,7 +20,16 @@ class NaverNewsCollector(BaseCollector):
 
     def __init__(self, timeout: int = 20):
         super().__init__(timeout=timeout)
-        self.session.headers.update({"Referer": "https://search.naver.com/"})
+        self.session.headers.update(
+            {
+                "Referer": "https://search.naver.com/",
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                ),
+            }
+        )
 
     def collect(
         self,
@@ -88,7 +98,7 @@ class NaverNewsCollector(BaseCollector):
                     continue
 
                 url = title_el.get("href", "").strip()
-                title = title_el.get_text(" ", strip=True)
+                title = self._clean_text(title_el.get_text(" ", strip=True))
                 if not url or not title or url in seen_urls:
                     continue
 
@@ -110,18 +120,27 @@ class NaverNewsCollector(BaseCollector):
                 if to_date and compact > to_date:
                     continue
 
+                summary = self._clean_text(summary_el.get_text(" ", strip=True) if summary_el else "")
+                content = self._fetch_article_content(url) or summary or title
+                content = self._clean_text(content)
+
+                if not content or content.lower() == "네이버뉴스":
+                    content = summary or title
+
                 seen_urls.add(url)
                 docs.append(
                     DocumentRecord(
                         source_type="news",
                         title=title,
-                        content=summary_el.get_text(" ", strip=True) if summary_el else title,
+                        content=content,
                         url=url,
                         published_at=normalized_date,
                         metadata={
                             "keyword": keyword,
-                            "press": press_el.get_text(" ", strip=True) if press_el else "",
+                            "press": self._clean_text(press_el.get_text(" ", strip=True) if press_el else ""),
                             "raw_date_text": raw_date_text,
+                            "summary": summary,
+                            "domain": urlparse(url).netloc,
                         },
                     )
                 )
@@ -133,6 +152,43 @@ class NaverNewsCollector(BaseCollector):
             time.sleep(0.8)
 
         return docs
+
+    def _fetch_article_content(self, url: str) -> str:
+        try:
+            response = self.get_with_retry(url, log_prefix="NEWS:ARTICLE")
+        except Exception:
+            return ""
+
+        if BeautifulSoup is None:
+            return ""
+
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        selectors = [
+            "#dic_area",
+            "#newsct_article",
+            "#articeBody",
+            "article",
+            "div#articleBodyContents",
+            "div.newsct_article _article_body",
+        ]
+        for selector in selectors:
+            node = soup.select_one(selector)
+            if node:
+                text = self._clean_text(node.get_text(" ", strip=True))
+                if len(text) >= 40:
+                    return text
+
+        meta_desc = soup.select_one("meta[property='og:description'], meta[name='description']")
+        if meta_desc and meta_desc.get("content"):
+            return self._clean_text(meta_desc["content"])
+
+        paragraphs = [self._clean_text(p.get_text(" ", strip=True)) for p in soup.select("p")]
+        paragraphs = [p for p in paragraphs if len(p) >= 20]
+        if paragraphs:
+            return " ".join(paragraphs[:5])
+
+        return ""
 
     def _extract_news_date_text(self, info_nodes) -> str:
         for node in info_nodes:
@@ -173,3 +229,9 @@ class NaverNewsCollector(BaseCollector):
                 kwargs = {delta: int(m.group(1))}
                 return (now - timedelta(**kwargs)).strftime("%Y-%m-%dT%H:%M:%S")
         return ""
+
+    @staticmethod
+    def _clean_text(text: str) -> str:
+        text = re.sub(r"\s+", " ", (text or "")).strip()
+        text = text.replace("네이버뉴스", "").strip()
+        return text
