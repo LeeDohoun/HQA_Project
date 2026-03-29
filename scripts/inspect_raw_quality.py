@@ -9,6 +9,9 @@
     # 디렉토리 단위 진단(재귀적으로 *.jsonl 탐색)
     python scripts/inspect_raw_quality.py data/raw data/corpora/2차전지
 
+    # combined corpus 파일 단위 진단
+    python scripts/inspect_raw_quality.py data/corpora/2차전지/combined.jsonl
+
     # JSON 리포트 저장
     python scripts/inspect_raw_quality.py data/raw --json-out data/reports/raw_quality.json
 """
@@ -18,7 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import statistics
-from collections import Counter, defaultdict
+from collections import Counter
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -52,16 +55,22 @@ class SourceDiagnostics:
     has_title: int = 0
     has_content: int = 0
     has_page_content: int = 0
+    normalized_has_source_type: int = 0
+    normalized_has_title: int = 0
+    normalized_has_content: int = 0
+    normalized_has_page_content: int = 0
     title_eq_content: int = 0
     placeholder_suspects: int = 0
     low_quality_suspects: int = 0
     dart_wrapper_suspects: int = 0
     dart_has_body_but_wrapper: int = 0
     source_type_counts: Counter[str] = field(default_factory=Counter)
+    normalized_source_type_counts: Counter[str] = field(default_factory=Counter)
     content_lengths: list[int] = field(default_factory=list)
     placeholder_samples: list[dict[str, Any]] = field(default_factory=list)
     title_only_samples: list[dict[str, Any]] = field(default_factory=list)
     wrapper_samples: list[dict[str, Any]] = field(default_factory=list)
+    unknown_samples: list[dict[str, Any]] = field(default_factory=list)
 
     def add_sample(self, bucket: list[dict[str, Any]], record: dict[str, Any], path: Path, limit: int = 5) -> None:
         if len(bucket) >= limit:
@@ -82,6 +91,43 @@ def truncate_text(text: str, limit: int = 100) -> str:
     if len(cleaned) <= limit:
         return cleaned
     return cleaned[: limit - 3] + "..."
+
+
+def get_str_from_paths(record: dict[str, Any], paths: list[tuple[str, ...]]) -> str:
+    for path in paths:
+        cur: Any = record
+        found = True
+        for key in path:
+            if not isinstance(cur, dict) or key not in cur:
+                found = False
+                break
+            cur = cur[key]
+        if found and isinstance(cur, str) and cur.strip():
+            return cur.strip()
+    return ""
+
+
+def get_any_from_paths(record: dict[str, Any], paths: list[tuple[str, ...]]) -> Any:
+    for path in paths:
+        cur: Any = record
+        found = True
+        for key in path:
+            if not isinstance(cur, dict) or key not in cur:
+                found = False
+                break
+            cur = cur[key]
+        if found and cur is not None:
+            return cur
+    return None
+
+
+@dataclass
+class NormalizedRecord:
+    source_type: str
+    title: str
+    content: str
+    page_content: str
+    has_body: bool
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -158,6 +204,59 @@ def extract_content(record: dict[str, Any]) -> str:
     return ""
 
 
+def normalize_record(record: dict[str, Any]) -> NormalizedRecord:
+    source_type = get_str_from_paths(
+        record,
+        [
+            ("source_type",),
+            ("metadata", "source_type"),
+            ("metadata", "metadata", "source_type"),
+        ],
+    )
+    title = get_str_from_paths(
+        record,
+        [
+            ("title",),
+            ("metadata", "title"),
+            ("metadata", "metadata", "title"),
+        ],
+    )
+    content = get_str_from_paths(
+        record,
+        [
+            ("content",),
+            ("metadata", "content"),
+            ("page_content",),
+            ("metadata", "page_content"),
+        ],
+    )
+    page_content = get_str_from_paths(
+        record,
+        [
+            ("page_content",),
+            ("metadata", "page_content"),
+            ("metadata", "metadata", "page_content"),
+        ],
+    )
+    has_body_raw = get_any_from_paths(
+        record,
+        [
+            ("has_body",),
+            ("metadata", "has_body"),
+            ("metadata", "metadata", "has_body"),
+        ],
+    )
+    has_body = bool(has_body_raw) if has_body_raw is not None else False
+    normalized_source_type = source_type.lower() if source_type else "unknown"
+    return NormalizedRecord(
+        source_type=normalized_source_type,
+        title=title,
+        content=content,
+        page_content=page_content,
+        has_body=has_body,
+    )
+
+
 def calc_stats(lengths: list[int]) -> ContentStats:
     if not lengths:
         return ContentStats(count=0)
@@ -194,6 +293,7 @@ def check_low_quality(source: str, content_len: int, source_type: str | None = N
 
 def analyze_record(source: str, record: dict[str, Any], path: Path, agg: SourceDiagnostics) -> None:
     agg.total_docs += 1
+    normalized = normalize_record(record)
 
     title = str(record.get("title", "") or "").strip()
     content_raw = record.get("content")
@@ -208,38 +308,54 @@ def analyze_record(source: str, record: dict[str, Any], path: Path, agg: SourceD
     if isinstance(page_content_raw, str) and page_content_raw.strip():
         agg.has_page_content += 1
 
-    agg.content_lengths.append(content_len)
+    if normalized.source_type and normalized.source_type != "unknown":
+        agg.normalized_has_source_type += 1
+    if normalized.title:
+        agg.normalized_has_title += 1
+    if normalized.content:
+        agg.normalized_has_content += 1
+    if normalized.page_content:
+        agg.normalized_has_page_content += 1
 
-    if title and content and title == content:
+    agg.normalized_source_type_counts[normalized.source_type] += 1
+    if normalized.source_type == "unknown":
+        agg.add_sample(agg.unknown_samples, record, path)
+
+    normalized_content_len = len(normalized.content)
+    agg.content_lengths.append(normalized_content_len)
+
+    compare_title = normalized.title or title
+    compare_content = normalized.content or content
+    if compare_title and compare_content and compare_title == compare_content:
         agg.title_eq_content += 1
 
     if source == "news":
-        if title == "네이버뉴스" or content == "네이버뉴스":
+        if compare_title == "네이버뉴스" or compare_content == "네이버뉴스":
             agg.placeholder_suspects += 1
             agg.add_sample(agg.placeholder_samples, record, path)
-        if check_low_quality(source, content_len):
+        if check_low_quality(source, normalized_content_len):
             agg.low_quality_suspects += 1
 
     elif source == "forum":
-        if title and content and title == content:
+        if compare_title and compare_content and compare_title == compare_content:
             agg.add_sample(agg.title_only_samples, record, path)
-        if check_low_quality(source, content_len):
+        if check_low_quality(source, normalized_content_len):
             agg.low_quality_suspects += 1
 
     elif source == "dart":
-        has_wrapper = any(token in content for token in DART_WRAPPER_TOKENS)
+        has_wrapper = any(token in compare_content for token in DART_WRAPPER_TOKENS)
         if has_wrapper:
             agg.dart_wrapper_suspects += 1
             agg.add_sample(agg.wrapper_samples, record, path)
-            if bool(record.get("has_body")):
+            if normalized.has_body:
                 agg.dart_has_body_but_wrapper += 1
-        if check_low_quality(source, content_len):
+        if check_low_quality(source, normalized_content_len):
             agg.low_quality_suspects += 1
 
     elif source == "combined":
-        source_type = str(record.get("source_type", "") or "unknown")
-        agg.source_type_counts[source_type] += 1
-        if check_low_quality(source, content_len, source_type=source_type):
+        raw_source_type = str(record.get("source_type", "") or "unknown")
+        agg.source_type_counts[raw_source_type] += 1
+        if check_low_quality(source, normalized_content_len, source_type=normalized.source_type):
             agg.low_quality_suspects += 1
 
 
@@ -273,6 +389,17 @@ def format_summary(agg: SourceDiagnostics) -> list[str]:
             f"page_content={agg.has_page_content}/{agg.total_docs} ({pct(agg.has_page_content, agg.total_docs)}%)"
         ),
         (
+            "normalized field coverage: "
+            f"source_type={agg.normalized_has_source_type}/{agg.total_docs} "
+            f"({pct(agg.normalized_has_source_type, agg.total_docs)}%), "
+            f"title={agg.normalized_has_title}/{agg.total_docs} "
+            f"({pct(agg.normalized_has_title, agg.total_docs)}%), "
+            f"content={agg.normalized_has_content}/{agg.total_docs} "
+            f"({pct(agg.normalized_has_content, agg.total_docs)}%), "
+            f"page_content={agg.normalized_has_page_content}/{agg.total_docs} "
+            f"({pct(agg.normalized_has_page_content, agg.total_docs)}%)"
+        ),
+        (
             "content 길이 통계: "
             f"count={stats.count}, min={stats.min}, max={stats.max}, "
             f"mean={stats.mean}, median={stats.median}, p95={stats.p95}"
@@ -290,6 +417,7 @@ def format_summary(agg: SourceDiagnostics) -> list[str]:
         lines.append(f"has_body=true + wrapper-text 의심: {agg.dart_has_body_but_wrapper}")
     if agg.source == "combined":
         lines.append(f"source_type별 문서 수: {dict(agg.source_type_counts)}")
+    lines.append(f"normalized source_type별 문서 수: {dict(agg.normalized_source_type_counts)}")
     return lines
 
 
@@ -317,6 +445,12 @@ def make_json_report(diagnostics: dict[str, SourceDiagnostics]) -> dict[str, Any
                 "content": agg.has_content,
                 "page_content": agg.has_page_content,
             },
+            "normalized_presence": {
+                "source_type": agg.normalized_has_source_type,
+                "title": agg.normalized_has_title,
+                "content": agg.normalized_has_content,
+                "page_content": agg.normalized_has_page_content,
+            },
             "title_eq_content": {
                 "count": agg.title_eq_content,
                 "ratio_percent": pct(agg.title_eq_content, agg.total_docs),
@@ -327,10 +461,12 @@ def make_json_report(diagnostics: dict[str, SourceDiagnostics]) -> dict[str, Any
             "dart_wrapper_suspects": agg.dart_wrapper_suspects,
             "dart_has_body_but_wrapper": agg.dart_has_body_but_wrapper,
             "source_type_counts": dict(agg.source_type_counts),
+            "normalized_source_type_counts": dict(agg.normalized_source_type_counts),
             "samples": {
                 "news_placeholder": agg.placeholder_samples,
                 "forum_title_only": agg.title_only_samples,
                 "dart_wrapper": agg.wrapper_samples,
+                "unknown_unparsed": agg.unknown_samples,
             },
         }
     return report
@@ -350,6 +486,10 @@ def print_report(diagnostics: dict[str, SourceDiagnostics]) -> None:
     print_samples("news placeholder 샘플", diagnostics.get("news", SourceDiagnostics("news")).placeholder_samples)
     print_samples("forum title-only 샘플", diagnostics.get("forum", SourceDiagnostics("forum")).title_only_samples)
     print_samples("dart wrapper-text 샘플", diagnostics.get("dart", SourceDiagnostics("dart")).wrapper_samples)
+    print_samples(
+        "unknown/unparsed sample",
+        [sample for agg in diagnostics.values() for sample in agg.unknown_samples][:5],
+    )
 
 
 def main() -> int:
