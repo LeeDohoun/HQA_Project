@@ -153,9 +153,17 @@ class DartDisclosureCollector(BaseCollector):
                 mojibake_detected=mojibake_detected,
             )
             has_body = body_extracted
+            if has_body and not body_error_type:
+                body_error_type = "success"
 
             # raw/event 용으로는 남기되, 본문 성공 여부를 표시
             content = detail_excerpt if has_body else f"{corp_name} 공시: {title}"
+            final_source = body_source if has_body else "title_fallback"
+            print(
+                f"[DART][PATH] rcept_no={rcept_no} "
+                f"structured_candidate={bool(self._match_structured_endpoints(title))} "
+                f"final_source={final_source} has_body={has_body} body_error_type={body_error_type}"
+            )
 
             docs.append(
                 DocumentRecord(
@@ -171,7 +179,7 @@ class DartDisclosureCollector(BaseCollector):
                         "rcept_no": rcept_no,
                         "report_nm": title,
                         "has_body": has_body,
-                        "body_source": body_source if body_source else ("dart_detail" if has_body else "title_fallback"),
+                        "body_source": final_source,
                         "body_extracted": body_extracted,
                         "wrapper_text_detected": wrapper_text_detected,
                         "body_error_type": body_error_type,
@@ -204,6 +212,7 @@ class DartDisclosureCollector(BaseCollector):
             "mojibake_detected": False,
         }
         endpoints = self._match_structured_endpoints(report_nm)
+        print(f"[DART][STRUCTURED] rcept_no={rcept_no} endpoints={endpoints}")
         if not endpoints:
             return "", "structured_api", quality_meta
 
@@ -212,6 +221,7 @@ class DartDisclosureCollector(BaseCollector):
             payload = self._structured_cache.get(cache_key)
             if payload is None:
                 try:
+                    print(f"[DART][STRUCTURED] API hit endpoint={endpoint} corp_code={corp_code}")
                     response = self.get_with_retry(
                         f"https://opendart.fss.or.kr/api/{endpoint}.json",
                         params={
@@ -240,8 +250,10 @@ class DartDisclosureCollector(BaseCollector):
 
             target = self._find_structured_row(rows=rows, rcept_no=rcept_no)
             if target is None:
+                print(f"[DART][STRUCTURED] rcept_no match failed endpoint={endpoint} target={rcept_no}")
                 quality_meta["body_error_type"] = "structured_no_rcept_match"
                 continue
+            print(f"[DART][STRUCTURED] rcept_no match success endpoint={endpoint} target={rcept_no}")
 
             text = self._structured_row_to_text(report_nm=report_nm, endpoint=endpoint, row=target)
             cleaned = self._sanitize_body_text(text)
@@ -416,7 +428,10 @@ class DartDisclosureCollector(BaseCollector):
         if BeautifulSoup is None:
             return text
         lname = name.lower()
-        if any(lname.endswith(ext) for ext in (".xml", ".xhtml", ".html", ".htm")) or "<" in text:
+        if lname.endswith((".xml", ".xhtml")):
+            soup = BeautifulSoup(text, "xml")
+            return soup.get_text(" ", strip=True)
+        if lname.endswith((".html", ".htm")) or "<" in text:
             soup = BeautifulSoup(text, "html.parser")
             return soup.get_text(" ", strip=True)
         return text
@@ -474,9 +489,9 @@ class DartDisclosureCollector(BaseCollector):
                 quality_meta["wrapper_text_detected"] = wrapper_detected
                 if self._contains_error_page_tokens(cleaned) or self._contains_error_page_tokens(viewer_body):
                     quality_meta["body_error_type"] = "viewer_error_page"
-                    return "", "viewer", quality_meta
+                    return "", "viewer_fallback", quality_meta
                 if cleaned:
-                    return cleaned[:2000], "viewer", quality_meta
+                    return cleaned[:2000], "viewer_fallback", quality_meta
 
         candidates = []
 
@@ -513,7 +528,7 @@ class DartDisclosureCollector(BaseCollector):
                 quality_meta["body_error_type"] = "main_too_short"
             return "", "main_too_short", quality_meta
 
-        return best[:1200], "main_fallback", quality_meta
+        return best[:1200], "viewer_fallback", quality_meta
 
     def _extract_viewer_url(self, html: str) -> str:
         m = re.search(r"viewDoc\((?P<args>.*?)\)", html, flags=re.DOTALL)
