@@ -1,8 +1,7 @@
 """
-HQA AI Server - AI 에이전트 & RAG 전용 서버
+HQA AI Server.
 
-포트: 8001
-역할: CPU/GPU 집약적인 LLM 추론, LangGraph 워크플로우, RAG 파이프라인 실행
+Runs stock analysis workflows and query suggestion endpoints for the backend.
 """
 
 from __future__ import annotations
@@ -10,18 +9,18 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import sys
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-# 프로젝트 루트를 sys.path에 추가 (src/ 패키지 접근용)
 PROJECT_ROOT = Path(__file__).parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -33,37 +32,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ── 인메모리 결과 캐시 (Redis 폴백용) ──
-_results: OrderedDict[str, Dict[str, Any]] = OrderedDict()
+_results: OrderedDict[str, dict[str, Any]] = OrderedDict()
 _MAX_CACHE = 500
 
 
-# ──────────────────────────────────────────────
-# 라이프사이클
-# ──────────────────────────────────────────────
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("🤖 HQA AI Server 시작 (port 8001)")
+    logger.info("HQA AI Server starting on port 8001")
     try:
         from src.agents.graph import is_langgraph_available
-        if is_langgraph_available():
-            logger.info("   LangGraph: 활성 ✅")
-        else:
-            logger.info("   LangGraph: 비활성 (폴백 모드)")
+
+        logger.info("LangGraph available: %s", is_langgraph_available())
     except Exception:
-        logger.info("   LangGraph: 로드 실패")
+        logger.info("LangGraph availability check failed")
     yield
-    logger.info("🛑 HQA AI Server 종료")
+    logger.info("HQA AI Server stopped")
 
-
-# ──────────────────────────────────────────────
-# 앱 생성
-# ──────────────────────────────────────────────
 
 app = FastAPI(
     title="HQA AI Server",
-    description="AI 에이전트 & RAG 분석 전용 서버",
+    description="AI analysis service for HQA",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -76,118 +64,97 @@ app.add_middleware(
 )
 
 
-# ──────────────────────────────────────────────
-# 스키마
-# ──────────────────────────────────────────────
-
 class AnalyzeRequest(BaseModel):
     task_id: str
     stock_name: str
     stock_code: str
-    mode: str = "full"          # "full" | "quick"
+    mode: str = "full"
     max_retries: int = 1
-
-
-class ChatRequest(BaseModel):
-    message: str
-    session_id: Optional[str] = None
 
 
 class SuggestRequest(BaseModel):
     query: str
 
 
-# ──────────────────────────────────────────────
-# Redis 헬퍼
-# ──────────────────────────────────────────────
-
 def _get_redis_url() -> str:
-    import os
     return os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 
-def _publish_progress(task_id: str, agent: str, status: str, message: str, progress: float):
-    """Redis pub/sub으로 진행 상황 전달"""
+def _publish_progress(task_id: str, agent: str, status: str, message: str, progress: float) -> None:
     try:
         import redis
-        r = redis.from_url(_get_redis_url())
-        event = json.dumps({
-            "task_id": task_id,
-            "agent": agent,
-            "status": status,
-            "message": message,
-            "progress": progress,
-            "timestamp": datetime.now().isoformat(),
-        }, ensure_ascii=False)
-        r.publish(f"hqa:progress:{task_id}", event)
+
+        redis_client = redis.from_url(_get_redis_url())
+        payload = json.dumps(
+            {
+                "task_id": task_id,
+                "agent": agent,
+                "status": status,
+                "message": message,
+                "progress": progress,
+                "timestamp": datetime.now().isoformat(),
+            },
+            ensure_ascii=False,
+        )
+        redis_client.publish(f"hqa:progress:{task_id}", payload)
     except Exception:
-        pass  # Redis 미사용 시 무시
+        pass
 
 
-def _store_result(task_id: str, result: dict):
-    """결과를 Redis + 인메모리에 저장"""
+def _store_result(task_id: str, result: dict[str, Any]) -> None:
     try:
         import redis
-        r = redis.from_url(_get_redis_url())
-        r.setex(
+
+        redis_client = redis.from_url(_get_redis_url())
+        redis_client.setex(
             f"hqa:result:{task_id}",
-            3600,  # 1시간 TTL
+            3600,
             json.dumps(result, ensure_ascii=False, default=str),
         )
     except Exception:
         pass
 
-    # 인메모리 폴백
     _results[task_id] = result
     while len(_results) > _MAX_CACHE:
         _results.popitem(last=False)
 
 
-# ──────────────────────────────────────────────
-# 분석 실행 (백그라운드)
-# ──────────────────────────────────────────────
-
 async def _run_analysis_background(
     task_id: str, stock_name: str, stock_code: str, mode: str, max_retries: int
-):
-    """asyncio 백그라운드에서 AI 분석 실행"""
+) -> None:
     loop = asyncio.get_event_loop()
     try:
-        _publish_progress(task_id, "system", "started", f"{stock_name} 분석 시작", 0.0)
-
+        _publish_progress(task_id, "system", "started", f"{stock_name} analysis started", 0.0)
         if mode == "quick":
-            result = await loop.run_in_executor(
-                None, _execute_quick, task_id, stock_name, stock_code
-            )
+            result = await loop.run_in_executor(None, _execute_quick, task_id, stock_name, stock_code)
         else:
             result = await loop.run_in_executor(
                 None, _execute_full, task_id, stock_name, stock_code, max_retries
             )
 
         _store_result(task_id, {**result, "status": "completed"})
-        _publish_progress(task_id, "system", "completed", "분석 완료", 1.0)
+        _publish_progress(task_id, "system", "completed", "analysis completed", 1.0)
+    except Exception as exc:
+        logger.exception("Analysis failed: %s", task_id)
+        _store_result(task_id, {"task_id": task_id, "status": "failed", "error": str(exc)})
+        _publish_progress(task_id, "system", "error", f"error: {str(exc)[:200]}", 0.0)
 
-    except Exception as e:
-        logger.exception(f"분석 실패: {task_id}")
-        _store_result(task_id, {"task_id": task_id, "status": "failed", "error": str(e)})
-        _publish_progress(task_id, "system", "error", f"오류: {str(e)[:200]}", 0.0)
 
+def _execute_quick(task_id: str, stock_name: str, stock_code: str) -> dict[str, Any]:
+    from src.agents import ChartistAgent, QuantAgent
+    from src.utils.parallel import is_error, run_agents_parallel
 
-def _execute_quick(task_id: str, stock_name: str, stock_code: str) -> dict:
-    """빠른 분석 (Quant + Chartist 병렬)"""
-    from src.agents import QuantAgent, ChartistAgent
-    from src.utils.parallel import run_agents_parallel, is_error
-
-    _publish_progress(task_id, "quant", "started", "재무 분석 중...", 0.2)
-    _publish_progress(task_id, "chartist", "started", "기술적 분석 중...", 0.2)
+    _publish_progress(task_id, "quant", "started", "financial analysis running", 0.2)
+    _publish_progress(task_id, "chartist", "started", "technical analysis running", 0.2)
 
     quant = QuantAgent()
     chartist = ChartistAgent()
-
-    parallel_results = run_agents_parallel({
-        "quant": (quant.full_analysis, (stock_name, stock_code)),
-        "chartist": (chartist.full_analysis, (stock_name, stock_code)),
-    })
+    parallel_results = run_agents_parallel(
+        {
+            "quant": (quant.full_analysis, (stock_name, stock_code)),
+            "chartist": (chartist.full_analysis, (stock_name, stock_code)),
+        }
+    )
 
     quant_score = parallel_results["quant"]
     chartist_score = parallel_results["chartist"]
@@ -197,8 +164,8 @@ def _execute_quick(task_id: str, stock_name: str, stock_code: str) -> dict:
     if is_error(chartist_score):
         chartist_score = chartist._default_score(stock_code, str(chartist_score))
 
-    _publish_progress(task_id, "quant", "completed", f"재무: {quant_score.grade}", 1.0)
-    _publish_progress(task_id, "chartist", "completed", f"기술: {chartist_score.signal}", 1.0)
+    _publish_progress(task_id, "quant", "completed", f"financial: {quant_score.grade}", 1.0)
+    _publish_progress(task_id, "chartist", "completed", f"technical: {chartist_score.signal}", 1.0)
 
     return {
         "task_id": task_id,
@@ -212,13 +179,12 @@ def _execute_quick(task_id: str, stock_name: str, stock_code: str) -> dict:
     }
 
 
-def _execute_full(task_id: str, stock_name: str, stock_code: str, max_retries: int) -> dict:
-    """전체 분석 (LangGraph 워크플로우)"""
+def _execute_full(task_id: str, stock_name: str, stock_code: str, max_retries: int) -> dict[str, Any]:
     from src.agents.graph import run_stock_analysis
 
-    _publish_progress(task_id, "analyst", "started", "헤게모니 분석 중...", 0.1)
-    _publish_progress(task_id, "quant", "started", "재무 분석 중...", 0.1)
-    _publish_progress(task_id, "chartist", "started", "기술적 분석 중...", 0.1)
+    _publish_progress(task_id, "analyst", "started", "analyst running", 0.1)
+    _publish_progress(task_id, "quant", "started", "quant running", 0.1)
+    _publish_progress(task_id, "chartist", "started", "chartist running", 0.1)
 
     result = run_stock_analysis(
         stock_name=stock_name,
@@ -233,15 +199,19 @@ def _execute_full(task_id: str, stock_name: str, stock_code: str, max_retries: i
     final_decision = result.get("final_decision")
 
     if analyst_score:
-        _publish_progress(task_id, "analyst", "completed",
-                          f"헤게모니: {getattr(analyst_score, 'hegemony_grade', '?')}", 1.0)
+        _publish_progress(
+            task_id,
+            "analyst",
+            "completed",
+            f"analyst: {getattr(analyst_score, 'hegemony_grade', '?')}",
+            1.0,
+        )
     if quant_score:
-        _publish_progress(task_id, "quant", "completed", f"재무: {quant_score.grade}", 1.0)
+        _publish_progress(task_id, "quant", "completed", f"quant: {quant_score.grade}", 1.0)
     if chartist_score:
-        _publish_progress(task_id, "chartist", "completed", f"기술: {chartist_score.signal}", 1.0)
+        _publish_progress(task_id, "chartist", "completed", f"chartist: {chartist_score.signal}", 1.0)
     if final_decision:
-        _publish_progress(task_id, "risk_manager", "completed",
-                          f"판단: {final_decision.action.value}", 1.0)
+        _publish_progress(task_id, "risk_manager", "completed", f"decision: {final_decision.action.value}", 1.0)
 
     return {
         "task_id": task_id,
@@ -259,25 +229,23 @@ def _execute_full(task_id: str, stock_name: str, stock_code: str, max_retries: i
     }
 
 
-# ──────────────────────────────────────────────
-# 변환 헬퍼
-# ──────────────────────────────────────────────
-
-def _score_to_dict(score) -> dict:
+def _score_to_dict(score: Any) -> dict[str, Any]:
     if score is None:
         return {}
     if hasattr(score, "__dict__"):
-        return {k: v for k, v in score.__dict__.items() if not k.startswith("_")}
+        return {key: value for key, value in score.__dict__.items() if not key.startswith("_")}
     return {}
 
 
-def _decision_to_dict(decision) -> dict:
+def _decision_to_dict(decision: Any) -> dict[str, Any]:
     if decision is None:
         return {}
     return {
         "action": decision.action.value if hasattr(decision.action, "value") else str(decision.action),
         "confidence": getattr(decision, "confidence", 0),
-        "risk_level": decision.risk_level.value if hasattr(decision.risk_level, "value") else str(decision.risk_level),
+        "risk_level": decision.risk_level.value
+        if hasattr(decision.risk_level, "value")
+        else str(decision.risk_level),
         "total_score": getattr(decision, "total_score", 0),
         "summary": getattr(decision, "summary", ""),
         "key_catalysts": getattr(decision, "key_catalysts", []),
@@ -286,24 +254,13 @@ def _decision_to_dict(decision) -> dict:
     }
 
 
-# ──────────────────────────────────────────────
-# 엔드포인트
-# ──────────────────────────────────────────────
-
 @app.get("/health")
-async def health():
+async def health() -> dict[str, Any]:
     return {"status": "ok", "service": "HQA AI Server", "port": 8001}
 
 
 @app.post("/analyze", status_code=202)
-async def analyze(request: AnalyzeRequest):
-    """
-    분석 요청 (비동기)
-
-    즉시 task_id를 반환하고 백그라운드에서 분석을 실행합니다.
-    진행 상황은 Redis pub/sub `hqa:progress:{task_id}` 채널로 전달됩니다.
-    결과는 Redis `hqa:result:{task_id}` 키에 저장됩니다.
-    """
+async def analyze(request: AnalyzeRequest) -> dict[str, str]:
     asyncio.create_task(
         _run_analysis_background(
             request.task_id,
@@ -317,72 +274,47 @@ async def analyze(request: AnalyzeRequest):
 
 
 @app.get("/analyze/{task_id}")
-async def get_analyze_result(task_id: str):
-    """분석 결과 조회 (Redis → 인메모리 순서로 조회)"""
-    # Redis 우선 조회
+async def get_analyze_result(task_id: str) -> dict[str, Any]:
     try:
         import redis
-        r = redis.from_url(_get_redis_url())
-        data = r.get(f"hqa:result:{task_id}")
+
+        redis_client = redis.from_url(_get_redis_url())
+        data = redis_client.get(f"hqa:result:{task_id}")
         if data:
             return json.loads(data)
     except Exception:
         pass
 
-    # 인메모리 폴백
     result = _results.get(task_id)
     if result is None:
-        raise HTTPException(status_code=404, detail=f"작업을 찾을 수 없습니다: {task_id}")
+        raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
     return result
 
 
-@app.post("/chat")
-async def chat(request: ChatRequest):
-    """대화형 질문 (SupervisorAgent)"""
-    loop = asyncio.get_event_loop()
-
-    def _run():
-        from src.agents import SupervisorAgent
-        supervisor = SupervisorAgent()
-        result = supervisor.execute(request.message)
-        if isinstance(result, dict):
-            return {
-                "message": (
-                    result.get("summary") or result.get("answer") or
-                    result.get("analysis") or result.get("message") or str(result)
-                ),
-                "intent": result.get("intent"),
-                "stocks": result.get("stocks", []),
-            }
-        return {"message": str(result)}
-
-    return await loop.run_in_executor(None, _run)
-
-
 @app.post("/suggest")
-async def suggest(request: SuggestRequest):
-    """쿼리 제안 (Answerability Check)"""
+async def suggest(request: SuggestRequest) -> dict[str, Any]:
     loop = asyncio.get_event_loop()
 
-    def _run():
+    def _run() -> dict[str, Any]:
         from src.agents.llm_config import get_instruct_llm
+
         llm = get_instruct_llm()
-        prompt = f"""당신은 주식 분석 AI 시스템의 쿼리 검증 모듈입니다.
+        prompt = f"""You are validating whether a query is suitable for a Korean stock analysis assistant.
 
-사용자의 질문이 다음 기능 범위 내에 있는지 판단하세요:
-1. 한국 주식 종목 분석 (재무, 기술적, 헤게모니)
-2. 실시간 시세 조회
-3. 산업/테마 분석
-4. 종목 비교
+The system can answer:
+1. Individual Korean stock analysis
+2. Realtime price lookup
+3. Sector/theme analysis
+4. Stock comparison
 
-사용자 질문: "{request.query}"
+User query: "{request.query}"
 
-다음 JSON 형식으로 응답하세요:
+Return JSON with:
 {{
-    "is_answerable": true/false,
-    "corrected_query": "교정된 질문 (필요시)",
-    "suggestions": ["대안 질문1", "대안 질문2", "대안 질문3"],
-    "reason": "판단 근거"
+  "is_answerable": true,
+  "corrected_query": null,
+  "suggestions": [],
+  "reason": null
 }}
 """
         try:
@@ -392,9 +324,14 @@ async def suggest(request: SuggestRequest):
             end = text.rfind("}") + 1
             if start >= 0 and end > start:
                 return json.loads(text[start:end])
-        except Exception as e:
-            logger.warning(f"쿼리 제안 실패: {e}")
-        return {"is_answerable": True, "corrected_query": None, "suggestions": [], "reason": None}
+        except Exception as exc:
+            logger.warning("Suggestion generation failed: %s", exc)
+        return {
+            "is_answerable": True,
+            "corrected_query": None,
+            "suggestions": [],
+            "reason": None,
+        }
 
     result = await loop.run_in_executor(None, _run)
     return {"original_query": request.query, **result}
