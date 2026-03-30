@@ -18,11 +18,11 @@
 - **에이전트 트레이싱** (판단 근거·결과·실행 시간 JSON 기록)
 - **프롬프트 관리** (에이전트별 프롬프트 외부 파일 분리)
 
-> 📌 데이터 수집 파이프라인(`data_pipeline/`), 프론트엔드(`frontend/`), 메인 백엔드(`backend/`), 대시보드(`dashboard/`) 등은 **별도 브랜치**에서 관리됩니다.
+> 📌 데이터 수집 파이프라인(`data_pipeline/`), 프론트엔드(`frontend/`), 대시보드(`dashboard/`) 등은 **별도 브랜치**에서 관리됩니다.
 
 ### ✨ 주요 특징
 
-- 🔄 **LangGraph 상태 머신**: Supervisor가 조율하는 6개 전문 에이전트 (병렬 실행 + 품질 게이트 + 피드백 루프)
+- 🔄 **LangGraph 상태 머신**: Supervisor가 조율하는 병렬 분석 흐름(Analyst/Quant/Chartist + Risk Manager, 품질 게이트 및 피드백 루프)
 - 🤖 **자율 에이전트**: YAML 설정 기반 감시 종목 자동 분석 · 장중 스케줄 반복 · 조건부 매매 실행
 - 🔍 **Hybrid Search**: BM25 키워드 검색 + Vector 의미 검색 → RRF 병합 → Qwen3 리랭킹
 - 📊 **실시간 시세**: 한국투자증권 REST API + WebSocket 실시간 체결가 스트리밍
@@ -40,7 +40,7 @@
 | 목표 | 설명 |
 |------|------|
 | 🔍 **헤게모니 기업 발굴** | 산업 지배력, 기술적 해자(Moat), 성장성을 정량/정성 분석 |
-| 🤖 **멀티 에이전트 분석** | 6개 전문 에이전트의 상호 검증 · 품질 게이트 · 피드백 루프 |
+| 🤖 **멀티 에이전트 분석** | Supervisor + Analyst + Quant + Chartist + Risk Manager의 상호 검증 · 품질 게이트 · 피드백 루프 |
 | 📊 **RAG 기반 실시간 분석** | Hybrid Search (Vector + BM25 + Reranking)로 최신 정보 활용 |
 | 💹 **자율 매매 에이전트** | YAML 설정 기반 자동 분석 → 조건 충족 시 KIS API 매매 실행 (3중 서킷 브레이커) |
 
@@ -159,12 +159,10 @@ HQA_Project/
 
 *   **`config/watchlist.yaml`**: 자율 에이전트(`AutonomousRunner`)가 주기적으로 감시하고 분석할 종목 리스트와 매매 조건(서킷 브레이커, 손절 기준 등)을 정의하는 파일입니다.
 *   **`prompts/`**: 각 에이전트가 사용하는 LLM 지시문(프롬프트)을 Markdown 파일로 관리하는 폴더입니다. 소스 코드를 수정하지 않고 프롬프트 엔지니어링을 할 수 있게 해줍니다.
-    *   `supervisor/routing.md`: 사용자 질문의 의도를 파악하는 프롬프트.
-    *   `researcher/summary.md`: 수집된 데이터를 요약하는 프롬프트.
-    *   `strategist/hegemony.md`: 회사의 독점력과 성장성을 분석하는 프롬프트.
-    *   `quant/web_fallback.md`: 재무 데이터 스크래핑 실패 시 웹 검색 결과에서 재무 지표를 추출하는 프롬프트.
-    *   `chartist/analysis.md`: 기술적 지표를 바탕으로 차트를 분석하는 프롬프트 (CrewAI 기반).
-    *   `risk_manager/decision.md`: 모든 에이전트의 점수를 종합하여 최종 투자 결정을 내리는 프롬프트.
+*   `supervisor/routing.md`: 사용자 질문의 의도를 파악하는 프롬프트.
+*   `quant/web_fallback.md`: 재무 데이터 스크래핑 실패 시 웹 검색 결과에서 재무 지표를 추출하는 프롬프트.
+*   `chartist/analysis.md`: 기술적 지표를 바탕으로 차트를 분석하는 프롬프트.
+*   `risk_manager/decision.md`: 모든 에이전트의 점수를 종합하여 최종 투자 결정을 내리는 프롬프트.
 
 ### 3️⃣ 핵심 비즈니스 로직 (`src/`)
 
@@ -173,12 +171,10 @@ HQA_Project/
 #### 🤖 `src/agents/` — AI 에이전트 및 워크플로우
 개별 AI 전문가 객체들과 이들의 실행 순서를 정의합니다.
 
-*   **`graph.py`**: **가장 중요한 파일 중 하나입니다.** LangGraph를 사용하여 여러 에이전트(Analyst, Quant, Chartist, Risk Manager)가 병렬로 실행되고, Quality Gate를 거쳐 최종 결론에 도달하는 **상태 머신(Workflow)**을 정의합니다.
+*   **`graph.py`**: **가장 중요한 파일 중 하나입니다.** LangGraph를 사용하여 여러 분석 단계(Analyst, Quant, Chartist, Risk Manager)가 병렬로 실행되고, Quality Gate를 거쳐 최종 결론에 도달하는 **상태 머신(Workflow)**을 정의합니다.
 *   **`llm_config.py`**: Gemini, Ollama 등 다양한 LLM 제공자를 설정하고 초기화하는 팩토리 함수들을 모아둔 파일입니다. Instruct(빠른) 모델과 Thinking(추론용) 모델을 구분하여 제공합니다.
 *   **`supervisor.py`**: 사용자의 입력을 받아 가장 먼저 처리하는 에이전트입니다. 대화 이력을 기억(Memory)하고, 질문의 의도(Intent)를 분석하여 다른 전문가 에이전트에게 업무를 할당(Routing)합니다.
-*   **`analyst.py`**: `Researcher`와 `Strategist`를 하나로 묶어 동작하게 하는 통합 관리자(Wrapper) 클래스입니다.
-*   **`researcher.py`**: RAG 시스템이나 웹 검색을 통해 시장 데이터, 뉴스, 리포트 등 정성적 정보를 수집하고 요약합니다. 데이터 수집 실패 시 Plan B로 우회(Fallback)하는 로직이 핵심입니다.
-*   **`strategist.py`**: `Researcher`가 모은 정보를 바탕으로 기업의 '경제적 해자(Moat)'와 '성장성'을 평가하여 점수(70점 만점)를 매깁니다.
+*   **`analyst.py`**: 리서치 수집과 헤게모니 판단을 하나로 묶은 통합 분석기입니다. RAG, 웹 검색, Vision 분석 결과를 종합해 Analyst 점수를 산출합니다.
 *   **`quant.py`**: 네이버 금융 등에서 재무제표 수치를 가져와 PER, PBR, ROE 등을 계산하고 가치, 수익성, 성장성, 안정성을 평가(100점 만점)합니다.
 *   **`chartist.py`**: 이동평균선, RSI, MACD 등의 기술적 지표를 분석하여 매매 시점과 추세를 판단(100점 만점)합니다.
 *   **`risk_manager.py`**: 앞선 Analyst, Quant, Chartist의 총 270점 만점 평가를 종합하여 리스크를 평가하고, 최종적인 투자 의견(적극 매수, 보유, 매도 등)과 포지션 크기(비중)를 결정합니다.
@@ -186,7 +182,7 @@ HQA_Project/
 #### ⚙️ `src/runner/` — 자율 에이전트 시스템
 사람의 개입 없이 설정된 종목을 자동으로 분석하고 매매하는 모듈입니다.
 
-*   **`autonomous_runner.py`**: 무한 루프(Loop)를 돌며 `config/watchlist.yaml`에 정의된 종목들을 스케줄(예: 60분 간격, 장 중에만)에 따라 순차적으로 LangGraph에 넣고 분석 돌리는 **메인 엔진**입니다.
+*   **`autonomous_runner.py`**: `config/watchlist.yaml`에 정의된 종목들을 스케줄(예: 60분 간격, 장 중에만)에 따라 순차적으로 LangGraph에 넣고 분석하는 **메인 엔진**입니다.
 *   **`trade_executor.py`**: `Risk Manager`가 내린 `FinalDecision`을 바탕으로 실제 증권사(KIS) API를 통해 주문을 넣는 클래스입니다. 일일 매수 한도 초과 방지, 종목 쿨다운, 모의투자(Dry Run) 지원 등 **서킷 브레이커(안전장치)** 역할을 합니다.
 
 #### 🔍 `src/rag/` — 리서치 및 검색 증강 파이프라인
@@ -232,7 +228,7 @@ AI 전용 웹 애플리케이션(API 서버)입니다. 사용자가 브라우저
 
 1.  **시작**: `main.py --auto` 실행.
 2.  **스케줄링**: `src/runner/autonomous_runner.py`가 `config/watchlist.yaml`을 읽고 첫 번째 종목(예: 삼성전자)을 가져옵니다.
-3.  **워크플로우**: `src/agents/graph.py` 호출. 3개 파트(Analyst, Quant, Chartist)로 작업 지시.
+3.  **워크플로우**: `src/agents/graph.py` 호출. Analyst, Quant, Chartist를 병렬 실행하고 Risk Manager가 최종 판단을 내립니다.
 4.  **정보 수집/분석**:
     *   **Analyst**는 `src/rag/retriever.py`와 `src/tools/web_search_tool.py`를 써서 뉴스를 읽고, `src/utils/prompt_loader.py`로 가져온 프롬프트로 평가합니다.
     *   **Quant**는 `src/tools/finance_tool.py`로 재무를 봅니다.
@@ -249,11 +245,10 @@ AI 전용 웹 애플리케이션(API 서버)입니다. 사용자가 브라우저
 | 에이전트 | LLM 모드 | 역할 | 점수 체계 |
 |---------|---------|------|----------|
 | **Supervisor** | Instruct | 사용자 의도 분석 · 에이전트 라우팅 · 10턴 대화 메모리 | — |
-| **Researcher** | Instruct (빠른 수집) | 정보 수집 · Plan A→B 폴백 · 품질 평가(A~D등급) | 품질 0~100 |
-| **Strategist** | Thinking (깊은 추론) | 헤게모니 분석 · 독점력/성장성 평가 · 품질 등급별 톤 조정 | Moat 0~40 + Growth 0~30 = **0~70** |
+| **Analyst** | Instruct + Thinking | 정보 수집 · 헤게모니 분석 · 품질 평가(A~D등급) | Moat 0~40 + Growth 0~30 = **0~70** |
 | **Quant** | Instruct | PER/PBR/ROE 등 재무 지표 분석 · 밸류에이션 | 4영역 각 25 = **0~100** |
 | **Chartist** | Instruct | RSI/MACD/볼린저밴드 기술적 분석 | 4영역 합산 = **0~100** |
-| **Risk Manager** | Thinking | 3개 에이전트 종합 → 최종 투자 판단 · 투자 지시서 생성 | 총 **270점 만점** |
+| **Risk Manager** | Thinking + Validator(선택) | 3개 에이전트 종합 → 최종 투자 판단 · 필요 시 이종 모델 교차 검증 | 총 **270점 만점** |
 
 ### 에이전트 프롬프트 관리
 
@@ -262,11 +257,9 @@ AI 전용 웹 애플리케이션(API 서버)입니다. 사용자가 브라우저
 | 에이전트 | 프롬프트 파일 | 주요 변수 |
 |---------|-------------|----------|
 | Supervisor | `prompts/supervisor/routing.md` | `{query}`, `{conversation_history}` |
-| Researcher | `prompts/researcher/summary.md` | `{stock_name}`, `{stock_code}`, `{research_data}` |
-| Strategist | `prompts/strategist/hegemony.md` | `{stock_name}`, `{research_summary}` |
 | Quant | `prompts/quant/web_fallback.md` | `{stock_name}`, `{stock_code}`, `{search_results}` |
 | Chartist | `prompts/chartist/analysis.md` | `{stock_name}`, `{stock_code}` |
-| Risk Manager | `prompts/risk_manager/decision.md` | `{stock_name}`, `{stock_code}` + 12개 점수 변수 |
+| Risk Manager | `prompts/risk_manager/decision.md` | `{stock_name}`, `{stock_code}` + 점수 변수 |
 
 ```python
 # 프롬프트 로더 사용법 (코드에서 호출)
@@ -283,11 +276,11 @@ prompt = load_prompt("risk_manager", "decision",
 - **메모리**: 최근 10턴 컨텍스트 유지, 후속 질문 자동 감지 ("그럼 하이닉스는?")
 - **라우팅**: 규칙 기반 빠른 분석 → LLM 상세 분석 (2단계)
 
-#### Researcher → Strategist (Analyst 통합)
-- **Researcher**: 5개 카테고리별 Plan A→B 폴백 (리포트: RAG→웹 / 뉴스: 웹→RAG)
+#### Analyst (리서치 + 헤게모니 통합)
+- **리서치 수집**: RAG 검색, 웹 검색, Vision 분석을 조합해 시장 데이터와 정성 정보를 수집
 - **품질 평가**: `ResearchResult.evaluate_quality()` → A/B/C/D 등급 + 경고 목록
-- **Strategist**: 데이터 품질 등급별 분석 톤 자동 조정 (D등급: 2단계 하향)
-- **출력**: `HegemonyScore` (moat + growth = 0~70점)
+- **헤게모니 판단**: 수집된 정보를 바탕으로 독점력(Moat)과 성장성(Growth)을 통합 평가
+- **출력**: `AnalystScore` (moat + growth = 0~70점)
 
 #### Quant (퀀트)
 - **전략**: Plan A (네이버 금융 크롤링) → Plan B (웹 검색 + LLM JSON 추출)
@@ -300,6 +293,7 @@ prompt = load_prompt("risk_manager", "decision",
 #### Risk Manager (리스크 관리자)
 - **입력**: `AgentScores` (Analyst 70 + Quant 100 + Chartist 100 = 270점 만점)
 - **출력**: `FinalDecision` (투자 행동, 리스크 레벨, 목표가, 손절가, 포지션 사이징)
+- **교차 검증**: `OLLAMA_THINKING_VALIDATOR_MODEL` 또는 `GEMINI_THINKING_VALIDATOR_MODEL` 설정 시 최종 판단만 보조 모델이 재검토
 
 ### LangGraph 워크플로우
 
@@ -478,7 +472,7 @@ Query ──┬── Vector Search (Snowflake Arctic Korean, k=20) ──┐
 | **2. 서킷 브레이커** | TradeExecutor | 일일 매수 한도, 쿨다운 30분, 손절 10%, dry_run 기본 |
 | **3. 에이전트 트레이싱** | AgentTracer | 판단 근거·실행 시간·에러 추적, 사후 검증 가능 |
 | **4. 인프라 장애 대응** | Fallback 시스템 | API 타임아웃 → 매수 중단 + 알림, WebSocket 끊김 → REST 폴링 |
-| **5. 데이터 품질 관리** | Quality Gate | D등급 → 자동 재시도, Strategist 분석 톤 2단계 하향 |
+| **5. 데이터 품질 관리** | Quality Gate | D등급 → 자동 재시도, Analyst 재수집 유도 |
 
 ---
 
@@ -593,8 +587,8 @@ TAVILY_API_KEY=tvly-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 | 분류 | 기술 | 용도 |
 |------|------|------|
 | **언어** | Python 3.10+ | 비동기 처리, AI/ML 생태계 |
-| **LLM (Instruct)** | Gemini 2.5 Flash Lite | Supervisor, Researcher, Quant, Chartist |
-| **LLM (Thinking)** | Gemini 2.5 Flash Preview | Strategist, Risk Manager |
+| **LLM (Instruct)** | Gemini 2.5 Flash Lite | Supervisor, Quant, Chartist |
+| **LLM (Thinking)** | Gemini 2.5 Flash Preview | Analyst, Risk Manager |
 | **오케스트레이션** | LangGraph (선택) | 상태 머신 워크플로우, 조건부 라우팅 |
 | **자율 에이전트** | AutonomousRunner + TradeExecutor | YAML 기반 자동 분석 + 조건부 매매 |
 | **병렬 실행** | ThreadPoolExecutor (폴백) | 에이전트 동시 실행 |

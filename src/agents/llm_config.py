@@ -7,6 +7,7 @@ LLM_PROVIDER 환경변수로 Ollama / Gemini 전환 가능.
 모델 구분:
 - Instruct (빠름): 정보 수집, 요약, 패턴 인식
 - Thinking (깊은 추론): 헤게모니 판단, 최종 결정
+- Thinking Validator (교차 검증): 최종 결정 재검토
 - Vision (이미지): 차트/그래프 분석
 
 에이전트별 모델:
@@ -24,12 +25,14 @@ LLM_PROVIDER 환경변수로 Ollama / Gemini 전환 가능.
   OLLAMA_BASE_URL=http://localhost:11434
   OLLAMA_INSTRUCT_MODEL=llama3.1:8b
   OLLAMA_THINKING_MODEL=deepseek-r1:14b
+  OLLAMA_THINKING_VALIDATOR_MODEL=qwen3.5:14b
   OLLAMA_VISION_MODEL=llava:13b
 
   # --- Gemini 모드 ---
   GOOGLE_API_KEY=AIza...
   GEMINI_INSTRUCT_MODEL=gemini-2.5-flash-lite
   GEMINI_THINKING_MODEL=gemini-2.5-flash-preview-04-17
+  GEMINI_THINKING_VALIDATOR_MODEL=gemini-2.5-flash
   GEMINI_VISION_MODEL=gemini-2.5-flash-preview-04-17
 """
 
@@ -55,12 +58,14 @@ LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama").lower().strip()
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_INSTRUCT_MODEL = os.getenv("OLLAMA_INSTRUCT_MODEL", "llama3.1:8b")
 OLLAMA_THINKING_MODEL = os.getenv("OLLAMA_THINKING_MODEL", "deepseek-r1:14b")
+OLLAMA_THINKING_VALIDATOR_MODEL = os.getenv("OLLAMA_THINKING_VALIDATOR_MODEL", "").strip()
 OLLAMA_VISION_MODEL = os.getenv("OLLAMA_VISION_MODEL", "llava:13b")
 
 # Gemini 설정
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
 GEMINI_INSTRUCT_MODEL = os.getenv("GEMINI_INSTRUCT_MODEL", "gemini-2.5-flash-lite")
 GEMINI_THINKING_MODEL = os.getenv("GEMINI_THINKING_MODEL", "gemini-2.5-flash-preview-04-17")
+GEMINI_THINKING_VALIDATOR_MODEL = os.getenv("GEMINI_THINKING_VALIDATOR_MODEL", "").strip()
 GEMINI_VISION_MODEL = os.getenv("GEMINI_VISION_MODEL", "gemini-2.5-flash-preview-04-17")
 
 
@@ -164,6 +169,37 @@ def get_thinking_llm() -> BaseChatModel:
     return llm
 
 
+def get_thinking_validator_llm() -> Optional[BaseChatModel]:
+    """
+    Thinking Validator (최종 판단 교차 검증) LLM
+
+    - Risk Manager 최종 판단 재검토용
+    - 미설정 시 None 반환
+    """
+    provider = _get_provider()
+
+    if provider == "gemini":
+        if not GEMINI_THINKING_VALIDATOR_MODEL:
+            return None
+        llm = _create_gemini_llm(
+            GEMINI_THINKING_VALIDATOR_MODEL,
+            temperature=0.7,
+        )
+        logger.debug(
+            f"🧪 Thinking Validator LLM: Gemini ({GEMINI_THINKING_VALIDATOR_MODEL})"
+        )
+        return llm
+
+    if not OLLAMA_THINKING_VALIDATOR_MODEL:
+        return None
+
+    llm = _create_ollama_llm(OLLAMA_THINKING_VALIDATOR_MODEL, temperature=0.5)
+    logger.debug(
+        f"🧪 Thinking Validator LLM: Ollama ({OLLAMA_THINKING_VALIDATOR_MODEL})"
+    )
+    return llm
+
+
 def get_vision_llm() -> BaseChatModel:
     """
     Vision (이미지 분석) LLM
@@ -207,6 +243,7 @@ def get_llm_info() -> Dict[str, str]:
             "provider": "gemini",
             "instruct_model": GEMINI_INSTRUCT_MODEL,
             "thinking_model": GEMINI_THINKING_MODEL,
+            "thinking_validator_model": GEMINI_THINKING_VALIDATOR_MODEL,
             "vision_model": GEMINI_VISION_MODEL,
             "api_key_set": bool(GOOGLE_API_KEY),
         }
@@ -216,6 +253,7 @@ def get_llm_info() -> Dict[str, str]:
             "base_url": OLLAMA_BASE_URL,
             "instruct_model": OLLAMA_INSTRUCT_MODEL,
             "thinking_model": OLLAMA_THINKING_MODEL,
+            "thinking_validator_model": OLLAMA_THINKING_VALIDATOR_MODEL,
             "vision_model": OLLAMA_VISION_MODEL,
         }
 
