@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 import time
-from typing import List
+from typing import Any, Dict, List
 
 try:
     from bs4 import BeautifulSoup
@@ -14,6 +14,8 @@ from .types import DocumentRecord
 
 
 class NaverStockForumCollector(BaseCollector):
+    MIN_BODY_LENGTH = 20
+
     def collect(
         self,
         stock_code: str,
@@ -26,28 +28,16 @@ class NaverStockForumCollector(BaseCollector):
 
         docs: List[DocumentRecord] = []
         for page in range(1, pages + 1):
-            url = f"https://finance.naver.com/item/board.naver?code={stock_code}&page={page}"
-            response = self.get_with_retry(url, log_prefix=f"FORUM:{stock_code}:{page}")
-
-            soup = BeautifulSoup(response.text, "html.parser")
-            rows = soup.select("table.type2 tr")
+            page_url = f"https://finance.naver.com/item/board.naver?code={stock_code}&page={page}"
+            list_items = self._collect_forum_list_items(stock_code=stock_code, page=page, page_url=page_url)
             page_dates: List[str] = []
             page_seen_any_date = False
 
-            for row in rows:
-                title_el = row.select_one("td.title a")
-                date_el = row.select_one("td:nth-of-type(1)")
-                if title_el is None:
-                    continue
-
-                title = _clean_text(title_el.get_text(" ", strip=True))
-                href = title_el.get("href", "")
-                full_url = f"https://finance.naver.com{href}" if href.startswith("/") else href
-                raw_date = date_el.get_text(strip=True) if date_el else ""
-                published_at = self.to_iso_datetime(raw_date, ["%Y.%m.%d %H:%M", "%Y.%m.%d"], default_time="00:00:00")
-                if not published_at:
-                    continue
-
+            for item in list_items:
+                title = item["title"]
+                full_url = item["url"]
+                raw_date = item["raw_date_text"]
+                published_at = item["published_at"]
                 compact = published_at[:10].replace("-", "")
                 page_dates.append(compact)
                 page_seen_any_date = True
@@ -56,7 +46,13 @@ class NaverStockForumCollector(BaseCollector):
                 if to_date and compact > to_date:
                     continue
 
-                body = self._fetch_forum_body(full_url) or title
+                body, body_extracted = self._fetch_forum_body(full_url, referer=page_url)
+                content_source = "body" if body_extracted else "title_only"
+                body_missing_reason = ""
+                if not body_extracted:
+                    body_missing_reason = "body_missing_or_too_short"
+                    print(f"[SKIP_HINT][FORUM] body missing -> fallback title url={full_url}")
+                    body = title
 
                 docs.append(
                     DocumentRecord(
@@ -66,7 +62,13 @@ class NaverStockForumCollector(BaseCollector):
                         url=full_url,
                         stock_code=stock_code,
                         published_at=published_at,
-                        metadata={"page": str(page), "raw_date_text": raw_date},
+                        metadata={
+                            "page": str(page),
+                            "raw_date_text": raw_date,
+                            "content_source": content_source,
+                            "body_extracted": body_extracted,
+                            "body_missing_reason": body_missing_reason,
+                        },
                     )
                 )
 
@@ -77,36 +79,102 @@ class NaverStockForumCollector(BaseCollector):
 
         return docs
 
-    def _fetch_forum_body(self, url: str) -> str:
+    def _collect_forum_list_items(self, stock_code: str, page: int, page_url: str) -> List[Dict[str, str]]:
+        response = self.get_with_retry(
+            page_url,
+            log_prefix=f"FORUM:{stock_code}:{page}",
+            headers={"Referer": f"https://finance.naver.com/item/main.naver?code={stock_code}"},
+        )
         if BeautifulSoup is None:
-            return ""
-
-        try:
-            response = self.get_with_retry(url, log_prefix="FORUM:READ")
-        except Exception:
-            return ""
+            return []
 
         soup = BeautifulSoup(response.text, "html.parser")
+        rows = soup.select("table.type2 tr")
+        items: List[Dict[str, str]] = []
+        for row in rows:
+            parsed = self._parse_forum_list_row(row)
+            if parsed is not None:
+                items.append(parsed)
+        return items
 
+    def _parse_forum_list_row(self, row: Any) -> Dict[str, str] | None:
+        title_el = row.select_one("td.title a")
+        date_el = row.select_one("td:nth-of-type(1)")
+        if title_el is None:
+            return None
+
+        title = _clean_text(title_el.get_text(" ", strip=True))
+        href = title_el.get("href", "")
+        full_url = f"https://finance.naver.com{href}" if href.startswith("/") else href
+        raw_date = date_el.get_text(strip=True) if date_el else ""
+        published_at = self.to_iso_datetime(raw_date, ["%Y.%m.%d %H:%M", "%Y.%m.%d"], default_time="00:00:00")
+        if not title or not full_url or not published_at:
+            return None
+        return {
+            "title": title,
+            "url": full_url,
+            "raw_date_text": raw_date,
+            "published_at": published_at,
+        }
+
+    def _fetch_forum_body(self, url: str, *, referer: str = "") -> tuple[str, bool]:
+        if BeautifulSoup is None:
+            return "", False
+
+        try:
+            response = self.get_with_retry(
+                url,
+                log_prefix="FORUM:READ",
+                headers={"Referer": referer or "https://finance.naver.com/"},
+            )
+        except Exception:
+            return "", False
+
+        soup = BeautifulSoup(response.text, "html.parser")
+        body = self._extract_forum_body_from_soup(soup)
+        cleaned = self._sanitize_forum_body(body)
+        if len(cleaned) < self.MIN_BODY_LENGTH:
+            return "", False
+        return cleaned[:4000], True
+
+    def _extract_forum_body_from_soup(self, soup: Any) -> str:
         selectors = [
+            "td.view_cnt",
             "div.view_se",
             "div#body",
-            "td.view_cnt",
             "div.article",
+            "div.se-main-container",
+            "div.ContentRenderer",
         ]
         for selector in selectors:
             node = soup.select_one(selector)
             if node:
                 text = _clean_text(node.get_text(" ", strip=True))
-                if len(text) >= 10:
-                    return text[:4000]
+                if text:
+                    return text
 
         paragraphs = [_clean_text(p.get_text(" ", strip=True)) for p in soup.select("p")]
-        paragraphs = [p for p in paragraphs if len(p) >= 10]
+        paragraphs = [p for p in paragraphs if len(p) >= 8]
         if paragraphs:
-            return " ".join(paragraphs[:8])[:4000]
-
+            return " ".join(paragraphs[:10])
         return ""
+
+    def _sanitize_forum_body(self, text: str) -> str:
+        cleaned = _clean_text(text)
+        if not cleaned:
+            return ""
+        noise_patterns = [
+            r"목록\s*답글\s*글쓰기",
+            r"URL\s*복사",
+            r"신고\s*수정\s*삭제",
+            r"이전글\s*다음글",
+            r"댓글\s*\d+",
+            r"게시판\s*운영원칙",
+        ]
+        for pattern in noise_patterns:
+            cleaned = re.sub(pattern, " ", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        return cleaned
 
 
 class NaverStockChartCollector(BaseCollector):
