@@ -37,3 +37,6 @@ data/token/
 
 # 9. 루트 package-lock.json (프론트엔드용은 frontend/에 있음)
 package-lock.json
+
+# 10. Java/Maven 빌드 출력 (컴파일된 파일, 업로드 불필요)
+backend/target/
