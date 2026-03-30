@@ -2,13 +2,12 @@
 """
 HQA 에이전트 모음
 
-구조:
+구조 (v2 — 통합):
 ┌─────────────────────────────────────────────────────────────┐
 │  SupervisorAgent        ──→  쿼리 분석 & 라우팅 (입구)       │
 ├─────────────────────────────────────────────────────────────┤
-│  Researcher (Instruct)  ──→  정보 수집/요약 (빠름)           │
-│  Strategist (Thinking)  ──→  헤게모니 판단 (깊은 추론)       │
-│  AnalystAgent           ──→  Researcher + Strategist 통합    │
+│  AnalystAgent (통합)    ──→  데이터 수집 + 헤게모니 판단      │
+│    (구 Researcher + Strategist 통합)                         │
 │                                                             │
 │  QuantAgent (Instruct)  ──→  재무 지표 분석                  │
 │  ChartistAgent (Instruct)──→ 기술적 지표 분석                │
@@ -30,12 +29,16 @@ from .supervisor import (
     Intent,
 )
 
-# 메인 에이전트
-from .analyst import AnalystAgent, AnalystScore
-
-# 하위 에이전트 (Analyst 내부)
-from .researcher import ResearcherAgent, ResearchResult
-from .strategist import StrategistAgent, HegemonyScore
+# 통합 에이전트 (Analyst = Researcher + Strategist)
+from .analyst import (
+    AnalystAgent,
+    AnalystScore,
+    ResearchResult,
+    HegemonyScore,
+    # 하위 호환 별칭 (구 코드에서 ResearcherAgent / StrategistAgent 직접 사용 시)
+    ResearcherAgent,
+    StrategistAgent,
+)
 
 # 다른 에이전트
 from .quant import QuantAgent, QuantScore
@@ -76,15 +79,15 @@ __all__ = [
     "QueryAnalysis",
     "Intent",
     
-    # 메인 에이전트
+    # 통합 Analyst
     "AnalystAgent",
     "AnalystScore",
-    
-    # 하위 에이전트
-    "ResearcherAgent",
     "ResearchResult",
-    "StrategistAgent",
     "HegemonyScore",
+    
+    # 하위 호환 별칭
+    "ResearcherAgent",
+    "StrategistAgent",
     
     # 다른 에이전트
     "QuantAgent",

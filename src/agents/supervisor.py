@@ -580,18 +580,14 @@ JSON만 응답하세요.
         
         print(f"\n🏭 {industry} 산업 분석 시작...")
         
-        # Researcher의 산업 분석 기능 활용
-        from src.agents.researcher import ResearcherAgent
-        researcher = ResearcherAgent()
+        # 통합 AnalystAgent로 산업 분석
+        from src.agents.analyst import AnalystAgent
+        analyst = AnalystAgent()
         
         # 산업 관련 정보 수집
-        news = researcher._search_news(industry)
-        policy = researcher._search_policy(industry)
-        industry_info = researcher._search_industry(industry)
-        
-        # Strategist로 분석
-        from src.agents.strategist import StrategistAgent
-        strategist = StrategistAgent()
+        news = analyst._search_news(industry)
+        policy = analyst._search_policy(industry)
+        industry_info = analyst._search_industry(industry)
         
         analysis_prompt = f"""
 {industry} 산업에 대해 분석하세요:
@@ -613,7 +609,7 @@ JSON만 응답하세요.
 5. 관련 종목 추천
 """
         
-        response = strategist.llm.invoke(analysis_prompt)
+        response = analyst.llm.invoke(analysis_prompt)
         
         return {
             "status": "success",
@@ -629,14 +625,11 @@ JSON만 응답하세요.
         
         print(f"\n🌍 '{issue}' 이슈 분석 시작...")
         
-        from src.agents.researcher import ResearcherAgent
-        from src.agents.strategist import StrategistAgent
-        
-        researcher = ResearcherAgent()
-        strategist = StrategistAgent()
+        from src.agents.analyst import AnalystAgent
+        analyst = AnalystAgent()
         
         # 이슈 관련 정보 수집
-        news = researcher._search_news(issue)
+        news = analyst._search_news(issue)
         
         # 영향 분석
         analysis_prompt = f"""
@@ -653,7 +646,7 @@ JSON만 응답하세요.
 5. 투자 전략 제안
 """
         
-        response = strategist.llm.invoke(analysis_prompt)
+        response = analyst.llm.invoke(analysis_prompt)
         
         return {
             "status": "success",
@@ -712,11 +705,11 @@ JSON만 응답하세요.
         
         print(f"\n🔍 '{theme}' 관련주 탐색 중...")
         
-        from src.agents.researcher import ResearcherAgent
-        researcher = ResearcherAgent()
+        from src.agents.analyst import AnalystAgent
+        analyst = AnalystAgent()
         
         # 웹 검색으로 관련주 탐색
-        search_result = researcher._search_news(f"{theme} 관련주 수혜주")
+        search_result = analyst._search_news(f"{theme} 관련주 수혜주")
         
         return {
             "status": "success",
