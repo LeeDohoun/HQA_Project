@@ -294,6 +294,7 @@ class DartDisclosureCollector(BaseCollector):
         parts = [p.strip() for p in args_raw.split(",")]
         if len(parts) < 6:
             return ""
+        return f"https://dart.fss.or.kr/report/viewer.do?{urlencode(params)}"
 
         def _normalize(part: str) -> str:
             part = part.strip()
