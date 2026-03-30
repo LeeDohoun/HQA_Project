@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import re
 import time
-from typing import List
+from typing import Dict, List, Tuple
+from urllib.parse import urlencode
 
 try:
     from bs4 import BeautifulSoup
@@ -15,6 +16,31 @@ from .types import DocumentRecord
 
 class DartDisclosureCollector(BaseCollector):
     LIST_URL = "https://opendart.fss.or.kr/api/list.json"
+    DOCUMENT_URL = "https://opendart.fss.or.kr/api/document.xml"
+    WRAPPER_TEXT_TOKENS = [
+        "잠시만 기다려주세요",
+        "현재목차",
+        "본문선택",
+        "첨부선택",
+        "문서목차",
+        "인쇄 닫기",
+    ]
+    DART_ERROR_PAGE_KEYWORDS = [
+        "홈으로 가기",
+        "서비스 이용에 불편을 드려 죄송합니다",
+        "요청하신 인터넷주소(URL)를 찾을 수 없습니다",
+        "URL이 변경되었거나 삭제되었을 수 있습니다",
+        "DART 메인화면 바로가기",
+        "Copyright Financial supervisory service",
+        "Financial supervisory service",
+        "dart@fss.or.kr",
+    ]
+    DART_ERROR_PAGE_MOJIBAKE_PATTERNS = [
+        r"�솒.*媛�湲�",
+        r"�꽌鍮꾩뒪.*遺덊렪",
+        r"�슂泥��븯�떊.*URL.*李얠쓣.*�닔.*�뾾",
+        r"DART.*硫붿씤�솕硫�.*諛붾줈媛�湲�",
+    ]
 
     IMPORTANT_REPORT_KEYWORDS = [
         "사업보고서",
@@ -92,8 +118,20 @@ class DartDisclosureCollector(BaseCollector):
                 default_time="00:00:00",
             )
 
-            detail_excerpt = self._fetch_detail_excerpt(url) if url else ""
-            has_body = bool(detail_excerpt)
+            detail_excerpt, body_source, quality_meta = self._fetch_official_document_body(rcept_no)
+            if not detail_excerpt and url:
+                detail_excerpt, body_source, quality_meta = self._fetch_detail_excerpt(url)
+            wrapper_text_detected = bool(quality_meta.get("wrapper_text_detected", False))
+            body_error_type = str(quality_meta.get("body_error_type", ""))
+            encoding_fixed = bool(quality_meta.get("encoding_fixed", False))
+            mojibake_detected = bool(quality_meta.get("mojibake_detected", False))
+            body_extracted = self._is_valid_body_text(
+                detail_excerpt,
+                wrapper_text_detected=wrapper_text_detected,
+                body_error_type=body_error_type,
+                mojibake_detected=mojibake_detected,
+            )
+            has_body = body_extracted
 
             # raw/event 용으로는 남기되, 본문 성공 여부를 표시
             content = detail_excerpt if has_body else f"{corp_name} 공시: {title}"
@@ -112,7 +150,12 @@ class DartDisclosureCollector(BaseCollector):
                         "rcept_no": rcept_no,
                         "report_nm": title,
                         "has_body": has_body,
-                        "body_source": "dart_detail" if has_body else "title_fallback",
+                        "body_source": body_source if body_source else ("dart_detail" if has_body else "title_fallback"),
+                        "body_extracted": body_extracted,
+                        "wrapper_text_detected": wrapper_text_detected,
+                        "body_error_type": body_error_type,
+                        "encoding_fixed": encoding_fixed,
+                        "mojibake_detected": mojibake_detected,
                         "importance": "high",
                     },
                 )
@@ -125,48 +168,295 @@ class DartDisclosureCollector(BaseCollector):
     def _is_important_report(self, title: str) -> bool:
         return any(keyword in title for keyword in self.IMPORTANT_REPORT_KEYWORDS)
 
-    def _fetch_detail_excerpt(self, url: str) -> str:
+    def _fetch_official_document_body(self, rcept_no: str) -> Tuple[str, str, Dict[str, bool | str]]:
+        quality_meta: Dict[str, bool | str] = {
+            "wrapper_text_detected": False,
+            "body_error_type": "",
+            "encoding_fixed": False,
+            "mojibake_detected": False,
+        }
+        if not rcept_no:
+            quality_meta["body_error_type"] = "missing_rcept_no"
+            return "", "official_api", quality_meta
+        try:
+            response = self.get_with_retry(
+                self.DOCUMENT_URL,
+                params={"crtfc_key": self.api_key, "rcept_no": rcept_no},
+                timeout=self.timeout,
+                log_prefix="DART:DOCUMENT",
+            )
+        except Exception:
+            quality_meta["body_error_type"] = "official_api_failed"
+            return "", "official_api", quality_meta
+
+        text, encoding_fixed, mojibake_detected = self._decode_response_text(response)
+        quality_meta["encoding_fixed"] = encoding_fixed
+        quality_meta["mojibake_detected"] = mojibake_detected
+        cleaned = self._sanitize_body_text(text)
+        is_error_page = self._contains_error_page_tokens(text) or self._contains_error_page_tokens(cleaned)
+        wrapper_detected = self._contains_wrapper_tokens(text) or self._contains_wrapper_tokens(cleaned)
+        quality_meta["wrapper_text_detected"] = wrapper_detected or is_error_page
+        if is_error_page:
+            quality_meta["body_error_type"] = "official_error_page"
+            return "", "official_api", quality_meta
+        if not cleaned or len(cleaned) < 120:
+            quality_meta["body_error_type"] = "official_too_short"
+            return "", "official_api", quality_meta
+        return cleaned[:2000], "official_api", quality_meta
+
+    def _fetch_detail_excerpt(self, url: str) -> Tuple[str, str, Dict[str, bool | str]]:
+        quality_meta: Dict[str, bool | str] = {
+            "wrapper_text_detected": False,
+            "body_error_type": "",
+            "encoding_fixed": False,
+            "mojibake_detected": False,
+        }
         if BeautifulSoup is None:
-            return ""
+            return "", "none", quality_meta
 
         try:
-            response = self.session.get(url, timeout=self.timeout)
+            response = self.get_with_retry(
+                url,
+                timeout=self.timeout,
+                log_prefix="DART:DETAIL",
+                headers={"Referer": "https://dart.fss.or.kr/"},
+            )
             response.raise_for_status()
         except Exception:
-            return ""
+            quality_meta["body_error_type"] = "main_failed"
+            return "", "main_failed", quality_meta
 
-        soup = BeautifulSoup(response.text, "html.parser")
+        main_html, main_encoding_fixed, main_mojibake = self._decode_response_text(response)
+        quality_meta["encoding_fixed"] = bool(main_encoding_fixed)
+        quality_meta["mojibake_detected"] = bool(main_mojibake)
+
+        soup = BeautifulSoup(main_html, "html.parser")
+        viewer_url = self._extract_viewer_url(main_html)
+        if viewer_url:
+            viewer_body, viewer_meta = self._fetch_viewer_body(viewer_url)
+            quality_meta["encoding_fixed"] = bool(quality_meta["encoding_fixed"] or viewer_meta.get("encoding_fixed"))
+            quality_meta["mojibake_detected"] = bool(
+                quality_meta["mojibake_detected"] or viewer_meta.get("mojibake_detected")
+            )
+            if viewer_body:
+                wrapper_detected_raw = self._contains_wrapper_tokens(viewer_body) or self._contains_error_page_tokens(viewer_body)
+                cleaned = self._sanitize_body_text(viewer_body)
+                wrapper_detected = wrapper_detected_raw or self._contains_wrapper_tokens(cleaned)
+                quality_meta["wrapper_text_detected"] = wrapper_detected
+                if self._contains_error_page_tokens(cleaned) or self._contains_error_page_tokens(viewer_body):
+                    quality_meta["body_error_type"] = "viewer_error_page"
+                    return "", "viewer", quality_meta
+                if cleaned:
+                    return cleaned[:2000], "viewer", quality_meta
 
         candidates = []
 
         meta_desc = soup.select_one("meta[property='og:description'], meta[name='description']")
         if meta_desc and meta_desc.get("content"):
-            text = self._clean_text(meta_desc.get("content", ""))
+            text = self._sanitize_body_text(meta_desc.get("content", ""))
             if len(text) >= 30:
                 candidates.append(text)
 
         title_node = soup.select_one("title")
         if title_node:
-            text = self._clean_text(title_node.get_text(" ", strip=True))
+            text = self._sanitize_body_text(title_node.get_text(" ", strip=True))
             if len(text) >= 20:
                 candidates.append(text)
 
         body = soup.select_one("body")
         if body:
-            body_text = self._clean_text(body.get_text(" ", strip=True))
-            body_text = self._remove_noise(body_text)
+            body_text = self._sanitize_body_text(body.get_text(" ", strip=True))
             if len(body_text) >= 80:
                 candidates.append(body_text[:1500])
 
         if not candidates:
-            return ""
+            quality_meta["body_error_type"] = "main_fallback_empty"
+            return "", "main_fallback_empty", quality_meta
 
         best = max(candidates, key=len)
-        best = self._clean_text(best)
+        best = self._sanitize_body_text(best)
+        wrapper_detected = self._contains_wrapper_tokens(max(candidates, key=len)) or self._contains_wrapper_tokens(best)
+        if self._contains_error_page_tokens(best):
+            quality_meta["body_error_type"] = "main_error_page"
+        quality_meta["wrapper_text_detected"] = wrapper_detected or self._contains_error_page_tokens(best)
         if len(best) < 30:
+            if not quality_meta["body_error_type"]:
+                quality_meta["body_error_type"] = "main_too_short"
+            return "", "main_too_short", quality_meta
+
+        return best[:1200], "main_fallback", quality_meta
+
+    def _extract_viewer_url(self, html: str) -> str:
+        m = re.search(r"viewDoc\((?P<args>.*?)\)", html, flags=re.DOTALL)
+        if not m:
+            return ""
+        args_raw = m.group("args")
+        parts = [p.strip() for p in args_raw.split(",")]
+        if len(parts) < 6:
             return ""
 
-        return best[:1200]
+        def _normalize(part: str) -> str:
+            part = part.strip()
+            if part.lower() == "null":
+                return ""
+            if part.startswith("'") and part.endswith("'"):
+                return part[1:-1]
+            return part.strip("'\"")
+
+        params = {
+            "rcpNo": _normalize(parts[0]),
+            "dcmNo": _normalize(parts[1]),
+            "eleId": _normalize(parts[2]),
+            "offset": _normalize(parts[3]),
+            "length": _normalize(parts[4]),
+            "dtd": _normalize(parts[5]),
+        }
+        if not params["rcpNo"] or not params["dcmNo"]:
+            return ""
+        return f"https://dart.fss.or.kr/report/viewer.do?{urlencode(params)}"
+
+    def _fetch_viewer_body(self, viewer_url: str) -> Tuple[str, Dict[str, bool]]:
+        meta = {"encoding_fixed": False, "mojibake_detected": False}
+        if BeautifulSoup is None:
+            return "", meta
+        try:
+            response = self.get_with_retry(
+                viewer_url,
+                timeout=self.timeout,
+                log_prefix="DART:VIEWER",
+                headers={
+                    "Referer": "https://dart.fss.or.kr/",
+                    "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                },
+            )
+        except Exception:
+            return "", meta
+
+        html, encoding_fixed, mojibake_detected = self._decode_response_text(response)
+        meta["encoding_fixed"] = encoding_fixed
+        meta["mojibake_detected"] = mojibake_detected
+        soup = BeautifulSoup(html, "html.parser")
+
+        selectors = [
+            "div#XFormD1_Form0",
+            "body",
+            "div#viewerContents",
+            "div.xforms",
+            "table",
+        ]
+        for selector in selectors:
+            node = soup.select_one(selector)
+            if node:
+                text = self._clean_text(node.get_text(" ", strip=True))
+                if len(text) >= 80:
+                    if self._contains_error_page_tokens(text):
+                        return "", meta
+                    return text, meta
+        return "", meta
+
+    def _sanitize_body_text(self, text: str) -> str:
+        text = self._clean_text(text)
+        text = self._remove_noise(text)
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
+
+    def _contains_wrapper_tokens(self, text: str) -> bool:
+        if not text:
+            return False
+        if any(token in text for token in self.WRAPPER_TEXT_TOKENS):
+            return True
+        return self._contains_mojibake_wrapper_text(text)
+
+    def _contains_mojibake_wrapper_text(self, text: str) -> bool:
+        if not text:
+            return False
+        return any(re.search(pattern, text) for pattern in self.DART_ERROR_PAGE_MOJIBAKE_PATTERNS)
+
+    def _is_error_page_text(self, text: str) -> bool:
+        return self._contains_error_page_tokens(text)
+
+    def _contains_error_page_tokens(self, text: str) -> bool:
+        if not text:
+            return False
+        normalized = self._clean_text(text)
+        if any(keyword in normalized for keyword in self.DART_ERROR_PAGE_KEYWORDS):
+            return True
+        if self._contains_mojibake_wrapper_text(normalized):
+            return True
+        return False
+
+    def _decode_response_text(self, response) -> Tuple[str, bool, bool]:
+        content = response.content or b""
+        response_encoding = (response.encoding or "").lower().strip()
+        candidates = []
+        if response_encoding:
+            candidates.append(response_encoding)
+        candidates.extend(["utf-8", "cp949", "euc-kr"])
+
+        tried = set()
+        decoded_variants: List[Tuple[str, str]] = []
+        for enc in candidates:
+            if enc in tried:
+                continue
+            tried.add(enc)
+            try:
+                decoded_variants.append((enc, content.decode(enc, errors="strict")))
+            except Exception:
+                continue
+
+        if not decoded_variants:
+            fallback = content.decode("utf-8", errors="replace")
+            return fallback, False, self._is_mojibake_text(fallback)
+
+        best_enc, best_text = max(
+            decoded_variants,
+            key=lambda item: self._decode_quality_score(item[1]),
+        )
+        encoding_fixed = bool(response_encoding and best_enc != response_encoding)
+        mojibake_detected = self._is_mojibake_text(best_text)
+        return best_text, encoding_fixed, mojibake_detected
+
+    def _decode_quality_score(self, text: str) -> int:
+        if not text:
+            return -10_000
+        score = 0
+        score += len(re.findall(r"[가-힣]", text)) * 2
+        score += len(re.findall(r"[A-Za-z0-9]", text))
+        score -= text.count("�") * 20
+        score -= len(re.findall(r"[ÃÂÐØþ]", text)) * 4
+        score -= len(re.findall(r"(?:í|ì|ë|ê){4,}", text)) * 8
+        return score
+
+    def _is_mojibake_text(self, text: str) -> bool:
+        if not text:
+            return False
+        replacement_ratio = text.count("�") / max(1, len(text))
+        strange_latin = len(re.findall(r"[ÃÂÐØþ]", text))
+        mojibake_jamo_like = len(re.findall(r"(?:í|ì|ë|ê){2,}", text))
+        return (
+            replacement_ratio > 0.002
+            or strange_latin >= 5
+            or mojibake_jamo_like >= 3
+            or self._contains_mojibake_wrapper_text(text)
+        )
+
+    def _is_valid_body_text(
+        self,
+        text: str,
+        wrapper_text_detected: bool,
+        body_error_type: str = "",
+        mojibake_detected: bool = False,
+    ) -> bool:
+        if not text:
+            return False
+        if wrapper_text_detected:
+            return False
+        if body_error_type:
+            return False
+        if mojibake_detected:
+            return False
+        return len(text) >= 120
 
     @staticmethod
     def _remove_noise(text: str) -> str:
@@ -178,6 +468,12 @@ class DartDisclosureCollector(BaseCollector):
             r"이전 다음",
             r"검색어 입력",
             r"다운로드",
+            r"잠시만 기다려주세요",
+            r"현재목차",
+            r"본문선택",
+            r"첨부선택",
+            r"문서목차",
+            r"인쇄 닫기",
         ]
         for pattern in noise_patterns:
             text = re.sub(pattern, " ", text, flags=re.IGNORECASE)
