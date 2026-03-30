@@ -16,6 +16,7 @@ from .types import DocumentRecord
 
 class DartDisclosureCollector(BaseCollector):
     LIST_URL = "https://opendart.fss.or.kr/api/list.json"
+    DOCUMENT_URL = "https://opendart.fss.or.kr/api/document.xml"
     WRAPPER_TEXT_TOKENS = [
         "잠시만 기다려주세요",
         "현재목차",
@@ -28,9 +29,11 @@ class DartDisclosureCollector(BaseCollector):
         "홈으로 가기",
         "서비스 이용에 불편을 드려 죄송합니다",
         "요청하신 인터넷주소(URL)를 찾을 수 없습니다",
+        "URL이 변경되었거나 삭제되었을 수 있습니다",
         "DART 메인화면 바로가기",
         "Copyright Financial supervisory service",
         "Financial supervisory service",
+        "dart@fss.or.kr",
     ]
     DART_ERROR_PAGE_MOJIBAKE_PATTERNS = [
         r"�솒.*媛�湲�",
@@ -115,7 +118,9 @@ class DartDisclosureCollector(BaseCollector):
                 default_time="00:00:00",
             )
 
-            detail_excerpt, body_source, quality_meta = self._fetch_detail_excerpt(url) if url else ("", "none", {})
+            detail_excerpt, body_source, quality_meta = self._fetch_official_document_body(rcept_no)
+            if not detail_excerpt and url:
+                detail_excerpt, body_source, quality_meta = self._fetch_detail_excerpt(url)
             wrapper_text_detected = bool(quality_meta.get("wrapper_text_detected", False))
             body_error_type = str(quality_meta.get("body_error_type", ""))
             encoding_fixed = bool(quality_meta.get("encoding_fixed", False))
@@ -145,7 +150,7 @@ class DartDisclosureCollector(BaseCollector):
                         "rcept_no": rcept_no,
                         "report_nm": title,
                         "has_body": has_body,
-                        "body_source": body_source if has_body else "title_fallback",
+                        "body_source": body_source if body_source else ("dart_detail" if has_body else "title_fallback"),
                         "body_extracted": body_extracted,
                         "wrapper_text_detected": wrapper_text_detected,
                         "body_error_type": body_error_type,
@@ -162,6 +167,42 @@ class DartDisclosureCollector(BaseCollector):
 
     def _is_important_report(self, title: str) -> bool:
         return any(keyword in title for keyword in self.IMPORTANT_REPORT_KEYWORDS)
+
+    def _fetch_official_document_body(self, rcept_no: str) -> Tuple[str, str, Dict[str, bool | str]]:
+        quality_meta: Dict[str, bool | str] = {
+            "wrapper_text_detected": False,
+            "body_error_type": "",
+            "encoding_fixed": False,
+            "mojibake_detected": False,
+        }
+        if not rcept_no:
+            quality_meta["body_error_type"] = "missing_rcept_no"
+            return "", "official_api", quality_meta
+        try:
+            response = self.get_with_retry(
+                self.DOCUMENT_URL,
+                params={"crtfc_key": self.api_key, "rcept_no": rcept_no},
+                timeout=self.timeout,
+                log_prefix="DART:DOCUMENT",
+            )
+        except Exception:
+            quality_meta["body_error_type"] = "official_api_failed"
+            return "", "official_api", quality_meta
+
+        text, encoding_fixed, mojibake_detected = self._decode_response_text(response)
+        quality_meta["encoding_fixed"] = encoding_fixed
+        quality_meta["mojibake_detected"] = mojibake_detected
+        cleaned = self._sanitize_body_text(text)
+        is_error_page = self._contains_error_page_tokens(text) or self._contains_error_page_tokens(cleaned)
+        wrapper_detected = self._contains_wrapper_tokens(text) or self._contains_wrapper_tokens(cleaned)
+        quality_meta["wrapper_text_detected"] = wrapper_detected or is_error_page
+        if is_error_page:
+            quality_meta["body_error_type"] = "official_error_page"
+            return "", "official_api", quality_meta
+        if not cleaned or len(cleaned) < 120:
+            quality_meta["body_error_type"] = "official_too_short"
+            return "", "official_api", quality_meta
+        return cleaned[:2000], "official_api", quality_meta
 
     def _fetch_detail_excerpt(self, url: str) -> Tuple[str, str, Dict[str, bool | str]]:
         quality_meta: Dict[str, bool | str] = {
@@ -198,12 +239,13 @@ class DartDisclosureCollector(BaseCollector):
                 quality_meta["mojibake_detected"] or viewer_meta.get("mojibake_detected")
             )
             if viewer_body:
-                wrapper_detected_raw = self._contains_wrapper_tokens(viewer_body) or self._is_error_page_text(viewer_body)
+                wrapper_detected_raw = self._contains_wrapper_tokens(viewer_body) or self._contains_error_page_tokens(viewer_body)
                 cleaned = self._sanitize_body_text(viewer_body)
                 wrapper_detected = wrapper_detected_raw or self._contains_wrapper_tokens(cleaned)
                 quality_meta["wrapper_text_detected"] = wrapper_detected
-                if self._is_error_page_text(cleaned) or self._is_error_page_text(viewer_body):
+                if self._contains_error_page_tokens(cleaned) or self._contains_error_page_tokens(viewer_body):
                     quality_meta["body_error_type"] = "viewer_error_page"
+                    return "", "viewer", quality_meta
                 if cleaned:
                     return cleaned[:2000], "viewer", quality_meta
 
@@ -234,9 +276,9 @@ class DartDisclosureCollector(BaseCollector):
         best = max(candidates, key=len)
         best = self._sanitize_body_text(best)
         wrapper_detected = self._contains_wrapper_tokens(max(candidates, key=len)) or self._contains_wrapper_tokens(best)
-        if self._is_error_page_text(best):
+        if self._contains_error_page_tokens(best):
             quality_meta["body_error_type"] = "main_error_page"
-        quality_meta["wrapper_text_detected"] = wrapper_detected or self._is_error_page_text(best)
+        quality_meta["wrapper_text_detected"] = wrapper_detected or self._contains_error_page_tokens(best)
         if len(best) < 30:
             if not quality_meta["body_error_type"]:
                 quality_meta["body_error_type"] = "main_too_short"
@@ -252,6 +294,7 @@ class DartDisclosureCollector(BaseCollector):
         parts = [p.strip() for p in args_raw.split(",")]
         if len(parts) < 6:
             return ""
+        return f"https://dart.fss.or.kr/report/viewer.do?{urlencode(params)}"
 
         def _normalize(part: str) -> str:
             part = part.strip()
@@ -282,7 +325,11 @@ class DartDisclosureCollector(BaseCollector):
                 viewer_url,
                 timeout=self.timeout,
                 log_prefix="DART:VIEWER",
-                headers={"Referer": "https://dart.fss.or.kr/"},
+                headers={
+                    "Referer": "https://dart.fss.or.kr/",
+                    "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                },
             )
         except Exception:
             return "", meta
@@ -304,6 +351,8 @@ class DartDisclosureCollector(BaseCollector):
             if node:
                 text = self._clean_text(node.get_text(" ", strip=True))
                 if len(text) >= 80:
+                    if self._contains_error_page_tokens(text):
+                        return "", meta
                     return text, meta
         return "", meta
 
@@ -326,6 +375,9 @@ class DartDisclosureCollector(BaseCollector):
         return any(re.search(pattern, text) for pattern in self.DART_ERROR_PAGE_MOJIBAKE_PATTERNS)
 
     def _is_error_page_text(self, text: str) -> bool:
+        return self._contains_error_page_tokens(text)
+
+    def _contains_error_page_tokens(self, text: str) -> bool:
         if not text:
             return False
         normalized = self._clean_text(text)
@@ -374,6 +426,7 @@ class DartDisclosureCollector(BaseCollector):
         score += len(re.findall(r"[A-Za-z0-9]", text))
         score -= text.count("�") * 20
         score -= len(re.findall(r"[ÃÂÐØþ]", text)) * 4
+        score -= len(re.findall(r"(?:í|ì|ë|ê){4,}", text)) * 8
         return score
 
     def _is_mojibake_text(self, text: str) -> bool:
@@ -381,7 +434,13 @@ class DartDisclosureCollector(BaseCollector):
             return False
         replacement_ratio = text.count("�") / max(1, len(text))
         strange_latin = len(re.findall(r"[ÃÂÐØþ]", text))
-        return replacement_ratio > 0.002 or strange_latin >= 5 or self._contains_mojibake_wrapper_text(text)
+        mojibake_jamo_like = len(re.findall(r"(?:í|ì|ë|ê){2,}", text))
+        return (
+            replacement_ratio > 0.002
+            or strange_latin >= 5
+            or mojibake_jamo_like >= 3
+            or self._contains_mojibake_wrapper_text(text)
+        )
 
     def _is_valid_body_text(
         self,
