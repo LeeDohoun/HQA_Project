@@ -21,9 +21,19 @@ class IngestionRunReport:
     stock_name: str
     enabled_sources: List[str]
     source_success: Dict[str, bool] = field(default_factory=dict)
+    # deprecated aliases are maintained for compatibility:
+    # - collector_status ~= collector_ok
+    # - source_data_present ~= data_present
+    source_data_present: Dict[str, bool] = field(default_factory=dict)
+    collector_status: Dict[str, bool] = field(default_factory=dict)
+    collector_ok: Dict[str, bool] = field(default_factory=dict)
+    data_present: Dict[str, bool] = field(default_factory=dict)
     source_counts: Dict[str, int] = field(default_factory=dict)
+    document_counts: Dict[str, int] = field(default_factory=dict)
+    market_data_counts: Dict[str, int] = field(default_factory=dict)
     raw_saved_counts: Dict[str, int] = field(default_factory=dict)
     failures: Dict[str, str] = field(default_factory=dict)
+    warnings: Dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -55,6 +65,20 @@ class IngestionService:
             self._safe_collect_forum(request, docs, report)
         if "chart" in request.enabled_sources:
             self._safe_collect_chart(request, docs, market_records, report)
+        if "quote" in request.enabled_sources:
+            report.collector_status["quote"] = False
+            report.collector_ok["quote"] = False
+            report.source_data_present["quote"] = False
+            report.data_present["quote"] = False
+            report.source_success["quote"] = False
+            report.market_data_counts["quote"] = 0
+            report.source_counts["quote"] = 0
+            report.warnings["quote"] = "enabled_but_not_implemented"
+
+        for source in request.enabled_sources:
+            collector_ok = bool((report.collector_ok or {}).get(source, False))
+            data_present = bool((report.data_present or {}).get(source, False))
+            report.source_success[source] = collector_ok and data_present
 
         return CollectResult(documents=docs, market_records=market_records, report=report)
 
@@ -111,22 +135,43 @@ class IngestionService:
             rows = collector.collect(self._build_news_keyword(request.target.stock_name, request.target.stock_code), **kwargs)
             rows = self._attach_stock_info(rows, request.target.stock_name, request.target.stock_code, request.theme_key)
             docs.extend(rows)
-            report.source_success["news"] = True
+            report.collector_status["news"] = True
+            report.collector_ok["news"] = True
+            report.source_data_present["news"] = len(rows) > 0
+            report.data_present["news"] = len(rows) > 0
+            report.source_success["news"] = report.collector_ok["news"] and report.data_present["news"]
             report.source_counts["news"] = len(rows)
+            report.document_counts["news"] = len(rows)
             report.raw_saved_counts["news"] = self._save_raw_documents(rows, request.raw_output_dir, "news", request.theme_key)
+            if len(rows) == 0:
+                report.warnings["news"] = "collector_ok_but_no_documents"
         except Exception as e:
+            report.collector_status["news"] = False
+            report.collector_ok["news"] = False
             report.source_success["news"] = False
+            report.source_data_present["news"] = False
+            report.data_present["news"] = False
             report.failures["news"] = str(e)
             print(f"[WARN][{request.target.stock_name}] news collect failed: {e}")
 
     def _safe_collect_dart(self, request: CollectRequest, docs: List[DocumentRecord], report: IngestionRunReport) -> None:
         if not request.target.corp_code:
+            report.collector_status["dart"] = False
+            report.collector_ok["dart"] = False
             report.source_success["dart"] = False
+            report.source_data_present["dart"] = False
+            report.data_present["dart"] = False
+            report.document_counts["dart"] = 0
             report.failures["dart"] = "corp_code 없음"
             print(f"[WARN][DART] corp_code 없음: {request.target.stock_name}({request.target.stock_code})")
             return
         if not request.dart_api_key:
+            report.collector_status["dart"] = False
+            report.collector_ok["dart"] = False
             report.source_success["dart"] = False
+            report.source_data_present["dart"] = False
+            report.data_present["dart"] = False
+            report.document_counts["dart"] = 0
             report.failures["dart"] = "DART_API_KEY 없음"
             print("[WARN][DART] DART_API_KEY 없음")
             return
@@ -139,11 +184,22 @@ class IngestionService:
             )
             rows = self._attach_stock_info(rows, request.target.stock_name, request.target.stock_code, request.theme_key)
             docs.extend(rows)
-            report.source_success["dart"] = True
+            report.collector_status["dart"] = True
+            report.collector_ok["dart"] = True
+            report.source_data_present["dart"] = len(rows) > 0
+            report.data_present["dart"] = len(rows) > 0
+            report.source_success["dart"] = report.collector_ok["dart"] and report.data_present["dart"]
             report.source_counts["dart"] = len(rows)
+            report.document_counts["dart"] = len(rows)
             report.raw_saved_counts["dart"] = self._save_raw_documents(rows, request.raw_output_dir, "dart", request.theme_key)
+            if len(rows) == 0:
+                report.warnings["dart"] = "collector_ok_but_no_documents"
         except Exception as e:
+            report.collector_status["dart"] = False
+            report.collector_ok["dart"] = False
             report.source_success["dart"] = False
+            report.source_data_present["dart"] = False
+            report.data_present["dart"] = False
             report.failures["dart"] = str(e)
             print(f"[WARN][{request.target.stock_name}] dart collect failed: {e}")
 
@@ -157,11 +213,22 @@ class IngestionService:
             )
             rows = self._attach_stock_info(rows, request.target.stock_name, request.target.stock_code, request.theme_key)
             docs.extend(rows)
-            report.source_success["forum"] = True
+            report.collector_status["forum"] = True
+            report.collector_ok["forum"] = True
+            report.source_data_present["forum"] = len(rows) > 0
+            report.data_present["forum"] = len(rows) > 0
+            report.source_success["forum"] = report.collector_ok["forum"] and report.data_present["forum"]
             report.source_counts["forum"] = len(rows)
+            report.document_counts["forum"] = len(rows)
             report.raw_saved_counts["forum"] = self._save_raw_documents(rows, request.raw_output_dir, "forum", request.theme_key)
+            if len(rows) == 0:
+                report.warnings["forum"] = "collector_ok_but_no_documents"
         except Exception as e:
+            report.collector_status["forum"] = False
+            report.collector_ok["forum"] = False
             report.source_success["forum"] = False
+            report.source_data_present["forum"] = False
+            report.data_present["forum"] = False
             report.failures["forum"] = str(e)
             print(f"[WARN][{request.target.stock_name}] forum collect failed: {e}")
 
@@ -214,15 +281,26 @@ class IngestionService:
                 except Exception as e:
                     print(f"[WARN][{request.target.stock_name}] KIS chart collect skipped: {e}")
 
-            report.source_success["chart"] = True
-            report.source_counts["chart"] = len(rows)
+            report.collector_status["chart"] = True
+            report.collector_ok["chart"] = True
+            report.source_data_present["chart"] = len(current_market_rows) > 0
+            report.data_present["chart"] = len(current_market_rows) > 0
+            report.source_success["chart"] = report.collector_ok["chart"] and report.data_present["chart"]
+            report.source_counts["chart"] = len(current_market_rows)
+            report.market_data_counts["chart"] = len(current_market_rows)
             report.raw_saved_counts["chart"] = self._save_raw_market_records(
                 current_market_rows,
                 request.raw_output_dir,
                 request.theme_key,
             )
+            if len(current_market_rows) == 0:
+                report.warnings["chart"] = "collector_ok_but_no_market_records"
         except Exception as e:
+            report.collector_status["chart"] = False
+            report.collector_ok["chart"] = False
             report.source_success["chart"] = False
+            report.source_data_present["chart"] = False
+            report.data_present["chart"] = False
             report.failures["chart"] = str(e)
             print(f"[WARN][{request.target.stock_name}] chart collect failed: {e}")
 

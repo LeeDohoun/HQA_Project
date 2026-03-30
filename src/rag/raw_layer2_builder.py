@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict
 from pathlib import Path
 from typing import Dict, Iterable, List
@@ -14,6 +15,15 @@ from src.rag.vector_store import SourceRAGBuilder
 
 
 class RawLayer2Builder:
+    DART_WRAPPER_TOKENS = (
+        "잠시만 기다려주세요",
+        "현재목차",
+        "본문선택",
+        "첨부선택",
+        "문서목차",
+        "인쇄 닫기",
+    )
+
     def __init__(self, data_dir: str = "./data"):
         self.data_dir = Path(data_dir)
         self.raw_dir = self.data_dir / "raw"
@@ -23,7 +33,7 @@ class RawLayer2Builder:
         self.bm25_root = self.data_dir / "bm25"
 
     def rebuild_theme(self, theme_key: str, update_mode: str = "append-new-stocks") -> Dict:
-        docs = self._load_raw_documents(theme_key)
+        docs, doc_quality_stats = self._load_raw_documents(theme_key)
         builder = RAGCorpusBuilder(chunk_size=700, chunk_overlap=100)
         records = builder.build_records(docs)
         deduped_records = self._dedupe_records(records)
@@ -66,12 +76,21 @@ class RawLayer2Builder:
             "bm25_path": str(bm25_path),
             "market_stats": market_stats,
             "records": deduped_records,
+            "raw_docs_count": doc_quality_stats["raw_docs_count"],
+            "skipped_invalid_count_by_source": doc_quality_stats["skipped_invalid_count_by_source"],
+            "built_records_count": len(records),
+            "final_records_count": len(deduped_records),
         }
 
-    def _load_raw_documents(self, theme_key: str) -> List[DocumentRecord]:
+    def _load_raw_documents(self, theme_key: str) -> tuple[List[DocumentRecord], Dict]:
         docs: List[DocumentRecord] = []
+        raw_docs_count = 0
+        skipped_invalid_count_by_source: Dict[str, int] = {"news": 0, "forum": 0, "dart": 0}
         if not self.raw_dir.exists():
-            return docs
+            return docs, {
+                "raw_docs_count": 0,
+                "skipped_invalid_count_by_source": skipped_invalid_count_by_source,
+            }
 
         for source_dir in self.raw_dir.iterdir():
             if not source_dir.is_dir():
@@ -86,11 +105,17 @@ class RawLayer2Builder:
                 continue
 
             for row in self._iter_jsonl(file_path):
+                raw_docs_count += 1
                 source_type = str(row.get("source_type", source)).strip().lower()
                 if not is_document_source(source_type):
                     continue
 
                 merged_metadata = self._normalize_document_metadata(row, source_type)
+
+                if not self._is_valid_document_for_layer2(source_type=source_type, row=row, metadata=merged_metadata):
+                    if source_type in skipped_invalid_count_by_source:
+                        skipped_invalid_count_by_source[source_type] += 1
+                    continue
 
                 # DART는 본문이 있는 문서만 corpus/BM25/vector 대상으로 사용
                 if source_type == "dart" and not merged_metadata.get("has_body", False):
@@ -109,7 +134,70 @@ class RawLayer2Builder:
                     )
                 )
 
-        return docs
+        for source_name, skipped_count in skipped_invalid_count_by_source.items():
+            print(f"[LAYER2][{source_name}] skipped_invalid={skipped_count}")
+
+        return docs, {
+            "raw_docs_count": raw_docs_count,
+            "skipped_invalid_count_by_source": skipped_invalid_count_by_source,
+        }
+
+    def _is_valid_document_for_layer2(self, source_type: str, row: Dict, metadata: Dict) -> bool:
+        if source_type == "news":
+            return self._is_valid_news_doc(row)
+        if source_type == "forum":
+            return self._is_valid_forum_doc(row, metadata)
+        if source_type == "dart":
+            return self._is_valid_dart_doc(row, metadata)
+        return True
+
+    @staticmethod
+    def _is_valid_news_doc(row: Dict) -> bool:
+        title = str(row.get("title", "") or "").strip()
+        content = str(row.get("content", "") or "").strip()
+        if not title or not content:
+            return False
+        if title == "네이버뉴스" or content == "네이버뉴스":
+            return False
+        return len(content) >= 30
+
+    @staticmethod
+    def _as_bool(value) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() in {"true", "1", "yes", "y"}
+        if isinstance(value, (int, float)):
+            return value != 0
+        return False
+
+    def _is_valid_forum_doc(self, row: Dict, metadata: Dict) -> bool:
+        title = str(row.get("title", "") or "").strip()
+        content = str(row.get("content", "") or "").strip()
+        if not title or not content:
+            return False
+        if content == title:
+            return False
+        if str(metadata.get("content_source", "")).strip().lower() == "title_only":
+            return False
+        body_extracted = self._as_bool(metadata.get("body_extracted"))
+        if not body_extracted:
+            return False
+        return len(content) >= 20
+
+    def _is_valid_dart_doc(self, row: Dict, metadata: Dict) -> bool:
+        title = str(row.get("title", "") or "").strip()
+        content = str(row.get("content", "") or "").strip()
+        if not title or not content:
+            return False
+        if not self._as_bool(metadata.get("has_body")):
+            return False
+        if self._as_bool(metadata.get("wrapper_text_detected")):
+            return False
+        normalized_content = re.sub(r"\s+", " ", content)
+        if any(token in normalized_content for token in self.DART_WRAPPER_TOKENS):
+            return False
+        return len(normalized_content) >= 200
 
     def _load_raw_market_records(self, theme_key: str) -> List[Dict]:
         rows: List[Dict] = []
