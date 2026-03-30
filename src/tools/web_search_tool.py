@@ -37,6 +37,26 @@ class SearchResult:
     score: float = 0.0
     published_date: Optional[str] = None
 
+    @property
+    def snippet(self) -> str:
+        """기존 dict 기반 호출부와의 호환용 별칭"""
+        return self.content
+
+    def to_dict(self) -> Dict[str, Any]:
+        """기존 dict 기반 호출부와의 호환용 직렬화"""
+        return {
+            "title": self.title,
+            "url": self.url,
+            "content": self.content,
+            "snippet": self.snippet,
+            "score": self.score,
+            "published_date": self.published_date,
+        }
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """dict-like 접근 호환"""
+        return self.to_dict().get(key, default)
+
 
 class WebSearchEngine:
     """

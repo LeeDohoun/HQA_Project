@@ -560,7 +560,7 @@ JSON만 응답하세요.
         if not analysis.stocks:
             return {"status": "error", "message": "조회할 종목을 찾을 수 없습니다."}
         
-        if "realtime" not in self.tools or not self.tools["realtime"].is_available():
+        if "realtime" not in self.tools or not self.tools["realtime"].is_available:
             return {"status": "error", "message": "실시간 시세 API가 설정되지 않았습니다."}
         
         stock = analysis.stocks[0]
