@@ -12,10 +12,11 @@ Chartist Agent - 기술적 분석 전문 에이전트
 """
 
 from typing import Dict, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from crewai import Agent, Task, Crew, Process
 from src.agents.llm_config import get_instruct_llm
+from src.agents.context import AgentContextPacket, EvidenceItem
 from src.tools.charts_tools import (
     TechnicalAnalysisTool,
     RSIAnalysisTool,
@@ -57,6 +58,7 @@ class ChartistScore:
     mid_term_opinion: str = ""  # 중기 의견
     stop_loss: str = ""  # 손절가
     target_price: str = ""  # 목표가
+    analysis_packet: Dict = field(default_factory=dict)
 
 
 class ChartistAgent:
@@ -342,7 +344,8 @@ class ChartistAgent:
                 short_term_opinion=check_result["signal"],
                 mid_term_opinion=check_result["signal"],
                 stop_loss=f"-{check_result['indicators'].get('atr', 0) * 2:.0f}원 (2ATR)",
-                target_price=f"+{check_result['indicators'].get('atr', 0) * 3:.0f}원 (3ATR)"
+                target_price=f"+{check_result['indicators'].get('atr', 0) * 3:.0f}원 (3ATR)",
+                analysis_packet=self._build_packet(stock_name, stock_code, check_result).to_dict(),
             )
             
         except Exception as e:
@@ -365,7 +368,8 @@ class ChartistAgent:
             short_term_opinion="관망",
             mid_term_opinion="관망",
             stop_loss="N/A",
-            target_price="N/A"
+            target_price="N/A",
+            analysis_packet=self._build_error_packet(stock_code, error).to_dict(),
         )
     
     def generate_report(self, score: ChartistScore, stock_name: str) -> str:
@@ -423,6 +427,57 @@ class ChartistAgent:
 - 볼린저밴드 위치: {score.bb_position}
 - 거래량 비율: {score.volume_ratio:.2f}x
 """
+
+    def _build_packet(self, stock_name: str, stock_code: str, check_result: dict) -> AgentContextPacket:
+        indicators = check_result.get("indicators", {})
+        return AgentContextPacket(
+            agent_name="chartist",
+            stock_name=stock_name,
+            stock_code=stock_code,
+            summary=check_result.get("signal", ""),
+            key_points=[
+                s for s in [
+                    ", ".join(check_result.get("trend_signals", [])[:2]),
+                    ", ".join(check_result.get("momentum_signals", [])[:2]),
+                    ", ".join(check_result.get("volatility_signals", [])[:2]),
+                    ", ".join(check_result.get("volume_signals", [])[:2]),
+                ] if s
+            ],
+            risks=[
+                f"RSI={indicators.get('rsi', 0):.1f}",
+                f"MACD={indicators.get('macd_histogram', 0):.2f}",
+                f"거래량비율={indicators.get('volume_ratio', 0):.2f}",
+            ],
+            contrarian_view="기술적 신호는 단기 구간에 민감하므로 펀더멘털과 충돌할 수 있음",
+            evidence=[
+                EvidenceItem(
+                    source="chart",
+                    title="기술 지표",
+                    snippet=str(indicators),
+                )
+            ],
+            score=check_result.get("total_score", 0),
+            confidence=min(100, max(0, check_result.get("total_score", 0))),
+            grade=check_result.get("signal", ""),
+            signal=check_result.get("signal", ""),
+            next_action="risk_manager_review",
+            source_tags=["charts", "technical"],
+        )
+
+    def _build_error_packet(self, stock_code: str, error: str) -> AgentContextPacket:
+        return AgentContextPacket(
+            agent_name="chartist",
+            stock_name="",
+            stock_code=stock_code,
+            summary=f"오류로 기본값 반환: {error}",
+            risks=[error],
+            contrarian_view="데이터 오류로 판단 신뢰도가 낮음",
+            score=50,
+            confidence=30,
+            grade="중립",
+            next_action="manual_review",
+            source_tags=["error_recovery"],
+        )
 
 
 # 테스트

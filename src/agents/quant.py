@@ -13,9 +13,10 @@ Quant Agent (퀀트 에이전트)
 """
 
 from typing import Dict, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from src.agents.llm_config import get_instruct_llm
+from src.agents.context import AgentContextPacket, EvidenceItem
 from src.tools.finance_tool import (
     QuantitativeAnalyzer,
     QuantitativeAnalysis,
@@ -55,6 +56,7 @@ class QuantScore:
     # 최종 의견
     opinion: str = ""
     grade: str = "C"  # A/B/C/D/F
+    analysis_packet: Dict = field(default_factory=dict)
 
 
 class QuantAgent:
@@ -115,7 +117,8 @@ class QuantAgent:
                 roe=analysis.metrics.get("ROE"),
                 debt_ratio=analysis.metrics.get("부채비율"),
                 opinion=analysis.summary,
-                grade=self._calculate_grade(analysis.total_score)
+                grade=self._calculate_grade(analysis.total_score),
+                analysis_packet=self._build_packet_from_analysis(stock_name, stock_code, analysis).to_dict(),
             )
             
         except Exception as e:
@@ -241,6 +244,7 @@ JSON만 출력하세요.
                 debt_ratio=data.get("debt_ratio"),
                 opinion=data.get("opinion", "웹 검색 기반 분석") + disclaimer,
                 grade=self._calculate_grade(total),
+                analysis_packet=self._build_packet_from_web(stock_name, stock_code, data, combined_text, total).to_dict(),
             )
             
             print(f"   ✅ 웹 검색 폴백 성공: {total}/100점 (등급 {score.grade})")
@@ -263,7 +267,8 @@ JSON만 출력하세요.
             growth_analysis="분석 불가",
             stability_analysis="분석 불가",
             opinion="데이터 부족으로 중립 의견",
-            grade="C"
+            grade="C",
+            analysis_packet=self._build_packet_from_error(stock_name, error).to_dict(),
         )
     
     def generate_report(self, score: QuantScore, stock_name: str) -> str:
@@ -323,6 +328,102 @@ JSON만 출력하세요.
 ## 💡 퀀트 총평
 > {score.opinion}
 """
+
+    def _build_packet_from_analysis(
+        self,
+        stock_name: str,
+        stock_code: str,
+        analysis: QuantitativeAnalysis,
+    ) -> AgentContextPacket:
+        return AgentContextPacket(
+            agent_name="quant",
+            stock_name=stock_name,
+            stock_code=stock_code,
+            summary=analysis.summary,
+            key_points=[
+                analysis.valuation_detail[:120],
+                analysis.profitability_detail[:120],
+                analysis.growth_detail[:120],
+                analysis.stability_detail[:120],
+            ],
+            risks=[
+                f"PER={analysis.metrics.get('PER')}",
+                f"PBR={analysis.metrics.get('PBR')}",
+                f"ROE={analysis.metrics.get('ROE')}",
+                f"부채비율={analysis.metrics.get('부채비율')}",
+            ],
+            catalysts=[analysis.summary] if analysis.summary else [],
+            contrarian_view="재무 데이터는 후행 지표이므로 단기 변동성 반영이 제한됨",
+            evidence=[
+                EvidenceItem(
+                    source="finance",
+                    title="재무제표 분석",
+                    snippet=str(analysis.metrics),
+                )
+            ],
+            score=analysis.total_score,
+            confidence=min(100, max(0, analysis.total_score)),
+            grade=self._calculate_grade(analysis.total_score),
+            signal=analysis.summary,
+            next_action="risk_manager_review",
+            source_tags=["finance", "fundamental"],
+        )
+
+    def _build_packet_from_web(
+        self,
+        stock_name: str,
+        stock_code: str,
+        data: Dict,
+        combined_text: str,
+        total: int,
+    ) -> AgentContextPacket:
+        return AgentContextPacket(
+            agent_name="quant",
+            stock_name=stock_name,
+            stock_code=stock_code,
+            summary=data.get("opinion", ""),
+            key_points=[
+                data.get("valuation_analysis", ""),
+                data.get("profitability_analysis", ""),
+                data.get("growth_analysis", ""),
+                data.get("stability_analysis", ""),
+            ],
+            risks=[
+                f"PER={data.get('per')}",
+                f"PBR={data.get('pbr')}",
+                f"ROE={data.get('roe')}",
+                f"부채비율={data.get('debt_ratio')}",
+            ],
+            contrarian_view="웹 검색 기반 폴백이라 원본 재무제표 대비 정확도 제한",
+            evidence=[
+                EvidenceItem(
+                    source="web",
+                    title="검색 스니펫",
+                    snippet=combined_text[:240],
+                )
+            ],
+            score=total,
+            confidence=60,
+            grade=self._calculate_grade(total),
+            signal=data.get("opinion", ""),
+            next_action="risk_manager_review",
+            source_tags=["web_search", "llm_extract"],
+        )
+
+    def _build_packet_from_error(self, stock_name: str, error: str) -> AgentContextPacket:
+        return AgentContextPacket(
+            agent_name="quant",
+            stock_name=stock_name,
+            stock_code="",
+            summary=f"오류로 기본값 적용: {error}",
+            risks=[error],
+            contrarian_view="데이터 오류로 판단 신뢰도가 낮음",
+            score=48,
+            confidence=30,
+            grade="C",
+            next_action="manual_review",
+            source_tags=["error_recovery"],
+        )
     
     def quick_check(self, stock_code: str) -> Dict:
         """

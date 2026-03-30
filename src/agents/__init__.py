@@ -53,6 +53,12 @@ from .risk_manager import (
     RiskLevel,
 )
 
+# 공통 중간 컨텍스트
+from .context import (
+    AgentContextPacket,
+    EvidenceItem,
+)
+
 # LangGraph 워크플로우
 from .graph import (
     run_stock_analysis,
@@ -101,6 +107,10 @@ __all__ = [
     "FinalDecision",
     "InvestmentAction",
     "RiskLevel",
+
+    # 공통 컨텍스트
+    "AgentContextPacket",
+    "EvidenceItem",
     
     # LLM (Provider 패턴)
     "get_instruct_llm",

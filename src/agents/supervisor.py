@@ -22,6 +22,7 @@ from src.utils.stock_mapper import StockMapper, get_mapper
 from src.utils.memory import ConversationMemory
 from src.utils.parallel import run_agents_parallel, is_error
 from src.agents.graph import run_stock_analysis, is_langgraph_available
+from src.utils.prompt_loader import load_prompt_optional
 
 
 class Intent(Enum):
@@ -262,44 +263,13 @@ class SupervisorAgent:
         if context_hint:
             history_section += f"\n{context_hint}\n"
         
-        prompt = f"""
-사용자 쿼리를 분석하세요.
-{history_section}
-쿼리: "{query}"
-
-다음 JSON 형식으로 응답하세요:
-{{
-    "intent": "stock_analysis | quick_analysis | industry | issue | price | comparison | theme | general",
-    "stocks": [
-        {{"name": "종목명", "code": "종목코드"}}
-    ],
-    "industry": "산업명 또는 null",
-    "issue": "이슈/키워드 또는 null",
-    "theme": "테마 또는 null",
-    "confidence": 0.0~1.0,
-    "needs_clarification": true/false,
-    "clarification_message": "추가 질문 (필요시)"
-}}
-
-의도 분류 기준:
-- stock_analysis: 특정 종목 심층 분석 요청
-- quick_analysis: 빠른/간단한 분석 요청
-- industry: 산업/업종 동향 분석
-- issue: 글로벌 이슈/정책 영향 분석
-- price: 실시간 가격/시세 조회
-- comparison: 2개 이상 종목 비교
-- theme: 테마/관련주 탐색
-- general: 일반 질문
-
-종목코드 참고 (주요 종목):
-- 삼성전자: 005930
-- SK하이닉스: 000660
-- 현대차: 005380
-- 네이버: 035420
-- 카카오: 035720
-
-JSON만 응답하세요.
-"""
+        prompt = load_prompt_optional(
+            "supervisor",
+            "routing",
+            fallback=self._routing_fallback_prompt(),
+            query=query,
+            conversation_history=history_section or "없음",
+        )
         
         try:
             response = self.llm.invoke(prompt)
@@ -345,6 +315,38 @@ JSON만 응답하세요.
         quick_result.confidence = max(quick_result.confidence, 0.5)
         self._set_execution_plan(quick_result)
         return quick_result
+
+    def _routing_fallback_prompt(self) -> str:
+        """라우팅용 기본 프롬프트"""
+        return """
+사용자 쿼리를 분석하세요.
+{conversation_history}
+쿼리: "{query}"
+
+다음 JSON 형식으로 응답하세요:
+{
+    "intent": "stock_analysis | quick_analysis | industry | issue | price | comparison | theme | general",
+    "stocks": [{"name": "종목명", "code": "종목코드"}],
+    "industry": "산업명 또는 null",
+    "issue": "이슈/키워드 또는 null",
+    "theme": "테마 또는 null",
+    "confidence": 0.0~1.0,
+    "needs_clarification": true/false,
+    "clarification_message": "추가 질문 (필요시)"
+}
+
+의도 분류 기준:
+- stock_analysis: 특정 종목 심층 분석 요청
+- quick_analysis: 빠른/간단한 분석 요청
+- industry: 산업/업종 동향 분석
+- issue: 글로벌 이슈/정책 영향 분석
+- price: 실시간 가격/시세 조회
+- comparison: 2개 이상 종목 비교
+- theme: 테마/관련주 탐색
+- general: 일반 질문
+
+JSON만 응답하세요.
+"""
     
     def _set_execution_plan(self, analysis: QueryAnalysis):
         """의도에 따른 실행 계획 설정"""

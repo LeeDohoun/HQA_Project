@@ -83,6 +83,9 @@ class AnalysisState(TypedDict, total=False):
     analyst_score: Any        # AnalystScore
     quant_score: Any          # QuantScore
     chartist_score: Any       # ChartistScore
+    analyst_context: Dict[str, Any]
+    quant_context: Dict[str, Any]
+    chartist_context: Dict[str, Any]
     
     # ── 품질 관리 ──
     research_quality: str     # A / B / C / D
@@ -190,6 +193,7 @@ def _analyst_node(state: AnalysisState) -> dict:
         
         return {
             "analyst_score": analyst_score,
+            "analyst_context": getattr(analyst_score, "analysis_packet", {}) or {},
             "research_quality": quality_grade,
             "quality_warnings": quality_warnings,
         }
@@ -210,6 +214,7 @@ def _analyst_node(state: AnalysisState) -> dict:
                 report_summary="", image_analysis="",
                 final_opinion=f"오류로 인한 기본값: {str(e)[:100]}"
             ),
+            "analyst_context": {},
             "research_quality": "D",
             "quality_warnings": [f"Analyst 오류: {str(e)[:200]}"],
             "errors": {**state.get("errors", {}), "analyst": str(e)[:200]},
@@ -239,7 +244,10 @@ def _quant_node(state: AnalysisState) -> dict:
             quant_score = agent.full_analysis(stock_name, stock_code)
         
         print(f"   ✅ Quant 완료: {quant_score.grade} ({quant_score.total_score}/100)")
-        return {"quant_score": quant_score}
+        return {
+            "quant_score": quant_score,
+            "quant_context": getattr(quant_score, "analysis_packet", {}) or {},
+        }
         
     except Exception as e:
         logger.exception(f"Quant 노드 오류: {e}")
@@ -253,6 +261,7 @@ def _quant_node(state: AnalysisState) -> dict:
         agent = QuantAgent()
         return {
             "quant_score": agent._default_score(stock_name, str(e)),
+            "quant_context": {},
             "errors": {**state.get("errors", {}), "quant": str(e)[:200]},
         }
 
@@ -283,7 +292,10 @@ def _chartist_node(state: AnalysisState) -> dict:
             chartist_score = agent.full_analysis(stock_name, stock_code)
         
         print(f"   ✅ Chartist 완료: {chartist_score.signal} ({chartist_score.total_score}/100)")
-        return {"chartist_score": chartist_score}
+        return {
+            "chartist_score": chartist_score,
+            "chartist_context": getattr(chartist_score, "analysis_packet", {}) or {},
+        }
         
     except Exception as e:
         logger.exception(f"Chartist 노드 오류: {e}")
@@ -297,6 +309,7 @@ def _chartist_node(state: AnalysisState) -> dict:
         agent = ChartistAgent()
         return {
             "chartist_score": agent._default_score(stock_code, str(e)),
+            "chartist_context": {},
             "errors": {**state.get("errors", {}), "chartist": str(e)[:200]},
         }
 
@@ -426,6 +439,7 @@ def _retry_research(state: AnalysisState) -> dict:
         
         return {
             "analyst_score": analyst_score,
+            "analyst_context": getattr(analyst_score, "analysis_packet", {}) or {},
             "research_quality": new_quality,
             "quality_warnings": research_result.quality_warnings,
             "retry_count": retry_count,
@@ -441,6 +455,7 @@ def _retry_research(state: AnalysisState) -> dict:
         
         return {
             "retry_count": retry_count,
+            "analyst_context": {},
             "errors": {**state.get("errors", {}), "retry_research": str(e)[:200]},
         }
 
@@ -482,6 +497,9 @@ def _risk_manager_node(state: AnalysisState) -> dict:
             chartist_volume_score=chartist_score.volume_score,
             chartist_total=chartist_score.total_score,
             chartist_signal=chartist_score.signal,
+            analyst_context=state.get("analyst_context", {}) or {},
+            quant_context=state.get("quant_context", {}) or {},
+            chartist_context=state.get("chartist_context", {}) or {},
         )
         
         agent = RiskManagerAgent()
@@ -675,6 +693,9 @@ def run_stock_analysis(
         "errors": {},
         "status": "running",
         "quality_warnings": [],
+        "analyst_context": {},
+        "quant_context": {},
+        "chartist_context": {},
         "tracer": tracer,
     }
     
@@ -687,6 +708,11 @@ def run_stock_analysis(
             "status": "success",
             "stock": {"name": stock_name, "code": stock_code},
             "scores": {},
+            "analysis_context": {
+                "analyst": final_state.get("analyst_context", {}),
+                "quant": final_state.get("quant_context", {}),
+                "chartist": final_state.get("chartist_context", {}),
+            },
         }
         
         if final_state.get("analyst_score"):
@@ -844,6 +870,11 @@ def _fallback_parallel_analysis(
             "quant": quant_score,
             "chartist": chartist_score,
         },
+        "analysis_context": {
+            "analyst": getattr(analyst_score, "analysis_packet", {}) or {},
+            "quant": getattr(quant_score, "analysis_packet", {}) or {},
+            "chartist": getattr(chartist_score, "analysis_packet", {}) or {},
+        },
     }
     
     # Phase 2: Risk Manager
@@ -865,6 +896,9 @@ def _fallback_parallel_analysis(
         chartist_volume_score=chartist_score.volume_score,
         chartist_total=chartist_score.total_score,
         chartist_signal=chartist_score.signal,
+        analyst_context=getattr(analyst_score, "analysis_packet", {}) or {},
+        quant_context=getattr(quant_score, "analysis_packet", {}) or {},
+        chartist_context=getattr(chartist_score, "analysis_packet", {}) or {},
     )
     
     risk_manager = RiskManagerAgent()

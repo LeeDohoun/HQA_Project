@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from src.agents.llm_config import get_instruct_llm, get_thinking_llm, VisionAnalyzer
+from src.utils.prompt_loader import load_prompt_optional
+from src.agents.context import AgentContextPacket, EvidenceItem
 
 # RAG 검색 도구
 from src.tools.rag_tool import RAGSearchTool
@@ -197,6 +199,7 @@ class AnalystScore:
     risk_factors: str = ""
     policy_impact: str = ""
     detailed_reasoning: str = ""
+    analysis_packet: Dict = field(default_factory=dict)
 
 
 # ──────────────────────────────────────────────
@@ -282,6 +285,8 @@ class AnalystAgent:
         print(f"🧠 [Analyst] {stock_name} 헤게모니 통합 분석 중...")
         hegemony = self.analyze_hegemony(research_result)
 
+        packet = self._build_context_packet(stock_name, stock_code, research_result, hegemony)
+
         return AnalystScore(
             moat_score=hegemony.moat_score,
             growth_score=hegemony.growth_score,
@@ -296,6 +301,7 @@ class AnalystAgent:
             risk_factors=hegemony.risk_factors,
             policy_impact=hegemony.policy_impact,
             detailed_reasoning=hegemony.detailed_reasoning,
+            analysis_packet=packet.to_dict(),
         )
 
     def analyze_stock(self, stock_name: str, stock_code: str) -> str:
@@ -420,94 +426,19 @@ class AnalystAgent:
         """
         stock_name = research_result.stock_name
         research_summary = research_result.to_analysis_prompt()
-
         print(f"🧠 {stock_name} 헤게모니 분석 중 (Thinking 모델)...")
 
-        analysis_prompt = f"""
-당신은 20년 경력의 베테랑 투자 전략가입니다.
-다음 리서치 자료를 바탕으로 '{stock_name}'의 헤게모니(경제적 해자)를 분석하세요.
-
-{research_summary}
-
----
-
-다음 관점에서 깊이 있게 분석하세요:
-
-## 1. 독점력/경제적 해자 분석 (0-40점)
-- 시장 점유율과 지배력
-- 진입 장벽 (기술, 자본, 규모)
-- 가격 결정력 (Pricing Power)
-- 브랜드/네트워크 효과
-- 전환 비용 (Switching Cost)
-
-## 2. 성장성 분석 (0-30점)
-- 미래 산업 연관성 (AI, 로봇, 친환경 등)
-- 매출 성장 구조 (일회성 vs 구조적)
-- TAM(Total Addressable Market) 확장 가능성
-- R&D 투자와 기술 리더십
-
-## 3. 정책/규제 영향
-- 정부 지원 정책의 수혜 여부
-- 규제 리스크
-- 글로벌 통상 환경 영향
-
-## 4. 경쟁 구도 분석
-- 주요 경쟁사 대비 포지션
-- 경쟁 심화/완화 전망
-- 대체재 위협
-
-## 5. 리스크 요인
-- 산업 사이클 리스크
-- 기술 변화 리스크
-- 지정학적 리스크
-
----
-
-[⚠️ 중요: 데이터 신뢰도에 따른 행동 강령]
-위 리서치 자료에 포함된 '정보 품질 등급'을 반드시 확인하고, 아래 규칙을 따르십시오.
-
-1. 등급이 'D'인 경우:
-   - 투자의견을 두 단계 낮추십시오.
-   - hegemony_grade를 C 이하로 부여하십시오.
-   - final_opinion에 "데이터 심각 부족으로 분석 신뢰도가 매우 낮음"을 명시하십시오.
-   - 점수는 보수적으로 부여하십시오 (각 항목 최대 60% 수준).
-
-2. 등급이 'C'인 경우:
-   - 투자의견을 한 단계 낮추십시오.
-   - final_opinion에 "데이터 부족으로 인한 불확실성이 존재함"을 명시하십시오.
-
-3. 등급이 'B'인 경우:
-   - 정상적으로 분석하되, 빈 영역은 분석에서 제외하십시오.
-
-4. 등급이 'A'인 경우:
-   - 확보된 데이터를 근거로 확신에 찬 어조를 사용하십시오.
-
----
-
-분석 결과를 다음 JSON 형식으로 출력하세요:
-
-{{
-    "moat_score": <0-40 정수>,
-    "moat_analysis": "<독점력 분석 3-5문장>",
-    "growth_score": <0-30 정수>,
-    "growth_analysis": "<성장성 분석 3-5문장>",
-    "competitive_advantage": "<경쟁 우위 핵심 1-2문장>",
-    "risk_factors": "<주요 리스크 2-3가지>",
-    "policy_impact": "<정책 영향 1-2문장>",
-    "hegemony_grade": "<A/B/C/D/F 중 하나>",
-    "final_opinion": "<한 줄 총평>",
-    "detailed_reasoning": "<상세 추론 과정 5-10문장>"
-}}
-
-등급 기준:
-- A (60-70점): 압도적 해자, 적극 매수
-- B (50-59점): 견고한 해자, 매수
-- C (40-49점): 보통 해자, 중립
-- D (30-39점): 약한 해자, 관망
-- F (0-29점): 해자 없음, 매도
-
-JSON만 출력하세요.
-"""
+        analysis_prompt = load_prompt_optional(
+            "analyst",
+            "analysis",
+            fallback=self._analysis_fallback_prompt(),
+            stock_name=stock_name,
+            stock_code=research_result.stock_code,
+            research_summary=research_summary,
+            quality_grade=research_result.quality_grade,
+            quality_score=research_result.quality_score,
+            quality_warnings="\n".join(f"- {w}" for w in research_result.quality_warnings) or "- 없음",
+        )
 
         try:
             response = self.thinking_llm.invoke(analysis_prompt)
@@ -553,6 +484,122 @@ JSON만 출력하세요.
                 final_opinion="데이터 부족으로 중립 의견",
                 detailed_reasoning=f"오류 발생: {str(e)}",
             )
+
+    def _analysis_fallback_prompt(self) -> str:
+        """분석용 기본 프롬프트"""
+        return """
+당신은 20년 경력의 베테랑 투자 전략가입니다.
+다음 리서치 자료를 바탕으로 '{stock_name}'({stock_code})의 헤게모니(경제적 해자)를 분석하세요.
+
+{research_summary}
+
+---
+
+다음 관점에서 깊이 있게 분석하세요:
+
+## 1. 독점력/경제적 해자 분석 (0-40점)
+- 시장 점유율과 지배력
+- 진입 장벽 (기술, 자본, 규모)
+- 가격 결정력 (Pricing Power)
+- 브랜드/네트워크 효과
+- 전환 비용 (Switching Cost)
+
+## 2. 성장성 분석 (0-30점)
+- 미래 산업 연관성 (AI, 로봇, 친환경 등)
+- 매출 성장 구조 (일회성 vs 구조적)
+- TAM(Total Addressable Market) 확장 가능성
+- R&D 투자와 기술 리더십
+
+## 3. 정책/규제 영향
+- 정부 지원 정책의 수혜 여부
+- 규제 리스크
+- 글로벌 통상 환경 영향
+
+## 4. 경쟁 구도 분석
+- 주요 경쟁사 대비 포지션
+- 경쟁 심화/완화 전망
+- 대체재 위협
+
+## 5. 리스크 요인
+- 산업 사이클 리스크
+- 기술 변화 리스크
+- 지정학적 리스크
+
+---
+
+[⚠️ 중요: 데이터 신뢰도에 따른 행동 강령]
+품질 등급이 낮을수록 더 보수적으로 판단하세요.
+
+- A: 확보된 데이터를 근거로 확신에 찬 어조
+- B: 정상 분석
+- C: 불확실성 명시
+- D: 신뢰도 낮음, 두 단계 보수화
+
+분석 결과를 다음 JSON 형식으로 출력하세요:
+{
+    "moat_score": <0-40 정수>,
+    "moat_analysis": "<독점력 분석 3-5문장>",
+    "growth_score": <0-30 정수>,
+    "growth_analysis": "<성장성 분석 3-5문장>",
+    "competitive_advantage": "<경쟁 우위 핵심 1-2문장>",
+    "risk_factors": "<주요 리스크 2-3가지>",
+    "policy_impact": "<정책 영향 1-2문장>",
+    "hegemony_grade": "<A/B/C/D/F 중 하나>",
+    "final_opinion": "<한 줄 총평>",
+    "detailed_reasoning": "<상세 추론 과정 5-10문장>"
+}
+
+JSON만 출력하세요.
+"""
+
+    def _build_context_packet(
+        self,
+        stock_name: str,
+        stock_code: str,
+        research_result: ResearchResult,
+        hegemony: HegemonyScore,
+    ) -> AgentContextPacket:
+        """Risk Manager로 넘길 구조화 컨텍스트 생성"""
+        key_points = [point for point in [
+            hegemony.moat_analysis.split("。")[0] if hegemony.moat_analysis else "",
+            hegemony.growth_analysis.split("。")[0] if hegemony.growth_analysis else "",
+            research_result.report_sources[0] if research_result.report_sources else "",
+        ] if point]
+
+        risks = [item.strip(" -•") for item in re.split(r"[,\n]", hegemony.risk_factors) if item.strip()]
+        evidence = [
+            EvidenceItem(
+                source="rag",
+                title="증권사 리포트",
+                snippet=research_result.report_summary[:240],
+            ),
+            EvidenceItem(
+                source="web",
+                title="뉴스/정책",
+                snippet=(research_result.news_summary or research_result.policy_summary)[:240],
+            ),
+        ]
+
+        return AgentContextPacket(
+            agent_name="analyst",
+            stock_name=stock_name,
+            stock_code=stock_code,
+            summary=hegemony.final_opinion,
+            key_points=key_points[:5],
+            risks=risks[:5],
+            catalysts=[hegemony.policy_impact] if hegemony.policy_impact else [],
+            contrarian_view=hegemony.risk_factors,
+            evidence=evidence,
+            score=hegemony.total_score,
+            confidence=research_result.quality_score,
+            grade=hegemony.hegemony_grade,
+            next_action="risk_manager_review",
+            source_tags=[
+                "rag",
+                "web_search",
+                "vision" if research_result.chart_analysis else "text",
+            ],
+        )
 
     def generate_report(self, score: HegemonyScore, stock_name: str) -> str:
         """분석 결과를 마크다운 보고서 형식으로 출력"""
