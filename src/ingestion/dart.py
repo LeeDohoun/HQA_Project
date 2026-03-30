@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import re
 import time
+from io import BytesIO
 from typing import Dict, List, Tuple
 from urllib.parse import urlencode
+from zipfile import BadZipFile, ZipFile
 
 try:
     from bs4 import BeautifulSoup
@@ -41,6 +43,16 @@ class DartDisclosureCollector(BaseCollector):
         r"�슂泥��븯�떊.*URL.*李얠쓣.*�닔.*�뾾",
         r"DART.*硫붿씤�솕硫�.*諛붾줈媛�湲�",
     ]
+    # report_nm 정규화 후 매핑: endpoint 이름은 OpenDART 가이드 기준 사용
+    STRUCTURED_ENDPOINT_MAP = [
+        ("유형자산취득결정", ["tgastInhDecsn"]),
+        ("유형자산양도결정", ["tgastTrfDecsn"]),
+        ("전환사채", ["cvbdIsDecsn"]),
+        ("신주인수권부사채", ["bdwtIsDecsn"]),
+        ("교환사채", ["exbdIsDecsn"]),
+        ("타법인주식및출자증권취득결정", ["otcprStkInvscrInhDecsn"]),
+        ("타법인주식및출자증권양도결정", ["otcprStkInvscrTrfDecsn"]),
+    ]
 
     IMPORTANT_REPORT_KEYWORDS = [
         "사업보고서",
@@ -73,6 +85,7 @@ class DartDisclosureCollector(BaseCollector):
                 )
             }
         )
+        self._structured_cache: Dict[Tuple[str, str, str, str], Dict] = {}
 
     def collect(
         self,
@@ -118,7 +131,15 @@ class DartDisclosureCollector(BaseCollector):
                 default_time="00:00:00",
             )
 
-            detail_excerpt, body_source, quality_meta = self._fetch_official_document_body(rcept_no)
+            detail_excerpt, body_source, quality_meta = self._fetch_structured_body(
+                corp_code=corp_code,
+                bgn_de=bgn_de,
+                end_de=end_de,
+                rcept_no=rcept_no,
+                report_nm=title,
+            )
+            if not detail_excerpt:
+                detail_excerpt, body_source, quality_meta = self._fetch_official_document_body(rcept_no)
             if not detail_excerpt and url:
                 detail_excerpt, body_source, quality_meta = self._fetch_detail_excerpt(url)
             wrapper_text_detected = bool(quality_meta.get("wrapper_text_detected", False))
@@ -168,6 +189,114 @@ class DartDisclosureCollector(BaseCollector):
     def _is_important_report(self, title: str) -> bool:
         return any(keyword in title for keyword in self.IMPORTANT_REPORT_KEYWORDS)
 
+    def _fetch_structured_body(
+        self,
+        corp_code: str,
+        bgn_de: str,
+        end_de: str,
+        rcept_no: str,
+        report_nm: str,
+    ) -> Tuple[str, str, Dict[str, bool | str]]:
+        quality_meta: Dict[str, bool | str] = {
+            "wrapper_text_detected": False,
+            "body_error_type": "no_structured_match",
+            "encoding_fixed": False,
+            "mojibake_detected": False,
+        }
+        endpoints = self._match_structured_endpoints(report_nm)
+        if not endpoints:
+            return "", "structured_api", quality_meta
+
+        for endpoint in endpoints:
+            cache_key = (endpoint, corp_code, bgn_de, end_de)
+            payload = self._structured_cache.get(cache_key)
+            if payload is None:
+                try:
+                    response = self.get_with_retry(
+                        f"https://opendart.fss.or.kr/api/{endpoint}.json",
+                        params={
+                            "crtfc_key": self.api_key,
+                            "corp_code": corp_code,
+                            "bgn_de": bgn_de,
+                            "end_de": end_de,
+                        },
+                        timeout=self.timeout,
+                        log_prefix=f"DART:STRUCTURED:{endpoint}",
+                    )
+                    payload = response.json()
+                except Exception:
+                    quality_meta["body_error_type"] = "structured_fetch_failed"
+                    continue
+                self._structured_cache[cache_key] = payload
+
+            if not isinstance(payload, dict) or payload.get("status") != "000":
+                quality_meta["body_error_type"] = "structured_empty"
+                continue
+
+            rows = payload.get("list", [])
+            if not isinstance(rows, list) or not rows:
+                quality_meta["body_error_type"] = "structured_empty"
+                continue
+
+            target = self._find_structured_row(rows=rows, rcept_no=rcept_no)
+            if target is None:
+                quality_meta["body_error_type"] = "structured_no_rcept_match"
+                continue
+
+            text = self._structured_row_to_text(report_nm=report_nm, endpoint=endpoint, row=target)
+            cleaned = self._sanitize_body_text(text)
+            if not cleaned:
+                quality_meta["body_error_type"] = "structured_empty"
+                continue
+            if self._contains_error_page_tokens(cleaned):
+                quality_meta["wrapper_text_detected"] = True
+                quality_meta["body_error_type"] = "structured_error_page"
+                continue
+            quality_meta["mojibake_detected"] = self._is_mojibake_text(cleaned)
+            if quality_meta["mojibake_detected"]:
+                quality_meta["body_error_type"] = "structured_mojibake"
+                continue
+            if len(cleaned) < 120:
+                quality_meta["body_error_type"] = "structured_too_short"
+                continue
+            quality_meta["body_error_type"] = ""
+            return cleaned[:2500], "structured_api", quality_meta
+
+        return "", "structured_api", quality_meta
+
+    def _match_structured_endpoints(self, report_nm: str) -> List[str]:
+        normalized = self._normalize_report_name(report_nm)
+        for keyword, endpoints in self.STRUCTURED_ENDPOINT_MAP:
+            if keyword in normalized:
+                return endpoints
+        return []
+
+    def _normalize_report_name(self, report_nm: str) -> str:
+        normalized = self._clean_text(report_nm)
+        normalized = re.sub(r"\(.*?\)", "", normalized)
+        normalized = normalized.replace(" ", "")
+        return normalized
+
+    def _find_structured_row(self, rows: List[Dict], rcept_no: str) -> Dict | None:
+        if not rows:
+            return None
+        if rcept_no:
+            for row in rows:
+                if str(row.get("rcept_no", "")).strip() == str(rcept_no).strip():
+                    return row
+        return rows[0]
+
+    def _structured_row_to_text(self, report_nm: str, endpoint: str, row: Dict) -> str:
+        lines = [f"[공시유형] {report_nm}", f"[structured_endpoint] {endpoint}"]
+        for key, value in row.items():
+            if key in {"status", "message"}:
+                continue
+            val = self._clean_text(str(value or ""))
+            if not val:
+                continue
+            lines.append(f"{key}: {val}")
+        return "\n".join(lines)
+
     def _fetch_official_document_body(self, rcept_no: str) -> Tuple[str, str, Dict[str, bool | str]]:
         quality_meta: Dict[str, bool | str] = {
             "wrapper_text_detected": False,
@@ -189,20 +318,120 @@ class DartDisclosureCollector(BaseCollector):
             quality_meta["body_error_type"] = "official_api_failed"
             return "", "official_api", quality_meta
 
-        text, encoding_fixed, mojibake_detected = self._decode_response_text(response)
-        quality_meta["encoding_fixed"] = encoding_fixed
-        quality_meta["mojibake_detected"] = mojibake_detected
-        cleaned = self._sanitize_body_text(text)
-        is_error_page = self._contains_error_page_tokens(text) or self._contains_error_page_tokens(cleaned)
-        wrapper_detected = self._contains_wrapper_tokens(text) or self._contains_wrapper_tokens(cleaned)
-        quality_meta["wrapper_text_detected"] = wrapper_detected or is_error_page
-        if is_error_page:
-            quality_meta["body_error_type"] = "official_error_page"
+        content_bytes = response.content or b""
+        if not content_bytes:
+            quality_meta["body_error_type"] = "official_empty"
             return "", "official_api", quality_meta
-        if not cleaned or len(cleaned) < 120:
-            quality_meta["body_error_type"] = "official_too_short"
+        if not content_bytes.startswith(b"PK"):
+            quality_meta["body_error_type"] = "zip_signature_missing"
             return "", "official_api", quality_meta
-        return cleaned[:2000], "official_api", quality_meta
+
+        try:
+            with ZipFile(BytesIO(content_bytes)) as zf:
+                names = zf.namelist()
+                print(f"[DART:DOCUMENT] zip entries count={len(names)} sample={names[:5]}")
+                candidates = self._select_document_inner_files(names)
+                if not candidates:
+                    quality_meta["body_error_type"] = "no_valid_inner_file"
+                    return "", "official_api", quality_meta
+
+                best_text = ""
+                best_score = -10**9
+                encoding_fixed_any = False
+                mojibake_any = False
+                for name in candidates:
+                    try:
+                        inner_bytes = zf.read(name)
+                    except Exception:
+                        continue
+                    decoded, encoding_fixed, mojibake = self._decode_bytes_with_candidates(inner_bytes)
+                    encoding_fixed_any = encoding_fixed_any or encoding_fixed
+                    mojibake_any = mojibake_any or mojibake
+                    normalized = self._normalize_inner_document_text(name=name, text=decoded)
+                    cleaned = self._sanitize_body_text(normalized)
+                    if not cleaned:
+                        continue
+                    score = self._document_text_score(cleaned)
+                    if score > best_score:
+                        best_score = score
+                        best_text = cleaned
+
+                quality_meta["encoding_fixed"] = encoding_fixed_any
+                quality_meta["mojibake_detected"] = mojibake_any
+                if not best_text:
+                    quality_meta["body_error_type"] = "decode_failed"
+                    return "", "official_api", quality_meta
+                if self._contains_error_page_tokens(best_text):
+                    quality_meta["wrapper_text_detected"] = True
+                    quality_meta["body_error_type"] = "official_error_page"
+                    return "", "official_api", quality_meta
+                if self._is_mojibake_text(best_text):
+                    quality_meta["mojibake_detected"] = True
+                    quality_meta["body_error_type"] = "official_mojibake"
+                    return "", "official_api", quality_meta
+                if len(best_text) < 120:
+                    quality_meta["body_error_type"] = "cleaned_too_short"
+                    return "", "official_api", quality_meta
+                quality_meta["body_error_type"] = ""
+                return best_text[:2500], "official_api", quality_meta
+        except BadZipFile:
+            quality_meta["body_error_type"] = "zip_open_failed"
+            return "", "official_api", quality_meta
+
+    def _select_document_inner_files(self, names: List[str]) -> List[str]:
+        scored: List[Tuple[int, str]] = []
+        for name in names:
+            lname = name.lower()
+            score = -1
+            if lname.endswith((".xml", ".xhtml")):
+                score = 50
+            elif lname.endswith((".html", ".htm")):
+                score = 40
+            elif lname.endswith(".txt"):
+                score = 30
+            if "xbrl" in lname:
+                score += 5
+            if score > 0:
+                scored.append((score, name))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [name for _, name in scored[:10]]
+
+    def _decode_bytes_with_candidates(self, blob: bytes) -> Tuple[str, bool, bool]:
+        encodings = ["utf-8", "utf-8-sig", "cp949", "euc-kr"]
+        variants: List[Tuple[str, str]] = []
+        for enc in encodings:
+            try:
+                variants.append((enc, blob.decode(enc, errors="strict")))
+            except Exception:
+                continue
+        if not variants:
+            fallback = blob.decode("utf-8", errors="replace")
+            return fallback, False, self._is_mojibake_text(fallback)
+
+        best_enc, best_text = max(variants, key=lambda x: self._decode_quality_score(x[1]))
+        encoding_fixed = best_enc not in {"utf-8", "utf-8-sig"}
+        return best_text, encoding_fixed, self._is_mojibake_text(best_text)
+
+    def _normalize_inner_document_text(self, name: str, text: str) -> str:
+        if BeautifulSoup is None:
+            return text
+        lname = name.lower()
+        if any(lname.endswith(ext) for ext in (".xml", ".xhtml", ".html", ".htm")) or "<" in text:
+            soup = BeautifulSoup(text, "html.parser")
+            return soup.get_text(" ", strip=True)
+        return text
+
+    def _document_text_score(self, text: str) -> int:
+        score = len(text)
+        score += len(re.findall(r"[가-힣]", text)) * 2
+        if self._contains_error_page_tokens(text):
+            score -= 2000
+        if self._is_mojibake_text(text):
+            score -= 1500
+        if "재무제표" in text or "주요사항" in text or "이사회" in text:
+            score += 200
+        return score
+
 
     def _fetch_detail_excerpt(self, url: str) -> Tuple[str, str, Dict[str, bool | str]]:
         quality_meta: Dict[str, bool | str] = {
@@ -294,7 +523,6 @@ class DartDisclosureCollector(BaseCollector):
         parts = [p.strip() for p in args_raw.split(",")]
         if len(parts) < 6:
             return ""
-        return f"https://dart.fss.or.kr/report/viewer.do?{urlencode(params)}"
 
         def _normalize(part: str) -> str:
             part = part.strip()
