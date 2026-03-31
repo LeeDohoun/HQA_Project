@@ -8,9 +8,23 @@ def _hash_key(base: str) -> str:
     return hashlib.md5(base.encode("utf-8")).hexdigest()
 
 
+def _extract_chunk_suffix(metadata: Dict) -> str:
+    chunk_index = (metadata or {}).get("chunk_index", None)
+    if chunk_index is None:
+        return ""
+
+    try:
+        normalized = int(chunk_index)
+    except (TypeError, ValueError):
+        return ""
+
+    return f"|chunk:{normalized}"
+
+
 def make_document_id(source_type: str, metadata: Dict, text: str = "") -> str:
     source = (source_type or "").strip()
     meta = metadata or {}
+    chunk_suffix = _extract_chunk_suffix(meta)
 
     url = str(meta.get("url", "")).strip()
     rcept_no = str(meta.get("rcept_no", "")).strip()
@@ -19,18 +33,18 @@ def make_document_id(source_type: str, metadata: Dict, text: str = "") -> str:
     published_at = str(meta.get("published_at", "")).strip()
 
     if source in {"news", "general_news", "report"} and url:
-        return _hash_key(f"{source}|{url}")
+        return _hash_key(f"{source}|{url}{chunk_suffix}")
 
     if source == "dart" and rcept_no:
-        return _hash_key(f"{source}|{rcept_no}")
+        return _hash_key(f"{source}|{rcept_no}{chunk_suffix}")
 
     if source == "forum":
-        return _hash_key(f"{source}|{stock_code}|{title}|{published_at}")
+        return _hash_key(f"{source}|{stock_code}|{title}|{published_at}{chunk_suffix}")
 
     if url:
-        return _hash_key(f"{source}|{url}")
+        return _hash_key(f"{source}|{url}{chunk_suffix}")
 
-    return _hash_key(f"{source}|{stock_code}|{title}|{published_at}|{text[:120]}")
+    return _hash_key(f"{source}|{stock_code}|{title}|{published_at}|{text[:120]}{chunk_suffix}")
 
 
 def make_record_id(row: Dict) -> str:

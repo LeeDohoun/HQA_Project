@@ -73,6 +73,12 @@ class DartDisclosureCollector(BaseCollector):
         "영업실적",
     ]
 
+    PERIODIC_REPORT_KEYWORDS = [
+        "사업보고서",
+        "분기보고서",
+        "반기보고서",
+    ]
+
     def __init__(self, api_key: str, timeout: int = 20):
         super().__init__(timeout=timeout)
         self.api_key = api_key
@@ -363,6 +369,8 @@ class DartDisclosureCollector(BaseCollector):
                     cleaned = self._sanitize_body_text(normalized)
                     if not cleaned:
                         continue
+                    if self._looks_like_toc_only(cleaned):
+                        continue
                     score = self._document_text_score(cleaned)
                     if score > best_score:
                         best_score = score
@@ -443,9 +451,60 @@ class DartDisclosureCollector(BaseCollector):
             score -= 2000
         if self._is_mojibake_text(text):
             score -= 1500
+        if self._looks_like_toc_only(text):
+            score -= 3000
         if "재무제표" in text or "주요사항" in text or "이사회" in text:
             score += 200
         return score
+
+    def _looks_like_toc_only(self, text: str) -> bool:
+        if not text:
+            return False
+
+        normalized = self._clean_text(text)
+        if len(normalized) < 250:
+            return False
+
+        toc_markers = [
+            "목 차",
+            "I.",
+            "Ⅱ.",
+            "Ⅲ.",
+            "Ⅳ.",
+            "Ⅴ.",
+            "Ⅵ.",
+            "Ⅶ.",
+            "Ⅷ.",
+            "Ⅸ.",
+            "Ⅹ.",
+        ]
+        marker_hits = sum(1 for marker in toc_markers if marker in normalized)
+        if marker_hits < 3:
+            return False
+
+        body_markers = [
+            "회사의 개요",
+            "사업의 내용",
+            "재무에 관한 사항",
+            "주주에 관한 사항",
+            "임원 및 직원",
+            "이사회의",
+            "감사의견",
+        ]
+        body_hits = sum(1 for marker in body_markers if marker in normalized)
+
+        # 숫자 점선 패턴이 과도하면 목차로 간주
+        dotted_index_hits = len(re.findall(r"-{5,}\s*\d{1,4}", normalized))
+        if dotted_index_hits >= 5 and body_hits <= 3:
+            return True
+
+        lines = re.split(r"(?<=\d)\s+(?=[IVXⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ])", normalized)
+        long_lines = [line for line in lines if len(line) >= 40]
+        if not long_lines:
+            return False
+        average_line_length = sum(len(line) for line in long_lines) / len(long_lines)
+
+        return marker_hits >= 4 and body_hits <= 4 and average_line_length < 180
 
 
     def _fetch_detail_excerpt(self, url: str) -> Tuple[str, str, Dict[str, bool | str]]:

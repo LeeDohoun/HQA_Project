@@ -32,6 +32,10 @@ from src.ingestion import (
 from src.rag import BM25IndexManager
 from src.rag.dedupe import make_document_id
 from src.rag.raw_layer2_builder import RawLayer2Builder
+from src.rag.source_registry import DEFAULT_MARKET_SOURCES
+
+
+SUPPORTED_ENABLED_SOURCES = ("news", "dart", "forum", "chart")
 
 
 
@@ -303,6 +307,34 @@ def _build_bm25_index(records: List[Dict]) -> BM25IndexManager:
     return bm25
 
 
+def _parse_enabled_sources(raw: str) -> List[str]:
+    seen: Set[str] = set()
+    normalized: List[str] = []
+
+    for source in raw.split(","):
+        item = source.strip().lower()
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        normalized.append(item)
+
+    unsupported = [s for s in normalized if s not in SUPPORTED_ENABLED_SOURCES]
+    if unsupported:
+        print(
+            "[WARN] unsupported enabled source(s) ignored: "
+            f"{unsupported}. supported={list(SUPPORTED_ENABLED_SOURCES)}"
+        )
+
+    filtered = [s for s in normalized if s in SUPPORTED_ENABLED_SOURCES]
+    if not filtered:
+        raise ValueError(
+            "enabled source가 비어 있습니다. "
+            f"지원 소스: {', '.join(SUPPORTED_ENABLED_SOURCES)}"
+        )
+
+    return filtered
+
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Crawler -> RAG JSONL 빌더")
@@ -330,7 +362,7 @@ def main() -> None:
     parser.add_argument(
         "--enabled-sources",
         default="news,dart,forum",
-        help="수집 소스 목록(쉼표 구분). 예: news,dart,forum 또는 news,dart,forum,chart",
+        help="수집 소스 목록(쉼표 구분). 지원: news,dart,forum,chart",
     )
     parser.add_argument(
         "--general-news-keywords",
@@ -355,7 +387,7 @@ def main() -> None:
     args = parser.parse_args()
 
     theme_key = _make_theme_key(args.theme, args.base_filename)
-    enabled_sources = [s.strip() for s in args.enabled_sources.split(",") if s.strip()]
+    enabled_sources = _parse_enabled_sources(args.enabled_sources)
     overwrite_policy = "theme_full_reset" if args.update_mode == "overwrite" else "append_new_stocks"
     targets = _load_stock_targets(args)
     dart_api_key = os.getenv("DART_API_KEY", "")
@@ -381,18 +413,24 @@ def main() -> None:
         print(f"[OVERWRITE] policy: {overwrite_policy} (enabled_sources={enabled_sources})")
         old_theme_records = _load_jsonl(str(combined_jsonl))
         old_doc_ids = _collect_theme_doc_ids(old_theme_records)
+        market_theme_dir = output_dir / "market_data" / theme_key
 
         # theme 전체 raw/corpora 리셋 (news-only여도 일관된 overwrite semantics 유지)
-        for source in ("news", "dart", "forum"):
+        for source in ("news", "dart", "forum", *sorted(DEFAULT_MARKET_SOURCES)):
             _remove_file_if_exists(raw_output_dir / source / f"{theme_key}.jsonl", log_label=f"raw {source} file")
         for source in ("news", "dart", "forum", "combined"):
             _remove_file_if_exists(corpus_dir / f"{source}.jsonl", log_label=f"corpus {source} file")
+        for source in (*sorted(DEFAULT_MARKET_SOURCES), "combined"):
+            _remove_file_if_exists(
+                market_theme_dir / f"{source}.jsonl",
+                log_label=f"market_data {source} file",
+            )
 
         vector_removed_stats = _remove_vector_records_by_doc_ids(output_dir / "vector_stores", old_doc_ids)
         print(f"[OVERWRITE] vector removed summary: {vector_removed_stats}")
 
         # 파일 삭제 이후 다음 저장 단계를 위해 빈 파일 재생성
-        for source in ("news", "dart", "forum"):
+        for source in ("news", "dart", "forum", "chart"):
             (raw_output_dir / source / f"{theme_key}.jsonl").touch(exist_ok=True)
 
     if args.update_mode == "append-new-stocks":

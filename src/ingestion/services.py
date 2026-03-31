@@ -34,6 +34,9 @@ class CollectResult:
 
 
 class IngestionService:
+    def __init__(self, kis_chart_collector: KISChartCollector | None = None):
+        self.kis_chart_collector = kis_chart_collector or KISChartCollector()
+
     def collect_target_documents(self, request: CollectRequest) -> CollectResult:
         return self.collect(request)
 
@@ -203,7 +206,7 @@ class IngestionService:
 
             if os.getenv("KIS_APP_KEY") and os.getenv("KIS_APP_SECRET"):
                 try:
-                    kis_rows = KISChartCollector().collect_daily(
+                    kis_rows = self.kis_chart_collector.collect_daily(
                         stock_name=request.target.stock_name,
                         stock_code=request.target.stock_code,
                         from_date=request.from_date,
