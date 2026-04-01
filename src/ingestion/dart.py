@@ -26,6 +26,11 @@ class DartDisclosureCollector(BaseCollector):
         "첨부선택",
         "문서목차",
         "인쇄 닫기",
+        # DART 문서 목록/네비게이션 UI 패턴 (viewer_fallback 오분류 방지)
+        "전체문서 선택",
+        "본문문서선택",
+        "직전 정기보고서 바로가기",
+        "첨부문서선택",
     ]
     DART_ERROR_PAGE_KEYWORDS = [
         "홈으로 가기",
@@ -432,17 +437,31 @@ class DartDisclosureCollector(BaseCollector):
         encoding_fixed = best_enc not in {"utf-8", "utf-8-sig"}
         return best_text, encoding_fixed, self._is_mojibake_text(best_text)
 
+    @staticmethod
+    def _strip_leading_css(text: str) -> str:
+        """xforms/XBRL 문서에서 텍스트 앞부분의 인라인 CSS 블록 제거.
+
+        DART 주요사항보고서는 .xforms 클래스 CSS가 <style> 태그 없이
+        텍스트 노드로 포함되어 get_text() 후에도 CSS가 남는 문제가 있음.
+        예) '.xforms * { font-family: 돋움체; } .xforms_title * { ... }'
+        """
+        return re.sub(r'^(?:\s*\.[a-zA-Z_][^{}]*\{[^{}]*\}\s*)+', '', text).lstrip()
+
     def _normalize_inner_document_text(self, name: str, text: str) -> str:
         if BeautifulSoup is None:
-            return text
+            return self._strip_leading_css(text)
         lname = name.lower()
         if lname.endswith((".xml", ".xhtml")):
             soup = BeautifulSoup(text, "xml")
-            return soup.get_text(" ", strip=True)
+            for tag in soup(["style", "script"]):
+                tag.decompose()
+            return self._strip_leading_css(soup.get_text(" ", strip=True))
         if lname.endswith((".html", ".htm")) or "<" in text:
             soup = BeautifulSoup(text, "html.parser")
-            return soup.get_text(" ", strip=True)
-        return text
+            for tag in soup(["style", "script"]):
+                tag.decompose()
+            return self._strip_leading_css(soup.get_text(" ", strip=True))
+        return self._strip_leading_css(text)
 
     def _document_text_score(self, text: str) -> int:
         score = len(text)
@@ -494,8 +513,9 @@ class DartDisclosureCollector(BaseCollector):
         body_hits = sum(1 for marker in body_markers if marker in normalized)
 
         # 숫자 점선 패턴이 과도하면 목차로 간주
+        # body_markers가 목차 항목 텍스트에도 포함되므로 body_hits 상한을 두지 않음
         dotted_index_hits = len(re.findall(r"-{5,}\s*\d{1,4}", normalized))
-        if dotted_index_hits >= 5 and body_hits <= 3:
+        if dotted_index_hits >= 8:
             return True
 
         lines = re.split(r"(?<=\d)\s+(?=[IVXⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ])", normalized)
