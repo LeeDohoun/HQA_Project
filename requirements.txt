@@ -1,0 +1,16 @@
+requests>=2.31.0,<3.0.0
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+python-dotenv>=1.0.0
+
+# Retrieval / indexing
+langchain-core>=0.1.0
+rank-bm25>=0.2.2
+
+# Theme collector (Selenium)
+selenium>=4.20.0,<5.0.0
+webdriver-manager>=4.0.1
+
+# Forum collector (Playwright — CSR 페이지 렌더링)
+# 설치 후 브라우저도 다운로드 필요: playwright install chromium
+playwright>=1.40.0

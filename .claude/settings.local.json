@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:m.stock.naver.com)",
+      "Bash(conda run:*)",
+      "Bash(pip show:*)",
+      "Bash(python -c \"import sys; sys.exit\\(0\\)\")",
+      "Bash(python -c ':*)",
+      "Bash(bash:*)",
+      "Bash(mkdir -p .claude/rules)",
+      "Bash(cp \"C:/Users/bigcomlab/.claude/plugins/cache/omc/oh-my-claudecode/4.9.3/templates/rules/\"*.md .claude/rules/)",
+      "Bash(python -c \"from playwright.sync_api import sync_playwright; print\\('playwright OK'\\)\")",
+      "Bash(gh auth:*)"
+    ]
+  },
+  "enabledPlugins": {
+    "oh-my-claudecode@omc": true
+  }
+}

@@ -1,0 +1,93 @@
+{
+  "theme_key": "2차전지",
+  "stock_count": 2,
+  "enabled_sources": [
+    "news",
+    "dart",
+    "forum",
+    "chart"
+  ],
+  "source_success": {
+    "news": 2,
+    "dart": 2,
+    "forum": 2,
+    "chart": 2
+  },
+  "source_fail": {
+    "news": 0,
+    "dart": 0,
+    "forum": 0,
+    "chart": 0
+  },
+  "raw_docs_count": 330,
+  "raw_saved_count": 550,
+  "skipped_invalid_count_by_source": {
+    "news": 0,
+    "forum": 84,
+    "dart": 0
+  },
+  "built_records_count": 308,
+  "final_records_count": 308,
+  "dedup_added_count": 308,
+  "missing_stocks": [],
+  "per_stock_reports": [
+    {
+      "stock_code": "393890",
+      "stock_name": "더블유씨피",
+      "enabled_sources": [
+        "news",
+        "dart",
+        "forum",
+        "chart"
+      ],
+      "source_success": {
+        "news": true,
+        "dart": true,
+        "forum": true,
+        "chart": true
+      },
+      "source_counts": {
+        "news": 0,
+        "dart": 2,
+        "forum": 150,
+        "chart": 50
+      },
+      "raw_saved_counts": {
+        "news": 0,
+        "dart": 2,
+        "forum": 150,
+        "chart": 110
+      },
+      "failures": {}
+    },
+    {
+      "stock_code": "086520",
+      "stock_name": "에코프로",
+      "enabled_sources": [
+        "news",
+        "dart",
+        "forum",
+        "chart"
+      ],
+      "source_success": {
+        "news": true,
+        "dart": true,
+        "forum": true,
+        "chart": true
+      },
+      "source_counts": {
+        "news": 20,
+        "dart": 8,
+        "forum": 150,
+        "chart": 50
+      },
+      "raw_saved_counts": {
+        "news": 20,
+        "dart": 8,
+        "forum": 150,
+        "chart": 110
+      },
+      "failures": {}
+    }
+  ]
+}
