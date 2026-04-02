@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+# File role:
+# - Build a period-specific RAG snapshot from existing corpora.
+# - Optionally write separate vector stores for the filtered window.
+
 import argparse
 import json
 from pathlib import Path
@@ -12,6 +16,7 @@ from src.rag.vector_store import SourceRAGBuilder
 SUPPORTED_SOURCE_TYPES = ("news", "general_news", "dart", "forum", "chart")
 
 
+# JSONL load/save helpers for period snapshots.
 def load_jsonl(path: Path) -> List[Dict]:
     if not path.exists():
         return []
@@ -131,6 +136,10 @@ def dedupe_rows(rows: List[Dict]) -> List[Dict]:
     return out
 
 
+# Main execution flow:
+# 1) load combined corpora
+# 2) filter by date/theme/source
+# 3) write period-specific outputs
 def main() -> None:
     parser = argparse.ArgumentParser(description="기간 기준 RAG 재구성")
     parser.add_argument("--data-dir", default="./data")

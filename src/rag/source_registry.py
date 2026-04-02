@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+# File role:
+# - Classify source types as document sources or market-data sources.
+
 from typing import Iterable, List, Set
 
 DEFAULT_DOCUMENT_SOURCES: Set[str] = {"news", "general_news", "dart", "forum", "report"}

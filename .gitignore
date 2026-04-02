@@ -14,7 +14,7 @@ __pycache__/
 # -----------------------------
 # Virtual Environment
 # -----------------------------
-rag/
+/rag/
 venv/
 .env
 .env.*

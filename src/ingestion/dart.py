@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+# File role:
+# - Collect DART disclosures and extract a usable body text.
+# - Tries structured APIs first, then official document ZIPs, then viewer fallbacks.
+
 import re
 import time
 from io import BytesIO

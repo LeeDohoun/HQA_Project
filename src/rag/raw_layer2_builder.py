@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+# File role:
+# - Read raw files and rebuild Layer 2 retrieval assets.
+# - Produces corpora, BM25 indexes, vector stores, and market-data shards.
+
 import json
 import re
 from dataclasses import asdict
@@ -33,6 +37,10 @@ class RawLayer2Builder:
         self.bm25_root = self.data_dir / "bm25"
 
     def rebuild_theme(self, theme_key: str, update_mode: str = "append-new-stocks") -> Dict:
+        # Main flow:
+        # 1) validate raw documents
+        # 2) build chunked corpus rows
+        # 3) write BM25, vector, and market-data assets
         docs, doc_quality_stats = self._load_raw_documents(theme_key)
         builder = RAGCorpusBuilder(chunk_size=700, chunk_overlap=100)
         records = builder.build_records(docs)
@@ -83,6 +91,7 @@ class RawLayer2Builder:
         }
 
     def _load_raw_documents(self, theme_key: str) -> tuple[List[DocumentRecord], Dict]:
+        # Source-specific validation prevents broken raw rows from reaching retrieval.
         docs: List[DocumentRecord] = []
         raw_docs_count = 0
         skipped_invalid_count_by_source: Dict[str, int] = {"news": 0, "forum": 0, "dart": 0}
@@ -200,6 +209,7 @@ class RawLayer2Builder:
         return len(normalized_content) >= 200
 
     def _load_raw_market_records(self, theme_key: str) -> List[Dict]:
+        # Market data follows a separate path from text corpora.
         rows: List[Dict] = []
         if not self.raw_dir.exists():
             return rows

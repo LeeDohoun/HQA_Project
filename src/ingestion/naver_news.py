@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+# File role:
+# - Search Naver news and extract article bodies.
+# - Filters placeholder or too-short content before saving raw results.
+
 from datetime import datetime, timedelta
 import re
 import time

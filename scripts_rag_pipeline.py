@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+# File role:
+# - Main CLI for theme-based collection.
+# - Builds raw data first, then rebuilds Layer 2 assets for retrieval.
+
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -39,6 +43,7 @@ SUPPORTED_ENABLED_SOURCES = ("news", "dart", "forum", "chart")
 
 
 
+# CLI input normalization helpers.
 def _make_theme_key(theme: str, base_filename: str) -> str:
     raw = (theme or base_filename or "default").strip().lower()
     raw = re.sub(r"\s+", "_", raw)
@@ -336,6 +341,11 @@ def _parse_enabled_sources(raw: str) -> List[str]:
 
 
 
+# Main execution flow:
+# 1) resolve targets
+# 2) collect raw data
+# 3) rebuild Layer 2 assets
+# 4) write a summary report
 def main() -> None:
     parser = argparse.ArgumentParser(description="Crawler -> RAG JSONL 빌더")
     parser.add_argument("--stock-name", default="")

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+# File role:
+# - Generate stable identifiers so repeated runs can dedupe records safely.
+
 import hashlib
 from typing import Dict
 

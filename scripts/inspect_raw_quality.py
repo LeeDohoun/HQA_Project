@@ -18,6 +18,9 @@
 
 from __future__ import annotations
 
+# File role:
+# - Inspect raw/corpus JSONL files and summarize common data-quality problems.
+
 import argparse
 import json
 import statistics

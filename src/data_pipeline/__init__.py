@@ -9,6 +9,9 @@ from .collectors import (
 )
 from .rag_builder import RAGCorpusBuilder
 
+# File role:
+# - Compatibility package surface for older data_pipeline references.
+
 __all__ = [
     "CrawledDocument",
     "ThemeStock",

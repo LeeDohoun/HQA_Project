@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+# File role:
+# - Convert document-level records into chunked JSONL rows for retrieval assets.
+
 """수집 문서를 RAG 코퍼스로 변환/저장."""
 
 from dataclasses import asdict

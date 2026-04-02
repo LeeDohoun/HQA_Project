@@ -1,6 +1,10 @@
 from dotenv import load_dotenv
 load_dotenv()
 
+# File role:
+# - Manual DART collector smoke-check.
+# - Useful when verifying body extraction quality outside the full pipeline.
+
 import os
 from src.ingestion.dart import DartDisclosureCollector
 

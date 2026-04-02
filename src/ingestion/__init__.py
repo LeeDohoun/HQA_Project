@@ -7,6 +7,9 @@ from .services import IngestionService
 from .kis_client import KISClient
 from .kis_chart import KISChartCollector
 
+# File role:
+# - Public ingestion-layer exports for scripts and package users.
+
 __all__ = [
     "CollectRequest",
     "DocumentRecord",

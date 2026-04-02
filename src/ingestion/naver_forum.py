@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+# File role:
+# - Collect Naver stock forum posts and Naver chart rows.
+# - Forum collection prefers JSON endpoints and falls back to Playwright when needed.
+
 import json as _json
 import re
 import time

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+# File role:
+# - Lightweight JSON vector store for local semantic search.
+# - Vector files are sharded per source type.
+
 import hashlib
 import json
 import math

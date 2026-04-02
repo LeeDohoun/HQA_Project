@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+# File role:
+# - Shared dataclasses for request/response payloads across the pipeline.
+
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 

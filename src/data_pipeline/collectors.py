@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+# File role:
+# - Compatibility exports for older import paths.
+# - The active implementations now live under src.ingestion.
+
 """하위 호환용 collector export 모듈 (신규 구현: src.ingestion)."""
 
 from src.ingestion.dart import DartDisclosureCollector

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+# File role:
+# - Orchestrate per-source collectors for one stock target.
+# - Persist raw outputs, attach metadata, and return a structured run report.
+
 import inspect
 import json
 import os
@@ -37,9 +41,11 @@ class IngestionService:
     def __init__(self, kis_chart_collector: KISChartCollector | None = None):
         self.kis_chart_collector = kis_chart_collector or KISChartCollector()
 
+    # Public entry used by the CLI when collecting one stock target.
     def collect_target_documents(self, request: CollectRequest) -> CollectResult:
         return self.collect(request)
 
+    # Source collectors are isolated so one failure does not stop the others.
     def collect(self, request: CollectRequest) -> CollectResult:
         report = IngestionRunReport(
             stock_code=request.target.stock_code,
@@ -269,6 +275,7 @@ class IngestionService:
         return len(docs)
 
     def _save_raw_market_records(self, rows: List[MarketRecord], raw_output_dir: str, theme_key: str) -> int:
+        # Market rows are stored separately from text documents.
         if not rows:
             return 0
         raw_dir = Path(raw_output_dir) / "chart"

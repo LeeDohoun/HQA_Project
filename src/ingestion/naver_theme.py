@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+# File role:
+# - Resolve a Naver theme keyword into a set of stock targets.
+
 from dataclasses import dataclass
 import re
 from typing import List, Tuple

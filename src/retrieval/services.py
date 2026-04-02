@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+# File role:
+# - Hybrid retrieval entry point.
+# - Runs vector search and BM25 search, then merges them with RRF.
+
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -13,6 +17,7 @@ class RetrievalService:
         self.data_dir = Path(data_dir)
         self.theme_key = theme_key
 
+    # Query flow: vector search -> BM25 search -> reciprocal-rank fusion.
     def search(self, query: str, source_types: Optional[List[str]] = None, top_k: int = 20) -> List[Dict]:
         source_filter = {s.strip().lower() for s in (source_types or []) if s.strip()}
 

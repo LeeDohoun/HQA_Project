@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+# File role:
+# - Collect market chart rows from the KIS API.
+
 from typing import List
 
 from .kis_client import KISClient

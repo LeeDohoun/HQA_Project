@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+# File role:
+# - Shared HTTP session, retry logic, and date normalization utilities.
+
 from datetime import datetime
 import time
 from typing import Dict, List, Optional

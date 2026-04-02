@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+# File role:
+# - Thin KIS HTTP client with shared token caching and refresh handling.
+
 import json
 import os
 import threading
