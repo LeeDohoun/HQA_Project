@@ -99,16 +99,28 @@ class RAGCorpusBuilder:
 
     @staticmethod
     def _ensure_canonical_fields(metadata: Dict, base_doc_id: str) -> None:
-        """Guarantee every canonical field is present in metadata."""
+        """Guarantee every canonical field is present in metadata.
+
+        When asdict(DocumentRecord) is called, the DocumentRecord.metadata dict
+        becomes a nested 'metadata' key.  We must hoist values from that nested
+        dict into the top-level canonical slots so downstream consumers always
+        find them at a predictable location.
+        """
+        # 1. Extract nested metadata dict produced by asdict()
+        nested = metadata.pop("metadata", None)
+        if isinstance(nested, dict):
+            # Promote all nested keys that aren't already set at top level
+            for k, v in nested.items():
+                if k not in metadata or metadata[k] in (None, "", 0, 0.0):
+                    metadata[k] = v
+
+        # 2. Fill any missing canonical fields with defaults
         for key, default in _CANONICAL_FIELDS.items():
             if key not in metadata or metadata[key] is None:
                 metadata[key] = default
 
-        # Set doc_id if still empty
+        # 3. Set doc_id if still empty
         if not metadata.get("doc_id"):
             chunk_idx = metadata.get("chunk_index", 0)
             metadata["doc_id"] = f"{base_doc_id}_c{chunk_idx}"
 
-        # Propagate top-level fields into canonical slots
-        if not metadata.get("source_type") and metadata.get("source_type"):
-            pass  # already set by asdict

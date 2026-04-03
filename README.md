@@ -194,11 +194,18 @@ HQA_Project/
 #### 🔍 `src/rag/` — 리서치 및 검색 증강 파이프라인
 외부 문서를 읽고 벡터 스토어에 저장한 뒤, 스마트하게 검색해내는 시스템입니다.
 
-*   **`retriever.py`**: 벡터 검색(의미 검색)과 BM25(키워드 검색) 결과를 합친 뒤(RRF 방식), Reranker를 사용해 가장 정확한 문서를 최상단으로 끌어올리는 통합 검색 엔진입니다 (Hybrid Search).
+*   **`retriever.py`**: 벡터 검색(의미 검색)과 BM25(키워드 검색) 결과를 합친 뒤(RRF 방식), Reranker를 사용해 가장 정확한 문서를 최상단으로 끌어올리는 통합 검색 엔진입니다 (Hybrid Search). *레거시 — 새 코드는 `canonical_retriever.py` 사용 권장.*
+*   **`canonical_retriever.py`** *(v1.3)*: 파이프라인이 빌드한 `data/canonical_index/` 자산을 직접 소비하는 통합 검색 진입점. source weighting + freshness decay를 적용하여 report/dart 문서를 forum보다 우선합니다.
+*   **`source_weighting.py`** *(v1.3)*: source별 가중치(report=1.0, dart=0.95, news=0.8, forum=0.35), freshness decay 설정, query intent→source filter 매핑.
+*   **`raw_layer2_builder.py`**: raw JSONL → corpus → canonical RAG index → BM25/vector store 빌드를 수행합니다. canonical index 동기화 단계에서 `data/canonical_index/<theme>/`에 통합 인덱스를 생성합니다.
 *   **`bm25_index.py`**: 금융 단어(예: PER, EBITDA)나 숫자(예: 12.5배)가 잘리지 않도록 보호하는 특수 토크나이저를 사용한 키워드 검색 인덱스입니다.
-*   **`vector_store.py`**: 문서를 벡터(숫자 배열)로 변환해 저장하는 ChromaDB 연동 래퍼입니다.
+*   **`vector_store.py`**: 문서를 벡터(숫자 배열)로 변환해 저장하는 래퍼입니다. ChromaDB(고성능 online) + SimpleVectorStore(경량 offline JSON) 공존.
 *   **`embeddings.py`, `reranker.py`, `ocr_processor.py`**: 각각 문서 임베딩(Snowflake Arctic), 순위 재조정(Qwen3), PDF 이미지/표 인식(PaddleOCR)을 담당하는 처리 모듈입니다. `*_provider.py`는 로컬 모델 구동 또는 API 사용(Cohere, Upstage 등)을 전환해주는 어댑터입니다.
 *   **`document_loader.py`, `text_splitter.py`**: 원본 문서(PDF 등)를 텍스트로 읽어오고 통째로 넣기엔 너무 크므로 LLM이 소화하기 좋게 알맞은 크기(청크)로 자르는 역할을 합니다.
+
+#### 🏗️ `src/ingestion/` — 데이터 수집 (v1.3)
+*   **`theme_targets.py`**: 테마 키워드로 발견한 종목 리스트를 `data/raw/theme_targets/<theme>.jsonl`로 저장/로드합니다. 재수집 시 검색 대신 저장된 파일을 재사용할 수 있습니다.
+*   **`services.py`**: 뉴스/DART/포럼/차트 수집을 오케스트레이션합니다.
 
 #### 🛠️ `src/tools/` — 외부 연동 도구 (Tools)
 에이전트들이 정보를 얻기 위해 호출하는 외부 API 함수들입니다.
@@ -206,8 +213,14 @@ HQA_Project/
 *   **`realtime_tool.py`**: 한국투자증권(KIS) API를 호출하여 실시간 주가, 호가창을 가져옵니다.
 *   **`finance_tool.py`**: 네이버 금융 페이지를 스크래핑하여 주요 재무제표 값을 가져오고 정량 점수를 계산합니다.
 *   **`web_search_tool.py`**: 구글링과 유사하게 Tavily API나 DuckDuckGo를 이용하여 최신 뉴스를 검색합니다.
-*   **`rag_tool.py`**: `src/rag/retriever.py`를 에이전트가 도구의 형태로 호출할 수 있게 감싸놓은 래퍼입니다.
+*   **`rag_tool.py`**: `src/rag/canonical_retriever.py`를 에이전트가 도구 형태로 호출할 수 있게 감싸놓은 래퍼입니다. source_types/intent 파라미터로 source-aware 검색이 가능합니다.
+*   **`search_tool.py`** *(deprecated)*: 레거시 ChromaDB 직접 검색 도구. 신규 코드는 `rag_tool.py` 사용.
 *   **`charts_tools.py`**: `chartist.py`가 사용하는 RSI, 볼린저밴드 등 기술적 지표를 계산하고 raw 값과 표시용 요약을 함께 제공합니다.
+
+#### 📜 `scripts/` — 파이프라인 스크립트 (v1.3)
+*   **`theme_pipeline.py`**: 테마 키워드 → theme_targets 저장 → 수집 → Layer2 빌드. 전체 데이터 수집 파이프라인 엔트리포인트.
+*   **`build_rag.py`**: raw → corpus → canonical RAG sync. theme_targets 파일이 있으면 자동으로 theme_key 결정.
+*   **`run_pipeline.py`**: 수집 → 빌드 → 분석을 한 명령으로 실행. `--full`, `--collect-and-build`, `--build-and-analyze`, `--analyze-only` 범위 지정 가능.
 
 #### 🔬 `src/tracing/` — 옵저버빌리티
 AI 에이전트의 사고 과정을 추적합니다.
@@ -632,6 +645,7 @@ TAVILY_API_KEY=tvly-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 | 버전 | 날짜 | 주요 변경 |
 |------|------|----------|
+| **v1.3** | 2026-04 | Canonical RAG 아키텍처 (source-aware retrieval, freshness decay, canonical_index), theme_targets 파이프라인 (theme_pipeline.py), 통합 배치 엔트리 (run_pipeline.py), 레거시 검색 경로 deprecated 처리 |
 | **v1.2** | 2026-03 | 자율 에이전트 시스템 (AutonomousRunner, TradeExecutor, 3중 서킷 브레이커, YAML 설정), 프롬프트 외부화 (6개 에이전트 → prompts/ Markdown), PromptLoader, CLI `--auto`/`--loop`/`--dry-run` |
 | **v1.1** | 2026-03 | 에이전트 트레이싱 시스템 (AgentTracer, Context Manager, 이벤트 타임라인, reasoning 요약/원본 분리, Thread-safe, JSON 구조화 저장) |
 | **v1.0** | 2026-03 | AI 서버 분리 (FastAPI :8001), LangGraph 상태 머신, Hybrid Search, Quality Gate, GPU-free 프로바이더 |

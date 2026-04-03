@@ -437,3 +437,90 @@ chart / quote 계열
 한 줄로 요약하면:
 
 > `ai-data-main`은 “데이터를 직접 만들 수 있고, 그 데이터를 바로 에이전트가 소비할 수 있는” HQA 통합 실행 브랜치입니다.
+
+---
+
+## 14. Canonical RAG 아키텍처 (v1.3)
+
+v1.3에서 검색 경로가 아래와 같이 정리되었습니다.
+
+### 14.1 주 경로 (Canonical)
+
+```text
+RawLayer2Builder
+  → data/canonical_index/<theme>/corpus.jsonl
+  → data/canonical_index/<theme>/combined_vector_store.json
+  → data/canonical_index/<theme>/bm25_index.json
+
+CanonicalRetriever (src/rag/canonical_retriever.py)
+  → Vector search + BM25 hybrid
+  → source_weighting.py 적용 (credibility × freshness)
+  → intent 기반 source filter
+
+RAGSearchTool (src/tools/rag_tool.py)
+  → CanonicalRetriever를 에이전트 도구 형태로 노출
+  → source_types / intent 파라미터 지원
+```
+
+### 14.2 레거시 경로 (Deprecated)
+
+```text
+RAGRetriever (src/rag/retriever.py) — ChromaDB + BM25 + Reranker
+  → get_legacy_retriever()로만 접근 가능 (deprecation warning)
+
+search_tool.py — 전체 파일이 deprecated
+```
+
+### 14.3 Source Weighting 정책
+
+| Source | Weight | 설명 |
+|--------|--------|------|
+| report | 1.00 | 증권사 리포트 |
+| dart | 0.95 | DART 공시 |
+| news | 0.80 | 뉴스 |
+| general_news | 0.75 | 일반 뉴스 |
+| forum | 0.35 | 종토방 (보조) |
+
+---
+
+## 15. theme_targets 파이프라인
+
+### 15.1 저장 경로
+
+```text
+data/raw/theme_targets/<theme_key>.jsonl      — 종목 리스트
+data/raw/theme_targets/<theme_key>.meta.json  — 메타 정보
+```
+
+### 15.2 파이프라인 스크립트
+
+| 스크립트 | 역할 |
+|---------|------|
+| scripts/theme_pipeline.py | 테마 수집 → Layer2 빌드 |
+| scripts/build_rag.py | raw → canonical RAG sync |
+| scripts/run_pipeline.py | 수집 → 빌드 → 분석 (배치) |
+
+### 15.3 watchlist vs theme_targets
+
+| 구성 | 역할 | 위치 |
+|------|------|------|
+| config/watchlist.yaml | 분석 대상 + 매매 설정 | 에이전트 런타임 |
+| theme_targets/\<theme\>.jsonl | 수집 대상 종목 | 데이터 파이프라인 |
+
+---
+
+## 16. 검색 경로 분리 요약
+
+```text
+┌── 주 경로 (Canonical) ──────────────────────────┐
+│ CanonicalRetriever → source_weighting            │
+│ → canonical_index/<theme>/ 소비                  │
+│ → RAGSearchTool (도구)                           │
+│ → get_retriever() 항상 이 타입 반환              │
+├── 레거시 경로 (Deprecated) ─────────────────────┤
+│ RAGRetriever → ChromaDB                          │
+│ → get_legacy_retriever() (warning)               │
+│ → search_tool.py (deprecated)                    │
+└─────────────────────────────────────────────────┘
+```
+

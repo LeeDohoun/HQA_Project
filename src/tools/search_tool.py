@@ -1,12 +1,13 @@
 # 파일: src/tools/search_tool.py
 """
-RAG 검색 도구
-- 텍스트 검색: 기존 리포트 내용 검색
-- 멀티모달 검색: 텍스트 + 이미지(차트/그래프) 검색
+RAG 검색 도구 (DEPRECATED)
 
-Deprecated:
-- Use `src.tools.rag_tool` for document search.
-- This module remains only for legacy compatibility.
+⚠️ DEPRECATED: 이 모듈은 레거시 호환용으로만 유지됩니다.
+  - 주 경로: src.tools.rag_tool.RAGSearchTool + CanonicalRetriever
+  - 레거시: src.tools.rag_tool.get_legacy_retriever() (ChromaDB 직접 접근)
+
+신규 코드에서는 반드시 rag_tool.py의 RAGSearchTool을 사용하세요.
+이 파일의 모든 클래스/함수는 향후 버전에서 제거될 예정입니다.
 """
 
 from typing import List, Dict, Optional

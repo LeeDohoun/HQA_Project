@@ -126,7 +126,12 @@ class CanonicalRetriever:
         source_types: Optional[List[str]] = None,
         intent: Optional[str] = None,
     ) -> str:
-        """Search and return formatted context string for LLM consumption."""
+        """Search and return formatted context string for LLM consumption.
+
+        Output format is designed to be parseable by both:
+          - canonical: regex `source=xxx`
+          - legacy: split on `출처:`
+        """
         results = self.search(
             query=query, top_k=top_k,
             source_types=source_types, intent=intent,
@@ -145,9 +150,10 @@ class CanonicalRetriever:
             published = meta.get("published_at", "")
 
             parts.append(
-                f"\n[문서 {i}] source={source_type}, "
+                f"\n[문서 {i}] (출처: {source_type}, "
+                f"source={source_type}, "
                 f"score={score:.3f}, "
-                f"title={title}, stock={stock}, date={published}"
+                f"title={title}, stock={stock}, date={published})"
             )
             parts.append(result.get("text", ""))
 

@@ -732,14 +732,23 @@ JSON만 출력하세요.
         return "증권사 리포트를 확보하지 못했습니다. (RAG/웹 모두 실패)", []
 
     def _extract_sources(self, context: str) -> List[str]:
-        """컨텍스트에서 출처 정보 추출"""
+        """컨텍스트에서 출처 정보 추출 (canonical + legacy 포맷 모두 지원)"""
+        import re
         sources = []
         for line in context.split("\n"):
+            # Canonical format: source=report, source=dart, ...
+            m = re.search(r'source=([a-z_]+)', line)
+            if m:
+                src = m.group(1).strip()
+                if src and src not in sources:
+                    sources.append(src)
+                continue
+            # Legacy format: (출처: xxx, ...)
             if "출처:" in line:
                 try:
-                    source = line.split("출처:")[1].split(",")[0].strip()
-                    if source and source not in sources:
-                        sources.append(source)
+                    src = line.split("출처:")[1].split(",")[0].strip().rstrip(")")
+                    if src and src not in sources:
+                        sources.append(src)
                 except Exception:
                     pass
         return sources
