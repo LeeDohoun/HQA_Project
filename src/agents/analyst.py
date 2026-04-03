@@ -28,8 +28,8 @@ from src.agents.llm_config import get_instruct_llm, get_thinking_llm, VisionAnal
 from src.utils.prompt_loader import load_prompt_optional
 from src.agents.context import AgentContextPacket, EvidenceItem
 
-# RAG 검색 도구
-from src.tools.rag_tool import RAGSearchTool
+# RAG 검색 도구 (Canonical Retriever 통합)
+from src.tools.rag_tool import RAGSearchTool, get_canonical_retriever
 
 # 웹 검색 도구 (선택적)
 try:
@@ -223,7 +223,21 @@ class AnalystAgent:
         self._instruct_llm = None   # 필요 시에만 로드 (Lazy)
         self._thinking_llm = None   # 필요 시에만 로드 (Lazy)
         self.vision_analyzer = VisionAnalyzer()
+
+        # Source-aware RAG tools (canonical retriever 기반)
         self.rag_tool = RAGSearchTool(top_k=5)
+        self.rag_tool_reports = RAGSearchTool(
+            top_k=5, source_types=["report", "dart", "news"], intent="investment"
+        )
+        self.rag_tool_news = RAGSearchTool(
+            top_k=5, source_types=["news", "general_news", "forum"], intent="sentiment"
+        )
+        self.rag_tool_policy = RAGSearchTool(
+            top_k=5, source_types=["dart", "news", "report"], intent="policy"
+        )
+        self.rag_tool_industry = RAGSearchTool(
+            top_k=5, source_types=["report", "news"], intent="industry"
+        )
 
         # 내부 추적용
         self._last_report_source = "none"
@@ -676,10 +690,10 @@ JSON만 출력하세요.
         """
         self._last_report_source = "none"
 
-        # Plan A: RAG 검색
+        # Plan A: RAG 검색 (source: report, dart, news)
         try:
             query = f"{stock_name} 실적 전망 목표주가 투자의견"
-            context = self.rag_tool._run(query)
+            context = self.rag_tool_reports._run(query)
 
             if not self._is_empty_result(context):
                 self._last_report_source = "rag"
@@ -780,10 +794,10 @@ JSON만 출력하세요.
             except Exception as e:
                 print(f"   ⚠️ 웹 뉴스 오류: {e} → RAG 폴백")
 
-        # Plan B: RAG 폴백
+        # Plan B: RAG 폴백 (source: news, forum)
         try:
             rag_query = f"{stock_name} 뉴스 시장 이슈 최근 동향"
-            context = self.rag_tool._run(rag_query)
+            context = self.rag_tool_news._run(rag_query)
 
             if not self._is_empty_result(context):
                 self._last_news_source = "rag"
@@ -828,10 +842,10 @@ JSON만 출력하세요.
             except Exception as e:
                 print(f"   ⚠️ 웹 정책 오류: {e} → RAG 폴백")
 
-        # Plan B: RAG 폴백
+        # Plan B: RAG 폴백 (source: dart, news, report)
         try:
             rag_query = f"{stock_name} 정책 규제 정부 법안 {keyword}"
-            context = self.rag_tool._run(rag_query)
+            context = self.rag_tool_policy._run(rag_query)
 
             if not self._is_empty_result(context):
                 self._last_policy_source = "rag"
@@ -859,10 +873,10 @@ JSON만 출력하세요.
         }
         industry_query = industry_map.get(stock_name, f"{stock_name} 산업 동향 시장")
 
-        # Plan A: RAG 검색
+        # Plan A: RAG 검색 (source: report, news)
         try:
             query = f"{stock_name} 산업 동향 시장 전망"
-            context = self.rag_tool._run(query)
+            context = self.rag_tool_industry._run(query)
 
             if not self._is_empty_result(context):
                 self._last_industry_source = "rag"

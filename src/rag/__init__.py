@@ -181,6 +181,37 @@ except ImportError:
     pass
 
 try:
+    from .canonical_retriever import CanonicalRetriever
+
+    _export(["CanonicalRetriever"], locals())
+except ImportError:
+    pass
+
+try:
+    from .source_weighting import (
+        SOURCE_WEIGHTS,
+        INTENT_SOURCE_MAP,
+        apply_source_weighting,
+        get_source_weight,
+        get_intent_sources,
+        compute_freshness_multiplier,
+    )
+
+    _export(
+        [
+            "SOURCE_WEIGHTS",
+            "INTENT_SOURCE_MAP",
+            "apply_source_weighting",
+            "get_source_weight",
+            "get_intent_sources",
+            "compute_freshness_multiplier",
+        ],
+        locals(),
+    )
+except ImportError:
+    pass
+
+try:
     from .reranker import (
         Qwen3Reranker,
         RerankResult,

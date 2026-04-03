@@ -1,4 +1,5 @@
 from .types import CollectRequest, DocumentRecord, MarketRecord, StockTarget
+from .theme_targets import ThemeTargetStore, make_theme_key
 from .naver_theme import NaverThemeStockCollector, ThemeStock
 from .naver_news import NaverNewsCollector
 from .dart import DartDisclosureCollector
@@ -14,6 +15,8 @@ __all__ = [
     "CollectRequest",
     "DocumentRecord",
     "StockTarget",
+    "ThemeTargetStore",
+    "make_theme_key",
     "MarketRecord",
     "ThemeStock",
     "NaverNewsCollector",

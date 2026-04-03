@@ -2,7 +2,9 @@ from __future__ import annotations
 
 # File role:
 # - Shared dataclasses for request/response payloads across the pipeline.
+# - Canonical metadata schema for the unified RAG corpus.
 
+import hashlib
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
@@ -14,16 +16,56 @@ class StockTarget:
     corp_code: str = ""
 
 
+def generate_doc_id(
+    source_type: str,
+    url: str = "",
+    title: str = "",
+    published_at: str = "",
+    stock_code: str = "",
+) -> str:
+    """Generate a stable, deterministic document ID for dedup & traceability."""
+    key_parts = [
+        (source_type or "").strip().lower(),
+        (url or "").strip(),
+        (title or "").strip(),
+        (published_at or "").strip(),
+        (stock_code or "").strip(),
+    ]
+    base = "|".join(key_parts)
+    return hashlib.md5(base.encode("utf-8")).hexdigest()
+
+
 @dataclass
 class DocumentRecord:
+    """Canonical text document record.
+
+    Required canonical metadata fields (set explicitly or via metadata dict):
+        doc_id, source_type, stock_code, stock_name, theme_key,
+        published_at, collected_at,
+        credibility_score, freshness_score, content_quality_score
+    """
+
     source_type: str
     title: str
     content: str
     url: str
+    doc_id: str = ""
     stock_name: Optional[str] = None
     stock_code: Optional[str] = None
     published_at: Optional[str] = None
     metadata: Dict[str, str] = field(default_factory=dict)
+
+    def ensure_doc_id(self) -> str:
+        """Auto-generate doc_id if missing."""
+        if not self.doc_id:
+            self.doc_id = generate_doc_id(
+                source_type=self.source_type,
+                url=self.url,
+                title=self.title,
+                published_at=self.published_at or "",
+                stock_code=self.stock_code or "",
+            )
+        return self.doc_id
 
 
 @dataclass

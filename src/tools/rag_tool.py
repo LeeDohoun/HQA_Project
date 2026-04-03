@@ -1,11 +1,13 @@
 # 파일: src/tools/rag_tool.py
 """
-RAG 검색 도구 모듈
-- 증권사 리포트 검색 (리랭킹 포함)
-- CrewAI 에이전트에서 도구로 사용
+RAG 검색 도구 모듈 — Canonical Retriever 통합 버전
+
+- 에이전트가 사용하는 유일한 텍스트 검색 진입점
+- CanonicalRetriever → 파이프라인 빌드 자산을 직접 소비
+- 레거시 ChromaDB RAGRetriever도 폴백으로 지원
 """
 
-from typing import Optional
+from typing import List, Optional
 from pydantic import Field
 
 try:
@@ -13,98 +15,113 @@ try:
 except ImportError:
     BaseTool = object
 
-from src.rag import RAGRetriever, RetrievalResult
+# ── Canonical Retriever (primary) ──
+from src.rag.canonical_retriever import CanonicalRetriever
+
+# ── Legacy RAG Retriever (fallback) ──
+try:
+    from src.rag.retriever import RAGRetriever, RetrievalResult
+    _LEGACY_RAG_AVAILABLE = True
+except ImportError:
+    _LEGACY_RAG_AVAILABLE = False
+
+# ── Singletons ──
+_canonical_retriever: Optional[CanonicalRetriever] = None
+_legacy_retriever = None
 
 
-# 전역 Retriever 인스턴스 (싱글톤)
-_retriever_instance: Optional[RAGRetriever] = None
+def get_canonical_retriever() -> CanonicalRetriever:
+    """CanonicalRetriever 싱글톤 인스턴스."""
+    global _canonical_retriever
+    if _canonical_retriever is None:
+        _canonical_retriever = CanonicalRetriever(data_dir="./data")
+    return _canonical_retriever
 
 
-def get_retriever() -> RAGRetriever:
-    """RAGRetriever 싱글톤 인스턴스 반환"""
-    global _retriever_instance
-    if _retriever_instance is None:
-        _retriever_instance = RAGRetriever(
+def get_retriever():
+    """하위 호환: 기존 코드가 get_retriever()를 호출하면 canonical 우선, legacy 폴백."""
+    canonical = get_canonical_retriever()
+    if canonical.available_themes:
+        return canonical
+
+    # Fallback to legacy RAGRetriever
+    global _legacy_retriever
+    if _legacy_retriever is None and _LEGACY_RAG_AVAILABLE:
+        _legacy_retriever = RAGRetriever(
             persist_dir="./database/chroma_db",
             collection_name="stock_reports",
             embedding_type="default",
-            # 검색 설정
-            retrieval_k=20,       # 벡터 검색 후보 수
-            rerank_top_k=3,       # 리랭킹 후 최종 반환 수
-            use_reranker=True,    # 리랭커 사용
-            # 리랭커 설정
+            retrieval_k=20,
+            rerank_top_k=3,
+            use_reranker=True,
             reranker_model="default",
             reranker_task_type="finance",
         )
-    return _retriever_instance
+    return _legacy_retriever
 
 
 class RAGSearchTool(BaseTool):
+    """Canonical RAG 검색 도구.
+
+    파이프라인이 빌드한 canonical text corpus를 검색합니다.
+    source_types 또는 intent를 지정하여 source-aware 검색이 가능합니다.
     """
-    RAG 검색 도구 (리랭킹 포함)
-    
-    모든 문서(리포트, 공시, 뉴스 등)가 하나의 벡터 공간에 저장됨.
-    쿼리에 따라 자동으로 관련 문서를 찾아 리랭킹 후 반환.
-    """
-    
+
     name: str = "Document Search"
     description: str = (
-        "Search for relevant documents including securities reports, disclosures, and financial analysis. "
-        "Returns the most relevant content with reranking applied. "
+        "Search for relevant documents including reports, disclosures, news, and forum posts. "
+        "Returns the most relevant content with source weighting applied. "
         "Input: search query (e.g., 'Samsung Electronics HBM earnings forecast')"
     )
-    
-    top_k: int = Field(default=3, description="Number of results to return")
+
+    top_k: int = Field(default=5, description="Number of results to return")
+    source_types: Optional[List[str]] = Field(default=None, description="Filter by source types")
+    intent: Optional[str] = Field(default=None, description="Query intent for source filtering")
 
     def _run(self, query: str) -> str:
-        """
-        문서 검색 (리랭킹 적용)
-        
-        Args:
-            query: 검색 쿼리
-            
-        Returns:
-            검색된 문서 컨텍스트
-        """
-        retriever = get_retriever()
-        
-        result: RetrievalResult = retriever.retrieve(
-            query=query,
-            k=self.top_k,
-        )
-        
-        if not result.text_results:
-            return "관련 문서를 찾을 수 없습니다."
-        
-        # 컨텍스트 구성
-        parts = []
-        status = "(리랭킹 적용)" if result.is_reranked else ""
-        parts.append(f"=== 검색 결과 {status} ===\n")
-        
-        for i, (doc, score) in enumerate(zip(result.text_results, result.scores), 1):
-            source = doc.metadata.get("source", "unknown")
-            page = doc.metadata.get("page_num", "?")
-            score_str = f", 관련도: {score:.3f}" if result.is_reranked else ""
-            
-            parts.append(f"[문서 {i}] (출처: {source}, 페이지: {page}{score_str})")
-            parts.append(doc.page_content)
-            parts.append("")
-        
-        return "\n".join(parts)
+        """문서 검색 (source weighting 적용)."""
+        canonical = get_canonical_retriever()
+
+        if canonical.available_themes:
+            context = canonical.search_for_context(
+                query=query,
+                top_k=self.top_k,
+                source_types=self.source_types,
+                intent=self.intent,
+            )
+            if context and "찾을 수 없습니다" not in context:
+                return context
+
+        # Fallback: legacy RAGRetriever
+        if _LEGACY_RAG_AVAILABLE:
+            try:
+                retriever = get_retriever()
+                if retriever and hasattr(retriever, 'retrieve'):
+                    result = retriever.retrieve(query=query, k=self.top_k)
+                    if result.text_results:
+                        parts = ["=== 검색 결과 (Legacy RAG) ===\n"]
+                        for i, (doc, score) in enumerate(
+                            zip(result.text_results, result.scores), 1
+                        ):
+                            source = doc.metadata.get("source", "unknown")
+                            parts.append(f"[문서 {i}] (출처: {source}, score: {score:.3f})")
+                            parts.append(doc.page_content)
+                            parts.append("")
+                        return "\n".join(parts)
+            except Exception:
+                pass
+
+        return "관련 문서를 찾을 수 없습니다."
 
 
-def search_documents(query: str, k: int = 3) -> str:
-    """
-    문서 검색 편의 함수
-    
-    Args:
-        query: 검색 쿼리
-        k: 반환할 결과 수
-        
-    Returns:
-        검색된 컨텍스트 문자열
-    """
-    tool = RAGSearchTool(top_k=k)
+def search_documents(
+    query: str,
+    k: int = 3,
+    source_types: Optional[List[str]] = None,
+    intent: Optional[str] = None,
+) -> str:
+    """문서 검색 편의 함수."""
+    tool = RAGSearchTool(top_k=k, source_types=source_types, intent=intent)
     return tool._run(query)
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 # File role:
 # - Convert document-level records into chunked JSONL rows for retrieval assets.
+# - Ensure all canonical metadata fields are present in every chunk.
 
 """수집 문서를 RAG 코퍼스로 변환/저장."""
 
@@ -11,6 +12,21 @@ from typing import Iterable, List, Dict
 import json
 
 from .collectors import CrawledDocument
+from src.ingestion.types import generate_doc_id
+
+# ── Canonical metadata fields that must exist on every corpus row ──
+_CANONICAL_FIELDS = {
+    "doc_id": "",
+    "source_type": "",
+    "stock_code": "",
+    "stock_name": "",
+    "theme_key": "",
+    "published_at": "",
+    "collected_at": "",
+    "credibility_score": 0.0,
+    "freshness_score": 0.0,
+    "content_quality_score": 0.0,
+}
 
 
 class RAGCorpusBuilder:
@@ -27,13 +43,27 @@ class RAGCorpusBuilder:
             if not chunks:
                 chunks = [doc.content]
 
+            doc_dict = asdict(doc)
+            # Generate a stable doc_id for this document
+            base_doc_id = generate_doc_id(
+                source_type=doc.source_type,
+                url=doc.url,
+                title=doc.title,
+                published_at=doc.published_at or "",
+                stock_code=doc.stock_code or "",
+            )
+
             for idx, chunk in enumerate(chunks):
+                metadata = {
+                    "chunk_index": idx,
+                    **doc_dict,
+                }
+                # Ensure all canonical fields exist
+                self._ensure_canonical_fields(metadata, base_doc_id)
+
                 record = {
                     "text": chunk,
-                    "metadata": {
-                        "chunk_index": idx,
-                        **asdict(doc),
-                    },
+                    "metadata": metadata,
                 }
                 records.append(record)
         return records
@@ -66,3 +96,19 @@ class RAGCorpusBuilder:
                 break
             start = max(0, end - self.chunk_overlap)
         return chunks
+
+    @staticmethod
+    def _ensure_canonical_fields(metadata: Dict, base_doc_id: str) -> None:
+        """Guarantee every canonical field is present in metadata."""
+        for key, default in _CANONICAL_FIELDS.items():
+            if key not in metadata or metadata[key] is None:
+                metadata[key] = default
+
+        # Set doc_id if still empty
+        if not metadata.get("doc_id"):
+            chunk_idx = metadata.get("chunk_index", 0)
+            metadata["doc_id"] = f"{base_doc_id}_c{chunk_idx}"
+
+        # Propagate top-level fields into canonical slots
+        if not metadata.get("source_type") and metadata.get("source_type"):
+            pass  # already set by asdict
