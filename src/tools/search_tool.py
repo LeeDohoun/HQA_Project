@@ -3,12 +3,31 @@
 RAG 검색 도구
 - 텍스트 검색: 기존 리포트 내용 검색
 - 멀티모달 검색: 텍스트 + 이미지(차트/그래프) 검색
+
+Deprecated:
+- Use `src.tools.rag_tool` for document search.
+- This module remains only for legacy compatibility.
 """
 
 from typing import List, Dict, Optional
-from crewai.tools import BaseTool
+import warnings
 from pydantic import Field
 from src.database.vector_store import ReportVectorStore, RAGRetriever
+
+try:
+    from crewai.tools import BaseTool
+except ImportError:
+    BaseTool = object
+
+
+_DEPRECATION_MESSAGE = (
+    "src.tools.search_tool is deprecated. "
+    "Use src.tools.rag_tool or the grouped public API in src.tools instead."
+)
+
+
+def _warn_deprecated() -> None:
+    warnings.warn(_DEPRECATION_MESSAGE, DeprecationWarning, stacklevel=2)
 
 
 class StockReportSearchTool(BaseTool):
@@ -26,6 +45,7 @@ class StockReportSearchTool(BaseTool):
         """
         벡터 DB에서 관련 리포트를 검색합니다.
         """
+        _warn_deprecated()
         try:
             db = ReportVectorStore()
             results = db.search_similar_reports(query, k=3)
@@ -67,6 +87,7 @@ class MultimodalReportSearchTool(BaseTool):
                 "summary": "검색 요약"
             }
         """
+        _warn_deprecated()
         try:
             retriever = RAGRetriever(
                 persist_dir="./database/chroma_db",
@@ -121,6 +142,7 @@ class ReportImageSearchTool(BaseTool):
         """
         이미지만 검색합니다.
         """
+        _warn_deprecated()
         try:
             retriever = RAGRetriever(
                 persist_dir="./database/chroma_db",

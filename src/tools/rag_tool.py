@@ -6,8 +6,12 @@ RAG 검색 도구 모듈
 """
 
 from typing import Optional
-from crewai.tools import BaseTool
 from pydantic import Field
+
+try:
+    from crewai.tools import BaseTool
+except ImportError:
+    BaseTool = object
 
 from src.rag import RAGRetriever, RetrievalResult
 
