@@ -8,17 +8,14 @@ import json
 import re
 from dataclasses import asdict
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Iterable, List
+from typing import Dict, Iterable, List
 
 from src.data_pipeline.rag_builder import RAGCorpusBuilder
 from src.ingestion.types import DocumentRecord
-from src.rag.bm25_index import BM25IndexManager
-from src.rag.dedupe import make_document_id, make_market_record_id, make_record_id
+from src.retrieval.bm25_index import BM25IndexManager
+from src.retrieval.vector_store import SourceRAGBuilder
+from src.rag.dedupe import make_market_record_id, make_record_id
 from src.rag.source_registry import DEFAULT_MARKET_SOURCES, is_document_source, is_market_source
-from src.rag.vector_store import SourceRAGBuilder
-
-if TYPE_CHECKING:
-    from src.rag.retriever import RAGRetriever
 
 
 class RawLayer2Builder:
@@ -31,23 +28,13 @@ class RawLayer2Builder:
         "인쇄 닫기",
     )
 
-    def __init__(
-        self,
-        data_dir: str = "./data",
-        sync_agent_rag: bool = True,
-        agent_rag_dir: str = "./database/chroma_db",
-        agent_collection_name: str = "stock_reports",
-    ):
+    def __init__(self, data_dir: str = "./data"):
         self.data_dir = Path(data_dir)
         self.raw_dir = self.data_dir / "raw"
         self.corpora_root = self.data_dir / "corpora"
         self.market_root = self.data_dir / "market_data"
         self.vector_root = self.data_dir / "vector_stores"
         self.bm25_root = self.data_dir / "bm25"
-        self.sync_agent_rag = sync_agent_rag
-        self.agent_rag_dir = agent_rag_dir
-        self.agent_collection_name = agent_collection_name
-        self._agent_retriever: "RAGRetriever | None" = None
 
     def rebuild_theme(self, theme_key: str, update_mode: str = "append-new-stocks") -> Dict:
         # Main flow:
@@ -89,7 +76,6 @@ class RawLayer2Builder:
         market_records = self._load_raw_market_records(theme_key)
         deduped_market = self._dedupe_market_records(market_records)
         market_stats = self._save_market_data(theme_key, deduped_market)
-        agent_rag_stats = self._sync_agent_rag(deduped_records) if self.sync_agent_rag else {}
 
         return {
             "combined_count": combined_count,
@@ -97,7 +83,6 @@ class RawLayer2Builder:
             "vector_stats": vector_stats,
             "bm25_path": str(bm25_path),
             "market_stats": market_stats,
-            "agent_rag_stats": agent_rag_stats,
             "records": deduped_records,
             "raw_docs_count": doc_quality_stats["raw_docs_count"],
             "skipped_invalid_count_by_source": doc_quality_stats["skipped_invalid_count_by_source"],
@@ -329,54 +314,3 @@ class RawLayer2Builder:
                     payload = row
                 f.write(json.dumps(payload, ensure_ascii=False) + "\n")
         return len(rows)
-
-    def _get_agent_retriever(self) -> "RAGRetriever":
-        from src.rag.retriever import RAGRetriever
-
-        if self._agent_retriever is None:
-            self._agent_retriever = RAGRetriever(
-                persist_dir=self.agent_rag_dir,
-                collection_name=self.agent_collection_name,
-                embedding_type="default",
-            )
-        return self._agent_retriever
-
-    def _sync_agent_rag(self, records: List[Dict]) -> Dict[str, int]:
-        """data pipeline 산출물을 ai-main 검색 경로에도 동기화"""
-        retriever = self._get_agent_retriever()
-        text_store = retriever.vector_store.text_store
-
-        added = 0
-        skipped_existing = 0
-
-        for row in records:
-            text = row.get("text", "")
-            metadata = dict(row.get("metadata", {}) or {})
-            if not text:
-                continue
-
-            doc_id = make_document_id(
-                source_type=str(metadata.get("source_type", "")).strip(),
-                metadata=metadata,
-                text=text,
-            )
-            metadata["doc_id"] = doc_id
-
-            existing = text_store.get(where={"doc_id": doc_id})
-            if existing and existing.get("ids"):
-                skipped_existing += 1
-                continue
-
-            retriever.vector_store.add_texts([text], metadatas=[metadata])
-            if retriever.use_hybrid:
-                retriever.bm25_index.add_texts([text], metadatas=[metadata])
-            added += 1
-
-        if retriever.use_hybrid and added > 0:
-            retriever.bm25_index.save_index()
-
-        return {
-            "added": added,
-            "skipped_existing": skipped_existing,
-            "persist_dir": self.agent_rag_dir,
-        }

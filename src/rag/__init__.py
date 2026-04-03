@@ -48,14 +48,36 @@ try:
         locals(),
     )
 except ImportError:
-    pass
+    try:
+        from src.retrieval import BM25IndexManager, reciprocal_rank_fusion
+
+        _export(
+            [
+                "BM25IndexManager",
+                "reciprocal_rank_fusion",
+            ],
+            locals(),
+        )
+    except ImportError:
+        pass
 
 try:
-    from .vector_store import VectorStoreManager, SimpleVectorStore, SourceRAGBuilder
+    from .vector_store import VectorStoreManager
 
     _export(
         [
             "VectorStoreManager",
+        ],
+        locals(),
+    )
+except ImportError:
+    pass
+
+try:
+    from src.retrieval import SimpleVectorStore, SourceRAGBuilder
+
+    _export(
+        [
             "SimpleVectorStore",
             "SourceRAGBuilder",
         ],

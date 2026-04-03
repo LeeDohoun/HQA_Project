@@ -18,13 +18,7 @@ import logging
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass, field
 
-try:
-    from langchain_core.documents import Document
-except ImportError:
-    @dataclass
-    class Document:
-        page_content: str
-        metadata: Dict = field(default_factory=dict)
+from langchain_core.documents import Document
 
 logger = logging.getLogger(__name__)
 

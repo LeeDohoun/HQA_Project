@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from src.rag.dedupe import make_document_id
-from src.rag.vector_store import SimpleVectorStore
+from src.retrieval.bm25_index import BM25IndexManager
+from src.retrieval.vector_store import SimpleVectorStore
 
 
 class RetrievalService:
@@ -56,8 +57,6 @@ class RetrievalService:
         return results[:top_k]
 
     def _search_bm25(self, query: str, source_filter: set[str], top_k: int) -> List[Dict]:
-        from src.rag.bm25_index import BM25IndexManager
-
         bm25_path = self.data_dir / "bm25" / f"{self.theme_key}_bm25.json" if self.theme_key else self.data_dir / "bm25" / "all_bm25.json"
         bm25 = BM25IndexManager(persist_path=str(bm25_path), auto_save=False)
         results: List[Dict] = []
