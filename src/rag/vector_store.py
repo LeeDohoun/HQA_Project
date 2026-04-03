@@ -5,15 +5,32 @@
 - PaddleOCR-VL이 모든 문서를 텍스트로 변환하므로 텍스트만 저장
 """
 
+import hashlib
+import json
+import math
 import os
-from typing import List, Dict, Optional
+import re
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, Iterable, List, Optional, Tuple
 
-from langchain_community.vectorstores import Chroma
-from langchain_core.documents import Document
+from .dedupe import make_document_id
+from .source_registry import is_document_source
 
-from .embeddings import EmbeddingManager
-from .document_loader import ProcessedDocument
-from .text_splitter import TextSplitter
+try:
+    from langchain_community.vectorstores import Chroma
+    from langchain_core.documents import Document
+    from .embeddings import EmbeddingManager
+    from .document_loader import ProcessedDocument
+    from .text_splitter import TextSplitter
+    _VECTOR_BACKEND_AVAILABLE = True
+except ImportError:
+    Chroma = None
+    Document = None
+    EmbeddingManager = None
+    ProcessedDocument = None
+    TextSplitter = None
+    _VECTOR_BACKEND_AVAILABLE = False
 
 
 class VectorStoreManager:
@@ -34,6 +51,11 @@ class VectorStoreManager:
             collection_name: 컬렉션 이름
             embedding_type: 임베딩 모델 타입 ("default", "korean", "multilingual", "large")
         """
+        if not _VECTOR_BACKEND_AVAILABLE:
+            raise ImportError(
+                "VectorStoreManager를 사용하려면 langchain-community 및 RAG 의존성이 필요합니다."
+            )
+
         print("⚙️ 벡터 저장소 초기화 중...")
         
         # 임베딩 관리자 초기화
@@ -251,3 +273,184 @@ class VectorStoreManager:
             print(f"✅ {len(ids)}개 문서 삭제 완료")
         except Exception as e:
             print(f"❌ 초기화 오류: {e}")
+
+
+@dataclass
+class VectorRecord:
+    """경량 JSON vector store 레코드"""
+
+    text: str
+    metadata: Dict
+    vector: List[float]
+
+
+class SimpleVectorStore:
+    """rag-data-pipeline 호환용 경량 JSON vector store"""
+
+    def __init__(self, dimension: int = 256):
+        self.dimension = dimension
+        self.records: List[VectorRecord] = []
+
+    def add_texts(self, texts: Iterable[str], metadatas: Iterable[Dict]) -> int:
+        count = 0
+        for text, metadata in zip(texts, metadatas):
+            self.records.append(
+                VectorRecord(
+                    text=text,
+                    metadata=metadata,
+                    vector=self._embed(text),
+                )
+            )
+            count += 1
+        return count
+
+    def upsert_texts(self, texts: Iterable[str], metadatas: Iterable[Dict]) -> int:
+        existing_ids = {
+            self._make_doc_id(record.metadata, record.text)
+            for record in self.records
+        }
+
+        added = 0
+        for text, metadata in zip(texts, metadatas):
+            doc_id = self._make_doc_id(metadata, text)
+            if doc_id in existing_ids:
+                continue
+            self.records.append(
+                VectorRecord(
+                    text=text,
+                    metadata=metadata,
+                    vector=self._embed(text),
+                )
+            )
+            existing_ids.add(doc_id)
+            added += 1
+        return added
+
+    def remove_by_theme(self, theme_key: str) -> int:
+        before = len(self.records)
+        self.records = [
+            record
+            for record in self.records
+            if (record.metadata or {}).get("theme_key", "") != theme_key
+        ]
+        return before - len(self.records)
+
+    def search(self, query: str, top_k: int = 5) -> List[Tuple[Dict, float]]:
+        query_vec = self._embed(query)
+        scored: List[Tuple[Dict, float]] = []
+        for record in self.records:
+            score = self._cosine_similarity(query_vec, record.vector)
+            scored.append(({"text": record.text, "metadata": record.metadata}, score))
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return scored[:top_k]
+
+    def save(self, output_path: str) -> int:
+        path = Path(output_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "dimension": self.dimension,
+            "size": len(self.records),
+            "records": [
+                {
+                    "text": record.text,
+                    "metadata": record.metadata,
+                    "vector": record.vector,
+                }
+                for record in self.records
+            ],
+        }
+        with path.open("w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False)
+        return len(self.records)
+
+    @classmethod
+    def load(cls, input_path: str) -> "SimpleVectorStore":
+        path = Path(input_path)
+        store = cls()
+        if not path.exists():
+            return store
+
+        with path.open("r", encoding="utf-8") as f:
+            payload = json.load(f)
+
+        store.dimension = int(payload.get("dimension", 256))
+        store.records = [
+            VectorRecord(
+                text=row.get("text", ""),
+                metadata=row.get("metadata", {}),
+                vector=row.get("vector", []),
+            )
+            for row in payload.get("records", [])
+        ]
+        return store
+
+    def _embed(self, text: str) -> List[float]:
+        tokens = re.findall(r"[가-힣A-Za-z0-9]+", (text or "").lower())
+        if not tokens:
+            return [0.0] * self.dimension
+
+        vector = [0.0] * self.dimension
+        for token in tokens:
+            token_hash = int(hashlib.md5(token.encode("utf-8")).hexdigest(), 16)
+            vector[token_hash % self.dimension] += 1.0
+
+        norm = math.sqrt(sum(value * value for value in vector))
+        if norm == 0:
+            return vector
+        return [value / norm for value in vector]
+
+    @staticmethod
+    def _cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
+        dot = sum(a * b for a, b in zip(vec1, vec2))
+        norm1 = math.sqrt(sum(a * a for a in vec1))
+        norm2 = math.sqrt(sum(b * b for b in vec2))
+        if norm1 == 0 or norm2 == 0:
+            return 0.0
+        return dot / (norm1 * norm2)
+
+    @staticmethod
+    def _make_doc_id(metadata: Dict, text: str) -> str:
+        source_type = str((metadata or {}).get("source_type", "")).strip().lower()
+        return make_document_id(source_type=source_type, metadata=metadata or {}, text=text or "")
+
+
+class SourceRAGBuilder:
+    """소스별 JSON vector store 빌더"""
+
+    def __init__(self, dimension: int = 256):
+        self.dimension = dimension
+
+    def upsert_by_source(
+        self,
+        records: List[Dict],
+        output_dir: str,
+        mode: str = "append-new-stocks",
+        theme_key: str = "",
+    ) -> Dict[str, int]:
+        grouped: Dict[str, List[Dict]] = {}
+        for row in records:
+            metadata = row.get("metadata", {}) or {}
+            source_type = str(metadata.get("source_type", "")).strip().lower()
+            if not is_document_source(source_type):
+                continue
+            grouped.setdefault(source_type, []).append(row)
+
+        output_stats: Dict[str, int] = {}
+        base = Path(output_dir)
+        base.mkdir(parents=True, exist_ok=True)
+
+        for source, source_rows in grouped.items():
+            output_file = base / f"{source}_vector_store.json"
+            store = SimpleVectorStore.load(str(output_file))
+            store.dimension = self.dimension
+
+            if mode == "overwrite" and theme_key:
+                store.remove_by_theme(theme_key)
+
+            store.upsert_texts(
+                texts=[row.get("text", "") for row in source_rows],
+                metadatas=[row.get("metadata", {}) for row in source_rows],
+            )
+            output_stats[source] = store.save(str(output_file))
+
+        return output_stats
