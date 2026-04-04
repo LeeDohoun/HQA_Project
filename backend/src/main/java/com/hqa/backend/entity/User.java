@@ -1,6 +1,7 @@
 package com.hqa.backend.entity;
 
 import com.hqa.backend.entity.enums.UserRole;
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -8,6 +9,8 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.OneToOne;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -21,21 +24,130 @@ public class User {
     @Id
     private String id = UUID.randomUUID().toString();
 
-    @Column(unique = true)
-    private String email;
-    private String name;
+    @Column(nullable = false, unique = true)
+    private String userId;
+
+    @Column(nullable = false)
+    private String firstName;
+
+    @Column(nullable = false)
+    private String lastName;
+
+    @Column(nullable = false)
+    private String password;
 
     @Enumerated(EnumType.STRING)
     private UserRole role = UserRole.user;
-    private boolean isActive = true;
+
+    @Column(name = "is_active")
+    private boolean active = true;
     private OffsetDateTime createdAt = OffsetDateTime.now();
     private OffsetDateTime updatedAt = OffsetDateTime.now();
 
-    @OneToOne(mappedBy = "user")
-    private UserCredential credential;
+    @OneToOne(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    private UserSecret secret;
+
+    @OneToOne(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    private UserSurvey survey;
 
     @OneToMany(mappedBy = "user")
     private List<AnalysisRecord> analyses = new ArrayList<>();
 
-    public String getId() { return id; }
+    @PrePersist
+    public void onCreate() {
+        OffsetDateTime now = OffsetDateTime.now();
+        createdAt = now;
+        updatedAt = now;
+    }
+
+    @PreUpdate
+    public void onUpdate() {
+        updatedAt = OffsetDateTime.now();
+    }
+
+    public String getId() {
+        return id;
+    }
+
+    public String getUserId() {
+        return userId;
+    }
+
+    public void setUserId(String userId) {
+        this.userId = userId;
+    }
+
+    public String getFirstName() {
+        return firstName;
+    }
+
+    public void setFirstName(String firstName) {
+        this.firstName = firstName;
+    }
+
+    public String getLastName() {
+        return lastName;
+    }
+
+    public void setLastName(String lastName) {
+        this.lastName = lastName;
+    }
+
+    public String getPassword() {
+        return password;
+    }
+
+    public void setPassword(String password) {
+        this.password = password;
+    }
+
+    public UserRole getRole() {
+        return role;
+    }
+
+    public void setRole(UserRole role) {
+        this.role = role;
+    }
+
+    public boolean isActive() {
+        return active;
+    }
+
+    public void setActive(boolean active) {
+        this.active = active;
+    }
+
+    public OffsetDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public OffsetDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public UserSecret getSecret() {
+        return secret;
+    }
+
+    public void setSecret(UserSecret secret) {
+        this.secret = secret;
+        if (secret != null) {
+            secret.setUser(this);
+        }
+    }
+
+    public UserSurvey getSurvey() {
+        return survey;
+    }
+
+    public void setSurvey(UserSurvey survey) {
+        this.survey = survey;
+        if (survey != null) {
+            survey.setUser(this);
+        }
+    }
+
+    public List<AnalysisRecord> getAnalyses() {
+        return analyses;
+    }
 }
