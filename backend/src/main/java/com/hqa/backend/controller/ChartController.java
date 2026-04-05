@@ -2,6 +2,7 @@ package com.hqa.backend.controller;
 
 import com.hqa.backend.dto.CandleHistoryResponse;
 import com.hqa.backend.service.ChartService;
+import jakarta.servlet.http.HttpSession;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -22,7 +23,8 @@ public class ChartController {
     public CandleHistoryResponse history(@PathVariable String stockCode,
                                          @RequestParam(defaultValue = "1m") String timeframe,
                                          @RequestParam(defaultValue = "200") int count,
-                                         @RequestParam(required = false) Long before) {
-        return chartService.getHistoricalCandles(stockCode, timeframe, count, before);
+                                         @RequestParam(required = false) Long before,
+                                         HttpSession session) {
+        return chartService.getHistoricalCandles(stockCode, timeframe, count, before, session);
     }
 }

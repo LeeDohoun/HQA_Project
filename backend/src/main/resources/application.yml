@@ -42,5 +42,3 @@ hqa:
   kis-app-key: ${KIS_APP_KEY:}
   kis-app-secret: ${KIS_APP_SECRET:}
   kis-account-no: ${KIS_ACCOUNT_NO:}
-  kiwoom-app-key: ${KIWOOM_APP_KEY:}
-  kiwoom-app-secret: ${KIWOOM_APP_SECRET:}

@@ -17,8 +17,6 @@ public class HqaProperties {
     private String kisAppKey = "";
     private String kisAppSecret = "";
     private String kisAccountNo = "";
-    private String kiwoomAppKey = "";
-    private String kiwoomAppSecret = "";
 
     public String getEnv() {
         return env;
@@ -100,19 +98,4 @@ public class HqaProperties {
         this.kisAccountNo = kisAccountNo;
     }
 
-    public String getKiwoomAppKey() {
-        return kiwoomAppKey;
-    }
-
-    public void setKiwoomAppKey(String kiwoomAppKey) {
-        this.kiwoomAppKey = kiwoomAppKey;
-    }
-
-    public String getKiwoomAppSecret() {
-        return kiwoomAppSecret;
-    }
-
-    public void setKiwoomAppSecret(String kiwoomAppSecret) {
-        this.kiwoomAppSecret = kiwoomAppSecret;
-    }
 }
