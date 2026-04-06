@@ -210,9 +210,33 @@ class SupervisorAgent:
             "AI": "AI",
             "인공지능": "AI",
         }
-        
+        theme_trigger_keywords = [
+            "관련주",
+            "테마",
+            "수혜주",
+            "추천",
+            "주도주",
+            "대장주",
+            "대표주",
+            "탑픽",
+            "선별",
+            "랭킹",
+            "순위",
+        ]
+
         for keyword, industry in industry_keywords.items():
             if keyword in query:
+                if any(kw in query for kw in theme_trigger_keywords):
+                    analysis.intent = Intent.THEME_SCREENING
+                    analysis.theme = industry
+                    analysis.required_agents = ["analyst", "quant", "chartist", "risk_manager"]
+                    analysis.execution_plan = [
+                        "extract_theme_candidates",
+                        "evaluate_candidates_parallel",
+                        "rank_leaders",
+                    ]
+                    analysis.confidence = 0.9
+                    return analysis
                 if any(kw in query for kw in ["산업", "업종", "섹터", "동향", "전망"]):
                     analysis.intent = Intent.INDUSTRY_ANALYSIS
                     analysis.industry = industry
@@ -223,14 +247,18 @@ class SupervisorAgent:
                     return analysis
         
         # 테마/관련주
-        if any(kw in query for kw in ["관련주", "테마", "수혜주", "추천"]):
+        if any(kw in query for kw in theme_trigger_keywords):
             # 테마 추출
             for keyword, industry in industry_keywords.items():
                 if keyword in query:
                     analysis.intent = Intent.THEME_SCREENING
                     analysis.theme = industry
-                    analysis.required_tools = ["web_search"]
-                    analysis.execution_plan = ["search_theme_stocks"]
+                    analysis.required_agents = ["analyst", "quant", "chartist", "risk_manager"]
+                    analysis.execution_plan = [
+                        "extract_theme_candidates",
+                        "evaluate_candidates_parallel",
+                        "rank_leaders",
+                    ]
                     analysis.confidence = 0.8
                     return analysis
         
@@ -399,10 +427,12 @@ JSON만 응답하세요.
             ]
             
         elif analysis.intent == Intent.THEME_SCREENING:
-            analysis.required_tools = ["web_search"]
+            analysis.required_agents = ["analyst", "quant", "chartist", "risk_manager"]
             analysis.execution_plan = [
-                "1. Web Search: 테마 관련주 검색",
-                "2. 종목 리스트 정리",
+                "1. Theme data scan: corpus/theme_targets/market_data 스캔",
+                "2. Candidate extraction: 후보군 자동 추출",
+                "3. Parallel agent evaluation: Analyst/Quant/Chartist 병렬 평가",
+                "4. Risk Manager ranking: 주도주 순위 확정",
             ]
     
     def execute(self, query: str) -> Dict[str, Any]:
@@ -704,21 +734,22 @@ JSON만 응답하세요.
     def _execute_theme_screening(self, analysis: QueryAnalysis) -> Dict[str, Any]:
         """테마/관련주 탐색"""
         theme = analysis.theme or analysis.original_query
-        
-        print(f"\n🔍 '{theme}' 관련주 탐색 중...")
-        
-        from src.agents.analyst import AnalystAgent
-        analyst = AnalystAgent()
-        
-        # 웹 검색으로 관련주 탐색
-        search_result = analyst._search_news(f"{theme} 관련주 수혜주")
-        
-        return {
-            "status": "success",
-            "theme": theme,
-            "search_result": search_result,
-            "message": f"'{theme}' 관련주 정보를 검색했습니다. 위 결과를 참고하세요.",
-        }
+
+        print(f"\n🔍 '{theme}' 테마 주도주 선별 중...")
+
+        from src.agents import ThemeLeaderOrchestrator
+
+        orchestrator = ThemeLeaderOrchestrator()
+        result = orchestrator.run(theme=theme, candidate_limit=5, top_n=3)
+
+        if result.get("status") != "success":
+            return result
+
+        result["message"] = (
+            f"'{theme}' 테마 데이터를 스캔해 후보를 추출하고, "
+            "Analyst/Quant/Chartist/Risk Manager를 통해 주도주를 선정했습니다."
+        )
+        return result
     
     def _execute_general_qa(self, analysis: QueryAnalysis) -> Dict[str, Any]:
         """일반 질문 처리 (대화 맥락 포함)"""

@@ -31,6 +31,8 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from src.config.settings import get_traces_dir
+
 logger = logging.getLogger(__name__)
 
 # 한국 표준시
@@ -249,7 +251,7 @@ class AgentTracer:
     def __init__(
         self,
         debug: bool = False,
-        traces_dir: str = "./data/traces",
+        traces_dir: Optional[str] = None,
     ):
         """
         Args:
@@ -257,7 +259,7 @@ class AgentTracer:
             traces_dir: 트레이스 JSON 저장 루트 디렉토리
         """
         self._debug = debug
-        self._traces_dir = Path(traces_dir)
+        self._traces_dir = Path(traces_dir) if traces_dir else get_traces_dir()
         self._lock = threading.Lock()
         self._trace: Optional[AnalysisTrace] = None
         self._start_time: Optional[datetime] = None

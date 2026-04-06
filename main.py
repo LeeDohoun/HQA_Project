@@ -13,6 +13,7 @@ HQA (Hegemony Quantitative Analyst) 메인 실행 파일
     python main.py                    # 대화형 모드
     python main.py --stock 삼성전자    # 종목 분석
     python main.py --quick 005930     # 빠른 분석
+    python main.py --theme 2차전지    # 테마 주도주 선정
     python main.py --price 005930     # 실시간 시세
     python main.py --auto             # 자율 에이전트 (1회 실행)
     python main.py --auto --loop      # 자율 에이전트 (반복 실행)
@@ -89,7 +90,7 @@ def run_interactive_mode():
             result = supervisor.execute(query)
             
             print("\n" + "=" * 50)
-            print(result)
+            print(format_result(result))
             print("=" * 50 + "\n")
             
         except KeyboardInterrupt:
@@ -242,6 +243,83 @@ def show_realtime_price(stock_input: str):
     print(tool.get_quote_summary(stock_code))
 
 
+def run_theme_orchestration(theme: str, candidate_limit: int = 5, top_n: int = 3):
+    """테마 데이터 기반 주도주 오케스트레이션 실행"""
+    from src.agents import ThemeLeaderOrchestrator
+
+    print("=" * 60)
+    print(f"🏁 [Theme Orchestration] {theme}")
+    print("=" * 60)
+    print(f"   후보 추출: 최대 {candidate_limit}개")
+    print(f"   최종 선정: 상위 {top_n}개")
+    print("-" * 60)
+
+    orchestrator = ThemeLeaderOrchestrator()
+    result = orchestrator.run(
+        theme=theme,
+        candidate_limit=candidate_limit,
+        top_n=top_n,
+    )
+
+    if result.get("status") != "success":
+        print(f"❌ {result.get('message', '테마 오케스트레이션 실패')}")
+        return result
+
+    print("\n🏆 [주도주 결과]")
+    print(result.get("summary", "요약 없음"))
+
+    leaders = result.get("leaders", [])
+    for idx, leader in enumerate(leaders, start=1):
+        candidate = leader.get("candidate", {})
+        decision = leader.get("final_decision", {})
+        print("\n" + "=" * 60)
+        print(
+            f"{idx}. {candidate.get('stock_name', 'N/A')}({candidate.get('stock_code', 'N/A')})"
+        )
+        print("=" * 60)
+        print(f"리더 점수: {leader.get('leader_score', 0)}")
+        print(f"최종 판단: {decision.get('action', 'N/A')}")
+        print(f"확신도: {decision.get('confidence', 0)}%")
+        print(f"요약: {decision.get('summary', '')}")
+
+    return result
+
+
+def format_result(result):
+    """CLI 출력용 결과 포맷터"""
+    if not isinstance(result, dict):
+        return str(result)
+
+    if result.get("status") == "success" and result.get("leaders"):
+        lines = [f"🏁 {result.get('theme', '테마')} 주도주 선정 결과"]
+        if result.get("summary"):
+            lines.extend(["", result["summary"]])
+        for idx, leader in enumerate(result.get("leaders", []), start=1):
+            candidate = leader.get("candidate", {})
+            decision = leader.get("final_decision", {})
+            lines.extend(
+                [
+                    "",
+                    f"{idx}. {candidate.get('stock_name', 'N/A')}({candidate.get('stock_code', 'N/A')})",
+                    f"   리더 점수: {leader.get('leader_score', 0)}",
+                    f"   최종 판단: {decision.get('action', 'N/A')} / 확신도 {decision.get('confidence', 0)}%",
+                    f"   요약: {decision.get('summary', '')}",
+                ]
+            )
+        return "\n".join(lines)
+
+    if result.get("summary"):
+        return result["summary"]
+
+    if result.get("answer"):
+        return result["answer"]
+
+    if result.get("analysis"):
+        return result["analysis"]
+
+    return str(result)
+
+
 def show_help():
     """도움말 출력"""
     help_text = """
@@ -267,7 +345,11 @@ def show_help():
      python main.py --price 삼성전자
      python main.py -p 005930
 
-  5. 자율 에이전트 모드
+  5. 테마 주도주 선정
+     python main.py --theme 2차전지
+     python main.py --theme 반도체 --candidate-limit 7 --top-n 3
+
+  6. 자율 에이전트 모드
      python main.py --auto             # 감시 목록 1회 분석
      python main.py --auto --loop      # 스케줄 반복 실행
      python main.py --auto --dry-run   # 매매 시뮬레이션만
@@ -354,6 +436,26 @@ def main():
         type=str,
         help="실시간 시세 조회"
     )
+
+    parser.add_argument(
+        "--theme",
+        type=str,
+        help="테마 데이터 기반 주도주 자동 선정"
+    )
+
+    parser.add_argument(
+        "--candidate-limit",
+        type=int,
+        default=5,
+        help="[--theme와 함께] 평가할 후보 종목 수 (기본: 5)"
+    )
+
+    parser.add_argument(
+        "--top-n",
+        type=int,
+        default=3,
+        help="[--theme와 함께] 최종 반환할 주도주 수 (기본: 3)"
+    )
     
     parser.add_argument(
         "--auto",
@@ -406,7 +508,16 @@ def main():
     if args.price:
         show_realtime_price(args.price)
         return
-    
+
+    # 테마 주도주 선정
+    if args.theme:
+        run_theme_orchestration(
+            args.theme,
+            candidate_limit=args.candidate_limit,
+            top_n=args.top_n,
+        )
+        return
+
     # 빠른 분석
     if args.quick:
         run_stock_analysis(args.quick, quick=True)

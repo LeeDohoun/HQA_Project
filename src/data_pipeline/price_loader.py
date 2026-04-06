@@ -15,12 +15,14 @@ from typing import Dict, Iterable, List, Optional
 
 import pandas as pd
 
+from src.config.settings import get_data_dir
+
 
 class PriceLoader:
     """Load OHLCV history for agent-side technical analysis."""
 
-    def __init__(self, data_dir: str = "./data", theme_key: Optional[str] = None):
-        self.data_dir = Path(data_dir)
+    def __init__(self, data_dir: Optional[str] = None, theme_key: Optional[str] = None):
+        self.data_dir = Path(data_dir) if data_dir else get_data_dir()
         self.theme_key = theme_key
 
     def get_stock_data(self, stock_code: str, days: int = 300) -> pd.DataFrame:

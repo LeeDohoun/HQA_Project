@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
+from src.config.settings import get_data_dir
 from src.data_pipeline.rag_builder import RAGCorpusBuilder
 from src.ingestion.types import DocumentRecord, generate_doc_id
 from src.retrieval.bm25_index import BM25IndexManager
@@ -103,8 +104,8 @@ class RawLayer2Builder:
         "인쇄 닫기",
     )
 
-    def __init__(self, data_dir: str = "./data"):
-        self.data_dir = Path(data_dir)
+    def __init__(self, data_dir: str | None = None):
+        self.data_dir = Path(data_dir) if data_dir else get_data_dir()
         self.raw_dir = self.data_dir / "raw"
         self.corpora_root = self.data_dir / "corpora"
         self.market_root = self.data_dir / "market_data"

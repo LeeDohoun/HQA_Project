@@ -393,11 +393,14 @@ class AnalystAgent:
         context = self.rag_tool._run(query)
 
         if not self._is_empty_result(context):
+            hits = self._extract_retrieval_hits(context)
+            self._log_retrieval_debug("quick_search", query, hits)
             return {
                 "query": query,
                 "context": context[:1000],
                 "has_results": True,
                 "source": "rag",
+                "hits": hits,
             }
 
         # Plan B: 웹 검색 폴백
@@ -415,6 +418,7 @@ class AnalystAgent:
                         "context": web_context[:1000],
                         "has_results": True,
                         "source": "web",
+                        "hits": [],
                     }
             except Exception:
                 pass
@@ -424,6 +428,78 @@ class AnalystAgent:
             "context": "",
             "has_results": False,
             "source": "none",
+            "hits": [],
+        }
+
+    def answer_question(self, question: str, max_context_chars: int = 2500) -> Dict:
+        """검색 결과를 근거로 단문 QA를 수행합니다."""
+        search = self.quick_search(question)
+        if not search["has_results"]:
+            raise ValueError(
+                "retrieval 결과가 없어 답변을 생성할 수 없습니다. "
+                "데이터 연결 상태를 먼저 점검하세요."
+            )
+
+        if search["source"] != "rag":
+            raise ValueError(
+                "검색 결과가 웹 폴백에만 의존하고 있습니다. "
+                "이 데모는 저장된 RAG 데이터 1건 이상이 필요합니다."
+            )
+
+        prompt = f"""
+당신은 한국 주식 분석 어시스턴트입니다.
+아래 검색 컨텍스트만 근거로 질문에 답하세요.
+근거가 부족하면 부족하다고 분명히 말하세요.
+
+[질문]
+{question}
+
+[검색 컨텍스트]
+{search['context'][:max_context_chars]}
+
+[답변 형식]
+1. 핵심 답변 2~4문장
+2. 근거 출처를 source 기준으로 한 줄 요약
+"""
+        response = self.instruct_llm.invoke(prompt)
+        answer = self._extract_llm_text(response)
+
+        if self._is_empty_result(answer):
+            logger.warning(
+                "빈 LLM 응답 감지. 짧은 컨텍스트로 재시도합니다. query=%s",
+                question,
+            )
+            retry_prompt = f"""
+당신은 한국 주식 분석 어시스턴트입니다.
+반드시 최종 답변만 출력하고, 생각 과정은 출력하지 마세요.
+아래 검색 문서 2건만 근거로 3문장 이내로 답하세요.
+
+[질문]
+{question}
+
+[검색 문서]
+{search['context'][:1200]}
+
+[출력 규칙]
+- 핵심 답변 2~3문장
+- 마지막 줄에 '근거:'로 시작하는 출처 요약 1줄
+"""
+            response = self.instruct_llm.invoke(retry_prompt)
+            answer = self._extract_llm_text(response)
+
+        if self._is_empty_result(answer):
+            logger.warning(
+                "LLM 응답이 계속 비어 있어 RAG 폴백 답변을 사용합니다. query=%s",
+                question,
+            )
+            answer = self._build_rag_fallback_answer(search)
+
+        return {
+            "question": question,
+            "answer": answer,
+            "search_source": search["source"],
+            "retrieved_hits": search["hits"],
+            "context_excerpt": search["context"],
         }
 
     # ──────────────────────────────────────────────
@@ -666,6 +742,7 @@ JSON만 출력하세요.
             "찾을 수 없습니다", "관련 문서를 찾을 수 없습니다",
             "검색 결과가 없습니다", "관련 뉴스 없음",
             "관련 정책 정보 없음", "관련 리포트를 찾을 수 없습니다",
+            "retrieval 인덱스가 없습니다", "데이터 디렉터리가 없습니다",
             "오류", "실패",
         ]
         return any(marker in text for marker in empty_markers)
@@ -698,6 +775,11 @@ JSON만 출력하세요.
             if not self._is_empty_result(context):
                 self._last_report_source = "rag"
                 sources = self._extract_sources(context)
+                self._log_retrieval_debug(
+                    "reports",
+                    query,
+                    self._extract_retrieval_hits(context),
+                )
                 # 3000자 이하면 원시 텍스트 그대로 전달 (LLM 호출 절약)
                 if len(context) <= 3000:
                     return context, sources
@@ -752,6 +834,98 @@ JSON만 출력하세요.
                 except Exception:
                     pass
         return sources
+
+    def _extract_retrieval_hits(self, context: str) -> List[Dict[str, str]]:
+        hits: List[Dict[str, str]] = []
+        pattern = re.compile(
+            r"source=(?P<source>[a-z_]+).*?title=(?P<title>[^,\n]*)",
+            re.IGNORECASE,
+        )
+        for line in context.splitlines():
+            if "source=" not in line:
+                continue
+            match = pattern.search(line)
+            if not match:
+                continue
+            hits.append(
+                {
+                    "source": match.group("source").strip(),
+                    "title": match.group("title").strip(),
+                }
+            )
+        return hits
+
+    def _extract_llm_text(self, response) -> str:
+        content = getattr(response, "content", "")
+        if isinstance(content, str):
+            return content.strip()
+
+        if isinstance(content, list):
+            parts: List[str] = []
+            for item in content:
+                if isinstance(item, str):
+                    parts.append(item)
+                    continue
+                if isinstance(item, dict):
+                    text = item.get("text") or item.get("content") or ""
+                    if text:
+                        parts.append(str(text))
+            return "\n".join(part.strip() for part in parts if str(part).strip()).strip()
+
+        if content is None:
+            return ""
+
+        return str(content).strip()
+
+    def _extract_context_snippet(self, context: str, max_chars: int = 360) -> str:
+        lines: List[str] = []
+        for raw_line in context.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            if line.startswith("===") or line.startswith("[문서 "):
+                continue
+            if "source=" in line and "title=" in line:
+                continue
+            lines.append(line)
+            if sum(len(row) for row in lines) >= max_chars:
+                break
+
+        snippet = re.sub(r"\s+", " ", " ".join(lines)).strip()
+        return snippet[:max_chars].rstrip(" ,.;")
+
+    def _build_rag_fallback_answer(self, search: Dict) -> str:
+        hits = search.get("hits", [])[:3]
+        snippet = self._extract_context_snippet(search.get("context", ""))
+        source_summary = "; ".join(
+            f"{hit.get('source', 'unknown')} - {hit.get('title', '(untitled)')}"
+            for hit in hits
+        )
+
+        if snippet:
+            return (
+                f"저장된 RAG 문서를 기준으로 보면 {snippet}. "
+                f"추가 정밀 분석이 필요하면 더 많은 리포트 데이터가 필요합니다.\n\n"
+                f"근거: {source_summary or '검색된 RAG 문서'}"
+            )
+
+        return (
+            f"저장된 RAG 문서 {len(hits)}건을 검색했지만 문장형 응답 생성이 불안정했습니다. "
+            f"검색 근거는 다음과 같습니다: {source_summary or '검색된 RAG 문서'}"
+        )
+
+    def _log_retrieval_debug(self, label: str, query: str, hits: List[Dict[str, str]]) -> None:
+        preview = ", ".join(
+            f"{row['source']}:{row['title'][:30] or '(untitled)'}"
+            for row in hits[:3]
+        )
+        logger.info(
+            "[Retrieval:%s] query=%s hits=%s preview=%s",
+            label,
+            query,
+            len(hits),
+            preview or "-",
+        )
 
     def _summarize_report(self, stock_name: str, context: str) -> str:
         """리포트 내용을 LLM으로 요약 (3000자 초과 시에만 호출)"""
@@ -810,6 +984,11 @@ JSON만 출력하세요.
 
             if not self._is_empty_result(context):
                 self._last_news_source = "rag"
+                self._log_retrieval_debug(
+                    "news",
+                    rag_query,
+                    self._extract_retrieval_hits(context),
+                )
                 return context[:500] + "\n\n[데이터 출처: RAG 저장 문서 — 실시간 뉴스 아님]"
         except Exception as e:
             print(f"   ⚠️ RAG 뉴스 폴백도 실패: {e}")
@@ -858,6 +1037,11 @@ JSON만 출력하세요.
 
             if not self._is_empty_result(context):
                 self._last_policy_source = "rag"
+                self._log_retrieval_debug(
+                    "policy",
+                    rag_query,
+                    self._extract_retrieval_hits(context),
+                )
                 return context[:500] + "\n\n[데이터 출처: RAG 저장 문서]"
         except Exception as e:
             print(f"   ⚠️ RAG 정책 폴백도 실패: {e}")
@@ -889,6 +1073,11 @@ JSON만 출력하세요.
 
             if not self._is_empty_result(context):
                 self._last_industry_source = "rag"
+                self._log_retrieval_debug(
+                    "industry",
+                    query,
+                    self._extract_retrieval_hits(context),
+                )
                 return context[:500]
             else:
                 print(f"   ℹ️ RAG 산업 결과 없음 → 웹 검색 폴백")

@@ -26,9 +26,9 @@ PROJECT_ROOT = Path(__file__).parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-# .env-ai 우선 로드, 없으면 .env fallback
-from dotenv import load_dotenv
-load_dotenv(PROJECT_ROOT / ".env-ai") or load_dotenv(PROJECT_ROOT / ".env")
+from src.config.settings import get_env_status, get_settings, load_project_env
+
+load_project_env()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -99,6 +99,14 @@ class ChatRequest(BaseModel):
 
 class SuggestRequest(BaseModel):
     query: str
+
+
+class ThemeAnalyzeRequest(BaseModel):
+    task_id: str
+    theme: str
+    theme_key: str = ""
+    candidate_limit: int = 5
+    top_n: int = 3
 
 
 # ──────────────────────────────────────────────
@@ -173,6 +181,36 @@ async def _run_analysis_background(
 
     except Exception as e:
         logger.exception(f"분석 실패: {task_id}")
+        _store_result(task_id, {"task_id": task_id, "status": "failed", "error": str(e)})
+        _publish_progress(task_id, "system", "error", f"오류: {str(e)[:200]}", 0.0)
+
+
+async def _run_theme_analysis_background(
+    task_id: str,
+    theme: str,
+    theme_key: str,
+    candidate_limit: int,
+    top_n: int,
+):
+    """asyncio 백그라운드에서 테마 주도주 선별 실행"""
+    loop = asyncio.get_event_loop()
+    try:
+        _publish_progress(task_id, "system", "started", f"{theme} 테마 분석 시작", 0.0)
+
+        result = await loop.run_in_executor(
+            None,
+            _execute_theme,
+            task_id,
+            theme,
+            theme_key,
+            candidate_limit,
+            top_n,
+        )
+
+        _store_result(task_id, {**result, "status": "completed"})
+        _publish_progress(task_id, "system", "completed", "테마 분석 완료", 1.0)
+    except Exception as e:
+        logger.exception(f"테마 분석 실패: {task_id}")
         _store_result(task_id, {"task_id": task_id, "status": "failed", "error": str(e)})
         _publish_progress(task_id, "system", "error", f"오류: {str(e)[:200]}", 0.0)
 
@@ -263,6 +301,73 @@ def _execute_full(task_id: str, stock_name: str, stock_code: str, max_retries: i
     }
 
 
+def _execute_theme(
+    task_id: str,
+    theme: str,
+    theme_key: str,
+    candidate_limit: int,
+    top_n: int,
+) -> dict:
+    """테마 전체 스캔 후 주도주 선별"""
+    from src.agents import ThemeLeaderOrchestrator
+
+    _publish_progress(task_id, "theme_orchestrator", "started", "후보군 추출 및 평가 중...", 0.1)
+
+    orchestrator = ThemeLeaderOrchestrator()
+    result = orchestrator.run(
+        theme=theme,
+        theme_key=theme_key,
+        candidate_limit=candidate_limit,
+        top_n=top_n,
+    )
+
+    if result.get("status") != "success":
+        return {
+            "task_id": task_id,
+            "mode": "theme",
+            "theme": theme,
+            "theme_key": theme_key,
+            "status": "failed",
+            "error": result.get("message", "테마 분석 실패"),
+            "completed_at": datetime.now().isoformat(),
+        }
+
+    _publish_progress(task_id, "theme_orchestrator", "completed", "주도주 선별 완료", 1.0)
+
+    leaders = []
+    for row in result.get("leaders", []):
+        candidate = row.get("candidate", {})
+        decision = row.get("final_decision", {})
+        leaders.append(
+            {
+                "stock_name": candidate.get("stock_name"),
+                "stock_code": candidate.get("stock_code"),
+                "leader_score": row.get("leader_score"),
+                "seed_score": candidate.get("seed_score"),
+                "action": decision.get("action"),
+                "confidence": decision.get("confidence"),
+                "summary": decision.get("summary"),
+                "risk_level": decision.get("risk_level"),
+                "key_catalysts": decision.get("key_catalysts", []),
+                "risk_factors": decision.get("risk_factors", []),
+            }
+        )
+
+    return {
+        "task_id": task_id,
+        "mode": "theme",
+        "theme": theme,
+        "theme_key": result.get("theme_key", theme_key),
+        "candidate_limit": candidate_limit,
+        "top_n": top_n,
+        "candidate_count": result.get("candidate_count", 0),
+        "evaluated_count": result.get("evaluated_count", 0),
+        "leaders": leaders,
+        "summary": result.get("summary", ""),
+        "completed_at": datetime.now().isoformat(),
+    }
+
+
 # ──────────────────────────────────────────────
 # 변환 헬퍼
 # ──────────────────────────────────────────────
@@ -296,7 +401,18 @@ def _decision_to_dict(decision) -> dict:
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "HQA AI Server", "port": 8001}
+    settings = get_settings()
+    env_status = get_env_status()
+    return {
+        "status": "ok",
+        "service": "HQA AI Server",
+        "port": 8001,
+        "data_dir": str(settings.data_dir),
+        "data_dir_exists": settings.data_dir.exists(),
+        "env_loaded": env_status.loaded,
+        "env_file": str(env_status.path) if env_status.path else None,
+        "env_message": env_status.message,
+    }
 
 
 @app.post("/analyze", status_code=202)
@@ -338,6 +454,32 @@ async def get_analyze_result(task_id: str):
     if result is None:
         raise HTTPException(status_code=404, detail=f"작업을 찾을 수 없습니다: {task_id}")
     return result
+
+
+@app.post("/theme/analyze", status_code=202)
+async def analyze_theme(request: ThemeAnalyzeRequest):
+    """
+    테마 주도주 선별 요청 (비동기)
+
+    즉시 task_id를 반환하고 백그라운드에서 후보 추출 및 멀티 에이전트 평가를 실행합니다.
+    결과는 `GET /theme/analyze/{task_id}` 또는 `GET /analyze/{task_id}`로 조회할 수 있습니다.
+    """
+    asyncio.create_task(
+        _run_theme_analysis_background(
+            request.task_id,
+            request.theme,
+            request.theme_key,
+            request.candidate_limit,
+            request.top_n,
+        )
+    )
+    return {"task_id": request.task_id, "status": "pending", "mode": "theme"}
+
+
+@app.get("/theme/analyze/{task_id}")
+async def get_theme_analyze_result(task_id: str):
+    """테마 주도주 선별 결과 조회"""
+    return await get_analyze_result(task_id)
 
 
 @app.post("/chat")

@@ -10,15 +10,15 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Dict, List
 
-try:
-    from dotenv import load_dotenv
-except ImportError:
-    load_dotenv = None
-
-if load_dotenv is not None:
-    load_dotenv()
-
 sys.path.insert(0, os.path.abspath("."))
+
+try:
+    from src.config.settings import get_data_dir, load_project_env
+except ImportError:
+    load_project_env = None
+
+if load_project_env is not None:
+    load_project_env()
 
 from src.ingestion import (
     CollectRequest,
@@ -116,7 +116,10 @@ def main() -> None:
     )
     parser.add_argument("--theme", required=True, help="테마 키워드")
     parser.add_argument("--theme-key", default="", help="저장용 테마 키")
-    parser.add_argument("--data-dir", default="./data")
+    parser.add_argument(
+        "--data-dir",
+        default=str(get_data_dir()) if "get_data_dir" in globals() else "./data",
+    )
     parser.add_argument("--theme-max-stocks", type=int, default=30)
     parser.add_argument("--theme-max-pages", type=int, default=10)
     parser.add_argument(

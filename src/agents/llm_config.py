@@ -38,12 +38,11 @@ LLM_PROVIDER 환경변수로 Ollama / Gemini 전환 가능.
 
 import os
 import logging
-from typing import List, Dict, Optional
-from langchain_core.messages import HumanMessage
-from langchain_core.language_models import BaseChatModel
-from dotenv import load_dotenv
+from types import SimpleNamespace
+from typing import Any, List, Dict, Optional
+from src.config.settings import load_project_env
 
-load_dotenv()
+load_project_env()
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +70,8 @@ GEMINI_VISION_MODEL = os.getenv("GEMINI_VISION_MODEL", "gemini-2.5-flash-preview
 
 def _get_provider() -> str:
     """현재 LLM Provider 반환 (검증 포함)"""
+    if LLM_PROVIDER == "mock":
+        return "mock"
     if LLM_PROVIDER == "gemini":
         if not GOOGLE_API_KEY:
             logger.warning(
@@ -86,13 +87,47 @@ def _get_provider() -> str:
 # Ollama LLM 생성
 # ==========================================
 
-def _create_ollama_llm(model: str, temperature: float = 0.3) -> BaseChatModel:
+class MockChatModel:
+    """네트워크나 외부 모델 없이 smoke test를 위한 최소 LLM."""
+
+    def __init__(self, role: str):
+        self.role = role
+
+    def invoke(self, prompt) -> SimpleNamespace:
+        if isinstance(prompt, list):
+            return SimpleNamespace(content=f"[mock:{self.role}] 멀티모달 입력을 수신했습니다.")
+
+        text = str(prompt)
+        if "[검색 컨텍스트]" in text:
+            context = text.split("[검색 컨텍스트]", 1)[1]
+            context = context.split("[답변 형식]", 1)[0].strip()
+            lines = [line.strip() for line in context.splitlines() if line.strip()]
+            evidence = " ".join(lines[:2])[:240]
+            return SimpleNamespace(
+                content=(
+                    f"[mock:{self.role}] 검색 문서를 기준으로 보면 {evidence} "
+                    "추가 검증이 필요하면 실제 LLM/Ollama 런타임으로 다시 확인하세요."
+                )
+            )
+
+        if "JSON만 출력하세요" in text:
+            return SimpleNamespace(content='{"intent":"general","confidence":0.5}')
+
+        return SimpleNamespace(content=f"[mock:{self.role}] 요청을 수신했습니다.")
+
+
+def _create_ollama_llm(
+    model: str,
+    temperature: float = 0.3,
+    reasoning: bool | str | None = False,
+) -> Any:
     """Ollama ChatModel 생성"""
     from langchain_ollama import ChatOllama
     return ChatOllama(
         model=model,
         base_url=OLLAMA_BASE_URL,
         temperature=temperature,
+        reasoning=reasoning,
     )
 
 
@@ -100,7 +135,7 @@ def _create_ollama_llm(model: str, temperature: float = 0.3) -> BaseChatModel:
 # Gemini LLM 생성
 # ==========================================
 
-def _create_gemini_llm(model: str, temperature: float = 0.3, **kwargs) -> BaseChatModel:
+def _create_gemini_llm(model: str, temperature: float = 0.3, **kwargs) -> Any:
     """Google Gemini ChatModel 생성"""
     try:
         from langchain_google_genai import ChatGoogleGenerativeAI
@@ -122,7 +157,7 @@ def _create_gemini_llm(model: str, temperature: float = 0.3, **kwargs) -> BaseCh
 # 통합 팩토리 함수 (에이전트가 호출하는 인터페이스)
 # ==========================================
 
-def get_instruct_llm() -> BaseChatModel:
+def get_instruct_llm() -> Any:
     """
     Instruct (빠른 분석) LLM
 
@@ -134,17 +169,24 @@ def get_instruct_llm() -> BaseChatModel:
     """
     provider = _get_provider()
 
-    if provider == "gemini":
+    if provider == "mock":
+        llm = MockChatModel("instruct")
+        logger.debug("🤖 Instruct LLM: Mock")
+    elif provider == "gemini":
         llm = _create_gemini_llm(GEMINI_INSTRUCT_MODEL, temperature=0.3)
         logger.debug(f"🤖 Instruct LLM: Gemini ({GEMINI_INSTRUCT_MODEL})")
     else:
-        llm = _create_ollama_llm(OLLAMA_INSTRUCT_MODEL, temperature=0.3)
+        llm = _create_ollama_llm(
+            OLLAMA_INSTRUCT_MODEL,
+            temperature=0.3,
+            reasoning=False,
+        )
         logger.debug(f"🤖 Instruct LLM: Ollama ({OLLAMA_INSTRUCT_MODEL})")
 
     return llm
 
 
-def get_thinking_llm() -> BaseChatModel:
+def get_thinking_llm() -> Any:
     """
     Thinking (깊은 추론) LLM
 
@@ -156,20 +198,27 @@ def get_thinking_llm() -> BaseChatModel:
     """
     provider = _get_provider()
 
-    if provider == "gemini":
+    if provider == "mock":
+        llm = MockChatModel("thinking")
+        logger.debug("🧠 Thinking LLM: Mock")
+    elif provider == "gemini":
         llm = _create_gemini_llm(
             GEMINI_THINKING_MODEL,
             temperature=1,  # Gemini Thinking은 temperature=1 권장
         )
         logger.debug(f"🧠 Thinking LLM: Gemini ({GEMINI_THINKING_MODEL})")
     else:
-        llm = _create_ollama_llm(OLLAMA_THINKING_MODEL, temperature=0.5)
+        llm = _create_ollama_llm(
+            OLLAMA_THINKING_MODEL,
+            temperature=0.5,
+            reasoning=False,
+        )
         logger.debug(f"🧠 Thinking LLM: Ollama ({OLLAMA_THINKING_MODEL})")
 
     return llm
 
 
-def get_thinking_validator_llm() -> Optional[BaseChatModel]:
+def get_thinking_validator_llm() -> Optional[Any]:
     """
     Thinking Validator (최종 판단 교차 검증) LLM
 
@@ -177,6 +226,9 @@ def get_thinking_validator_llm() -> Optional[BaseChatModel]:
     - 미설정 시 None 반환
     """
     provider = _get_provider()
+
+    if provider == "mock":
+        return MockChatModel("thinking_validator")
 
     if provider == "gemini":
         if not GEMINI_THINKING_VALIDATOR_MODEL:
@@ -193,14 +245,18 @@ def get_thinking_validator_llm() -> Optional[BaseChatModel]:
     if not OLLAMA_THINKING_VALIDATOR_MODEL:
         return None
 
-    llm = _create_ollama_llm(OLLAMA_THINKING_VALIDATOR_MODEL, temperature=0.5)
+    llm = _create_ollama_llm(
+        OLLAMA_THINKING_VALIDATOR_MODEL,
+        temperature=0.5,
+        reasoning=False,
+    )
     logger.debug(
         f"🧪 Thinking Validator LLM: Ollama ({OLLAMA_THINKING_VALIDATOR_MODEL})"
     )
     return llm
 
 
-def get_vision_llm() -> BaseChatModel:
+def get_vision_llm() -> Any:
     """
     Vision (이미지 분석) LLM
 
@@ -212,11 +268,18 @@ def get_vision_llm() -> BaseChatModel:
     """
     provider = _get_provider()
 
-    if provider == "gemini":
+    if provider == "mock":
+        llm = MockChatModel("vision")
+        logger.debug("👁️ Vision LLM: Mock")
+    elif provider == "gemini":
         llm = _create_gemini_llm(GEMINI_VISION_MODEL, temperature=0.3)
         logger.debug(f"👁️ Vision LLM: Gemini ({GEMINI_VISION_MODEL})")
     else:
-        llm = _create_ollama_llm(OLLAMA_VISION_MODEL, temperature=0.3)
+        llm = _create_ollama_llm(
+            OLLAMA_VISION_MODEL,
+            temperature=0.3,
+            reasoning=False,
+        )
         logger.debug(f"👁️ Vision LLM: Ollama ({OLLAMA_VISION_MODEL})")
 
     return llm
@@ -237,6 +300,15 @@ get_gemini_vision_llm = get_vision_llm
 def get_llm_info() -> Dict[str, str]:
     """현재 LLM 설정 정보 반환 (디버깅용)"""
     provider = _get_provider()
+
+    if provider == "mock":
+        return {
+            "provider": "mock",
+            "instruct_model": "mock",
+            "thinking_model": "mock",
+            "thinking_validator_model": "mock",
+            "vision_model": "mock",
+        }
 
     if provider == "gemini":
         return {
@@ -291,6 +363,8 @@ class VisionAnalyzer:
         Returns:
             분석 결과 텍스트
         """
+        from langchain_core.messages import HumanMessage
+
         message = HumanMessage(
             content=[
                 {"type": "text", "text": prompt},
@@ -319,6 +393,8 @@ class VisionAnalyzer:
         Returns:
             통합 분석 결과
         """
+        from langchain_core.messages import HumanMessage
+
         content = [{"type": "text", "text": prompt}]
 
         for img in images:

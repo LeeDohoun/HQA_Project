@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, List
 
+from src.config.settings import get_data_dir
 from .types import StockTarget
 
 
@@ -20,8 +21,8 @@ def make_theme_key(theme: str, fallback: str = "default") -> str:
 class ThemeTargetStore:
     """Persist theme-derived stock targets as JSONL snapshots."""
 
-    def __init__(self, data_dir: str = "./data"):
-        self.data_dir = Path(data_dir)
+    def __init__(self, data_dir: str | None = None):
+        self.data_dir = Path(data_dir) if data_dir else get_data_dir()
         self.root = self.data_dir / "raw" / "theme_targets"
 
     def get_path(self, theme_key: str) -> Path:

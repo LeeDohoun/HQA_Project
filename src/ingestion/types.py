@@ -8,6 +8,7 @@ import hashlib
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
+from src.config.settings import get_data_dir
 
 @dataclass
 class StockTarget:
@@ -81,7 +82,7 @@ class CollectRequest:
     enabled_sources: List[str] = field(default_factory=lambda: ["news", "dart", "forum"])
     general_news_keywords: Optional[List[str]] = None
     max_general_news: int = 20
-    raw_output_dir: str = "./data/raw"
+    raw_output_dir: str = field(default_factory=lambda: str(get_data_dir() / "raw"))
 
 
 @dataclass

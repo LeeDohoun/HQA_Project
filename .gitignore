@@ -2,6 +2,7 @@
 venv/
 env/
 .venv/
+.local/
 
 # 2. 보안 파일 (해킹 방지 - 가장 중요!)
 .env

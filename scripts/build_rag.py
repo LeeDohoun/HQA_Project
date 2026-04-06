@@ -21,6 +21,8 @@ import os
 # Add project root to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from src.config.settings import get_data_dir
+
 
 def _resolve_theme_key(args) -> str:
     """theme_targets가 있으면 저장된 theme_key를 우선 사용."""
@@ -81,8 +83,8 @@ def main():
     parser.add_argument(
         "--data-dir",
         type=str,
-        default="./data",
-        help="Data directory (default: ./data)",
+        default=str(get_data_dir()),
+        help="Data directory (default: HQA_DATA_DIR or ./data)",
     )
     parser.add_argument(
         "--stats",

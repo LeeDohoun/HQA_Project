@@ -171,8 +171,8 @@ class TechnicalIndicators:
 class TechnicalAnalyzer:
     """기술적 지표 계산기"""
     
-    def __init__(self):
-        self.price_loader = PriceLoader()
+    def __init__(self, data_dir: Optional[str] = None, theme_key: Optional[str] = None):
+        self.price_loader = PriceLoader(data_dir=data_dir, theme_key=theme_key)
     
     def analyze(self, stock_code: str, stock_name: str = "Unknown", days: int = 300) -> TechnicalIndicators:
         """
@@ -577,9 +577,14 @@ if HAS_CREWAI:
 # 직접 사용 가능한 함수
 # ============================================================
 
-def analyze_stock(stock_code: str, stock_name: str = "Unknown") -> TechnicalIndicators:
+def analyze_stock(
+    stock_code: str,
+    stock_name: str = "Unknown",
+    data_dir: Optional[str] = None,
+    theme_key: Optional[str] = None,
+) -> TechnicalIndicators:
     """종목 기술적 분석"""
-    analyzer = TechnicalAnalyzer()
+    analyzer = TechnicalAnalyzer(data_dir=data_dir, theme_key=theme_key)
     return analyzer.analyze(stock_code, stock_name)
 
 

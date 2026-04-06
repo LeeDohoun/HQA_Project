@@ -39,11 +39,12 @@ from typing import Dict
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 try:
-    from dotenv import load_dotenv
+    from src.config.settings import get_data_dir, load_project_env
 
-    load_dotenv()
+    load_project_env()
 except ImportError:
-    pass
+    def get_data_dir():
+        return Path("./data")
 
 
 def _load_corp_code_map(csv_path: str) -> Dict[str, str]:
@@ -274,7 +275,7 @@ def main():
     )
     parser.add_argument("--theme", required=True, help="Theme keyword")
     parser.add_argument("--theme-key", default="", help="Explicit theme key")
-    parser.add_argument("--data-dir", default="./data")
+    parser.add_argument("--data-dir", default=str(get_data_dir()))
     parser.add_argument("--config", default="./config/watchlist.yaml", help="Watchlist config")
 
     # Pipeline scope

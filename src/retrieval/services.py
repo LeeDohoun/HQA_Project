@@ -7,14 +7,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from src.config.settings import get_data_dir
 from src.rag.dedupe import make_document_id
 from src.retrieval.bm25_index import BM25IndexManager
 from src.retrieval.vector_store import SimpleVectorStore
 
 
 class RetrievalService:
-    def __init__(self, data_dir: str = "./data", theme_key: Optional[str] = None):
-        self.data_dir = Path(data_dir)
+    def __init__(self, data_dir: str | None = None, theme_key: Optional[str] = None):
+        self.data_dir = Path(data_dir) if data_dir else get_data_dir()
         self.theme_key = theme_key
 
     # Query flow: vector search -> BM25 search -> reciprocal-rank fusion.

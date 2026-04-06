@@ -15,12 +15,21 @@ from __future__ import annotations
 import warnings
 from typing import List, Optional
 
-from pydantic import Field
+try:
+    from pydantic import Field
+except ImportError:  # pragma: no cover - lightweight runtime fallback
+    def Field(default=None, description: str = ""):
+        return default
+
+from src.config.settings import get_data_dir
 
 try:
     from crewai.tools import BaseTool
 except ImportError:
-    BaseTool = object
+    class BaseTool:
+        def __init__(self, **kwargs):
+            for key, value in kwargs.items():
+                setattr(self, key, value)
 
 # ── Canonical Retriever (primary — always available) ──
 from src.rag.canonical_retriever import CanonicalRetriever
@@ -46,8 +55,16 @@ def get_canonical_retriever() -> CanonicalRetriever:
     """CanonicalRetriever 싱글톤 인스턴스. 항상 같은 타입 반환."""
     global _canonical_retriever
     if _canonical_retriever is None:
-        _canonical_retriever = CanonicalRetriever(data_dir="./data")
+        _canonical_retriever = CanonicalRetriever(data_dir=str(get_data_dir()))
     return _canonical_retriever
+
+
+def reset_retriever_cache(data_dir: Optional[str] = None) -> None:
+    global _canonical_retriever, _legacy_retriever
+    _canonical_retriever = (
+        CanonicalRetriever(data_dir=data_dir) if data_dir else None
+    )
+    _legacy_retriever = None
 
 
 def get_retriever() -> CanonicalRetriever:
@@ -112,19 +129,43 @@ class RAGSearchTool(BaseTool):
         default=None, description="Query intent for source filtering"
     )
 
+    def __init__(
+        self,
+        top_k: int = 5,
+        source_types: Optional[List[str]] = None,
+        intent: Optional[str] = None,
+        **kwargs,
+    ):
+        # Some runtimes instantiate this class without a Pydantic-powered BaseTool,
+        # leaving Field(...) descriptors as class attributes. Normalize values here.
+        try:
+            super().__init__(
+                top_k=top_k,
+                source_types=source_types,
+                intent=intent,
+                **kwargs,
+            )
+        except TypeError:
+            try:
+                super().__init__(**kwargs)
+            except Exception:
+                pass
+
+        self.top_k = int(top_k)
+        self.source_types = list(source_types) if source_types else None
+        self.intent = str(intent) if intent else None
+
     def _run(self, query: str) -> str:
         """문서 검색 (source weighting 적용)."""
         canonical = get_canonical_retriever()
-
-        if canonical.available_themes:
-            context = canonical.search_for_context(
-                query=query,
-                top_k=self.top_k,
-                source_types=self.source_types,
-                intent=self.intent,
-            )
-            if context and "찾을 수 없습니다" not in context:
-                return context
+        context = canonical.search_for_context(
+            query=query,
+            top_k=self.top_k,
+            source_types=self.source_types,
+            intent=self.intent,
+        )
+        if context and "찾을 수 없습니다" not in context:
+            return context
 
         # Fallback: legacy RAGRetriever (deprecated path)
         if _LEGACY_RAG_AVAILABLE:

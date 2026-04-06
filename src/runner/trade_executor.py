@@ -17,6 +17,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from src.config.settings import get_orders_dir
+
 logger = logging.getLogger(__name__)
 
 KST = timezone(timedelta(hours=9))
@@ -58,7 +60,7 @@ class TradeExecutor:
         self._order_history: List[Dict[str, Any]] = []
 
         # 주문 기록 저장 경로
-        self._orders_dir = Path("./data/orders")
+        self._orders_dir = get_orders_dir()
         self._orders_dir.mkdir(parents=True, exist_ok=True)
 
     @property

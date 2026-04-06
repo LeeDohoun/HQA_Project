@@ -14,6 +14,7 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from src.config.settings import get_data_dir
 from src.rag.source_weighting import (
     apply_source_weighting,
     get_intent_sources,
@@ -42,10 +43,10 @@ class CanonicalRetriever:
 
     def __init__(
         self,
-        data_dir: str = "./data",
+        data_dir: str | None = None,
         theme_key: Optional[str] = None,
     ):
-        self.data_dir = Path(data_dir)
+        self.data_dir = Path(data_dir) if data_dir else get_data_dir()
         self.canonical_root = self.data_dir / "canonical_index"
         self.theme_key = theme_key
 
@@ -87,16 +88,16 @@ class CanonicalRetriever:
         target_theme = theme_key or self.theme_key
         themes = [target_theme] if target_theme else self.available_themes
 
-        if not themes:
-            logger.warning("Canonical index 없음 → 빈 결과 반환")
-            return []
-
         # Determine source filter
         effective_source_filter = set()
         if source_types:
             effective_source_filter = {s.strip().lower() for s in source_types}
         elif intent:
             effective_source_filter = set(get_intent_sources(intent))
+
+        if not themes:
+            logger.warning("Canonical index 없음 → pipeline 폴백 검색 시도")
+            return self._fallback_legacy_search(query, top_k, effective_source_filter)
 
         # Collect results from all themes
         all_results: List[Dict] = []
@@ -138,6 +139,19 @@ class CanonicalRetriever:
         )
 
         if not results:
+            status = self.describe_data_state()
+            if status["raw_available"] and not status["retrieval_assets_available"]:
+                return (
+                    "관련 문서를 찾을 수 없습니다. "
+                    "raw 데이터는 있지만 retrieval 인덱스가 없습니다. "
+                    "`python3 scripts/build_rag.py --theme-key <theme> --data-dir "
+                    f"{self.data_dir}` 로 인덱스를 생성하세요."
+                )
+            if not status["data_dir_exists"]:
+                return (
+                    "관련 문서를 찾을 수 없습니다. "
+                    f"데이터 디렉터리가 없습니다: {self.data_dir}"
+                )
             return "관련 문서를 찾을 수 없습니다."
 
         parts = ["=== 검색된 문서 (Canonical RAG) ==="]
@@ -175,6 +189,24 @@ class CanonicalRetriever:
             }
         stats["total_themes"] = len(stats["themes"])
         return stats
+
+    def describe_data_state(self) -> Dict[str, object]:
+        raw_root = self.data_dir / "raw"
+        bm25_root = self.data_dir / "bm25"
+        vector_root = self.data_dir / "vector_stores"
+
+        has_bm25 = bm25_root.exists() and any(bm25_root.glob("*.json"))
+        has_vector = vector_root.exists() and any(vector_root.glob("*.json"))
+
+        return {
+            "data_dir": str(self.data_dir),
+            "data_dir_exists": self.data_dir.exists(),
+            "raw_available": raw_root.exists() and any(raw_root.rglob("*.jsonl")),
+            "canonical_available": bool(self.available_themes),
+            "pipeline_bm25_available": has_bm25,
+            "pipeline_vector_available": has_vector,
+            "retrieval_assets_available": bool(self.available_themes) or has_bm25 or has_vector,
+        }
 
     # ──────────────────────────────────────────────
     # Internal search methods

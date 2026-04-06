@@ -10,9 +10,9 @@ from typing import List, Dict, Optional, Callable
 from abc import ABC, abstractmethod
 
 from langchain_core.embeddings import Embeddings
-from dotenv import load_dotenv
+from src.config.settings import load_project_env
 
-load_dotenv()
+load_project_env()
 
 
 class BaseEmbedding(ABC):

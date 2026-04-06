@@ -12,6 +12,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
+from src.config.settings import get_data_dir
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -60,11 +62,11 @@ class BM25Document:
 class BM25IndexManager:
     def __init__(
         self,
-        persist_path: str = "./data/bm25/index.json",
+        persist_path: Optional[str] = None,
         auto_save: bool = True,
         save_interval: int = 50,
     ):
-        self.persist_path = persist_path
+        self.persist_path = persist_path or str(get_data_dir() / "bm25" / "index.json")
         self.auto_save = auto_save
         self.save_interval = save_interval
         self._corpus: List[BM25Document] = []
