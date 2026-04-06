@@ -1,10 +1,10 @@
 package com.hqa.backend.service;
 
-import com.hqa.backend.config.HqaProperties;
 import com.hqa.backend.dto.CandleData;
 import com.hqa.backend.dto.CandleHistoryResponse;
 import com.hqa.backend.dto.ErrorCode;
 import com.hqa.backend.exception.ApiException;
+import jakarta.servlet.http.HttpSession;
 import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Service;
@@ -23,22 +23,20 @@ public class ChartService {
             "1h", 3600
     );
 
-    private final HqaProperties properties;
+    private final AuthService authService;
 
-    public ChartService(HqaProperties properties) {
-        this.properties = properties;
+    public ChartService(AuthService authService) {
+        this.authService = authService;
     }
 
-    public CandleHistoryResponse getHistoricalCandles(String stockCode, String timeframe, int count, Long before) {
+    public CandleHistoryResponse getHistoricalCandles(String stockCode, String timeframe, int count, Long before, HttpSession session) {
         if (!stockCode.matches("^\\d{6}$")) {
             throw new ApiException(ErrorCode.STOCK_INVALID_CODE, 400, "Stock code must be 6 digits", null);
         }
         if (!TIMEFRAMES.containsKey(timeframe)) {
             throw new ApiException(ErrorCode.INVALID_REQUEST, 400, "Unsupported timeframe", timeframe);
         }
-        if (properties.getKiwoomAppKey().isBlank() || properties.getKiwoomAppSecret().isBlank()) {
-            throw new ApiException(ErrorCode.CHART_API_NOT_CONFIGURED, 503, "Chart API is not configured", null);
-        }
+        authService.requireUserSecret(session);
         return new CandleHistoryResponse(stockCode, timeframe, List.<CandleData>of(), false);
     }
 }

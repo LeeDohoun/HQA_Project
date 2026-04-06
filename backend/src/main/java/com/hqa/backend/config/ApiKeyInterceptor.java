@@ -16,6 +16,10 @@ public class ApiKeyInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+        String path = request.getRequestURI();
+        if (path.startsWith("/api/v1/auth")) {
+            return true;
+        }
         if ("local".equalsIgnoreCase(properties.getEnv()) || "dev".equalsIgnoreCase(properties.getEnv())) {
             return true;
         }

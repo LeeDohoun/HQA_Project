@@ -1,11 +1,9 @@
 package com.hqa.backend.service;
 
-import com.hqa.backend.config.HqaProperties;
-import com.hqa.backend.dto.ErrorCode;
 import com.hqa.backend.dto.RealtimePriceResponse;
 import com.hqa.backend.dto.StockInfo;
 import com.hqa.backend.dto.StockSearchResponse;
-import com.hqa.backend.exception.ApiException;
+import jakarta.servlet.http.HttpSession;
 import java.time.OffsetDateTime;
 import org.springframework.stereotype.Service;
 
@@ -13,22 +11,20 @@ import org.springframework.stereotype.Service;
 public class StockService {
 
     private final StockCatalogService stockCatalogService;
-    private final HqaProperties properties;
+    private final AuthService authService;
 
-    public StockService(StockCatalogService stockCatalogService, HqaProperties properties) {
+    public StockService(StockCatalogService stockCatalogService, AuthService authService) {
         this.stockCatalogService = stockCatalogService;
-        this.properties = properties;
+        this.authService = authService;
     }
 
     public StockSearchResponse search(String query) {
         return stockCatalogService.search(query);
     }
 
-    public RealtimePriceResponse getRealtimePrice(String stockCode) {
+    public RealtimePriceResponse getRealtimePrice(String stockCode, HttpSession session) {
         stockCatalogService.validateCode(stockCode);
-        if (properties.getKisAppKey().isBlank() || properties.getKisAppSecret().isBlank()) {
-            throw new ApiException(ErrorCode.SERVICE_UNAVAILABLE, 503, "Realtime price API is not configured", null);
-        }
+        authService.requireUserSecret(session);
         StockInfo stock = stockCatalogService.getStockInfo(stockCode);
         return new RealtimePriceResponse(
                 stock,
