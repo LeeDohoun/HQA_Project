@@ -48,7 +48,7 @@ public class User {
     private UserSecret secret;
 
     @OneToOne(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
-    private UserSurvey survey;
+    private UserPreference preference;
 
     @OneToMany(mappedBy = "user")
     private List<AnalysisRecord> analyses = new ArrayList<>();
@@ -136,14 +136,14 @@ public class User {
         }
     }
 
-    public UserSurvey getSurvey() {
-        return survey;
+    public UserPreference getPreference() {
+        return preference;
     }
 
-    public void setSurvey(UserSurvey survey) {
-        this.survey = survey;
-        if (survey != null) {
-            survey.setUser(this);
+    public void setPreference(UserPreference preference) {
+        this.preference = preference;
+        if (preference != null) {
+            preference.setUser(this);
         }
     }
 

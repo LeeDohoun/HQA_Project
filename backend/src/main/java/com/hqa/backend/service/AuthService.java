@@ -7,15 +7,15 @@ import com.hqa.backend.dto.AuthUserResponse;
 import com.hqa.backend.dto.ErrorCode;
 import com.hqa.backend.dto.UserSecretRequest;
 import com.hqa.backend.dto.UserSecretResponse;
-import com.hqa.backend.dto.UserSurveyRequest;
-import com.hqa.backend.dto.UserSurveyResponse;
+import com.hqa.backend.dto.UserPreferenceRequest;
+import com.hqa.backend.dto.UserPreferenceResponse;
 import com.hqa.backend.entity.User;
+import com.hqa.backend.entity.UserPreference;
 import com.hqa.backend.entity.UserSecret;
-import com.hqa.backend.entity.UserSurvey;
 import com.hqa.backend.exception.ApiException;
+import com.hqa.backend.repository.UserPreferenceRepository;
 import com.hqa.backend.repository.UserRepository;
 import com.hqa.backend.repository.UserSecretRepository;
-import com.hqa.backend.repository.UserSurveyRepository;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -29,16 +29,16 @@ public class AuthService {
 
     private final UserRepository userRepository;
     private final UserSecretRepository userSecretRepository;
-    private final UserSurveyRepository userSurveyRepository;
+    private final UserPreferenceRepository userPreferenceRepository;
     private final PasswordEncoder passwordEncoder;
 
     public AuthService(UserRepository userRepository,
                        UserSecretRepository userSecretRepository,
-                       UserSurveyRepository userSurveyRepository,
+                       UserPreferenceRepository userPreferenceRepository,
                        PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.userSecretRepository = userSecretRepository;
-        this.userSurveyRepository = userSurveyRepository;
+        this.userPreferenceRepository = userPreferenceRepository;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -101,33 +101,41 @@ public class AuthService {
         return toSecretResponse(secret);
     }
 
-    public UserSurveyResponse saveSurvey(UserSurveyRequest request, HttpSession session) {
+    public UserPreferenceResponse savePreference(UserPreferenceRequest request, HttpSession session) {
         User user = requireUser(session);
-        UserSurvey survey = user.getSurvey();
-        if (survey == null) {
-            survey = new UserSurvey();
-            survey.setUser(user);
-            user.setSurvey(survey);
+        UserPreference preference = user.getPreference();
+        if (preference == null) {
+            preference = new UserPreference();
+            preference.setUser(user);
+            user.setPreference(preference);
         }
 
-        survey.setInvestmentExperience(request.investmentExperience().trim());
-        survey.setRiskTolerance(request.riskTolerance().trim());
-        survey.setInvestmentGoal(request.investmentGoal().trim());
-        survey.setPreferredMarket(request.preferredMarket().trim());
-        survey.setNotes(request.notes() == null ? null : request.notes().trim());
+        preference.setTotalAssets(request.totalAssets());
+        preference.setMonthlyInvestment(request.monthlyInvestment());
+        preference.setInvestmentPeriodMonths(request.investmentPeriodMonths());
+        preference.setTargetReturnRate(request.targetReturnRate());
+        preference.setInvestmentGoal(request.investmentGoal());
+        preference.setInvestmentExperience(request.investmentExperience());
+        preference.setBirthDate(request.birthDate());
+        preference.setInvestmentType(request.investmentType());
+        preference.setVolatilityTolerance(request.volatilityTolerance());
+        preference.setLossAction(request.lossAction());
+        preference.setLeverageAllowed(request.leverageAllowed());
+        preference.setOccupationType(request.occupationType());
+        preference.setLossTolerance(request.lossTolerance());
 
-        UserSurvey savedSurvey = userSurveyRepository.save(survey);
-        return toSurveyResponse(savedSurvey);
+        UserPreference saved = userPreferenceRepository.save(preference);
+        return toPreferenceResponse(saved);
     }
 
     @Transactional(readOnly = true)
-    public UserSurveyResponse getSurvey(HttpSession session) {
+    public UserPreferenceResponse getPreference(HttpSession session) {
         User user = requireUser(session);
-        UserSurvey survey = user.getSurvey();
-        if (survey == null) {
-            throw new ApiException(ErrorCode.SURVEY_NOT_FOUND, 404, "Survey not found", user.getUserId());
+        UserPreference preference = user.getPreference();
+        if (preference == null) {
+            throw new ApiException(ErrorCode.SURVEY_NOT_FOUND, 404, "Preference not found", user.getUserId());
         }
-        return toSurveyResponse(survey);
+        return toPreferenceResponse(preference);
     }
 
     @Transactional(readOnly = true)
@@ -167,7 +175,7 @@ public class AuthService {
                 user.getRole(),
                 user.isActive(),
                 user.getSecret() != null && !isBlank(user.getSecret().getKisAppKey()),
-                user.getSurvey() != null,
+                user.getPreference() != null,
                 user.getCreatedAt()
         );
     }
@@ -183,14 +191,22 @@ public class AuthService {
         );
     }
 
-    private UserSurveyResponse toSurveyResponse(UserSurvey survey) {
-        return new UserSurveyResponse(
-                survey.getInvestmentExperience(),
-                survey.getRiskTolerance(),
-                survey.getInvestmentGoal(),
-                survey.getPreferredMarket(),
-                survey.getNotes(),
-                survey.getUpdatedAt()
+    private UserPreferenceResponse toPreferenceResponse(UserPreference preference) {
+        return new UserPreferenceResponse(
+                preference.getTotalAssets(),
+                preference.getMonthlyInvestment(),
+                preference.getInvestmentPeriodMonths(),
+                preference.getTargetReturnRate(),
+                preference.getInvestmentGoal(),
+                preference.getInvestmentExperience(),
+                preference.getBirthDate(),
+                preference.getInvestmentType(),
+                preference.getVolatilityTolerance(),
+                preference.getLossAction(),
+                preference.getLeverageAllowed(),
+                preference.getOccupationType(),
+                preference.getLossTolerance(),
+                preference.getUpdatedAt()
         );
     }
 

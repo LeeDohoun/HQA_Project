@@ -6,8 +6,8 @@ import com.hqa.backend.dto.AuthSignupRequest;
 import com.hqa.backend.dto.AuthUserResponse;
 import com.hqa.backend.dto.UserSecretRequest;
 import com.hqa.backend.dto.UserSecretResponse;
-import com.hqa.backend.dto.UserSurveyRequest;
-import com.hqa.backend.dto.UserSurveyResponse;
+import com.hqa.backend.dto.UserPreferenceRequest;
+import com.hqa.backend.dto.UserPreferenceResponse;
 import com.hqa.backend.service.AuthService;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
@@ -58,13 +58,13 @@ public class AuthController {
         return authService.upsertUserSecret(request, session);
     }
 
-    @GetMapping("/me/survey")
-    public UserSurveyResponse getSurvey(HttpSession session) {
-        return authService.getSurvey(session);
+    @GetMapping("/me/preference")
+    public UserPreferenceResponse getPreference(HttpSession session) {
+        return authService.getPreference(session);
     }
 
-    @PutMapping("/me/survey")
-    public UserSurveyResponse saveSurvey(@Valid @RequestBody UserSurveyRequest request, HttpSession session) {
-        return authService.saveSurvey(request, session);
+    @PutMapping("/me/preference")
+    public UserPreferenceResponse savePreference(@Valid @RequestBody UserPreferenceRequest request, HttpSession session) {
+        return authService.savePreference(request, session);
     }
 }

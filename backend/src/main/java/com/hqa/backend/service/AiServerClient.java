@@ -4,7 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hqa.backend.config.HqaProperties;
 import com.hqa.backend.dto.RecommendItem;
-import com.hqa.backend.dto.RecommendRequest;
+import com.hqa.backend.entity.enums.EventType;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -59,12 +59,12 @@ public class AiServerClient {
         return parseMap(response);
     }
 
-    public List<RecommendItem> recommend(RecommendRequest request) {
+    public List<RecommendItem> recommend(EventType eventType) {
         try {
             String response = webClient.post()
                     .uri(properties.getAiServerUrl() + "/recommend")
                     .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(request)
+                    .bodyValue(Map.of("event_type", eventType.name()))
                     .retrieve()
                     .bodyToMono(String.class)
                     .block();

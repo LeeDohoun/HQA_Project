@@ -1,10 +1,10 @@
 package com.hqa.backend.scheduler;
 
 import com.hqa.backend.dto.RecommendItem;
-import com.hqa.backend.dto.RecommendRequest;
+import com.hqa.backend.entity.enums.EventType;
 import com.hqa.backend.entity.User;
 import com.hqa.backend.entity.UserSecret;
-import com.hqa.backend.entity.UserSurvey;
+import com.hqa.backend.entity.UserPreference;
 import com.hqa.backend.repository.UserRepository;
 import com.hqa.backend.service.AiServerClient;
 import com.hqa.backend.service.KisClient;
@@ -40,9 +40,9 @@ public class TradingScheduler {
 
         for (User user : users) {
             UserSecret secret = user.getSecret();
-            UserSurvey survey = user.getSurvey();
+            UserPreference preference = user.getPreference();
 
-            if (secret == null || survey == null
+            if (secret == null || preference == null
                     || isBlank(secret.getKisAppKey())
                     || isBlank(secret.getKisAppSecret())
                     || isBlank(secret.getKisAccountNo())) {
@@ -50,17 +50,9 @@ public class TradingScheduler {
                 continue;
             }
 
-            RecommendRequest request = new RecommendRequest(
-                    survey.getInvestmentExperience(),
-                    survey.getRiskTolerance(),
-                    survey.getInvestmentGoal(),
-                    survey.getPreferredMarket(),
-                    survey.getNotes()
-            );
-
             List<RecommendItem> recommendations;
             try {
-                recommendations = aiServerClient.recommend(request);
+                recommendations = aiServerClient.recommend(EventType.RECOMMEND);
             } catch (Exception e) {
                 errorLogger.log("TradingScheduler", user.getUserId(), null,
                         "AI server recommend call failed", e.getMessage());
