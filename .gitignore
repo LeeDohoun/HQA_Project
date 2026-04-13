@@ -2,11 +2,12 @@
 venv/
 env/
 .venv/
+.local/
 
 # 2. 보안 파일 (해킹 방지 - 가장 중요!)
 .env
-.env-*
 .env.local
+.env-*
 
 # 3. 파이썬 자동 생성 파일 (불필요한 쓰레기 파일)
 __pycache__/
@@ -37,10 +38,3 @@ data/token/
 
 # 9. 루트 package-lock.json (프론트엔드용은 frontend/에 있음)
 package-lock.json
-
-# 10. Java/Maven 빌드 출력 (컴파일된 파일, 업로드 불필요)
-backend/target/
-backend/.m2repo/
-backend/run.log
-ai_server/*.log
-AGENTS.md

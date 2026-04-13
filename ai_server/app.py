@@ -1,17 +1,34 @@
+"""
+HQA AI Server - AI 에이전트 & RAG 전용 서버
+
+포트: 8001
+역할: CPU/GPU 집약적인 LLM 추론, LangGraph 워크플로우, RAG 파이프라인 실행
+"""
+
 from __future__ import annotations
 
 import asyncio
-import hashlib
+import json
 import logging
+import sys
 from collections import OrderedDict
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-from typing import Any
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
+# 프로젝트 루트를 sys.path에 추가 (src/ 패키지 접근용)
+PROJECT_ROOT = Path(__file__).parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.config.settings import get_env_status, get_settings, load_project_env
+
+load_project_env()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,25 +37,37 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ── 인메모리 결과 캐시 (Redis 폴백용) ──
+_results: OrderedDict[str, Dict[str, Any]] = OrderedDict()
+_MAX_CACHE = 500
 
-_results: OrderedDict[str, dict[str, Any]] = OrderedDict()
-_MAX_CACHE = 256
 
-
-class SuggestRequest(BaseModel):
-    query: str
-
+# ──────────────────────────────────────────────
+# 라이프사이클
+# ──────────────────────────────────────────────
 
 @asynccontextmanager
-async def lifespan(_: FastAPI):
-    logger.info("HQA AI Server started")
+async def lifespan(app: FastAPI):
+    logger.info("🤖 HQA AI Server 시작 (port 8001)")
+    try:
+        from src.agents.graph import is_langgraph_available
+        if is_langgraph_available():
+            logger.info("   LangGraph: 활성 ✅")
+        else:
+            logger.info("   LangGraph: 비활성 (폴백 모드)")
+    except Exception:
+        logger.info("   LangGraph: 로드 실패")
     yield
-    logger.info("HQA AI Server stopped")
+    logger.info("🛑 HQA AI Server 종료")
 
+
+# ──────────────────────────────────────────────
+# 앱 생성
+# ──────────────────────────────────────────────
 
 app = FastAPI(
     title="HQA AI Server",
-    description="AI analysis service for HQA",
+    description="AI 에이전트 & RAG 분석 전용 서버",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -46,313 +75,472 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
-@app.get("/health")
-async def health() -> dict[str, Any]:
-    return {
-        "status": "ok",
-        "service": "hqa-ai-server",
-        "cached_results": len(_results),
-        "timestamp": _now_iso(),
-    }
+# ──────────────────────────────────────────────
+# 스키마
+# ──────────────────────────────────────────────
+
+class AnalyzeRequest(BaseModel):
+    task_id: str
+    stock_name: str
+    stock_code: str
+    mode: str = "full"          # "full" | "quick"
+    max_retries: int = 1
 
 
-@app.post("/analyze")
-async def analyze(request: Request) -> dict[str, str]:
-    payload: dict[str, Any] = {}
+class ChatRequest(BaseModel):
+    message: str
+    session_id: Optional[str] = None
+
+
+class SuggestRequest(BaseModel):
+    query: str
+
+
+class ThemeAnalyzeRequest(BaseModel):
+    task_id: str
+    theme: str
+    theme_key: str = ""
+    candidate_limit: int = 5
+    top_n: int = 3
+
+
+# ──────────────────────────────────────────────
+# Redis 헬퍼
+# ──────────────────────────────────────────────
+
+def _get_redis_url() -> str:
+    import os
+    return os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
+
+def _publish_progress(task_id: str, agent: str, status: str, message: str, progress: float):
+    """Redis pub/sub으로 진행 상황 전달"""
     try:
-        parsed = await request.json()
-        if isinstance(parsed, dict):
-            payload = parsed
+        import redis
+        r = redis.from_url(_get_redis_url())
+        event = json.dumps({
+            "task_id": task_id,
+            "agent": agent,
+            "status": status,
+            "message": message,
+            "progress": progress,
+            "timestamp": datetime.now().isoformat(),
+        }, ensure_ascii=False)
+        r.publish(f"hqa:progress:{task_id}", event)
     except Exception:
-        body = (await request.body()).decode("utf-8", errors="ignore").strip()
-        logger.warning("Analyze request JSON parsing failed. raw_body=%s", body)
+        pass  # Redis 미사용 시 무시
 
-    task_id = str(payload.get("task_id", "")).strip()
-    stock_name = str(payload.get("stock_name", "")).strip()
-    stock_code = str(payload.get("stock_code", "")).strip()
-    mode = str(payload.get("mode", "full")).strip().lower() or "full"
-    max_retries_raw = payload.get("max_retries", 1)
 
+def _store_result(task_id: str, result: dict):
+    """결과를 Redis + 인메모리에 저장"""
     try:
-        max_retries = int(max_retries_raw)
-    except (TypeError, ValueError):
-        max_retries = 1
-
-    if not task_id:
-        raise HTTPException(status_code=422, detail="task_id is required")
-    if not stock_name:
-        raise HTTPException(status_code=422, detail="stock_name is required")
-    if len(stock_code) != 6 or not stock_code.isdigit():
-        raise HTTPException(status_code=422, detail="stock_code must be a 6-digit string")
-    if mode not in {"full", "quick"}:
-        mode = "full"
-
-    _results[task_id] = {
-        "task_id": task_id,
-        "status": "pending",
-        "mode": mode,
-        "stock": {"name": stock_name, "code": stock_code},
-        "scores": {},
-        "final_decision": {},
-        "research_quality": "collecting",
-        "quality_warnings": [],
-        "errors": {},
-    }
-    _trim_cache()
-    asyncio.create_task(
-        _run_analysis_background(
-            task_id,
-            stock_name,
-            stock_code,
-            mode,
-            max_retries,
+        import redis
+        r = redis.from_url(_get_redis_url())
+        r.setex(
+            f"hqa:result:{task_id}",
+            3600,  # 1시간 TTL
+            json.dumps(result, ensure_ascii=False, default=str),
         )
-    )
-    return {"task_id": task_id, "status": "pending"}
+    except Exception:
+        pass
+
+    # 인메모리 폴백
+    _results[task_id] = result
+    while len(_results) > _MAX_CACHE:
+        _results.popitem(last=False)
 
 
-@app.get("/analyze/{task_id}")
-async def get_analyze_result(task_id: str) -> dict[str, Any]:
-    result = _results.get(task_id)
-    if result is None:
-        raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
-    return result
-
-
-@app.post("/suggest")
-async def suggest(request: SuggestRequest) -> dict[str, Any]:
-    query = request.query.strip()
-    if not query:
-        return {
-            "original_query": request.query,
-            "is_answerable": False,
-            "corrected_query": None,
-            "suggestions": ["005930", "Samsung Electronics", "SK hynix"],
-            "reason": "Empty query",
-        }
-
-    is_code = query.isdigit() and len(query) == 6
-    suggestions = []
-    corrected_query = None
-    if not is_code and len(query) < 2:
-        suggestions = ["005930", "000660", "035420"]
-    elif "," in query:
-        corrected_query = query.replace(",", " ").strip()
-
-    return {
-        "original_query": request.query,
-        "is_answerable": True,
-        "corrected_query": corrected_query,
-        "suggestions": suggestions,
-        "reason": None,
-    }
-
-
-@app.post("/recommend")
-async def recommend(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    _ = payload.get("event_type", "RECOMMEND")
-    return [
-        {
-            "stockCode": "005930",
-            "stockName": "Samsung Electronics",
-            "quantity": 1,
-            "limitPrice": 70000,
-        }
-    ]
-
+# ──────────────────────────────────────────────
+# 분석 실행 (백그라운드)
+# ──────────────────────────────────────────────
 
 async def _run_analysis_background(
-    task_id: str,
-    stock_name: str,
-    stock_code: str,
-    mode: str,
-    max_retries: int,
-) -> None:
+    task_id: str, stock_name: str, stock_code: str, mode: str, max_retries: int
+):
+    """asyncio 백그라운드에서 AI 분석 실행"""
+    loop = asyncio.get_event_loop()
     try:
-        _store_partial(task_id, {"status": "running", "research_quality": "running"})
-        await asyncio.sleep(0.5)
+        _publish_progress(task_id, "system", "started", f"{stock_name} 분석 시작", 0.0)
 
-        if mode.lower() == "quick":
-            result = _execute_quick(task_id, stock_name, stock_code)
+        if mode == "quick":
+            result = await loop.run_in_executor(
+                None, _execute_quick, task_id, stock_name, stock_code
+            )
         else:
-            result = _execute_full(task_id, stock_name, stock_code, max_retries)
+            result = await loop.run_in_executor(
+                None, _execute_full, task_id, stock_name, stock_code, max_retries
+            )
 
-        result["status"] = "completed"
-        result["completed_at"] = _now_iso()
-        _store_result(task_id, result)
-    except Exception as exc:
-        logger.exception("Analysis failed for %s", task_id)
-        _store_result(
+        _store_result(task_id, {**result, "status": "completed"})
+        _publish_progress(task_id, "system", "completed", "분석 완료", 1.0)
+
+    except Exception as e:
+        logger.exception(f"분석 실패: {task_id}")
+        _store_result(task_id, {"task_id": task_id, "status": "failed", "error": str(e)})
+        _publish_progress(task_id, "system", "error", f"오류: {str(e)[:200]}", 0.0)
+
+
+async def _run_theme_analysis_background(
+    task_id: str,
+    theme: str,
+    theme_key: str,
+    candidate_limit: int,
+    top_n: int,
+):
+    """asyncio 백그라운드에서 테마 주도주 선별 실행"""
+    loop = asyncio.get_event_loop()
+    try:
+        _publish_progress(task_id, "system", "started", f"{theme} 테마 분석 시작", 0.0)
+
+        result = await loop.run_in_executor(
+            None,
+            _execute_theme,
             task_id,
-            {
-                "task_id": task_id,
-                "status": "failed",
-                "mode": mode.lower(),
-                "stock": {"name": stock_name, "code": stock_code},
-                "scores": {},
-                "final_decision": {},
-                "research_quality": "failed",
-                "quality_warnings": ["AI analysis failed"],
-                "completed_at": _now_iso(),
-                "errors": {"system": str(exc)},
-            },
+            theme,
+            theme_key,
+            candidate_limit,
+            top_n,
         )
 
+        _store_result(task_id, {**result, "status": "completed"})
+        _publish_progress(task_id, "system", "completed", "테마 분석 완료", 1.0)
+    except Exception as e:
+        logger.exception(f"테마 분석 실패: {task_id}")
+        _store_result(task_id, {"task_id": task_id, "status": "failed", "error": str(e)})
+        _publish_progress(task_id, "system", "error", f"오류: {str(e)[:200]}", 0.0)
 
-def _execute_quick(task_id: str, stock_name: str, stock_code: str) -> dict[str, Any]:
-    quant = _build_quant_score(stock_name, stock_code)
-    chartist = _build_chartist_score(stock_code)
+
+def _execute_quick(task_id: str, stock_name: str, stock_code: str) -> dict:
+    """빠른 분석 (Quant + Chartist 병렬)"""
+    from src.agents import QuantAgent, ChartistAgent
+    from src.utils.parallel import run_agents_parallel, is_error
+
+    _publish_progress(task_id, "quant", "started", "재무 분석 중...", 0.2)
+    _publish_progress(task_id, "chartist", "started", "기술적 분석 중...", 0.2)
+
+    quant = QuantAgent()
+    chartist = ChartistAgent()
+
+    parallel_results = run_agents_parallel({
+        "quant": (quant.full_analysis, (stock_name, stock_code)),
+        "chartist": (chartist.full_analysis, (stock_name, stock_code)),
+    })
+
+    quant_score = parallel_results["quant"]
+    chartist_score = parallel_results["chartist"]
+
+    if is_error(quant_score):
+        quant_score = quant._default_score(stock_name, str(quant_score))
+    if is_error(chartist_score):
+        chartist_score = chartist._default_score(stock_code, str(chartist_score))
+
+    _publish_progress(task_id, "quant", "completed", f"재무: {quant_score.grade}", 1.0)
+    _publish_progress(task_id, "chartist", "completed", f"기술: {chartist_score.signal}", 1.0)
 
     return {
         "task_id": task_id,
         "mode": "quick",
         "stock": {"name": stock_name, "code": stock_code},
         "scores": {
-            "quant": quant,
-            "chartist": chartist,
+            "quant": _score_to_dict(quant_score),
+            "chartist": _score_to_dict(chartist_score),
         },
-        "final_decision": _build_decision(quant["total_score"], chartist["total_score"], None),
-        "research_quality": "mock-quick",
-        "quality_warnings": ["Quick mode uses simplified local heuristics."],
-        "errors": {},
+        "completed_at": datetime.now().isoformat(),
     }
 
 
-def _execute_full(task_id: str, stock_name: str, stock_code: str, max_retries: int) -> dict[str, Any]:
-    analyst = _build_analyst_score(stock_name, stock_code, max_retries)
-    quant = _build_quant_score(stock_name, stock_code)
-    chartist = _build_chartist_score(stock_code)
+def _execute_full(task_id: str, stock_name: str, stock_code: str, max_retries: int) -> dict:
+    """전체 분석 (LangGraph 워크플로우)"""
+    from src.agents.graph import run_stock_analysis
+
+    _publish_progress(task_id, "analyst", "started", "헤게모니 분석 중...", 0.1)
+    _publish_progress(task_id, "quant", "started", "재무 분석 중...", 0.1)
+    _publish_progress(task_id, "chartist", "started", "기술적 분석 중...", 0.1)
+
+    result = run_stock_analysis(
+        stock_name=stock_name,
+        stock_code=stock_code,
+        max_retries=max_retries,
+    )
+
+    scores = result.get("scores", {})
+    analyst_score = scores.get("analyst")
+    quant_score = scores.get("quant")
+    chartist_score = scores.get("chartist")
+    final_decision = result.get("final_decision")
+
+    if analyst_score:
+        _publish_progress(task_id, "analyst", "completed",
+                          f"헤게모니: {getattr(analyst_score, 'hegemony_grade', '?')}", 1.0)
+    if quant_score:
+        _publish_progress(task_id, "quant", "completed", f"재무: {quant_score.grade}", 1.0)
+    if chartist_score:
+        _publish_progress(task_id, "chartist", "completed", f"기술: {chartist_score.signal}", 1.0)
+    if final_decision:
+        _publish_progress(task_id, "risk_manager", "completed",
+                          f"판단: {final_decision.action.value}", 1.0)
 
     return {
         "task_id": task_id,
         "mode": "full",
         "stock": {"name": stock_name, "code": stock_code},
         "scores": {
-            "analyst": analyst,
-            "quant": quant,
-            "chartist": chartist,
+            "analyst": _score_to_dict(analyst_score) if analyst_score else None,
+            "quant": _score_to_dict(quant_score) if quant_score else None,
+            "chartist": _score_to_dict(chartist_score) if chartist_score else None,
         },
-        "final_decision": _build_decision(
-            quant["total_score"],
-            chartist["total_score"],
-            analyst["total_score"],
-        ),
-        "research_quality": "mock-full",
-        "quality_warnings": [
-            "This restored AI server uses deterministic mock scoring.",
-        ],
-        "errors": {},
+        "final_decision": _decision_to_dict(final_decision) if final_decision else None,
+        "research_quality": result.get("research_quality"),
+        "quality_warnings": result.get("quality_warnings", []),
+        "completed_at": datetime.now().isoformat(),
     }
 
 
-def _build_analyst_score(stock_name: str, stock_code: str, max_retries: int) -> dict[str, Any]:
-    base = _score_seed(stock_name, stock_code, "analyst")
-    total_score = round(35 + (base % 36), 1)
-    grade = "A" if total_score >= 62 else "B" if total_score >= 50 else "C"
-    return {
-        "stock_name": stock_name,
-        "stock_code": stock_code,
-        "total_score": total_score,
-        "hegemony_grade": grade,
-        "final_opinion": f"Macro and company-specific signals are stable after {max_retries + 1} pass(es).",
-        "confidence": round(0.55 + ((base % 20) / 100), 2),
-    }
+def _execute_theme(
+    task_id: str,
+    theme: str,
+    theme_key: str,
+    candidate_limit: int,
+    top_n: int,
+) -> dict:
+    """테마 전체 스캔 후 주도주 선별"""
+    from src.agents import ThemeLeaderOrchestrator
 
+    _publish_progress(task_id, "theme_orchestrator", "started", "후보군 추출 및 평가 중...", 0.1)
 
-def _build_quant_score(stock_name: str, stock_code: str) -> dict[str, Any]:
-    base = _score_seed(stock_name, stock_code, "quant")
-    total_score = round(45 + (base % 46), 1)
-    if total_score >= 80:
-        grade = "A"
-        opinion = "Financial quality and valuation both look strong."
-    elif total_score >= 65:
-        grade = "B"
-        opinion = "Financial signals are acceptable with moderate upside."
-    else:
-        grade = "C"
-        opinion = "Financial profile is mixed and needs caution."
-    return {
-        "stock_name": stock_name,
-        "stock_code": stock_code,
-        "total_score": total_score,
-        "grade": grade,
-        "opinion": opinion,
-    }
+    orchestrator = ThemeLeaderOrchestrator()
+    result = orchestrator.run(
+        theme=theme,
+        theme_key=theme_key,
+        candidate_limit=candidate_limit,
+        top_n=top_n,
+    )
 
+    if result.get("status") != "success":
+        return {
+            "task_id": task_id,
+            "mode": "theme",
+            "theme": theme,
+            "theme_key": theme_key,
+            "status": "failed",
+            "error": result.get("message", "테마 분석 실패"),
+            "completed_at": datetime.now().isoformat(),
+        }
 
-def _build_chartist_score(stock_code: str) -> dict[str, Any]:
-    base = _score_seed(stock_code, "chartist")
-    total_score = round(40 + (base % 51), 1)
-    if total_score >= 78:
-        signal = "BUY"
-    elif total_score >= 58:
-        signal = "HOLD"
-    else:
-        signal = "SELL"
-    return {
-        "stock_code": stock_code,
-        "total_score": total_score,
-        "signal": signal,
-    }
+    _publish_progress(task_id, "theme_orchestrator", "completed", "주도주 선별 완료", 1.0)
 
-
-def _build_decision(
-    quant_score: float,
-    chartist_score: float,
-    analyst_score: float | None,
-) -> dict[str, Any]:
-    components = [quant_score, chartist_score]
-    if analyst_score is not None:
-        components.append(analyst_score)
-
-    average = sum(components) / len(components)
-    if average >= 75:
-        action = "BUY"
-    elif average >= 58:
-        action = "HOLD"
-    else:
-        action = "SELL"
+    leaders = []
+    for row in result.get("leaders", []):
+        candidate = row.get("candidate", {})
+        decision = row.get("final_decision", {})
+        leaders.append(
+            {
+                "stock_name": candidate.get("stock_name"),
+                "stock_code": candidate.get("stock_code"),
+                "leader_score": row.get("leader_score"),
+                "seed_score": candidate.get("seed_score"),
+                "action": decision.get("action"),
+                "confidence": decision.get("confidence"),
+                "summary": decision.get("summary"),
+                "risk_level": decision.get("risk_level"),
+                "key_catalysts": decision.get("key_catalysts", []),
+                "risk_factors": decision.get("risk_factors", []),
+            }
+        )
 
     return {
-        "action": action,
-        "confidence": round(min(0.95, max(0.45, average / 100)), 2),
-        "summary": f"Composite score {average:.1f} suggests {action.lower()} bias.",
+        "task_id": task_id,
+        "mode": "theme",
+        "theme": theme,
+        "theme_key": result.get("theme_key", theme_key),
+        "candidate_limit": candidate_limit,
+        "top_n": top_n,
+        "candidate_count": result.get("candidate_count", 0),
+        "evaluated_count": result.get("evaluated_count", 0),
+        "leaders": leaders,
+        "summary": result.get("summary", ""),
+        "completed_at": datetime.now().isoformat(),
     }
 
 
-def _score_seed(*parts: str) -> int:
-    digest = hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
-    return int(digest[:8], 16)
+# ──────────────────────────────────────────────
+# 변환 헬퍼
+# ──────────────────────────────────────────────
+
+def _score_to_dict(score) -> dict:
+    if score is None:
+        return {}
+    if hasattr(score, "__dict__"):
+        return {k: v for k, v in score.__dict__.items() if not k.startswith("_")}
+    return {}
 
 
-def _store_partial(task_id: str, patch: dict[str, Any]) -> None:
-    current = dict(_results.get(task_id, {}))
-    current.update(patch)
-    _results[task_id] = current
-    _trim_cache()
+def _decision_to_dict(decision) -> dict:
+    if decision is None:
+        return {}
+    return {
+        "action": decision.action.value if hasattr(decision.action, "value") else str(decision.action),
+        "confidence": getattr(decision, "confidence", 0),
+        "risk_level": decision.risk_level.value if hasattr(decision.risk_level, "value") else str(decision.risk_level),
+        "total_score": getattr(decision, "total_score", 0),
+        "summary": getattr(decision, "summary", ""),
+        "key_catalysts": getattr(decision, "key_catalysts", []),
+        "risk_factors": getattr(decision, "risk_factors", []),
+        "detailed_reasoning": getattr(decision, "detailed_reasoning", ""),
+    }
 
 
-def _store_result(task_id: str, result: dict[str, Any]) -> None:
-    _results[task_id] = result
-    _trim_cache()
+# ──────────────────────────────────────────────
+# 엔드포인트
+# ──────────────────────────────────────────────
+
+@app.get("/health")
+async def health():
+    settings = get_settings()
+    env_status = get_env_status()
+    return {
+        "status": "ok",
+        "service": "HQA AI Server",
+        "port": 8001,
+        "data_dir": str(settings.data_dir),
+        "data_dir_exists": settings.data_dir.exists(),
+        "env_loaded": env_status.loaded,
+        "env_file": str(env_status.path) if env_status.path else None,
+        "env_message": env_status.message,
+    }
 
 
-def _trim_cache() -> None:
-    while len(_results) > _MAX_CACHE:
-        _results.popitem(last=False)
+@app.post("/analyze", status_code=202)
+async def analyze(request: AnalyzeRequest):
+    """
+    분석 요청 (비동기)
+
+    즉시 task_id를 반환하고 백그라운드에서 분석을 실행합니다.
+    진행 상황은 Redis pub/sub `hqa:progress:{task_id}` 채널로 전달됩니다.
+    결과는 Redis `hqa:result:{task_id}` 키에 저장됩니다.
+    """
+    asyncio.create_task(
+        _run_analysis_background(
+            request.task_id,
+            request.stock_name,
+            request.stock_code,
+            request.mode,
+            request.max_retries,
+        )
+    )
+    return {"task_id": request.task_id, "status": "pending"}
 
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+@app.get("/analyze/{task_id}")
+async def get_analyze_result(task_id: str):
+    """분석 결과 조회 (Redis → 인메모리 순서로 조회)"""
+    # Redis 우선 조회
+    try:
+        import redis
+        r = redis.from_url(_get_redis_url())
+        data = r.get(f"hqa:result:{task_id}")
+        if data:
+            return json.loads(data)
+    except Exception:
+        pass
+
+    # 인메모리 폴백
+    result = _results.get(task_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"작업을 찾을 수 없습니다: {task_id}")
+    return result
 
 
-if __name__ == "__main__":
-    import uvicorn
+@app.post("/theme/analyze", status_code=202)
+async def analyze_theme(request: ThemeAnalyzeRequest):
+    """
+    테마 주도주 선별 요청 (비동기)
 
-    uvicorn.run("app:app", host="0.0.0.0", port=8001, reload=False)
+    즉시 task_id를 반환하고 백그라운드에서 후보 추출 및 멀티 에이전트 평가를 실행합니다.
+    결과는 `GET /theme/analyze/{task_id}` 또는 `GET /analyze/{task_id}`로 조회할 수 있습니다.
+    """
+    asyncio.create_task(
+        _run_theme_analysis_background(
+            request.task_id,
+            request.theme,
+            request.theme_key,
+            request.candidate_limit,
+            request.top_n,
+        )
+    )
+    return {"task_id": request.task_id, "status": "pending", "mode": "theme"}
+
+
+@app.get("/theme/analyze/{task_id}")
+async def get_theme_analyze_result(task_id: str):
+    """테마 주도주 선별 결과 조회"""
+    return await get_analyze_result(task_id)
+
+
+@app.post("/chat")
+async def chat(request: ChatRequest):
+    """대화형 질문 (SupervisorAgent)"""
+    loop = asyncio.get_event_loop()
+
+    def _run():
+        from src.agents import SupervisorAgent
+        supervisor = SupervisorAgent()
+        result = supervisor.execute(request.message)
+        if isinstance(result, dict):
+            return {
+                "message": (
+                    result.get("summary") or result.get("answer") or
+                    result.get("analysis") or result.get("message") or str(result)
+                ),
+                "intent": result.get("intent"),
+                "stocks": result.get("stocks", []),
+            }
+        return {"message": str(result)}
+
+    return await loop.run_in_executor(None, _run)
+
+
+@app.post("/suggest")
+async def suggest(request: SuggestRequest):
+    """쿼리 제안 (Answerability Check)"""
+    loop = asyncio.get_event_loop()
+
+    def _run():
+        from src.agents.llm_config import get_instruct_llm
+        llm = get_instruct_llm()
+        prompt = f"""당신은 주식 분석 AI 시스템의 쿼리 검증 모듈입니다.
+
+사용자의 질문이 다음 기능 범위 내에 있는지 판단하세요:
+1. 한국 주식 종목 분석 (재무, 기술적, 헤게모니)
+2. 실시간 시세 조회
+3. 산업/테마 분석
+4. 종목 비교
+
+사용자 질문: "{request.query}"
+
+다음 JSON 형식으로 응답하세요:
+{{
+    "is_answerable": true/false,
+    "corrected_query": "교정된 질문 (필요시)",
+    "suggestions": ["대안 질문1", "대안 질문2", "대안 질문3"],
+    "reason": "판단 근거"
+}}
+"""
+        try:
+            response = llm.invoke(prompt)
+            text = response.content
+            start = text.find("{")
+            end = text.rfind("}") + 1
+            if start >= 0 and end > start:
+                return json.loads(text[start:end])
+        except Exception as e:
+            logger.warning(f"쿼리 제안 실패: {e}")
+        return {"is_answerable": True, "corrected_query": None, "suggestions": [], "reason": None}
+
+    result = await loop.run_in_executor(None, _run)
+    return {"original_query": request.query, **result}

@@ -1,40 +1,33 @@
 # ==========================================
-# HQA API - Production Dockerfile
+# HQA AI Server - Dockerfile
 # ==========================================
-# Multi-stage build for minimal image size
-# CPU-only (GPU 의존성 제거)
+# AI 에이전트 & RAG 전용 서버 (CPU 집약적)
 # ==========================================
 
-# ── Stage 1: Dependencies ──
 FROM python:3.11-slim AS builder
 
 WORKDIR /app
 
-# 시스템 패키지
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Python 패키지 설치
 COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 
-# ── Stage 2: Runtime ──
 FROM python:3.11-slim AS runtime
 
 WORKDIR /app
 
-# 런타임 시스템 패키지
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# 빌드된 패키지 복사
 COPY --from=builder /install /usr/local
 
-# 애플리케이션 코드 및 프롬프트 복사
+# 애플리케이션 코드 복사
 COPY src/ ./src/
 COPY ai_server/ ./ai_server/
 COPY prompts/ ./prompts/
@@ -48,24 +41,18 @@ RUN groupadd -r hqa && useradd -r -g hqa -d /app hqa
 RUN chown -R hqa:hqa /app
 USER hqa
 
-# 환경변수
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app \
     ENV=production \
-    PORT=8000
+    PORT=8001
 
-# 헬스체크
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:${PORT}/health || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8001/health || exit 1
 
-# 포트 노출
-EXPOSE ${PORT}
+EXPOSE 8001
 
-# 서버 실행
 CMD ["uvicorn", "ai_server.app:app", \
      "--host", "0.0.0.0", \
-     "--port", "8000", \
-     "--workers", "4", \
-     "--proxy-headers", \
-     "--forwarded-allow-ips", "*"]
+     "--port", "8001", \
+     "--workers", "2"]

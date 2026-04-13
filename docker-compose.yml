@@ -2,14 +2,14 @@
 # HQA - Docker Compose
 # ==========================================
 # 서비스 구성:
-#   - api:    FastAPI 백엔드 (port 8000) - 경량 API 게이트웨이
+#   - api:    FastAPI 서비스 (port 8000) - ai_server.app의 호환 엔트리포인트
 #   - ai:     AI 서버 (port 8001)        - LLM/RAG/에이전트 (CPU 집약적)
 #   - redis:  Task Queue 브로커 + 캐시
 #   - postgres: 프로덕션 DB (선택)
 # ==========================================
 
 services:
-  # ── FastAPI Backend (경량 API 게이트웨이) ──
+  # ── FastAPI 서비스 (호환 엔트리포인트) ──
   api:
     build:
       context: .

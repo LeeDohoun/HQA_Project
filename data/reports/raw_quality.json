@@ -1,0 +1,233 @@
+{
+  "dart": {
+    "source": "dart",
+    "total_docs": 2416,
+    "presence": {
+      "title": 2416,
+      "content": 2416,
+      "page_content": 0
+    },
+    "normalized_presence": {
+      "source_type": 2416,
+      "title": 2416,
+      "content": 2416,
+      "page_content": 0
+    },
+    "title_eq_content": {
+      "count": 0,
+      "ratio_percent": 0.0
+    },
+    "content_length_stats": {
+      "count": 2416,
+      "min": 12,
+      "max": 1200,
+      "mean": 73.21,
+      "median": 28.0,
+      "p95": 311
+    },
+    "placeholder_suspects": 0,
+    "low_quality_suspects": 2157,
+    "dart_wrapper_suspects": 390,
+    "dart_has_body_but_wrapper": 265,
+    "source_type_counts": {},
+    "normalized_source_type_counts": {
+      "dart": 2416
+    },
+    "samples": {
+      "news_placeholder": [],
+      "forum_title_only": [],
+      "dart_wrapper": [
+        {
+          "path": "C:\\Users\\bigcomlab\\Desktop\\HQA_Project\\data\\raw\\dart\\2차전지.jsonl",
+          "id": null,
+          "source_type": "dart",
+          "title": "전환가액의조정",
+          "content": "잠시만 기다려주세요. 코 파워넷 현재목차 전체문서 선택 검색 이전 다음 본문 +본문선택+ 2024.12.18 전환가액의조정 첨부 +첨부선택+ +문서 선택+ -본문문서선택- 2..."
+        },
+        {
+          "path": "C:\\Users\\bigcomlab\\Desktop\\HQA_Project\\data\\raw\\dart\\2차전지.jsonl",
+          "id": null,
+          "source_type": "dart",
+          "title": "주주명부폐쇄기간또는기준일설정",
+          "content": "잠시만 기다려주세요. 코 파워넷 현재목차 전체문서 선택 검색 이전 다음 본문 +본문선택+ 2024.12.16 주주명부폐쇄기간또는기준일설정 첨부 +첨부선택+ +문서 선택+ -본..."
+        },
+        {
+          "path": "C:\\Users\\bigcomlab\\Desktop\\HQA_Project\\data\\raw\\dart\\2차전지.jsonl",
+          "id": null,
+          "source_type": "dart",
+          "title": "분기보고서 (2024.09)",
+          "content": "잠시만 기다려주세요. 코 파워넷 현재목차 전체문서 선택 검색 이전 다음 본문 +본문선택+ 2024.11.14 분기보고서 첨부 +첨부선택+ +직전 정기보고서 바로가기+ 2024..."
+        },
+        {
+          "path": "C:\\Users\\bigcomlab\\Desktop\\HQA_Project\\data\\raw\\dart\\2차전지.jsonl",
+          "id": null,
+          "source_type": "dart",
+          "title": "주식등의대량보유상황보고서(약식)",
+          "content": "잠시만 기다려주세요. 코 파워넷 현재목차 전체문서 선택 검색 이전 다음 본문 +본문선택+ 2024.09.24 주식등의대량보유상황보고서(약식) 첨부 +첨부선택+ +문서 선택+ ..."
+        },
+        {
+          "path": "C:\\Users\\bigcomlab\\Desktop\\HQA_Project\\data\\raw\\dart\\2차전지.jsonl",
+          "id": null,
+          "source_type": "dart",
+          "title": "전환사채(해외전환사채포함)발행후만기전사채취득",
+          "content": "잠시만 기다려주세요. 코 파워넷 현재목차 전체문서 선택 검색 이전 다음 본문 +본문선택+ 2024.09.23 전환사채(해외전환사채포함)발행후만기전사채취득 첨부 +첨부선택+ +..."
+        }
+      ],
+      "unknown_unparsed": []
+    }
+  },
+  "forum": {
+    "source": "forum",
+    "total_docs": 21715,
+    "presence": {
+      "title": 21715,
+      "content": 21715,
+      "page_content": 0
+    },
+    "normalized_presence": {
+      "source_type": 21715,
+      "title": 21715,
+      "content": 21715,
+      "page_content": 0
+    },
+    "title_eq_content": {
+      "count": 9679,
+      "ratio_percent": 44.57
+    },
+    "content_length_stats": {
+      "count": 21715,
+      "min": 1,
+      "max": 349,
+      "mean": 187.2,
+      "median": 310,
+      "p95": 349
+    },
+    "placeholder_suspects": 0,
+    "low_quality_suspects": 7657,
+    "dart_wrapper_suspects": 0,
+    "dart_has_body_but_wrapper": 0,
+    "source_type_counts": {},
+    "normalized_source_type_counts": {
+      "forum": 21715
+    },
+    "samples": {
+      "news_placeholder": [],
+      "forum_title_only": [
+        {
+          "path": "C:\\Users\\bigcomlab\\Desktop\\HQA_Project\\data\\raw\\forum\\2차전지.jsonl",
+          "id": null,
+          "source_type": "forum",
+          "title": "사상최대실적 예고 [ 4 ]",
+          "content": "사상최대실적 예고 [ 4 ]"
+        },
+        {
+          "path": "C:\\Users\\bigcomlab\\Desktop\\HQA_Project\\data\\raw\\forum\\2차전지.jsonl",
+          "id": null,
+          "source_type": "forum",
+          "title": "◐ 손주회사 현황 [ 1 ]",
+          "content": "◐ 손주회사 현황 [ 1 ]"
+        },
+        {
+          "path": "C:\\Users\\bigcomlab\\Desktop\\HQA_Project\\data\\raw\\forum\\2차전지.jsonl",
+          "id": null,
+          "source_type": "forum",
+          "title": "누가 샀노 [ 1 ]",
+          "content": "누가 샀노 [ 1 ]"
+        },
+        {
+          "path": "C:\\Users\\bigcomlab\\Desktop\\HQA_Project\\data\\raw\\forum\\2차전지.jsonl",
+          "id": null,
+          "source_type": "forum",
+          "title": "3분기에만 [ 2 ]",
+          "content": "3분기에만 [ 2 ]"
+        },
+        {
+          "path": "C:\\Users\\bigcomlab\\Desktop\\HQA_Project\\data\\raw\\forum\\2차전지.jsonl",
+          "id": null,
+          "source_type": "forum",
+          "title": "회사 [ 2 ]",
+          "content": "회사 [ 2 ]"
+        }
+      ],
+      "dart_wrapper": [],
+      "unknown_unparsed": []
+    }
+  },
+  "news": {
+    "source": "news",
+    "total_docs": 585,
+    "presence": {
+      "title": 585,
+      "content": 585,
+      "page_content": 0
+    },
+    "normalized_presence": {
+      "source_type": 585,
+      "title": 585,
+      "content": 585,
+      "page_content": 0
+    },
+    "title_eq_content": {
+      "count": 585,
+      "ratio_percent": 100.0
+    },
+    "content_length_stats": {
+      "count": 585,
+      "min": 5,
+      "max": 5,
+      "mean": 5.0,
+      "median": 5,
+      "p95": 5
+    },
+    "placeholder_suspects": 585,
+    "low_quality_suspects": 585,
+    "dart_wrapper_suspects": 0,
+    "dart_has_body_but_wrapper": 0,
+    "source_type_counts": {},
+    "normalized_source_type_counts": {
+      "news": 585
+    },
+    "samples": {
+      "news_placeholder": [
+        {
+          "path": "C:\\Users\\bigcomlab\\Desktop\\HQA_Project\\data\\raw\\news\\2차전지.jsonl",
+          "id": null,
+          "source_type": "news",
+          "title": "네이버뉴스",
+          "content": "네이버뉴스"
+        },
+        {
+          "path": "C:\\Users\\bigcomlab\\Desktop\\HQA_Project\\data\\raw\\news\\2차전지.jsonl",
+          "id": null,
+          "source_type": "news",
+          "title": "네이버뉴스",
+          "content": "네이버뉴스"
+        },
+        {
+          "path": "C:\\Users\\bigcomlab\\Desktop\\HQA_Project\\data\\raw\\news\\2차전지.jsonl",
+          "id": null,
+          "source_type": "news",
+          "title": "네이버뉴스",
+          "content": "네이버뉴스"
+        },
+        {
+          "path": "C:\\Users\\bigcomlab\\Desktop\\HQA_Project\\data\\raw\\news\\2차전지.jsonl",
+          "id": null,
+          "source_type": "news",
+          "title": "네이버뉴스",
+          "content": "네이버뉴스"
+        },
+        {
+          "path": "C:\\Users\\bigcomlab\\Desktop\\HQA_Project\\data\\raw\\news\\2차전지.jsonl",
+          "id": null,
+          "source_type": "news",
+          "title": "네이버뉴스",
+          "content": "네이버뉴스"
+        }
+      ],
+      "forum_title_only": [],
+      "dart_wrapper": [],
+      "unknown_unparsed": []
+    }
+  }
+}
