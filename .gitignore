@@ -40,3 +40,7 @@ package-lock.json
 
 # 10. Java/Maven 빌드 출력 (컴파일된 파일, 업로드 불필요)
 backend/target/
+backend/.m2repo/
+backend/run.log
+ai_server/*.log
+AGENTS.md

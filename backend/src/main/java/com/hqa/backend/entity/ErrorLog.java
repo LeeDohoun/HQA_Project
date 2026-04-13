@@ -18,7 +18,7 @@ import java.util.UUID;
 public class ErrorLog {
 
     @Id
-    private String id = UUID.randomUUID().toString();
+    private String id;
 
     private String userId;
     private String stockCode;
@@ -36,6 +36,9 @@ public class ErrorLog {
 
     @PrePersist
     public void onCreate() {
+        if (id == null) {
+            id = UUID.randomUUID().toString();
+        }
         createdAt = OffsetDateTime.now();
     }
 

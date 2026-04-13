@@ -22,7 +22,7 @@ import java.util.UUID;
 public class User {
 
     @Id
-    private String id = UUID.randomUUID().toString();
+    private String id;
 
     @Column(nullable = false, unique = true)
     private String userId;
@@ -55,6 +55,9 @@ public class User {
 
     @PrePersist
     public void onCreate() {
+        if (id == null) {
+            id = UUID.randomUUID().toString();
+        }
         OffsetDateTime now = OffsetDateTime.now();
         createdAt = now;
         updatedAt = now;

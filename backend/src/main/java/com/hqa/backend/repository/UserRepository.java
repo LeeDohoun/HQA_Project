@@ -8,8 +8,9 @@ import org.springframework.data.jpa.repository.Query;
 
 public interface UserRepository extends JpaRepository<User, String> {
     boolean existsByUserId(String userId);
+
     Optional<User> findByUserId(String userId);
 
-    @Query("SELECT u FROM User u JOIN FETCH u.secret JOIN FETCH u.survey WHERE u.active = true")
-    List<User> findAllActiveWithSecretAndSurvey();
+    @Query("SELECT u FROM User u JOIN FETCH u.secret JOIN FETCH u.preference WHERE u.active = true")
+    List<User> findAllActiveWithSecretAndPreference();
 }

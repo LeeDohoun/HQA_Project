@@ -26,7 +26,7 @@ public class TradingScheduler {
     private final ErrorLogger errorLogger;
 
     public TradingScheduler(UserRepository userRepository, AiServerClient aiServerClient,
-                             KisClient kisClient, ErrorLogger errorLogger) {
+            KisClient kisClient, ErrorLogger errorLogger) {
         this.userRepository = userRepository;
         this.aiServerClient = aiServerClient;
         this.kisClient = kisClient;
@@ -35,7 +35,7 @@ public class TradingScheduler {
 
     @Scheduled(fixedRate = 1_800_000)
     public void run() {
-        List<User> users = userRepository.findAllActiveWithSecretAndSurvey();
+        List<User> users = userRepository.findAllActiveWithSecretAndPreference();
         log.info("[TradingScheduler] Starting scheduled run for {} users", users.size());
 
         for (User user : users) {

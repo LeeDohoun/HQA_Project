@@ -27,7 +27,7 @@ import java.util.UUID;
 public class UserPreference {
 
     @Id
-    private String id = UUID.randomUUID().toString();
+    private String id;
 
     /** 현재 투자 가능한 총 재산 (원, 0 이상) */
     @Column(nullable = false)
@@ -97,6 +97,9 @@ public class UserPreference {
 
     @PrePersist
     public void onCreate() {
+        if (id == null) {
+            id = UUID.randomUUID().toString();
+        }
         OffsetDateTime now = OffsetDateTime.now();
         createdAt = now;
         updatedAt = now;

@@ -16,7 +16,7 @@ import java.util.UUID;
 public class UserSecret {
 
     @Id
-    private String id = UUID.randomUUID().toString();
+    private String id;
 
     private String kisAppKey;
     private String kisAppSecret;
@@ -30,6 +30,9 @@ public class UserSecret {
 
     @PrePersist
     public void onCreate() {
+        if (id == null) {
+            id = UUID.randomUUID().toString();
+        }
         OffsetDateTime now = OffsetDateTime.now();
         createdAt = now;
         updatedAt = now;
