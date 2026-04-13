@@ -30,15 +30,11 @@ export default function LoginPage() {
     <div className="auth-wrap">
       <div className="auth-card">
         <section className="auth-intro">
-          <span className="hero-badge">투자 분석 시작</span>
-          <h1>로그인하고 국내 주식 분석을 시작하세요.</h1>
-          <p>
-            이 프런트엔드는 현재 Spring Boot 백엔드와 연결되어 있으며,
-            세션 인증, 투자 성향 입력, 종목 검색, AI 분석 진행 조회를 지원합니다.
-          </p>
+          <span className="hero-badge">HQA</span>
+          <h1>로그인</h1>
         </section>
         <section className="auth-form">
-          <h2>다시 오신 것을 환영합니다</h2>
+          <h2>계정 접속</h2>
           <form className="stack" onSubmit={onSubmit}>
             <div className="field">
               <label htmlFor="userId">아이디</label>

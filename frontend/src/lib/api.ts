@@ -6,7 +6,9 @@ import type {
   ApiError,
   AuthResponse,
   AuthUser,
+  CandleHistory,
   LoginRequest,
+  RealtimePrice,
   ScoreDetail,
   SignupRequest,
   StockInfo,
@@ -124,6 +126,38 @@ type AnalysisResultWire = {
   errors: Record<string, string>;
 };
 
+type RealtimePriceWire = {
+  stock: StockInfo;
+  current_price: number;
+  change: number;
+  change_rate: number;
+  open_price: number;
+  high_price: number;
+  low_price: number;
+  volume: number;
+  market_cap: number | null;
+  per: number | null;
+  pbr: number | null;
+  timestamp: string;
+};
+
+type CandleWire = {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  complete: boolean | null;
+};
+
+type CandleHistoryWire = {
+  stock_code: string;
+  timeframe: string;
+  candles: CandleWire[];
+  has_more: boolean;
+};
+
 function mapAuthUser(user: AuthUserWire): AuthUser {
   return {
     id: user.id,
@@ -220,6 +254,32 @@ function mapResult(response: AnalysisResultWire): AnalysisResult {
   };
 }
 
+function mapRealtimePrice(response: RealtimePriceWire): RealtimePrice {
+  return {
+    stock: response.stock,
+    currentPrice: response.current_price,
+    change: response.change,
+    changeRate: response.change_rate,
+    openPrice: response.open_price,
+    highPrice: response.high_price,
+    lowPrice: response.low_price,
+    volume: response.volume,
+    marketCap: response.market_cap,
+    per: response.per,
+    pbr: response.pbr,
+    timestamp: response.timestamp
+  };
+}
+
+function mapCandleHistory(response: CandleHistoryWire): CandleHistory {
+  return {
+    stockCode: response.stock_code,
+    timeframe: response.timeframe,
+    candles: response.candles,
+    hasMore: response.has_more
+  };
+}
+
 export function parseProgressEvent(data: string): AnalysisProgressEvent {
   const parsed = JSON.parse(data) as {
     agent: string;
@@ -281,7 +341,18 @@ export const authApi = {
 
 export const stockApi = {
   search: (query: string) =>
-    api<StockSearchResponse>(`/api/v1/stocks/search?q=${encodeURIComponent(query)}`)
+    api<StockSearchResponse>(`/api/v1/stocks/search?q=${encodeURIComponent(query)}`),
+  price: async (stockCode: string) =>
+    mapRealtimePrice(await api<RealtimePriceWire>(`/api/v1/stocks/${stockCode}/price`))
+};
+
+export const chartApi = {
+  history: async (stockCode: string, timeframe: string, count = 120) =>
+    mapCandleHistory(
+      await api<CandleHistoryWire>(
+        `/api/v1/charts/${stockCode}/history?timeframe=${encodeURIComponent(timeframe)}&count=${count}`
+      )
+    )
 };
 
 export const analysisApi = {

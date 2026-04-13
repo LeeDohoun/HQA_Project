@@ -69,29 +69,26 @@ export default function PreferencePage() {
       await authApi.savePreference(form);
       router.push("/dashboard");
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "투자 성향 저장에 실패했습니다.");
+      setError(submitError instanceof Error ? submitError.message : "저장에 실패했습니다.");
     } finally {
       setSaving(false);
     }
   }
 
   return (
-      <AppShell
-      title="투자 성향 설정"
-      subtitle="분석을 시작하기 전에 HQA가 필요한 최소 프로필을 입력하세요."
-    >
+    <AppShell title="투자 성향 설정">
       <div className="panel">
         {loading ? (
-          <p className="meta">투자 성향 데이터를 불러오는 중입니다...</p>
+          <p className="meta">로딩 중...</p>
         ) : (
           <form className="stack" onSubmit={onSubmit}>
             <div className="form-grid two">
-              <NumberField label="총 자산 (원)" value={form.totalAssets} onChange={(value) => setForm((prev) => ({ ...prev, totalAssets: value }))} />
-              <NumberField label="월 투자 금액 (원)" value={form.monthlyInvestment} onChange={(value) => setForm((prev) => ({ ...prev, monthlyInvestment: value }))} />
+              <NumberField label="총 자산" value={form.totalAssets} onChange={(value) => setForm((prev) => ({ ...prev, totalAssets: value }))} />
+              <NumberField label="월 투자 금액" value={form.monthlyInvestment} onChange={(value) => setForm((prev) => ({ ...prev, monthlyInvestment: value }))} />
             </div>
             <div className="form-grid two">
-              <NumberField label="투자 기간 (개월)" value={form.investmentPeriodMonths} min={1} max={600} onChange={(value) => setForm((prev) => ({ ...prev, investmentPeriodMonths: value }))} />
-              <NumberField label="목표 수익률 (%)" value={form.targetReturnRate} min={1} max={1000} onChange={(value) => setForm((prev) => ({ ...prev, targetReturnRate: value }))} />
+              <NumberField label="투자 기간" value={form.investmentPeriodMonths} min={1} max={600} onChange={(value) => setForm((prev) => ({ ...prev, investmentPeriodMonths: value }))} />
+              <NumberField label="목표 수익률" value={form.targetReturnRate} min={1} max={1000} onChange={(value) => setForm((prev) => ({ ...prev, targetReturnRate: value }))} />
             </div>
             <div className="form-grid two">
               <SelectField label="투자 목적" value={form.investmentGoal} options={investmentGoalOptions} onChange={(value) => setForm((prev) => ({ ...prev, investmentGoal: value }))} />
@@ -106,14 +103,14 @@ export default function PreferencePage() {
             </div>
             <div className="form-grid two">
               <SelectField label="투자 성향" value={form.investmentType} options={investmentTypeOptions} onChange={(value) => setForm((prev) => ({ ...prev, investmentType: value }))} />
-              <SelectField label="변동성 허용 범위" value={form.volatilityTolerance} options={volatilityToleranceOptions} onChange={(value) => setForm((prev) => ({ ...prev, volatilityTolerance: value }))} />
+              <SelectField label="변동성 허용" value={form.volatilityTolerance} options={volatilityToleranceOptions} onChange={(value) => setForm((prev) => ({ ...prev, volatilityTolerance: value }))} />
             </div>
             <div className="form-grid two">
-              <SelectField label="손실 시 대응" value={form.lossAction} options={lossActionOptions} onChange={(value) => setForm((prev) => ({ ...prev, lossAction: value }))} />
-              <SelectField label="손실 허용 범위" value={form.lossTolerance} options={lossToleranceOptions} onChange={(value) => setForm((prev) => ({ ...prev, lossTolerance: value }))} />
+              <SelectField label="손실 대응" value={form.lossAction} options={lossActionOptions} onChange={(value) => setForm((prev) => ({ ...prev, lossAction: value }))} />
+              <SelectField label="손실 허용" value={form.lossTolerance} options={lossToleranceOptions} onChange={(value) => setForm((prev) => ({ ...prev, lossTolerance: value }))} />
             </div>
             <fieldset className="fieldset">
-              <legend>레버리지 허용 여부</legend>
+              <legend>레버리지</legend>
               <div className="toggle-row">
                 <label className="toggle">
                   <input checked={form.leverageAllowed === true} name="leverage" type="radio" onChange={() => setForm((prev) => ({ ...prev, leverageAllowed: true }))} />
@@ -128,7 +125,7 @@ export default function PreferencePage() {
             {error ? <p className="error-text">{error}</p> : null}
             <div className="button-row">
               <button className="button" disabled={saving} type="submit">
-                {saving ? "저장 중..." : "투자 성향 저장"}
+                {saving ? "저장 중..." : "저장"}
               </button>
             </div>
           </form>

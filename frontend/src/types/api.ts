@@ -61,6 +61,38 @@ export type StockSearchResponse = {
   total: number;
 };
 
+export type RealtimePrice = {
+  stock: StockInfo;
+  currentPrice: number;
+  change: number;
+  changeRate: number;
+  openPrice: number;
+  highPrice: number;
+  lowPrice: number;
+  volume: number;
+  marketCap: number | null;
+  per: number | null;
+  pbr: number | null;
+  timestamp: string;
+};
+
+export type Candle = {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  complete: boolean | null;
+};
+
+export type CandleHistory = {
+  stockCode: string;
+  timeframe: string;
+  candles: Candle[];
+  hasMore: boolean;
+};
+
 export type AnalysisMode = "full" | "quick";
 export type AnalysisStatus = "pending" | "running" | "completed" | "failed";
 

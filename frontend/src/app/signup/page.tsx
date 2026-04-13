@@ -34,15 +34,11 @@ export default function SignupPage() {
     <div className="auth-wrap">
       <div className="auth-card">
         <section className="auth-intro">
-          <span className="hero-badge">새 계정 만들기</span>
-          <h1>처음부터 HQA 투자 프로필을 설정하세요.</h1>
-          <p>
-            회원가입 직후 투자 성향 입력 화면으로 이동하여,
-            백엔드가 필요한 최소 사용자 정보를 바로 채울 수 있습니다.
-          </p>
+          <span className="hero-badge">HQA</span>
+          <h1>회원가입</h1>
         </section>
         <section className="auth-form">
-          <h2>회원가입</h2>
+          <h2>계정 만들기</h2>
           <form className="stack" onSubmit={onSubmit}>
             <div className="form-grid two">
               <div className="field">
@@ -93,7 +89,7 @@ export default function SignupPage() {
                 {loading ? "생성 중..." : "계정 만들기"}
               </button>
               <Link className="button-ghost" href="/login">
-                로그인으로 돌아가기
+                로그인
               </Link>
             </div>
           </form>

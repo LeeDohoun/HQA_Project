@@ -17,7 +17,6 @@ export function AppShell({ title, subtitle, actions, children }: AppShellProps) 
             HQA 작업공간
           </Link>
           <h1>{title}</h1>
-          {subtitle ? <p>{subtitle}</p> : null}
         </div>
         {actions ? <div className="hero-actions">{actions}</div> : null}
       </header>
