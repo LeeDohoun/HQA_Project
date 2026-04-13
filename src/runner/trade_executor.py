@@ -62,6 +62,7 @@ class TradeExecutor:
         # 주문 기록 저장 경로
         self._orders_dir = get_orders_dir()
         self._orders_dir.mkdir(parents=True, exist_ok=True)
+        self._restore_state_from_disk()
 
     @property
     def is_enabled(self) -> bool:
@@ -70,6 +71,26 @@ class TradeExecutor:
     @property
     def is_dry_run(self) -> bool:
         return self._dry_run
+
+    @property
+    def account_type(self) -> str:
+        return self._account_type
+
+    def get_runtime_config(self) -> Dict[str, Any]:
+        """현재 매매 실행기의 유효 설정과 상태를 반환."""
+        self._reset_daily_budget_if_needed()
+        return {
+            "enabled": self._enabled,
+            "dry_run": self._dry_run,
+            "account_type": self._account_type,
+            "max_daily_buy_amount": self._max_daily_buy,
+            "max_position_ratio": self._max_position_ratio,
+            "stop_loss_pct": self._stop_loss_pct,
+            "cooldown_minutes": self._cooldown_minutes,
+            "buy_conditions": self._buy_conditions,
+            "sell_conditions": self._sell_conditions,
+            "daily_summary": self.get_daily_summary(),
+        }
 
     def should_buy(self, decision) -> bool:
         """
@@ -205,14 +226,7 @@ class TradeExecutor:
                 stock_code, "BUY", quantity, current_price
             )
 
-        # 상태 업데이트
-        self._daily_spent += buy_amount
-        self._last_order_time[stock_code] = datetime.now(KST)
-        self._order_history.append(order)
-
-        # 파일 기록
-        self._save_order(order)
-
+        self._record_order(order, count_toward_limits=self._is_effective_order_status(order.get("status")))
         return order
 
     def execute_sell(
@@ -254,11 +268,92 @@ class TradeExecutor:
                 stock_code, "SELL", quantity, current_price
             )
 
-        self._last_order_time[stock_code] = datetime.now(KST)
-        self._order_history.append(order)
-        self._save_order(order)
+        self._record_order(order, count_toward_limits=self._is_effective_order_status(order.get("status")))
 
         return order
+
+    def preview_decision(
+        self,
+        stock_name: str,
+        stock_code: str,
+        decision,
+        *,
+        quantity: int = 0,
+        current_price: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """현재 설정에서 해당 판단이 어떤 주문으로 이어질지 미리 계산."""
+        self._reset_daily_budget_if_needed()
+
+        if self.should_buy(decision):
+            blocked = self._check_circuit_breaker(stock_code, "BUY")
+            buy_amount = self._calculate_buy_amount(current_price)
+            preview = {
+                "stock_name": stock_name,
+                "stock_code": stock_code,
+                "action": "BUY",
+                "quantity": (buy_amount // current_price) if current_price and current_price > 0 else 0,
+                "price": current_price,
+                "amount": buy_amount,
+                "dry_run": self._dry_run,
+            }
+            return {
+                "status": "blocked" if blocked else "ready",
+                "reason": blocked or "buy_conditions_met",
+                "order": preview,
+                "runtime": self.get_runtime_config(),
+            }
+
+        if self.should_sell(decision):
+            blocked = self._check_circuit_breaker(stock_code, "SELL")
+            preview = {
+                "stock_name": stock_name,
+                "stock_code": stock_code,
+                "action": "SELL",
+                "quantity": quantity,
+                "price": current_price,
+                "amount": (quantity * current_price) if quantity and current_price else 0,
+                "dry_run": self._dry_run,
+            }
+            return {
+                "status": "blocked" if blocked else "ready",
+                "reason": blocked or "sell_conditions_met",
+                "order": preview,
+                "runtime": self.get_runtime_config(),
+            }
+
+        return {
+            "status": "no_action",
+            "reason": self._build_no_action_reason(decision),
+            "order": None,
+            "runtime": self.get_runtime_config(),
+        }
+
+    def execute_decision(
+        self,
+        stock_name: str,
+        stock_code: str,
+        decision,
+        *,
+        quantity: int = 0,
+        current_price: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """FinalDecision을 주문 실행 결과로 변환."""
+        if self.should_buy(decision):
+            return self.execute_buy(
+                stock_name=stock_name,
+                stock_code=stock_code,
+                decision=decision,
+                current_price=current_price,
+            )
+        if self.should_sell(decision):
+            return self.execute_sell(
+                stock_name=stock_name,
+                stock_code=stock_code,
+                decision=decision,
+                quantity=quantity,
+                current_price=current_price,
+            )
+        return {"status": "no_action", "reason": self._build_no_action_reason(decision), "dry_run": self._dry_run}
 
     # ──────────────────────────────────────────────
     # 서킷 브레이커
@@ -272,12 +367,7 @@ class TradeExecutor:
             차단 이유 문자열 또는 None (통과)
         """
         now = datetime.now(KST)
-
-        # 일일 리셋
-        today = now.strftime("%Y-%m-%d")
-        if self._daily_reset_date != today:
-            self._daily_spent = 0.0
-            self._daily_reset_date = today
+        self._reset_daily_budget_if_needed(now)
 
         # 1. 일일 매수 한도
         if action == "BUY" and self._daily_spent >= self._max_daily_buy:
@@ -359,6 +449,7 @@ class TradeExecutor:
 
     def get_daily_summary(self) -> Dict[str, Any]:
         """일일 매매 요약"""
+        self._reset_daily_budget_if_needed()
         return {
             "date": self._daily_reset_date,
             "total_spent": self._daily_spent,
@@ -369,3 +460,88 @@ class TradeExecutor:
             ]),
             "dry_run": self._dry_run,
         }
+
+    def _record_order(self, order: Dict[str, Any], *, count_toward_limits: bool) -> None:
+        """주문 이력을 메모리/디스크에 기록하고 필요 시 예산과 쿨다운을 갱신."""
+        self._order_history.append(order)
+        if count_toward_limits:
+            stock_code = str(order.get("stock_code", "")).strip()
+            action = str(order.get("action", "")).upper()
+            amount = float(order.get("amount", 0) or 0)
+            timestamp = self._parse_timestamp(order.get("timestamp"))
+            if action == "BUY":
+                self._daily_spent += amount
+            if stock_code and timestamp is not None:
+                self._last_order_time[stock_code] = timestamp
+        self._save_order(order)
+
+    def _restore_state_from_disk(self) -> None:
+        """당일 주문 로그를 읽어 예산/쿨다운 상태를 복원."""
+        self._reset_daily_budget_if_needed()
+        log_file = self._orders_dir / self._daily_reset_date / "orders.jsonl"
+        if not log_file.exists():
+            return
+
+        try:
+            with log_file.open("r", encoding="utf-8") as f:
+                for line in f:
+                    row = json.loads(line.strip())
+                    if not isinstance(row, dict):
+                        continue
+                    self._order_history.append(row)
+                    if not self._is_effective_order_status(row.get("status")):
+                        continue
+
+                    stock_code = str(row.get("stock_code", "")).strip()
+                    action = str(row.get("action", "")).upper()
+                    amount = float(row.get("amount", 0) or 0)
+                    timestamp = self._parse_timestamp(row.get("timestamp"))
+
+                    if action == "BUY":
+                        self._daily_spent += amount
+                    if stock_code and timestamp is not None:
+                        previous = self._last_order_time.get(stock_code)
+                        if previous is None or timestamp > previous:
+                            self._last_order_time[stock_code] = timestamp
+        except Exception as e:
+            logger.exception(f"[TradeExecutor] 주문 상태 복원 실패: {e}")
+
+    def _reset_daily_budget_if_needed(self, now: Optional[datetime] = None) -> None:
+        current = now or datetime.now(KST)
+        today = current.strftime("%Y-%m-%d")
+        if self._daily_reset_date != today:
+            self._daily_spent = 0.0
+            self._daily_reset_date = today
+            self._last_order_time = {}
+            self._order_history = []
+
+    @staticmethod
+    def _parse_timestamp(value: Any) -> Optional[datetime]:
+        if not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(str(value))
+            if parsed.tzinfo is None:
+                return parsed.replace(tzinfo=KST)
+            return parsed.astimezone(KST)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _is_effective_order_status(status: Any) -> bool:
+        normalized = str(status or "").strip().lower()
+        if not normalized:
+            return True
+        if normalized in {"blocked", "no_action"}:
+            return False
+        return not normalized.startswith("error")
+
+    def _build_no_action_reason(self, decision) -> str:
+        if not self._enabled:
+            return "trading_disabled"
+        if self._buy_conditions or self._sell_conditions:
+            return (
+                f"조건 미충족 (점수:{decision.total_score}, "
+                f"행동:{getattr(getattr(decision, 'action', None), 'value', 'unknown')})"
+            )
+        return "trading_conditions_not_configured"
