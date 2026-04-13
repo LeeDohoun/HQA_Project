@@ -19,6 +19,25 @@ class FakeLLM:
         return SimpleNamespace(content=self.payload)
 
 
+class StructuredRunner:
+    def __init__(self, payload: dict):
+        self.payload = payload
+
+    def invoke(self, prompt: str):
+        return self.payload
+
+
+class StructuredFakeLLM(FakeLLM):
+    def __init__(self, payload: dict):
+        super().__init__("")
+        self.payload = payload
+        self.method = None
+
+    def with_structured_output(self, _schema, method="json_schema"):
+        self.method = method
+        return StructuredRunner(self.payload)
+
+
 def make_scores() -> AgentScores:
     return AgentScores(
         analyst_moat_score=32,
@@ -102,3 +121,36 @@ def test_cross_validation_falls_back_when_validator_fails():
     assert decision.validation_status == "unavailable"
     assert "보조 모델 검증 실패" in decision.validation_summary
     assert decision.risk_level == RiskLevel.MEDIUM
+
+
+def test_decision_parser_recovers_when_response_has_trailing_extra_data():
+    agent = RiskManagerAgent()
+    agent.llm = FakeLLM(build_response("BUY", total_score=74, confidence=78) + "\n{\"extra\": true}")
+    agent.validator_llm = None
+
+    decision = agent.make_decision("삼성전자", "005930", make_scores())
+
+    assert decision.action == InvestmentAction.BUY
+    assert decision.total_score == 74
+    assert decision.confidence == 78
+
+
+def test_decision_parser_prefers_structured_output():
+    agent = RiskManagerAgent()
+    agent.llm = StructuredFakeLLM(
+        {
+            "total_score": 81,
+            "action": "BUY",
+            "confidence": 77,
+            "risk_level": "LOW",
+            "summary": "구조화 응답",
+        }
+    )
+    agent.validator_llm = None
+
+    decision = agent.make_decision("삼성전자", "005930", make_scores())
+
+    assert agent.llm.method == "json_schema"
+    assert decision.action == InvestmentAction.BUY
+    assert decision.risk_level == RiskLevel.LOW
+    assert decision.summary == "구조화 응답"

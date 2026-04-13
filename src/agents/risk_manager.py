@@ -12,15 +12,20 @@ Risk Manager Agent (리스크 매니저 에이전트)
 """
 
 import json
+import logging
 import re
 from typing import Any, Dict, List
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 
+from pydantic import BaseModel, ConfigDict, Field
+
 from src.agents.llm_config import get_llm_info, get_thinking_llm, get_thinking_validator_llm
 from src.agents.context import AgentContextPacket
 from src.utils.prompt_loader import load_prompt_optional
+
+logger = logging.getLogger(__name__)
 
 
 class InvestmentAction(Enum):
@@ -118,6 +123,25 @@ class FinalDecision:
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
 
 
+class FinalDecisionPayload(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    total_score: int = 50
+    action: str = "HOLD"
+    confidence: int = 50
+    risk_level: str = "MEDIUM"
+    risk_factors: List[str] = Field(default_factory=list)
+    position_size: str = "25%"
+    entry_strategy: str = ""
+    exit_strategy: str = ""
+    stop_loss: str = ""
+    signal_alignment: str = ""
+    key_catalysts: List[str] = Field(default_factory=list)
+    contrarian_view: str = ""
+    summary: str = ""
+    detailed_reasoning: str = ""
+
+
 class RiskManagerAgent:
     """
     리스크 매니저 에이전트
@@ -198,15 +222,80 @@ class RiskManagerAgent:
         prompt: str,
     ) -> FinalDecision:
         """단일 LLM 호출 결과를 FinalDecision으로 변환"""
-        response = llm.invoke(prompt)
-        response_text = response.content.strip()
+        try:
+            structured_llm = self._build_structured_llm(llm)
+            if structured_llm is not None:
+                structured = structured_llm.invoke(prompt)
+                result = self._validate_payload(structured)
+                return self._parse_decision(stock_name, stock_code, result)
+        except Exception as exc:
+            logger.warning("RiskManager structured output failed: %s", exc)
 
-        json_match = re.search(r'\{[\s\S]*\}', response_text)
-        if not json_match:
+        response = llm.invoke(prompt)
+        response_text = self._response_to_text(getattr(response, "content", response)).strip()
+        payload = self._extract_first_json_object(response_text)
+        if not payload:
             raise ValueError("JSON 형식 응답 없음")
 
-        result = json.loads(json_match.group())
+        result = self._validate_payload(payload)
         return self._parse_decision(stock_name, stock_code, result)
+
+    @staticmethod
+    def _build_structured_llm(llm: Any):
+        if not hasattr(llm, "with_structured_output"):
+            return None
+        try:
+            return llm.with_structured_output(FinalDecisionPayload, method="json_schema")
+        except Exception:
+            return llm.with_structured_output(FinalDecisionPayload, method="json_mode")
+
+    @staticmethod
+    def _validate_payload(payload: Any) -> Dict[str, Any]:
+        if isinstance(payload, BaseModel):
+            return payload.model_dump()
+        if not isinstance(payload, dict):
+            raise TypeError(f"Expected dict payload, got {type(payload).__name__}")
+        return FinalDecisionPayload.model_validate(payload).model_dump()
+
+    @staticmethod
+    def _response_to_text(content: Any) -> str:
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            chunks: List[str] = []
+            for item in content:
+                if isinstance(item, str):
+                    chunks.append(item)
+                elif isinstance(item, dict):
+                    text = item.get("text") or item.get("content") or ""
+                    if text:
+                        chunks.append(str(text))
+                else:
+                    chunks.append(str(item))
+            return "\n".join(chunk for chunk in chunks if chunk)
+        return str(content)
+
+    @staticmethod
+    def _extract_first_json_object(text: str) -> Dict[str, Any]:
+        if not text:
+            return {}
+
+        cleaned = text.strip()
+        if cleaned.startswith("```"):
+            cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+            cleaned = re.sub(r"\s*```$", "", cleaned)
+
+        decoder = json.JSONDecoder()
+        for index, char in enumerate(cleaned):
+            if char != "{":
+                continue
+            try:
+                payload, _end = decoder.raw_decode(cleaned[index:])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                return payload
+        return {}
     
     def _build_decision_prompt(
         self,
