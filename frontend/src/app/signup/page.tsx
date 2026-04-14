@@ -13,11 +13,16 @@ export default function SignupPage() {
     lastName: "",
     password: ""
   });
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (form.password !== confirmPassword) {
+      setError("비밀번호가 일치하지 않습니다.");
+      return;
+    }
     setLoading(true);
     setError("");
     try {
@@ -57,6 +62,13 @@ export default function SignupPage() {
 
         <section className="auth-form">
           <div>
+            <button
+              type="button"
+              onClick={() => router.back()}
+              style={{ background: "none", border: "none", cursor: "pointer", padding: "0 0 8px 0", color: "var(--muted)", display: "flex", alignItems: "center", gap: 4, fontSize: "0.85rem" }}
+            >
+              ← 뒤로
+            </button>
             <h2>계정 만들기</h2>
             <p style={{ margin: "6px 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
               이미 계정이 있으신가요?{" "}
@@ -67,18 +79,18 @@ export default function SignupPage() {
           </div>
 
           <form className="stack" onSubmit={onSubmit}>
+            <div className="field">
+              <label htmlFor="userId">아이디</label>
+              <input
+                id="userId"
+                placeholder="4자 이상"
+                minLength={4}
+                value={form.userId}
+                onChange={(event) => setForm((prev) => ({ ...prev, userId: event.target.value }))}
+                required
+              />
+            </div>
             <div className="form-grid two">
-              <div className="field">
-                <label htmlFor="userId">아이디</label>
-                <input
-                  id="userId"
-                  placeholder="4자 이상"
-                  minLength={4}
-                  value={form.userId}
-                  onChange={(event) => setForm((prev) => ({ ...prev, userId: event.target.value }))}
-                  required
-                />
-              </div>
               <div className="field">
                 <label htmlFor="password">비밀번호</label>
                 <input
@@ -88,6 +100,18 @@ export default function SignupPage() {
                   type="password"
                   value={form.password}
                   onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
+                  required
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="confirmPassword">비밀번호 확인</label>
+                <input
+                  id="confirmPassword"
+                  placeholder="비밀번호 재입력"
+                  minLength={8}
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(event) => setConfirmPassword(event.target.value)}
                   required
                 />
               </div>
