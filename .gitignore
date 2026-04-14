@@ -38,3 +38,5 @@ data/token/
 
 # 9. 루트 package-lock.json (프론트엔드용은 frontend/에 있음)
 package-lock.json
+
+backend
