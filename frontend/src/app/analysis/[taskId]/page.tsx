@@ -24,9 +24,7 @@ export default function AnalysisPage() {
     async function loadResult() {
       try {
         const response = await analysisApi.result(taskId);
-        if (!active) {
-          return;
-        }
+        if (!active) return;
         setResult(response);
         if (response.status === "completed" || response.status === "failed") {
           setLoading(false);
@@ -46,17 +44,13 @@ export default function AnalysisPage() {
         });
 
         eventSource.addEventListener("progress", (event) => {
-          if (!active) {
-            return;
-          }
+          if (!active) return;
           setProgress(JSON.parse((event as MessageEvent<string>).data) as AnalysisProgressEvent);
         });
 
         eventSource.addEventListener("completed", async () => {
           const latest = await analysisApi.result(taskId);
-          if (!active) {
-            return;
-          }
+          if (!active) return;
           setResult(latest);
           setLoading(false);
           eventSource?.close();
@@ -73,9 +67,7 @@ export default function AnalysisPage() {
               }
             }
           } catch {
-            if (active) {
-              setLoading(false);
-            }
+            if (active) setLoading(false);
           }
         };
       } catch {
@@ -84,9 +76,7 @@ export default function AnalysisPage() {
     }
 
     loadResult().finally(() => {
-      if (active && !eventSource) {
-        setLoading(false);
-      }
+      if (active && !eventSource) setLoading(false);
     });
 
     return () => {
@@ -96,59 +86,76 @@ export default function AnalysisPage() {
   }, [taskId]);
 
   const statusTone = useMemo(() => {
-    if (result?.status === "completed") {
-      return "good";
-    }
-    if (result?.status === "failed") {
-      return "bad";
-    }
+    if (result?.status === "completed") return "good";
+    if (result?.status === "failed") return "bad";
     return "warn";
   }, [result?.status]);
 
   return (
     <AppShell
       title="분석 결과"
-      actions={<Link className="button-ghost" href="/dashboard">대시보드</Link>}
+      actions={<Link className="button-ghost" href="/dashboard">대시보드로 돌아가기</Link>}
     >
       {error ? <p className="error-text">{error}</p> : null}
+
       <div className="panel-grid">
+        {/* Header panel */}
         <section className="panel" style={{ gridColumn: "span 12" }}>
-          <div className="button-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
             <div>
-              <h2 className="section-title" style={{ marginBottom: 4 }}>{result?.stock?.name ?? "로딩 중..."}</h2>
-              <p className="meta mono">{result?.stock?.code ?? taskId}</p>
+              <h2 style={{ margin: "0 0 4px", fontSize: "1.1rem", fontWeight: 700, color: "var(--text-bright)" }}>
+                {result?.stock?.name ?? "로딩 중..."}
+              </h2>
+              <p className="meta mono" style={{ margin: 0 }}>{result?.stock?.code ?? taskId}</p>
             </div>
             <StatusPill label={translateStatus(result?.status ?? "running")} tone={statusTone as "good" | "warn" | "bad"} />
           </div>
+
           {progress ? (
-            <div className="stack" style={{ marginTop: 18 }}>
-              <div className="button-row" style={{ justifyContent: "space-between" }}>
-                <span className="meta">{progress.message}</span>
-                <span className="meta">{Math.round(progress.progress * 100)}%</span>
+            <div style={{ marginTop: 20, display: "grid", gap: 8 }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ fontSize: "0.82rem", color: "var(--muted)" }}>{progress.message}</span>
+                <span style={{ fontSize: "0.82rem", color: "var(--accent)", fontWeight: 600 }}>{Math.round(progress.progress * 100)}%</span>
               </div>
               <div className="progress-bar">
                 <span style={{ width: `${Math.round(progress.progress * 100)}%` }} />
               </div>
             </div>
           ) : null}
-          <div className="stat-strip" style={{ marginTop: 18 }}>
-            <div className="stat"><span className="meta">모드</span><strong>{translateMode(result?.mode) ?? "-"}</strong></div>
-            <div className="stat"><span className="meta">생성</span><strong style={{ fontSize: "1rem" }}>{formatDate(result?.createdAt)}</strong></div>
-            <div className="stat"><span className="meta">완료</span><strong style={{ fontSize: "1rem" }}>{formatDate(result?.completedAt)}</strong></div>
+
+          <div className="stat-strip" style={{ marginTop: 20, gap: 8 }}>
+            <div className="stat">
+              <span className="meta">모드</span>
+              <strong>{translateMode(result?.mode) ?? "-"}</strong>
+            </div>
+            <div className="stat">
+              <span className="meta">생성</span>
+              <strong style={{ fontSize: "0.88rem" }}>{formatDate(result?.createdAt)}</strong>
+            </div>
+            <div className="stat">
+              <span className="meta">완료</span>
+              <strong style={{ fontSize: "0.88rem" }}>{formatDate(result?.completedAt)}</strong>
+            </div>
           </div>
         </section>
+
+        {/* Scores */}
         <section className="panel" style={{ gridColumn: "span 7" }}>
-          <h2 className="section-title">점수</h2>
+          <h3 className="section-title">점수</h3>
           {result?.scores?.length ? (
             <div className="score-list">
               {result.scores.map((score) => (
                 <div className="score-card" key={score.agent}>
-                  <div className="button-row" style={{ justifyContent: "space-between" }}>
-                    <strong>{titleCaseAgent(score.agent)}</strong>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                    <strong style={{ fontSize: "0.9rem", color: "var(--text-bright)" }}>{titleCaseAgent(score.agent)}</strong>
                     <StatusPill label={score.grade ?? "-"} tone="neutral" />
                   </div>
-                  <p className="meta">{score.totalScore} / {score.maxScore}</p>
-                  {score.opinion ? <p>{score.opinion}</p> : null}
+                  <p style={{ margin: "6px 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
+                    {score.totalScore} / {score.maxScore}
+                  </p>
+                  {score.opinion ? (
+                    <p style={{ margin: "8px 0 0", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1.5 }}>{score.opinion}</p>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -156,14 +163,16 @@ export default function AnalysisPage() {
             <div className="empty-state"><strong>점수 없음</strong></div>
           )}
         </section>
+
+        {/* Final Decision */}
         <section className="panel" style={{ gridColumn: "span 5" }}>
-          <h2 className="section-title">최종 판단</h2>
+          <h3 className="section-title">최종 판단</h3>
           {result?.finalDecision && Object.keys(result.finalDecision).length > 0 ? (
             <div className="detail-list">
               {Object.entries(result.finalDecision).map(([key, value]) => (
                 <div className="detail-item" key={key}>
-                  <span className="meta">{key}</span>
-                  <div>{String(value)}</div>
+                  <span style={{ fontSize: "0.75rem", color: "var(--muted)", fontWeight: 500 }}>{key}</span>
+                  <div style={{ marginTop: 4, fontSize: "0.88rem", color: "var(--text-bright)" }}>{String(value)}</div>
                 </div>
               ))}
             </div>
@@ -171,29 +180,39 @@ export default function AnalysisPage() {
             <div className="empty-state"><strong>판단 없음</strong></div>
           )}
         </section>
+
+        {/* Warnings */}
         <section className="panel" style={{ gridColumn: "span 6" }}>
-          <h2 className="section-title">경고</h2>
+          <h3 className="section-title">경고</h3>
           {result?.qualityWarnings?.length ? (
             <div className="detail-list">
-              {result.qualityWarnings.map((warning) => <div className="detail-item" key={warning}>{warning}</div>)}
-            </div>
-          ) : (
-            <p className="meta">-</p>
-          )}
-        </section>
-        <section className="panel" style={{ gridColumn: "span 6" }}>
-          <h2 className="section-title">오류</h2>
-          {result?.errors && Object.keys(result.errors).length > 0 ? (
-            <div className="detail-list">
-              {Object.entries(result.errors).map(([key, value]) => (
-                <div className="detail-item" key={key}>
-                  <span className="meta">{key}</span>
-                  <div>{value}</div>
+              {result.qualityWarnings.map((warning) => (
+                <div className="detail-item" key={warning} style={{ borderColor: "rgba(245,158,11,0.2)", background: "var(--warn-dim)" }}>
+                  <span style={{ fontSize: "0.85rem", color: "var(--warn)" }}>{warning}</span>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="meta">{loading ? "로딩 중..." : "-"}</p>
+            <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>경고 없음</p>
+          )}
+        </section>
+
+        {/* Errors */}
+        <section className="panel" style={{ gridColumn: "span 6" }}>
+          <h3 className="section-title">오류</h3>
+          {result?.errors && Object.keys(result.errors).length > 0 ? (
+            <div className="detail-list">
+              {Object.entries(result.errors).map(([key, value]) => (
+                <div className="detail-item" key={key} style={{ borderColor: "rgba(239,83,80,0.2)", background: "var(--bad-dim)" }}>
+                  <span style={{ fontSize: "0.75rem", color: "var(--bad)", fontWeight: 500 }}>{key}</span>
+                  <div style={{ marginTop: 4, fontSize: "0.85rem", color: "var(--text)" }}>{value}</div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>
+              {loading ? "로딩 중..." : "오류 없음"}
+            </p>
           )}
         </section>
       </div>
@@ -203,25 +222,16 @@ export default function AnalysisPage() {
 
 function translateStatus(status: string) {
   switch (status) {
-    case "pending":
-      return "대기 중";
-    case "running":
-      return "진행 중";
-    case "completed":
-      return "완료";
-    case "failed":
-      return "실패";
-    default:
-      return status;
+    case "pending": return "대기 중";
+    case "running": return "진행 중";
+    case "completed": return "완료";
+    case "failed": return "실패";
+    default: return status;
   }
 }
 
 function translateMode(mode?: string | null) {
-  if (mode === "full") {
-    return "전체 분석";
-  }
-  if (mode === "quick") {
-    return "빠른 분석";
-  }
+  if (mode === "full") return "전체 분석";
+  if (mode === "quick") return "빠른 분석";
   return mode;
 }

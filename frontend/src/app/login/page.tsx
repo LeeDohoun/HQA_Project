@@ -30,35 +30,69 @@ export default function LoginPage() {
     <div className="auth-wrap">
       <div className="auth-card">
         <section className="auth-intro">
-          <span className="hero-badge">HQA</span>
-          <h1>로그인</h1>
+          <div className="auth-intro-top">
+            <span className="hero-badge">HQA</span>
+            <div>
+              <h1>투자의 시작,<br />지금 시작하세요</h1>
+              <p style={{ marginTop: 16 }}>AI 기반 주식 분석 플랫폼으로<br />더 스마트한 투자 결정을 내리세요.</p>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 32 }}>
+            {["KOSPI", "KOSDAQ", "AI 분석"].map((tag) => (
+              <span
+                key={tag}
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: 6,
+                  background: "rgba(69,137,255,0.12)",
+                  color: "#4589ff",
+                  fontSize: "0.75rem",
+                  fontWeight: 600
+                }}
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
         </section>
+
         <section className="auth-form">
-          <h2>계정 접속</h2>
+          <div>
+            <h2>로그인</h2>
+            <p style={{ margin: "6px 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
+              계정이 없으신가요?{" "}
+              <Link href="/signup" style={{ color: "var(--accent)", fontWeight: 600 }}>
+                회원가입
+              </Link>
+            </p>
+          </div>
+
           <form className="stack" onSubmit={onSubmit}>
             <div className="field">
               <label htmlFor="userId">아이디</label>
-              <input id="userId" value={userId} onChange={(event) => setUserId(event.target.value)} required />
+              <input
+                id="userId"
+                placeholder="아이디를 입력하세요"
+                value={userId}
+                onChange={(event) => setUserId(event.target.value)}
+                required
+              />
             </div>
             <div className="field">
               <label htmlFor="password">비밀번호</label>
               <input
                 id="password"
                 type="password"
+                placeholder="비밀번호를 입력하세요"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 required
               />
             </div>
             {error ? <p className="error-text">{error}</p> : null}
-            <div className="button-row">
-              <button className="button" disabled={loading} type="submit">
-                {loading ? "로그인 중..." : "로그인"}
-              </button>
-              <Link className="button-ghost" href="/signup">
-                회원가입
-              </Link>
-            </div>
+            <button className="button" disabled={loading} type="submit" style={{ marginTop: 4, minHeight: 42, justifyContent: "center" }}>
+              {loading ? "로그인 중..." : "로그인"}
+            </button>
           </form>
         </section>
       </div>
