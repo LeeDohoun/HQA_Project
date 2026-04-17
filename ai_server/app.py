@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import sys
 from collections import OrderedDict
 from contextlib import asynccontextmanager
@@ -42,13 +43,21 @@ _results: OrderedDict[str, Dict[str, Any]] = OrderedDict()
 _MAX_CACHE = 500
 
 
+def _runtime_port() -> int:
+    raw_port = os.getenv("PORT", "8001").strip()
+    try:
+        return int(raw_port)
+    except ValueError:
+        return 8001
+
+
 # ──────────────────────────────────────────────
 # 라이프사이클
 # ──────────────────────────────────────────────
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("🤖 HQA AI Server 시작 (port 8001)")
+    logger.info("🤖 HQA AI Server 시작 (port %s)", _runtime_port())
     try:
         from src.agents.graph import is_langgraph_available
         if is_langgraph_available():
@@ -567,7 +576,7 @@ async def health():
     return {
         "status": "ok",
         "service": "HQA AI Server",
-        "port": 8001,
+        "port": _runtime_port(),
         "data_dir": str(settings.data_dir),
         "data_dir_exists": settings.data_dir.exists(),
         "env_loaded": env_status.loaded,

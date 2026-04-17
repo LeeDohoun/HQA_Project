@@ -4,7 +4,9 @@ from __future__ import annotations
 # - Resolve a Naver theme keyword into a set of stock targets.
 
 from dataclasses import dataclass
+import os
 import re
+import shutil
 from typing import List, Tuple
 
 try:
@@ -13,6 +15,29 @@ except ImportError:
     BeautifulSoup = None
 
 from .base import BaseCollector, USER_AGENT
+
+
+def _first_existing_path(*candidates: str | None) -> str | None:
+    for candidate in candidates:
+        if candidate and candidate.strip():
+            return candidate.strip()
+    return None
+
+
+def _resolve_chrome_binary() -> str | None:
+    return _first_existing_path(
+        os.getenv("CHROME_BINARY"),
+        shutil.which("chromium"),
+        shutil.which("chromium-browser"),
+        shutil.which("google-chrome"),
+    )
+
+
+def _resolve_chromedriver() -> str | None:
+    return _first_existing_path(
+        os.getenv("CHROMEDRIVER"),
+        shutil.which("chromedriver"),
+    )
 
 
 @dataclass
@@ -37,6 +62,15 @@ class NaverThemeStockCollector(BaseCollector):
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument(f"user-agent={USER_AGENT}")
+
+        chrome_binary = _resolve_chrome_binary()
+        if chrome_binary:
+            options.binary_location = chrome_binary
+
+        chromedriver = _resolve_chromedriver()
+        if chromedriver:
+            return webdriver.Chrome(service=Service(chromedriver), options=options)
+
         return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
     def collect(self, theme_keyword: str, max_stocks: int = 30, max_pages: int = 10) -> List[ThemeStock]:

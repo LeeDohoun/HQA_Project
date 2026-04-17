@@ -17,6 +17,16 @@ from fastapi.testclient import TestClient
 from ai_server.app import app
 
 
+def test_health_reports_runtime_port(monkeypatch):
+    monkeypatch.setenv("PORT", "8123")
+
+    client = TestClient(app)
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json()["port"] == 8123
+
+
 def test_trading_preview_and_execute_endpoints(tmp_path, monkeypatch):
     orders_dir = tmp_path / "orders"
     monkeypatch.setenv("HQA_ORDERS_DIR", str(orders_dir))
