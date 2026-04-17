@@ -87,6 +87,7 @@ try:
         get_llm_info,
         get_gemini_llm,
         get_gemini_vision_llm,
+        get_llm_config,
         GeminiVisionAnalyzer,
     )
 except Exception as exc:  # pragma: no cover
@@ -97,6 +98,7 @@ except Exception as exc:  # pragma: no cover
     get_llm_info = _missing_dependency("get_llm_info", exc)
     get_gemini_llm = _missing_dependency("get_gemini_llm", exc)
     get_gemini_vision_llm = _missing_dependency("get_gemini_vision_llm", exc)
+    get_llm_config = _missing_dependency("get_llm_config", exc)
     GeminiVisionAnalyzer = _missing_dependency("GeminiVisionAnalyzer", exc)
 
 try:
@@ -132,6 +134,7 @@ __all__ = [
     "get_vision_llm",
     "VisionAnalyzer",
     "get_llm_info",
+    "get_llm_config",
     "get_gemini_llm",
     "get_gemini_vision_llm",
     "GeminiVisionAnalyzer",
