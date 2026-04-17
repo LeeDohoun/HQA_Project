@@ -6,18 +6,28 @@ import re
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.agents.analyst import AnalystAgent
+from src.agents.candidate_filter import (
+    CandidateFilter,
+    CandidateFilterConfig,
+    TIER_FULL,
+    TIER_QUICK,
+    TIER_WATCH,
+)
 from src.agents.chartist import ChartistAgent, ChartistScore
+from src.agents.conflict_detector import ConflictDetector
 from src.agents.context import AgentContextPacket, EvidenceItem
-from src.agents.llm_config import get_instruct_llm
+from src.agents.llm_config import get_instruct_llm, get_llm_info
 from src.agents.quant import QuantScore
 from src.agents.risk_manager import AgentScores, FinalDecision, RiskManagerAgent
 from src.config.settings import get_data_dir
 from src.ingestion.theme_targets import make_theme_key
+from src.tracing.metrics import MetricsCollector
+from src.utils.cache import AnalysisCache, make_content_hash, make_prompt_hash
 from src.utils.parallel import is_error, run_agents_parallel
 
 logger = logging.getLogger(__name__)
@@ -84,6 +94,9 @@ class ThemeLeaderOrchestrator:
         self.chartist = ChartistAgent()
         self.risk_manager = RiskManagerAgent()
         self.instruct_llm = get_instruct_llm()
+        self.cache = AnalysisCache(cache_dir=str(self.data_dir / "cache"))
+        self._metrics: Optional[MetricsCollector] = None
+        self._filter_config = CandidateFilterConfig()
 
     def run(
         self,
@@ -92,57 +105,138 @@ class ThemeLeaderOrchestrator:
         candidate_limit: int = 5,
         top_n: int = 3,
     ) -> Dict[str, Any]:
-        resolved_key = theme_key or make_theme_key(theme, theme)
-        candidates = self.extract_candidates(
-            theme=theme,
-            theme_key=resolved_key,
-            candidate_limit=candidate_limit,
-        )
-        if not candidates:
-            return {
-                "status": "error",
-                "message": f"테마 후보군을 찾지 못했습니다: {theme}",
-                "theme": theme,
-                "theme_key": resolved_key,
-            }
+        metrics = MetricsCollector()
+        previous_metrics = self._metrics
+        self._metrics = metrics
 
-        evaluations = []
-        for candidate in candidates:
-            evaluations.append(self.evaluate_candidate(theme, resolved_key, candidate))
+        try:
+            with metrics.timer("total"):
+                resolved_key = theme_key or make_theme_key(theme, theme)
+                all_candidates = self.extract_candidates(
+                    theme=theme,
+                    theme_key=resolved_key,
+                    candidate_limit=candidate_limit,
+                    apply_limit=False,
+                )
+                metrics.record("candidate_count_before_filter", len(all_candidates))
 
-        evaluations.sort(
-            key=lambda row: (
-                row.get("leader_score", 0),
-                row.get("final_decision", {}).get("confidence", 0),
-                row.get("candidate", {}).get("seed_score", 0),
-            ),
-            reverse=True,
-        )
-        leaders = evaluations[:top_n]
+                if not all_candidates:
+                    result = {
+                        "status": "error",
+                        "message": f"테마 후보군을 찾지 못했습니다: {theme}",
+                        "theme": theme,
+                        "theme_key": resolved_key,
+                    }
+                    result["metrics"] = metrics.to_dict()
+                    return result
 
-        summary_lines = [
-            f"{idx}. {row['candidate']['stock_name']}({row['candidate']['stock_code']})"
-            f" - leader_score {row['leader_score']}, "
-            f"{row['final_decision'].get('action', 'N/A')}, "
-            f"확신도 {row['final_decision'].get('confidence', 0)}%"
-            for idx, row in enumerate(leaders, start=1)
-        ]
+                filter_result = CandidateFilter.classify(all_candidates, self._filter_config)
+                metrics.record(
+                    "candidate_count_after_filter",
+                    len(filter_result.full_analysis) + len(filter_result.quick_analysis),
+                )
+                metrics.record("candidate_count_watch_only", len(filter_result.watch_only))
 
-        return {
-            "status": "success",
-            "theme": theme,
-            "theme_key": resolved_key,
-            "candidate_count": len(candidates),
-            "evaluated_count": len(evaluations),
-            "leaders": leaders,
-            "summary": "\n".join(summary_lines),
-        }
+                evaluations: List[Dict[str, Any]] = []
+                candidate_tiers: List[Dict[str, Any]] = []
+                promoted_codes = set()
+
+                selected_full = filter_result.full_analysis[:candidate_limit]
+                selected_full_codes = {candidate.stock_code for candidate in selected_full}
+
+                for candidate in filter_result.full_analysis:
+                    entry = CandidateFilter.build_tier_entry(
+                        candidate,
+                        TIER_FULL,
+                        filter_result.filter_reasons.get(candidate.stock_code, ""),
+                    )
+                    entry["analyzed"] = candidate.stock_code in selected_full_codes
+                    if not entry["analyzed"]:
+                        entry["reason"] = (
+                            f"{entry['reason']} / candidate_limit {candidate_limit} 초과"
+                        ).strip(" /")
+                    candidate_tiers.append(entry)
+
+                for candidate in selected_full:
+                    evaluations.append(self.evaluate_candidate(theme, resolved_key, candidate))
+
+                for candidate in filter_result.quick_analysis:
+                    quick_result = self.evaluate_candidate_quick(theme, resolved_key, candidate)
+                    quick_score = int(quick_result.get("combined_score", 0))
+                    promoted = quick_score >= self._filter_config.promote_threshold
+                    promoted_reason = ""
+                    if promoted:
+                        promoted_reason = (
+                            f"quick_score {quick_score} >= promote_threshold "
+                            f"{self._filter_config.promote_threshold}"
+                        )
+                        promoted_codes.add(candidate.stock_code)
+                        evaluations.append(self.evaluate_candidate(theme, resolved_key, candidate))
+
+                    candidate_tiers.append(
+                        CandidateFilter.build_tier_entry(
+                            candidate,
+                            TIER_QUICK,
+                            filter_result.filter_reasons.get(candidate.stock_code, ""),
+                            quick_score=quick_score,
+                            promoted=promoted,
+                            promoted_reason=promoted_reason,
+                        )
+                    )
+
+                for candidate in filter_result.watch_only:
+                    candidate_tiers.append(
+                        CandidateFilter.build_tier_entry(
+                            candidate,
+                            TIER_WATCH,
+                            filter_result.filter_reasons.get(candidate.stock_code, ""),
+                        )
+                    )
+
+                evaluations.sort(
+                    key=lambda row: (
+                        row.get("leader_score", 0),
+                        row.get("final_decision", {}).get("confidence", 0),
+                        row.get("candidate", {}).get("seed_score", 0),
+                    ),
+                    reverse=True,
+                )
+                leaders = evaluations[:top_n]
+
+                summary_lines = [
+                    f"{idx}. {row['candidate']['stock_name']}({row['candidate']['stock_code']})"
+                    f" - leader_score {row['leader_score']}, "
+                    f"{row['final_decision'].get('action', 'N/A')}, "
+                    f"확신도 {row['final_decision'].get('confidence', 0)}%"
+                    for idx, row in enumerate(leaders, start=1)
+                ]
+
+                result = {
+                    "status": "success",
+                    "theme": theme,
+                    "theme_key": resolved_key,
+                    "candidate_count": len(all_candidates),
+                    "evaluated_count": len(evaluations),
+                    "leaders": leaders,
+                    "summary": "\n".join(summary_lines),
+                    "candidate_filter": {
+                        **filter_result.filter_summary,
+                        "promoted_from_quick": len(promoted_codes),
+                    },
+                    "candidate_tiers": candidate_tiers,
+                }
+
+            result["metrics"] = metrics.to_dict()
+            return result
+        finally:
+            self._metrics = previous_metrics
 
     def extract_candidates(
         self,
         theme: str,
         theme_key: str,
         candidate_limit: int = 5,
+        apply_limit: bool = True,
     ) -> List[ThemeCandidate]:
         target_counter, target_names = self._load_theme_targets(theme_key)
         corpus_stats = self._load_corpus_stats(theme_key)
@@ -164,8 +258,10 @@ class ThemeLeaderOrchestrator:
             corpus_docs = stats.get("doc_count", 0)
             market_rows = market_counts.get(code, 0)
             source_coverage = len([v for v in [news_docs, forum_docs, dart_docs] if v > 0])
-            if corpus_docs <= 0 and market_rows <= 0:
-                # 로컬 텍스트/차트 근거가 전혀 없는 후보는 주도주 평가 대상에서 제외한다.
+            if apply_limit and corpus_docs <= 0 and market_rows <= 0:
+                # 하위 호환: 기존 extract_candidates() 직접 호출 경로는
+                # 분석 근거가 전혀 없는 후보를 제외한다. run()의 필터링 경로는
+                # apply_limit=False로 전체 후보를 받아 WATCH_ONLY로 분류한다.
                 continue
             seed_score = min(
                 100,
@@ -200,13 +296,50 @@ class ThemeLeaderOrchestrator:
             ),
             reverse=True,
         )
+        selected = candidates[:candidate_limit] if apply_limit else candidates
         logger.info(
             "[ThemeOrchestrator] theme=%s key=%s candidates=%s",
             theme,
             theme_key,
-            [(c.stock_name, c.stock_code, c.seed_score) for c in candidates[:candidate_limit]],
+            [(c.stock_name, c.stock_code, c.seed_score) for c in selected],
         )
-        return candidates[:candidate_limit]
+        return selected
+
+    def _timed_call(self, label: str, func: Callable[..., Any], *args: Any) -> Any:
+        token = self._start_metric_timer(label)
+        try:
+            return func(*args)
+        finally:
+            self._stop_metric_timer(token)
+
+    def _start_metric_timer(self, label: str) -> Optional[str]:
+        metrics = getattr(self, "_metrics", None)
+        if not metrics:
+            return None
+        return metrics.start_timer(label)
+
+    def _stop_metric_timer(self, token: Optional[str]) -> None:
+        metrics = getattr(self, "_metrics", None)
+        if token and metrics:
+            metrics.stop_timer(token)
+
+    def _increment_metric(self, key: str, delta: int = 1) -> None:
+        metrics = getattr(self, "_metrics", None)
+        if metrics:
+            metrics.increment(key, delta)
+
+    def _cache_get_or_compute(
+        self,
+        key: str,
+        fn: Callable[[], Any],
+        ttl_seconds: int,
+    ) -> Any:
+        cache = getattr(self, "cache", None)
+        if cache is None:
+            return fn()
+        value, was_cached = cache.get_or_compute(key, fn, ttl_seconds)
+        self._increment_metric("cache_hit_count" if was_cached else "cache_miss_count")
+        return value
 
     def evaluate_candidate(
         self,
@@ -214,115 +347,213 @@ class ThemeLeaderOrchestrator:
         theme_key: str,
         candidate: ThemeCandidate,
     ) -> Dict[str, Any]:
-        records = self._load_stock_records(theme_key, candidate.stock_code)
-        source_counts = Counter((row.get("metadata") or {}).get("source_type", "") for row in records)
-        analyst_context = self._compose_context(records, {"news", "forum", "dart"}, max_docs=6)
-        quant_context = self._compose_context(records, {"dart", "news"}, max_docs=5)
+        token = self._start_metric_timer(f"candidate.{candidate.stock_code}")
+        try:
+            records = self._load_stock_records(theme_key, candidate.stock_code)
+            source_counts = Counter((row.get("metadata") or {}).get("source_type", "") for row in records)
+            analyst_context = self._compose_context(records, {"news", "forum", "dart"}, max_docs=6)
+            quant_context = self._compose_context(records, {"dart", "news"}, max_docs=5)
 
-        tasks = {
-            "analyst": (
-                self._evaluate_analyst_candidate,
-                (theme, candidate, analyst_context, dict(source_counts)),
-            ),
-            "quant": (
-                self._evaluate_quant_candidate,
-                (theme, candidate, quant_context, dict(source_counts)),
-            ),
-            "chartist": (
-                self._evaluate_chartist_candidate,
-                (theme_key, candidate),
-            ),
-        }
-        results = run_agents_parallel(tasks, max_workers=3, timeout=240)
+            tasks = {
+                "analyst": (
+                    self._timed_call,
+                    (
+                        "agent.analyst",
+                        self._evaluate_analyst_candidate,
+                        theme,
+                        candidate,
+                        analyst_context,
+                        dict(source_counts),
+                    ),
+                ),
+                "quant": (
+                    self._timed_call,
+                    (
+                        "agent.quant",
+                        self._evaluate_quant_candidate,
+                        theme,
+                        candidate,
+                        quant_context,
+                        dict(source_counts),
+                    ),
+                ),
+                "chartist": (
+                    self._timed_call,
+                    (
+                        "agent.chartist",
+                        self._evaluate_chartist_candidate,
+                        theme_key,
+                        candidate,
+                    ),
+                ),
+            }
+            results = run_agents_parallel(tasks, max_workers=3, timeout=240)
 
-        analyst_result = results.get("analyst")
-        quant_result = results.get("quant")
-        chartist_result = results.get("chartist")
+            analyst_result = results.get("analyst")
+            quant_result = results.get("quant")
+            chartist_result = results.get("chartist")
 
-        if is_error(analyst_result):
-            analyst_result = self._fallback_analyst(theme, candidate, analyst_context, dict(source_counts))
-        if is_error(quant_result):
-            quant_result = self._fallback_quant(theme, candidate, quant_context, dict(source_counts))
-        if is_error(chartist_result) or not isinstance(chartist_result, ChartistScore):
-            chartist_result = self.chartist._default_score(candidate.stock_code, "테마 차트 분석 실패")
+            if is_error(analyst_result):
+                analyst_result = self._fallback_analyst(theme, candidate, analyst_context, dict(source_counts))
+            if is_error(quant_result):
+                quant_result = self._fallback_quant(theme, candidate, quant_context, dict(source_counts))
+            if is_error(chartist_result) or not isinstance(chartist_result, ChartistScore):
+                chartist_result = self.chartist._default_score(candidate.stock_code, "테마 차트 분석 실패")
 
-        scores = AgentScores(
-            analyst_moat_score=analyst_result["moat_score"],
-            analyst_growth_score=analyst_result["growth_score"],
-            analyst_total=analyst_result["total_score"],
-            analyst_grade=analyst_result["grade"],
-            analyst_opinion=analyst_result["summary"],
-            quant_valuation_score=quant_result.valuation_score,
-            quant_profitability_score=quant_result.profitability_score,
-            quant_growth_score=quant_result.growth_score,
-            quant_stability_score=quant_result.stability_score,
-            quant_total=quant_result.total_score,
-            quant_opinion=quant_result.opinion,
-            chartist_trend_score=chartist_result.trend_score,
-            chartist_momentum_score=chartist_result.momentum_score,
-            chartist_volatility_score=chartist_result.volatility_score,
-            chartist_volume_score=chartist_result.volume_score,
-            chartist_total=chartist_result.total_score,
-            chartist_signal=chartist_result.signal,
-            analyst_context=analyst_result["packet"].to_dict(),
-            quant_context=quant_result.analysis_packet,
-            chartist_context=chartist_result.analysis_packet,
-        )
+            scores = AgentScores(
+                analyst_moat_score=analyst_result["moat_score"],
+                analyst_growth_score=analyst_result["growth_score"],
+                analyst_total=analyst_result["total_score"],
+                analyst_grade=analyst_result["grade"],
+                analyst_opinion=analyst_result["summary"],
+                quant_valuation_score=quant_result.valuation_score,
+                quant_profitability_score=quant_result.profitability_score,
+                quant_growth_score=quant_result.growth_score,
+                quant_stability_score=quant_result.stability_score,
+                quant_total=quant_result.total_score,
+                quant_opinion=quant_result.opinion,
+                chartist_trend_score=chartist_result.trend_score,
+                chartist_momentum_score=chartist_result.momentum_score,
+                chartist_volatility_score=chartist_result.volatility_score,
+                chartist_volume_score=chartist_result.volume_score,
+                chartist_total=chartist_result.total_score,
+                chartist_signal=chartist_result.signal,
+                analyst_context=analyst_result["packet"].to_dict(),
+                quant_context=quant_result.analysis_packet,
+                chartist_context=chartist_result.analysis_packet,
+            )
 
-        final_decision = self.risk_manager.make_decision(
-            candidate.stock_name,
-            candidate.stock_code,
-            scores,
-        )
-        data_presence_score = min(100, candidate.seed_score)
-        leader_score = round(final_decision.total_score * 0.7 + data_presence_score * 0.3)
+            risk_token = self._start_metric_timer("agent.risk_manager")
+            try:
+                final_decision = self.risk_manager.make_decision(
+                    candidate.stock_name,
+                    candidate.stock_code,
+                    scores,
+                )
+            finally:
+                self._stop_metric_timer(risk_token)
 
-        return {
-            "candidate": {
-                "stock_name": candidate.stock_name,
-                "stock_code": candidate.stock_code,
-                "seed_score": candidate.seed_score,
-                "target_hits": candidate.target_hits,
-                "corpus_docs": candidate.corpus_docs,
-                "news_docs": candidate.news_docs,
-                "forum_docs": candidate.forum_docs,
-                "dart_docs": candidate.dart_docs,
-                "market_rows": candidate.market_rows,
-            },
-            "leader_score": leader_score,
-            "data_presence_score": data_presence_score,
-            "evidence": self._merge_evidence(
-                [
-                    self._extract_evidence_from_packet(analyst_result["packet"].to_dict()),
-                    self._extract_evidence_from_packet(quant_result.analysis_packet),
-                    self._extract_evidence_from_packet(chartist_result.analysis_packet),
-                ]
-            ),
-            "evidence_by_agent": {
-                "analyst": self._extract_evidence_from_packet(analyst_result["packet"].to_dict()),
-                "quant": self._extract_evidence_from_packet(quant_result.analysis_packet),
-                "chartist": self._extract_evidence_from_packet(chartist_result.analysis_packet),
-            },
-            "analyst": {
-                "total_score": analyst_result["total_score"],
-                "grade": analyst_result["grade"],
-                "summary": analyst_result["summary"],
-                "catalysts": analyst_result["packet"].catalysts,
-                "risks": analyst_result["packet"].risks,
-            },
-            "quant": {
-                "total_score": quant_result.total_score,
-                "grade": quant_result.grade,
-                "opinion": quant_result.opinion,
-            },
-            "chartist": {
-                "total_score": chartist_result.total_score,
-                "signal": chartist_result.signal,
-                "short_term_opinion": chartist_result.short_term_opinion,
-                "mid_term_opinion": chartist_result.mid_term_opinion,
-            },
-            "final_decision": self._decision_to_dict(final_decision),
-        }
+            data_presence_score = min(100, candidate.seed_score)
+            leader_score = round(final_decision.total_score * 0.7 + data_presence_score * 0.3)
+
+            result = {
+                "candidate": {
+                    "stock_name": candidate.stock_name,
+                    "stock_code": candidate.stock_code,
+                    "seed_score": candidate.seed_score,
+                    "target_hits": candidate.target_hits,
+                    "corpus_docs": candidate.corpus_docs,
+                    "news_docs": candidate.news_docs,
+                    "forum_docs": candidate.forum_docs,
+                    "dart_docs": candidate.dart_docs,
+                    "market_rows": candidate.market_rows,
+                },
+                "leader_score": leader_score,
+                "data_presence_score": data_presence_score,
+                "evidence": self._merge_evidence(
+                    [
+                        self._extract_evidence_from_packet(analyst_result["packet"].to_dict()),
+                        self._extract_evidence_from_packet(quant_result.analysis_packet),
+                        self._extract_evidence_from_packet(chartist_result.analysis_packet),
+                    ]
+                ),
+                "evidence_by_agent": {
+                    "analyst": self._extract_evidence_from_packet(analyst_result["packet"].to_dict()),
+                    "quant": self._extract_evidence_from_packet(quant_result.analysis_packet),
+                    "chartist": self._extract_evidence_from_packet(chartist_result.analysis_packet),
+                },
+                "analyst": {
+                    "total_score": analyst_result["total_score"],
+                    "grade": analyst_result["grade"],
+                    "summary": analyst_result["summary"],
+                    "catalysts": analyst_result["packet"].catalysts,
+                    "risks": analyst_result["packet"].risks,
+                },
+                "quant": {
+                    "total_score": quant_result.total_score,
+                    "grade": quant_result.grade,
+                    "opinion": quant_result.opinion,
+                },
+                "chartist": {
+                    "total_score": chartist_result.total_score,
+                    "signal": chartist_result.signal,
+                    "short_term_opinion": chartist_result.short_term_opinion,
+                    "mid_term_opinion": chartist_result.mid_term_opinion,
+                },
+                "final_decision": self._decision_to_dict(final_decision),
+            }
+
+            conflict_report = ConflictDetector().detect_from_theme_result(result)
+            result["conflicts"] = conflict_report.to_dict()
+            if conflict_report.triggered_rules:
+                self._increment_metric("conflict_count")
+
+            return result
+        finally:
+            self._stop_metric_timer(token)
+
+    def evaluate_candidate_quick(
+        self,
+        theme: str,
+        theme_key: str,
+        candidate: ThemeCandidate,
+    ) -> Dict[str, Any]:
+        """QUICK_ANALYSIS 후보를 Quant + Chartist만으로 가볍게 평가"""
+        token = self._start_metric_timer(f"candidate.{candidate.stock_code}")
+        try:
+            records = self._load_stock_records(theme_key, candidate.stock_code)
+            source_counts = Counter((row.get("metadata") or {}).get("source_type", "") for row in records)
+            quant_context = self._compose_context(records, {"dart", "news"}, max_docs=5)
+            tasks = {
+                "quant": (
+                    self._timed_call,
+                    (
+                        "agent.quant",
+                        self._evaluate_quant_candidate,
+                        theme,
+                        candidate,
+                        quant_context,
+                        dict(source_counts),
+                    ),
+                ),
+                "chartist": (
+                    self._timed_call,
+                    (
+                        "agent.chartist",
+                        self._evaluate_chartist_candidate,
+                        theme_key,
+                        candidate,
+                    ),
+                ),
+            }
+            results = run_agents_parallel(tasks, max_workers=2, timeout=180)
+            quant_result = results.get("quant")
+            chartist_result = results.get("chartist")
+            if is_error(quant_result):
+                quant_result = self._fallback_quant(theme, candidate, quant_context, dict(source_counts))
+            if is_error(chartist_result) or not isinstance(chartist_result, ChartistScore):
+                chartist_result = self.chartist._default_score(candidate.stock_code, "테마 차트 분석 실패")
+
+            combined_score = round((quant_result.total_score + chartist_result.total_score) / 2)
+            return {
+                "candidate": {
+                    "stock_name": candidate.stock_name,
+                    "stock_code": candidate.stock_code,
+                    "seed_score": candidate.seed_score,
+                },
+                "combined_score": combined_score,
+                "quant": {
+                    "total_score": quant_result.total_score,
+                    "grade": quant_result.grade,
+                    "opinion": quant_result.opinion,
+                },
+                "chartist": {
+                    "total_score": chartist_result.total_score,
+                    "signal": chartist_result.signal,
+                },
+            }
+        finally:
+            self._stop_metric_timer(token)
 
     def _evaluate_analyst_candidate(
         self,
@@ -653,41 +884,65 @@ class ThemeLeaderOrchestrator:
 
     def _load_theme_targets(self, theme_key: str) -> Tuple[Counter, Dict[str, str]]:
         path = self.data_dir / "raw" / "theme_targets" / f"{theme_key}.jsonl"
-        counter: Counter = Counter()
-        names: Dict[str, str] = {}
-        if not path.exists():
-            return counter, names
-        for row in self._iter_jsonl(path):
-            code = str(row.get("stock_code", "")).strip()
-            name = str(row.get("stock_name", "")).strip()
-            if not code or not name:
-                continue
-            counter[code] += 1
-            names[code] = name
-        return counter, names
+        cache_key = f"candidate/theme_targets_{theme_key}_{make_content_hash(path)}"
+
+        def compute() -> Dict[str, Any]:
+            counter: Counter = Counter()
+            names: Dict[str, str] = {}
+            if not path.exists():
+                return {"counter": {}, "names": {}}
+            for row in self._iter_jsonl(path):
+                code = str(row.get("stock_code", "")).strip()
+                name = str(row.get("stock_name", "")).strip()
+                if not code or not name:
+                    continue
+                counter[code] += 1
+                names[code] = name
+            return {"counter": dict(counter), "names": names}
+
+        payload = self._cache_get_or_compute(cache_key, compute, ttl_seconds=1800)
+        return Counter(payload.get("counter", {})), dict(payload.get("names", {}))
 
     def _load_corpus_stats(self, theme_key: str) -> Dict[str, Dict[str, Any]]:
         path = self.data_dir / "canonical_index" / theme_key / "corpus.jsonl"
-        stats: Dict[str, Dict[str, Any]] = {}
-        if not path.exists():
-            return stats
-        for row in self._iter_jsonl(path):
-            meta = row.get("metadata") or {}
-            code = str(meta.get("stock_code", "")).strip()
-            name = str(meta.get("stock_name", "")).strip()
-            if not code or not name:
-                continue
-            bucket = stats.setdefault(
-                code,
-                {
-                    "stock_name": name,
-                    "doc_count": 0,
-                    "source_counts": Counter(),
-                },
-            )
-            bucket["doc_count"] += 1
-            bucket["source_counts"][meta.get("source_type", "")] += 1
-        return stats
+        cache_key = f"corpus/stats_{theme_key}_{make_content_hash(path)}"
+
+        def compute() -> Dict[str, Dict[str, Any]]:
+            stats: Dict[str, Dict[str, Any]] = {}
+            if not path.exists():
+                return stats
+            for row in self._iter_jsonl(path):
+                meta = row.get("metadata") or {}
+                code = str(meta.get("stock_code", "")).strip()
+                name = str(meta.get("stock_name", "")).strip()
+                if not code or not name:
+                    continue
+                bucket = stats.setdefault(
+                    code,
+                    {
+                        "stock_name": name,
+                        "doc_count": 0,
+                        "source_counts": Counter(),
+                    },
+                )
+                bucket["doc_count"] += 1
+                bucket["source_counts"][meta.get("source_type", "")] += 1
+            return {
+                code: {
+                    **row,
+                    "source_counts": dict(row.get("source_counts", {})),
+                }
+                for code, row in stats.items()
+            }
+
+        payload = self._cache_get_or_compute(cache_key, compute, ttl_seconds=3600)
+        return {
+            code: {
+                **row,
+                "source_counts": Counter(row.get("source_counts", {})),
+            }
+            for code, row in payload.items()
+        }
 
     def _load_stock_records(self, theme_key: str, stock_code: str) -> List[Dict[str, Any]]:
         path = self.data_dir / "canonical_index" / theme_key / "corpus.jsonl"
@@ -709,20 +964,27 @@ class ThemeLeaderOrchestrator:
         return records
 
     def _load_market_counts(self, theme_key: str) -> Counter:
-        counter: Counter = Counter()
         candidates = [
             self.data_dir / "market_data" / theme_key / "chart.jsonl",
             self.data_dir / "market_data" / theme_key / "combined.jsonl",
             self.data_dir / "raw" / "chart" / f"{theme_key}.jsonl",
         ]
-        for path in candidates:
-            if not path.exists():
-                continue
-            for row in self._iter_jsonl(path):
-                code = str(row.get("stock_code", "")).strip()
-                if code:
-                    counter[code] += 1
-        return counter
+        hash_key = "_".join(make_content_hash(path) for path in candidates)
+        cache_key = f"chart/market_counts_{theme_key}_{hash_key}"
+
+        def compute() -> Dict[str, int]:
+            counter: Counter = Counter()
+            for path in candidates:
+                if not path.exists():
+                    continue
+                for row in self._iter_jsonl(path):
+                    code = str(row.get("stock_code", "")).strip()
+                    if code:
+                        counter[code] += 1
+            return dict(counter)
+
+        payload = self._cache_get_or_compute(cache_key, compute, ttl_seconds=300)
+        return Counter(payload)
 
     def _compose_context(
         self,
@@ -821,39 +1083,64 @@ class ThemeLeaderOrchestrator:
         *,
         label: str = "theme_orchestrator",
     ) -> Dict[str, Any]:
-        try:
-            structured_llm = self._build_structured_llm(llm, schema)
-            if structured_llm is not None:
-                structured = structured_llm.invoke(prompt)
-                return self._validate_structured_payload(structured, schema)
-        except Exception as exc:
-            logger.warning(
-                "Theme orchestration structured output failed (%s): %s",
-                label,
-                exc,
-            )
+        model_name = self._llm_model_name(llm)
+        prompt_hash = make_prompt_hash(prompt)
+        input_hash = make_prompt_hash(f"{schema.__name__}:{label}:{prompt}")
+        cache_key = f"agent/{label}_{model_name}_{prompt_hash}_{input_hash}"
 
-        try:
-            response = llm.invoke(prompt)
-            content = self._response_to_text(getattr(response, "content", response))
-            payload = self._extract_first_json_object(content)
-            if not payload:
-                if content.lstrip().startswith("[mock:"):
-                    logger.debug(
-                        "Theme orchestration mock response did not include JSON (%s)",
+        def compute() -> Dict[str, Any]:
+            try:
+                structured_llm = self._build_structured_llm(llm, schema)
+                if structured_llm is not None:
+                    self._increment_metric("llm_call_count")
+                    structured = structured_llm.invoke(prompt)
+                    return self._validate_structured_payload(structured, schema)
+            except Exception as exc:
+                logger.warning(
+                    "Theme orchestration structured output failed (%s): %s",
+                    label,
+                    exc,
+                )
+
+            try:
+                self._increment_metric("llm_call_count")
+                response = llm.invoke(prompt)
+                content = self._response_to_text(getattr(response, "content", response))
+                payload = self._extract_first_json_object(content)
+                if not payload:
+                    if content.lstrip().startswith("[mock:"):
+                        logger.debug(
+                            "Theme orchestration mock response did not include JSON (%s)",
+                            label,
+                        )
+                        return {}
+                    logger.warning(
+                        "Theme orchestration JSON payload missing (%s): %.200s",
                         label,
+                        content,
                     )
                     return {}
-                logger.warning(
-                    "Theme orchestration JSON payload missing (%s): %.200s",
-                    label,
-                    content,
-                )
+                return self._validate_structured_payload(payload, schema)
+            except Exception as exc:
+                logger.warning("Theme orchestration JSON parse failed (%s): %s", label, exc)
                 return {}
-            return self._validate_structured_payload(payload, schema)
-        except Exception as exc:
-            logger.warning("Theme orchestration JSON parse failed (%s): %s", label, exc)
+
+        payload = self._cache_get_or_compute(cache_key, compute, ttl_seconds=21600)
+        if not isinstance(payload, dict):
             return {}
+        if not payload:
+            return {}
+        return self._validate_structured_payload(payload, schema)
+
+    @staticmethod
+    def _llm_model_name(llm: Any) -> str:
+        model_name = (
+            getattr(llm, "model", None)
+            or getattr(llm, "model_name", None)
+            or get_llm_info().get("instruct_model", "")
+            or llm.__class__.__name__
+        )
+        return str(model_name).replace("/", "_")
 
     @staticmethod
     def _build_structured_llm(llm: Any, schema: type[BaseModel]):

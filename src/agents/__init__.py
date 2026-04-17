@@ -72,6 +72,23 @@ except Exception as exc:  # pragma: no cover
     EvidenceItem = None
 
 try:
+    from .candidate_filter import (
+        CandidateFilter,
+        CandidateFilterConfig,
+        CandidateFilterResult,
+    )
+except Exception as exc:  # pragma: no cover
+    CandidateFilter = _missing_dependency("CandidateFilter", exc)
+    CandidateFilterConfig = None
+    CandidateFilterResult = None
+
+try:
+    from .conflict_detector import ConflictDetector, ConflictReport
+except Exception as exc:  # pragma: no cover
+    ConflictDetector = _missing_dependency("ConflictDetector", exc)
+    ConflictReport = None
+
+try:
     from .graph import run_stock_analysis, is_langgraph_available, AnalysisState
 except Exception as exc:  # pragma: no cover
     run_stock_analysis = _missing_dependency("run_stock_analysis", exc)
@@ -127,6 +144,11 @@ __all__ = [
     "RiskLevel",
     "AgentContextPacket",
     "EvidenceItem",
+    "CandidateFilter",
+    "CandidateFilterConfig",
+    "CandidateFilterResult",
+    "ConflictDetector",
+    "ConflictReport",
     "get_instruct_llm",
     "get_thinking_llm",
     "get_vision_llm",

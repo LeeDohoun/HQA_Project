@@ -36,6 +36,12 @@ from .memory import (
     ConversationTurn,
 )
 
+from .cache import (
+    AnalysisCache,
+    make_content_hash,
+    make_prompt_hash,
+)
+
 __all__ = [
     # stock_mapper
     "StockMapper",
@@ -57,4 +63,8 @@ __all__ = [
     # memory
     "ConversationMemory",
     "ConversationTurn",
+    # cache
+    "AnalysisCache",
+    "make_content_hash",
+    "make_prompt_hash",
 ]

@@ -12,6 +12,7 @@ from src.tracing.agent_tracer import (
     AgentSpan,
     AgentTracer,
 )
+from src.tracing.metrics import MetricsCollector
 
 __all__ = [
     "AgentTrace",
@@ -19,4 +20,5 @@ __all__ = [
     "AnalysisTrace",
     "AgentSpan",
     "AgentTracer",
+    "MetricsCollector",
 ]

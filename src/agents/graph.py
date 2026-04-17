@@ -51,6 +51,7 @@ from typing import Dict, Any, Optional, List, TypedDict, Annotated
 from dataclasses import asdict
 
 from src.tracing.agent_tracer import AgentTracer
+from src.tracing.metrics import MetricsCollector
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +103,10 @@ class AnalysisState(TypedDict, total=False):
     
     # ── 트레이싱 ──
     tracer: Any               # AgentTracer 인스턴스
+    metrics: Any              # MetricsCollector 인스턴스
+
+    # ── 검증 ──
+    conflicts: Dict[str, Any]  # 규칙 기반 충돌 감지 결과
     
     # ── 메타 ──
     status: str               # "running" | "completed" | "error"
@@ -525,10 +530,16 @@ def _risk_manager_node(state: AnalysisState) -> dict:
         
         print(f"   ✅ 최종 판단: {final_decision.action.value} "
               f"(종합 {final_decision.total_score}/270점)")
+
+        conflict_report = _detect_conflicts(agent_scores, final_decision)
+        metrics: Optional[MetricsCollector] = state.get("metrics")
+        if metrics and conflict_report.get("triggered_rules"):
+            metrics.increment("conflict_count")
         
         return {
             "agent_scores": agent_scores,
             "final_decision": final_decision,
+            "conflicts": conflict_report,
             "status": "completed",
         }
         
@@ -570,6 +581,57 @@ def _should_retry_research(state: AnalysisState) -> str:
     return "proceed"
 
 
+def _timed_node(label: str, node_func):
+    """LangGraph 노드에 MetricsCollector 타이머를 얇게 씌웁니다."""
+    def wrapper(state: AnalysisState) -> dict:
+        metrics: Optional[MetricsCollector] = state.get("metrics")
+        if not metrics:
+            return node_func(state)
+        with metrics.timer(label):
+            return node_func(state)
+    return wrapper
+
+
+def _timed_call(metrics: Optional[MetricsCollector], label: str, func, *args):
+    if not metrics:
+        return func(*args)
+    with metrics.timer(label):
+        return func(*args)
+
+
+def _evidence_count_from_scores(scores: Any) -> int:
+    count = 0
+    for context in [
+        getattr(scores, "analyst_context", {}) or {},
+        getattr(scores, "quant_context", {}) or {},
+        getattr(scores, "chartist_context", {}) or {},
+    ]:
+        evidence = context.get("evidence", []) if isinstance(context, dict) else []
+        if isinstance(evidence, list):
+            count += len(evidence)
+    return count
+
+
+def _detect_conflicts(scores: Any, final_decision: Any) -> Dict[str, Any]:
+    try:
+        from src.agents.conflict_detector import ConflictDetector
+
+        report = ConflictDetector().detect_from_graph_result(
+            scores,
+            final_decision,
+            evidence_count=_evidence_count_from_scores(scores),
+        )
+        return report.to_dict()
+    except Exception as exc:
+        logger.warning("Conflict detection failed: %s", exc)
+        return {
+            "severity": "NONE",
+            "warnings": [],
+            "triggered_rules": [],
+            "suggested_action": "proceed",
+        }
+
+
 # ──────────────────────────────────────────────
 # 그래프 빌더
 # ──────────────────────────────────────────────
@@ -588,12 +650,12 @@ def build_analysis_graph() -> Optional['StateGraph']:
     graph = StateGraph(AnalysisState)
     
     # ── 노드 등록 ──
-    graph.add_node("analyst", _analyst_node)
-    graph.add_node("quant", _quant_node)
-    graph.add_node("chartist", _chartist_node)
+    graph.add_node("analyst", _timed_node("agent.analyst", _analyst_node))
+    graph.add_node("quant", _timed_node("agent.quant", _quant_node))
+    graph.add_node("chartist", _timed_node("agent.chartist", _chartist_node))
     graph.add_node("quality_gate", _quality_gate)
     graph.add_node("retry_research", _retry_research)
-    graph.add_node("risk_manager", _risk_manager_node)
+    graph.add_node("risk_manager", _timed_node("agent.risk_manager", _risk_manager_node))
     
     # ── 엣지: START → 병렬 분기 (3개 에이전트) ──
     # LangGraph에서 Fan-out은 START에서 여러 노드로 동시 엣지를 추가
@@ -667,6 +729,7 @@ def run_stock_analysis(
     """
     # 트레이서 생성
     tracer = AgentTracer(debug=debug_trace)
+    metrics = MetricsCollector()
     
     graph = get_analysis_graph()
     
@@ -674,7 +737,7 @@ def run_stock_analysis(
         # LangGraph 미설치 → 폴백
         tracer.start_trace(stock_name, stock_code, "fallback_parallel", query)
         tracer.set_fallback_reason("langgraph 미설치")
-        return _fallback_parallel_analysis(stock_name, stock_code, tracer=tracer)
+        return _fallback_parallel_analysis(stock_name, stock_code, tracer=tracer, metrics=metrics)
     
     print(f"\n🚀 [LangGraph] {stock_name}({stock_code}) 분석 워크플로우 시작")
     print(f"   ⚡ Analyst / Quant / Chartist 병렬 분기")
@@ -697,11 +760,13 @@ def run_stock_analysis(
         "quant_context": {},
         "chartist_context": {},
         "tracer": tracer,
+        "metrics": metrics,
     }
     
     try:
         # 그래프 실행
-        final_state = graph.invoke(initial_state)
+        with metrics.timer("total"):
+            final_state = graph.invoke(initial_state)
         
         # 결과 변환 (supervisor.execute() 호환)
         result = {
@@ -723,6 +788,8 @@ def run_stock_analysis(
             result["scores"]["chartist"] = final_state["chartist_score"]
         if final_state.get("final_decision"):
             result["final_decision"] = final_state["final_decision"]
+        if final_state.get("conflicts"):
+            result["conflicts"] = final_state["conflicts"]
         
         # 품질 정보 추가
         result["research_quality"] = final_state.get("research_quality", "?")
@@ -741,6 +808,8 @@ def run_stock_analysis(
                 f"{final_decision.action.value} ({final_decision.total_score}/270) "
                 f"리스크:{final_decision.risk_level.value}"
             )
+            metrics.record("final_action", final_decision.action.value)
+            metrics.record("final_confidence", final_decision.confidence)
         
         saved_path = tracer.finish_trace(
             final_result_summary=final_summary,
@@ -753,6 +822,7 @@ def run_stock_analysis(
         if saved_path:
             result["trace_file"] = saved_path
             print(f"📝 [Tracer] 트레이스 저장: {saved_path}")
+        result["metrics"] = metrics.to_dict()
         
         return result
         
@@ -774,6 +844,7 @@ def _fallback_parallel_analysis(
     stock_name: str,
     stock_code: str,
     tracer: Optional[AgentTracer] = None,
+    metrics: Optional[MetricsCollector] = None,
 ) -> Dict[str, Any]:
     """
     LangGraph 미설치 시 기존 병렬 실행 방식 (폴백)
@@ -787,154 +858,177 @@ def _fallback_parallel_analysis(
         RiskManagerAgent, AgentScores, AnalystScore,
     )
     
-    print(f"\n🚀 [Fallback] {stock_name}({stock_code}) 병렬 분석 시작...")
-    
-    agents = {
-        "analyst": AnalystAgent(),
-        "quant": QuantAgent(),
-        "chartist": ChartistAgent(),
-    }
-    
-    # Phase 1: 병렬 실행 (타이밍 측정)
-    t0 = time.time()
-    parallel_results = run_agents_parallel({
-        "analyst":  (agents["analyst"].full_analysis,  (stock_name, stock_code)),
-        "quant":    (agents["quant"].full_analysis,    (stock_name, stock_code)),
-        "chartist": (agents["chartist"].full_analysis, (stock_name, stock_code)),
-    })
-    parallel_elapsed = time.time() - t0
-    
-    analyst_score = parallel_results.get("analyst")
-    quant_score = parallel_results.get("quant")
-    chartist_score = parallel_results.get("chartist")
-    
-    # 트레이싱: 병렬 실행 결과 기록
-    if tracer:
-        # Analyst
+    if metrics is None:
+        metrics = MetricsCollector()
+
+    with metrics.timer("total"):
+        print(f"\n🚀 [Fallback] {stock_name}({stock_code}) 병렬 분석 시작...")
+
+        agents = {
+            "analyst": AnalystAgent(),
+            "quant": QuantAgent(),
+            "chartist": ChartistAgent(),
+        }
+
+        # Phase 1: 병렬 실행 (타이밍 측정)
+        t0 = time.time()
+        parallel_results = run_agents_parallel(
+            {
+                "analyst": (
+                    _timed_call,
+                    (metrics, "agent.analyst", agents["analyst"].full_analysis, stock_name, stock_code),
+                ),
+                "quant": (
+                    _timed_call,
+                    (metrics, "agent.quant", agents["quant"].full_analysis, stock_name, stock_code),
+                ),
+                "chartist": (
+                    _timed_call,
+                    (metrics, "agent.chartist", agents["chartist"].full_analysis, stock_name, stock_code),
+                ),
+            }
+        )
+        parallel_elapsed = time.time() - t0
+
+        analyst_score = parallel_results.get("analyst")
+        quant_score = parallel_results.get("quant")
+        chartist_score = parallel_results.get("chartist")
+
+        # 트레이싱: 병렬 실행 결과 기록
+        if tracer:
+            # Analyst
+            if is_error(analyst_score):
+                with tracer.trace_agent("analyst", f"{stock_name}({stock_code}) [fallback]") as span:
+                    span.set_error(str(analyst_score), error_type="parallel_error")
+            else:
+                with tracer.trace_agent("analyst", f"{stock_name}({stock_code}) [fallback]") as span:
+                    span.set_output(
+                        f"{analyst_score.hegemony_grade}등급 ({analyst_score.total_score}/70)"
+                    )
+                    span.set_reasoning(
+                        analyst_score.final_opinion[:200] if analyst_score.final_opinion else ""
+                    )
+
+            # Quant
+            if is_error(quant_score):
+                with tracer.trace_agent("quant", f"{stock_name}({stock_code}) [fallback]") as span:
+                    span.set_error(str(quant_score), error_type="parallel_error")
+            else:
+                with tracer.trace_agent("quant", f"{stock_name}({stock_code}) [fallback]") as span:
+                    span.set_output(
+                        f"{quant_score.grade} ({quant_score.total_score}/100)"
+                    )
+                    span.set_reasoning(quant_score.opinion[:200] if quant_score.opinion else "")
+
+            # Chartist
+            if is_error(chartist_score):
+                with tracer.trace_agent("chartist", f"{stock_name}({stock_code}) [fallback]") as span:
+                    span.set_error(str(chartist_score), error_type="parallel_error")
+            else:
+                with tracer.trace_agent("chartist", f"{stock_name}({stock_code}) [fallback]") as span:
+                    span.set_output(
+                        f"{chartist_score.signal} ({chartist_score.total_score}/100)"
+                    )
+                    span.set_reasoning(
+                        f"trend:{chartist_score.trend_score} momentum:{chartist_score.momentum_score}"
+                    )
+
+            tracer.set_metadata("parallel_elapsed_seconds", round(parallel_elapsed, 3))
+
+        # 에러 복구
         if is_error(analyst_score):
-            with tracer.trace_agent("analyst", f"{stock_name}({stock_code}) [fallback]") as span:
-                span.set_error(str(analyst_score), error_type="parallel_error")
-        else:
-            with tracer.trace_agent("analyst", f"{stock_name}({stock_code}) [fallback]") as span:
-                span.set_output(
-                    f"{analyst_score.hegemony_grade}등급 ({analyst_score.total_score}/70)"
-                )
-                span.set_reasoning(
-                    analyst_score.final_opinion[:200] if analyst_score.final_opinion else ""
-                )
-        
-        # Quant
+            analyst_score = AnalystScore(
+                moat_score=20, growth_score=15, total_score=35,
+                moat_reason="분석 오류", growth_reason="분석 오류",
+                report_summary="", image_analysis="",
+                final_opinion=f"오류: {str(analyst_score)[:100]}"
+            )
         if is_error(quant_score):
-            with tracer.trace_agent("quant", f"{stock_name}({stock_code}) [fallback]") as span:
-                span.set_error(str(quant_score), error_type="parallel_error")
-        else:
-            with tracer.trace_agent("quant", f"{stock_name}({stock_code}) [fallback]") as span:
-                span.set_output(
-                    f"{quant_score.grade} ({quant_score.total_score}/100)"
-                )
-                span.set_reasoning(quant_score.opinion[:200] if quant_score.opinion else "")
-        
-        # Chartist
+            quant_score = agents["quant"]._default_score(stock_name, str(quant_score))
         if is_error(chartist_score):
-            with tracer.trace_agent("chartist", f"{stock_name}({stock_code}) [fallback]") as span:
-                span.set_error(str(chartist_score), error_type="parallel_error")
-        else:
-            with tracer.trace_agent("chartist", f"{stock_name}({stock_code}) [fallback]") as span:
+            chartist_score = agents["chartist"]._default_score(stock_code, str(chartist_score))
+
+        results = {
+            "status": "success",
+            "stock": {"name": stock_name, "code": stock_code},
+            "scores": {
+                "analyst": analyst_score,
+                "quant": quant_score,
+                "chartist": chartist_score,
+            },
+            "analysis_context": {
+                "analyst": getattr(analyst_score, "analysis_packet", {}) or {},
+                "quant": getattr(quant_score, "analysis_packet", {}) or {},
+                "chartist": getattr(chartist_score, "analysis_packet", {}) or {},
+            },
+        }
+
+        # Phase 2: Risk Manager
+        agent_scores = AgentScores(
+            analyst_moat_score=analyst_score.moat_score,
+            analyst_growth_score=analyst_score.growth_score,
+            analyst_total=analyst_score.total_score,
+            analyst_grade=analyst_score.hegemony_grade,
+            analyst_opinion=analyst_score.final_opinion,
+            quant_valuation_score=quant_score.valuation_score,
+            quant_profitability_score=quant_score.profitability_score,
+            quant_growth_score=quant_score.growth_score,
+            quant_stability_score=quant_score.stability_score,
+            quant_total=quant_score.total_score,
+            quant_opinion=quant_score.opinion,
+            chartist_trend_score=chartist_score.trend_score,
+            chartist_momentum_score=chartist_score.momentum_score,
+            chartist_volatility_score=chartist_score.volatility_score,
+            chartist_volume_score=chartist_score.volume_score,
+            chartist_total=chartist_score.total_score,
+            chartist_signal=chartist_score.signal,
+            analyst_context=getattr(analyst_score, "analysis_packet", {}) or {},
+            quant_context=getattr(quant_score, "analysis_packet", {}) or {},
+            chartist_context=getattr(chartist_score, "analysis_packet", {}) or {},
+        )
+
+        risk_manager = RiskManagerAgent()
+
+        if tracer:
+            input_detail = (
+                f"Analyst:{analyst_score.total_score}/70 "
+                f"Quant:{quant_score.total_score}/100 "
+                f"Chartist:{chartist_score.total_score}/100"
+            )
+            with tracer.trace_agent("risk_manager", input_detail) as span:
+                with metrics.timer("agent.risk_manager"):
+                    final_decision = risk_manager.make_decision(stock_name, stock_code, agent_scores)
                 span.set_output(
-                    f"{chartist_score.signal} ({chartist_score.total_score}/100)"
+                    f"{final_decision.action.value} ({final_decision.total_score}/270) "
+                    f"리스크:{final_decision.risk_level.value}"
                 )
                 span.set_reasoning(
-                    f"trend:{chartist_score.trend_score} momentum:{chartist_score.momentum_score}"
+                    final_decision.summary[:200] if final_decision.summary else ""
                 )
+        else:
+            with metrics.timer("agent.risk_manager"):
+                final_decision = risk_manager.make_decision(stock_name, stock_code, agent_scores)
         
-        tracer.set_metadata("parallel_elapsed_seconds", round(parallel_elapsed, 3))
-    
-    # 에러 복구
-    if is_error(analyst_score):
-        analyst_score = AnalystScore(
-            moat_score=20, growth_score=15, total_score=35,
-            moat_reason="분석 오류", growth_reason="분석 오류",
-            report_summary="", image_analysis="",
-            final_opinion=f"오류: {str(analyst_score)[:100]}"
-        )
-    if is_error(quant_score):
-        quant_score = agents["quant"]._default_score(stock_name, str(quant_score))
-    if is_error(chartist_score):
-        chartist_score = agents["chartist"]._default_score(stock_code, str(chartist_score))
-    
-    results = {
-        "status": "success",
-        "stock": {"name": stock_name, "code": stock_code},
-        "scores": {
-            "analyst": analyst_score,
-            "quant": quant_score,
-            "chartist": chartist_score,
-        },
-        "analysis_context": {
-            "analyst": getattr(analyst_score, "analysis_packet", {}) or {},
-            "quant": getattr(quant_score, "analysis_packet", {}) or {},
-            "chartist": getattr(chartist_score, "analysis_packet", {}) or {},
-        },
-    }
-    
-    # Phase 2: Risk Manager
-    agent_scores = AgentScores(
-        analyst_moat_score=analyst_score.moat_score,
-        analyst_growth_score=analyst_score.growth_score,
-        analyst_total=analyst_score.total_score,
-        analyst_grade=analyst_score.hegemony_grade,
-        analyst_opinion=analyst_score.final_opinion,
-        quant_valuation_score=quant_score.valuation_score,
-        quant_profitability_score=quant_score.profitability_score,
-        quant_growth_score=quant_score.growth_score,
-        quant_stability_score=quant_score.stability_score,
-        quant_total=quant_score.total_score,
-        quant_opinion=quant_score.opinion,
-        chartist_trend_score=chartist_score.trend_score,
-        chartist_momentum_score=chartist_score.momentum_score,
-        chartist_volatility_score=chartist_score.volatility_score,
-        chartist_volume_score=chartist_score.volume_score,
-        chartist_total=chartist_score.total_score,
-        chartist_signal=chartist_score.signal,
-        analyst_context=getattr(analyst_score, "analysis_packet", {}) or {},
-        quant_context=getattr(quant_score, "analysis_packet", {}) or {},
-        chartist_context=getattr(chartist_score, "analysis_packet", {}) or {},
-    )
-    
-    risk_manager = RiskManagerAgent()
-    
-    if tracer:
-        input_detail = (
-            f"Analyst:{analyst_score.total_score}/70 "
-            f"Quant:{quant_score.total_score}/100 "
-            f"Chartist:{chartist_score.total_score}/100"
-        )
-        with tracer.trace_agent("risk_manager", input_detail) as span:
-            final_decision = risk_manager.make_decision(stock_name, stock_code, agent_scores)
-            span.set_output(
+        results["final_decision"] = final_decision
+        results["conflicts"] = _detect_conflicts(agent_scores, final_decision)
+        if results["conflicts"].get("triggered_rules"):
+            metrics.increment("conflict_count")
+        metrics.record("final_action", final_decision.action.value)
+        metrics.record("final_confidence", final_decision.confidence)
+
+        # 트레이스 종료
+        if tracer:
+            final_summary = (
                 f"{final_decision.action.value} ({final_decision.total_score}/270) "
                 f"리스크:{final_decision.risk_level.value}"
             )
-            span.set_reasoning(
-                final_decision.summary[:200] if final_decision.summary else ""
-            )
-    else:
-        final_decision = risk_manager.make_decision(stock_name, stock_code, agent_scores)
-    
-    results["final_decision"] = final_decision
-    
-    # 트레이스 종료
-    if tracer:
-        final_summary = (
-            f"{final_decision.action.value} ({final_decision.total_score}/270) "
-            f"리스크:{final_decision.risk_level.value}"
-        )
-        saved_path = tracer.finish_trace(final_result_summary=final_summary)
-        results["trace"] = tracer.to_dict()
-        if saved_path:
-            results["trace_file"] = saved_path
-            print(f"📝 [Tracer] 트레이스 저장: {saved_path}")
-    
+            saved_path = tracer.finish_trace(final_result_summary=final_summary)
+            results["trace"] = tracer.to_dict()
+            if saved_path:
+                results["trace_file"] = saved_path
+                print(f"📝 [Tracer] 트레이스 저장: {saved_path}")
+
+    results["metrics"] = metrics.to_dict()
     return results
 
 
