@@ -385,6 +385,8 @@ def _execute_theme(
                 "risk_level": decision.get("risk_level"),
                 "key_catalysts": decision.get("key_catalysts", []),
                 "risk_factors": decision.get("risk_factors", []),
+                "evidence": row.get("evidence", []),
+                "evidence_by_agent": row.get("evidence_by_agent", {}),
             }
         )
 

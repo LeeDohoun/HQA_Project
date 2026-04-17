@@ -126,9 +126,9 @@ class FinalDecision:
 class FinalDecisionPayload(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    total_score: int = 50
+    total_score: float | int = 50
     action: str = "HOLD"
-    confidence: int = 50
+    confidence: float | int = 50
     risk_level: str = "MEDIUM"
     risk_factors: List[str] = Field(default_factory=list)
     position_size: str = "25%"

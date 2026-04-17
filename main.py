@@ -21,7 +21,10 @@ HQA (Hegemony Quantitative Analyst) 메인 실행 파일
 """
 
 import argparse
+import json
 import sys
+from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 # ==========================================
@@ -44,6 +47,11 @@ def get_stock_mapper():
     """종목 매퍼 로드"""
     from src.utils.stock_mapper import get_mapper
     return get_mapper()
+
+
+def get_data_dir():
+    from src.config.settings import get_data_dir as _get_data_dir
+    return _get_data_dir()
 
 
 # ==========================================
@@ -281,8 +289,41 @@ def run_theme_orchestration(theme: str, candidate_limit: int = 5, top_n: int = 3
         print(f"최종 판단: {decision.get('action', 'N/A')}")
         print(f"확신도: {decision.get('confidence', 0)}%")
         print(f"요약: {decision.get('summary', '')}")
+        evidence_rows = leader.get("evidence", []) or []
+        if evidence_rows:
+            print("근거:")
+            for evidence_idx, row in enumerate(evidence_rows[:5], start=1):
+                source = row.get("source", "unknown")
+                title = row.get("title", "") or "(untitled)"
+                snippet = row.get("snippet", "") or ""
+                note = row.get("note", "") or ""
+                print(f"  [{evidence_idx}] {source} | {title}")
+                if note:
+                    print(f"      note: {note}")
+                if snippet:
+                    print(f"      snippet: {snippet[:180]}")
+
+    report_path = _save_theme_analysis_report(result)
+    if report_path:
+        print(f"\n📄 Evidence report saved: {report_path}")
 
     return result
+
+
+def _save_theme_analysis_report(result: dict) -> Optional[str]:
+    if not isinstance(result, dict) or result.get("status") != "success":
+        return None
+
+    data_dir = get_data_dir()
+    report_dir = Path(data_dir) / "reports"
+    report_dir.mkdir(parents=True, exist_ok=True)
+
+    theme_key = result.get("theme_key") or result.get("theme") or "theme"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    report_path = report_dir / f"{theme_key}_theme_analysis_{timestamp}.json"
+    with report_path.open("w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=False, indent=2)
+    return str(report_path)
 
 
 def format_result(result):
@@ -306,6 +347,10 @@ def format_result(result):
                     f"   요약: {decision.get('summary', '')}",
                 ]
             )
+            for evidence_idx, row in enumerate((leader.get("evidence", []) or [])[:3], start=1):
+                source = row.get("source", "unknown")
+                title = row.get("title", "") or "(untitled)"
+                lines.append(f"   근거 {evidence_idx}: [{source}] {title}")
         return "\n".join(lines)
 
     if result.get("summary"):

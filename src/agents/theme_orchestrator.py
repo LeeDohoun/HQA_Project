@@ -291,6 +291,18 @@ class ThemeLeaderOrchestrator:
             },
             "leader_score": leader_score,
             "data_presence_score": data_presence_score,
+            "evidence": self._merge_evidence(
+                [
+                    self._extract_evidence_from_packet(analyst_result["packet"].to_dict()),
+                    self._extract_evidence_from_packet(quant_result.analysis_packet),
+                    self._extract_evidence_from_packet(chartist_result.analysis_packet),
+                ]
+            ),
+            "evidence_by_agent": {
+                "analyst": self._extract_evidence_from_packet(analyst_result["packet"].to_dict()),
+                "quant": self._extract_evidence_from_packet(quant_result.analysis_packet),
+                "chartist": self._extract_evidence_from_packet(chartist_result.analysis_packet),
+            },
             "analyst": {
                 "total_score": analyst_result["total_score"],
                 "grade": analyst_result["grade"],
@@ -600,6 +612,44 @@ class ThemeLeaderOrchestrator:
             "risk_factors": decision.risk_factors,
             "detailed_reasoning": decision.detailed_reasoning,
         }
+
+    @staticmethod
+    def _extract_evidence_from_packet(packet: Dict[str, Any]) -> List[Dict[str, Any]]:
+        evidence_rows = []
+        for row in (packet or {}).get("evidence", []) or []:
+            if not isinstance(row, dict):
+                continue
+            evidence_rows.append(
+                {
+                    "source": str(row.get("source", "")).strip(),
+                    "title": str(row.get("title", "")).strip(),
+                    "snippet": str(row.get("snippet", "")).strip(),
+                    "url": str(row.get("url", "")).strip(),
+                    "note": str(row.get("note", "")).strip(),
+                }
+            )
+        return evidence_rows
+
+    @staticmethod
+    def _merge_evidence(groups: List[List[Dict[str, Any]]], limit: int = 8) -> List[Dict[str, Any]]:
+        merged: List[Dict[str, Any]] = []
+        seen = set()
+        for group in groups:
+            for row in group:
+                key = (
+                    row.get("source", ""),
+                    row.get("title", ""),
+                    row.get("snippet", ""),
+                    row.get("url", ""),
+                    row.get("note", ""),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                merged.append(row)
+                if len(merged) >= limit:
+                    return merged
+        return merged
 
     def _load_theme_targets(self, theme_key: str) -> Tuple[Counter, Dict[str, str]]:
         path = self.data_dir / "raw" / "theme_targets" / f"{theme_key}.jsonl"
