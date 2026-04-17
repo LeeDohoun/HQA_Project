@@ -103,6 +103,14 @@ class RawLayer2Builder:
         "문서목차",
         "인쇄 닫기",
     )
+    REPORT_DISCLAIMER_TOKENS = (
+        "본 자료",
+        "투자자",
+        "면책",
+        "책임",
+        "compliance notice",
+        "disclaimer",
+    )
 
     def __init__(self, data_dir: str | None = None):
         self.data_dir = Path(data_dir) if data_dir else get_data_dir()
@@ -234,7 +242,7 @@ class RawLayer2Builder:
     def _load_raw_documents(self, theme_key: str) -> tuple[List[DocumentRecord], Dict]:
         docs: List[DocumentRecord] = []
         raw_docs_count = 0
-        skipped_invalid_count_by_source: Dict[str, int] = {"news": 0, "forum": 0, "dart": 0}
+        skipped_invalid_count_by_source: Dict[str, int] = {"news": 0, "forum": 0, "dart": 0, "report": 0}
         if not self.raw_dir.exists():
             return docs, {
                 "raw_docs_count": 0,
@@ -322,6 +330,8 @@ class RawLayer2Builder:
             return self._is_valid_forum_doc(row, metadata)
         if source_type == "dart":
             return self._is_valid_dart_doc(row, metadata)
+        if source_type == "report":
+            return self._is_valid_report_doc(row, metadata)
         return True
 
     @staticmethod
@@ -371,6 +381,34 @@ class RawLayer2Builder:
         if any(token in normalized_content for token in self.DART_WRAPPER_TOKENS):
             return False
         return len(normalized_content) >= 200
+
+    def _is_valid_report_doc(self, row: Dict, metadata: Dict) -> bool:
+        title = str(row.get("title", "") or "").strip()
+        content = str(row.get("content", "") or "").strip()
+        if not title or not content:
+            return False
+        if self._as_bool(metadata.get("invalid")):
+            return False
+        if str(metadata.get("extraction_error", "") or "").strip():
+            return False
+
+        normalized_content = re.sub(r"\s+", " ", content)
+        if len(normalized_content) < 500:
+            return False
+
+        broker = str(metadata.get("broker", "") or "").strip()
+        pdf_url = str(metadata.get("pdf_url", "") or metadata.get("url", "") or "").strip()
+        if not broker and not pdf_url:
+            return False
+
+        lowered = normalized_content.lower()
+        disclaimer_hits = sum(
+            1 for token in self.REPORT_DISCLAIMER_TOKENS if token.lower() in lowered
+        )
+        if len(normalized_content) < 1200 and disclaimer_hits >= 3:
+            return False
+
+        return True
 
     # ──────────────────────────────────────────────
     # Market data

@@ -2,6 +2,7 @@ from .types import CollectRequest, DocumentRecord, MarketRecord, StockTarget
 from .theme_targets import ThemeTargetStore, make_theme_key
 from .naver_theme import NaverThemeStockCollector, ThemeStock
 from .naver_news import NaverNewsCollector
+from .naver_report import NaverReportCollector
 from .dart import DartDisclosureCollector
 from .naver_forum import NaverStockForumCollector, NaverStockChartCollector
 from .services import IngestionService
@@ -20,6 +21,7 @@ __all__ = [
     "MarketRecord",
     "ThemeStock",
     "NaverNewsCollector",
+    "NaverReportCollector",
     "DartDisclosureCollector",
     "NaverStockForumCollector",
     "NaverStockChartCollector",

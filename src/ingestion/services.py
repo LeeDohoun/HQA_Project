@@ -8,7 +8,7 @@ import inspect
 import json
 import os
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List
 
@@ -16,6 +16,7 @@ from .dart import DartDisclosureCollector
 from .kis_chart import KISChartCollector
 from .naver_forum import NaverStockChartCollector, NaverStockForumCollector
 from .naver_news import NaverNewsCollector
+from .naver_report import NaverReportCollector
 from .types import CollectRequest, DocumentRecord, MarketRecord
 
 
@@ -58,6 +59,8 @@ class IngestionService:
 
         if "news" in request.enabled_sources:
             self._safe_collect_news(request, docs, report)
+        if "report" in request.enabled_sources:
+            self._safe_collect_report(request, docs, report)
         if "dart" in request.enabled_sources:
             self._safe_collect_dart(request, docs, report)
         if "forum" in request.enabled_sources:
@@ -127,6 +130,39 @@ class IngestionService:
             report.source_success["news"] = False
             report.failures["news"] = str(e)
             print(f"[WARN][{request.target.stock_name}] news collect failed: {e}")
+
+    def _safe_collect_report(self, request: CollectRequest, docs: List[DocumentRecord], report: IngestionRunReport) -> None:
+        if request.report_source.strip().lower() != "naver":
+            report.source_success["report"] = False
+            report.failures["report"] = f"unsupported report_source={request.report_source}"
+            print(f"[WARN][REPORT] unsupported report_source={request.report_source}")
+            return
+
+        try:
+            collector = NaverReportCollector()
+            rows = collector.collect_by_stock(
+                stock_name=request.target.stock_name,
+                stock_code=request.target.stock_code,
+                max_items=request.max_reports,
+                from_date=self._resolve_report_from_date(request),
+                to_date=request.to_date,
+                max_pages=request.report_pages,
+            )
+            rows = self._attach_stock_info(rows, request.target.stock_name, request.target.stock_code, request.theme_key)
+            docs.extend(rows)
+            report.source_success["report"] = True
+            report.source_counts["report"] = len(rows)
+            report.raw_saved_counts["report"] = self._save_raw_documents(
+                rows,
+                request.raw_output_dir,
+                "report",
+                request.theme_key,
+                dedupe_existing=True,
+            )
+        except Exception as e:
+            report.source_success["report"] = False
+            report.failures["report"] = str(e)
+            print(f"[WARN][{request.target.stock_name}] report collect failed: {e}")
 
     def _safe_collect_dart(self, request: CollectRequest, docs: List[DocumentRecord], report: IngestionRunReport) -> None:
         if not request.target.corp_code:
@@ -262,17 +298,77 @@ class IngestionService:
 
         return docs
 
-    def _save_raw_documents(self, docs: List[DocumentRecord], raw_output_dir: str, source: str, theme_key: str) -> int:
+    @staticmethod
+    def _resolve_report_from_date(request: CollectRequest) -> str:
+        candidates: List[str] = []
+        if request.from_date:
+            candidates.append(request.from_date)
+        if request.report_days_back > 0:
+            candidates.append((datetime.utcnow() - timedelta(days=request.report_days_back)).strftime("%Y%m%d"))
+        compact_candidates = []
+        for value in candidates:
+            raw = str(value).strip()
+            if not raw:
+                continue
+            digits = "".join(ch for ch in raw if ch.isdigit())
+            if len(digits) >= 8:
+                compact_candidates.append(digits[:8])
+            elif len(digits) == 6:
+                compact_candidates.append(f"20{digits}")
+        return max(compact_candidates) if compact_candidates else ""
+
+    def _save_raw_documents(
+        self,
+        docs: List[DocumentRecord],
+        raw_output_dir: str,
+        source: str,
+        theme_key: str,
+        dedupe_existing: bool = False,
+    ) -> int:
         if not docs:
             return 0
         raw_dir = Path(raw_output_dir) / source
         raw_dir.mkdir(parents=True, exist_ok=True)
         output_path = raw_dir / f"{theme_key}.jsonl"
 
+        seen_keys = set()
+        if dedupe_existing and output_path.exists():
+            with output_path.open("r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        seen_keys.add(self._raw_document_key(json.loads(line)))
+                    except json.JSONDecodeError:
+                        continue
+
+        saved = 0
         with output_path.open("a", encoding="utf-8") as f:
             for doc in docs:
-                f.write(json.dumps(asdict(doc), ensure_ascii=False) + "\n")
-        return len(docs)
+                payload = asdict(doc)
+                key = self._raw_document_key(payload)
+                if dedupe_existing and key in seen_keys:
+                    continue
+                f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+                seen_keys.add(key)
+                saved += 1
+        return saved
+
+    @staticmethod
+    def _raw_document_key(row: Dict) -> str:
+        metadata = row.get("metadata") or {}
+        source_type = str(row.get("source_type") or metadata.get("source_type") or "").strip().lower()
+        url = str(metadata.get("pdf_url") or row.get("url") or metadata.get("url") or "").strip()
+        if url:
+            return f"{source_type}|url|{url}"
+        doc_id = str(row.get("doc_id") or metadata.get("doc_id") or "").strip()
+        if doc_id:
+            return f"{source_type}|doc_id|{doc_id}"
+        title = str(row.get("title") or metadata.get("title") or "").strip()
+        published_at = str(row.get("published_at") or metadata.get("published_at") or "").strip()
+        stock_code = str(row.get("stock_code") or metadata.get("stock_code") or "").strip()
+        return f"{source_type}|fallback|{stock_code}|{title}|{published_at}"
 
     def _save_raw_market_records(self, rows: List[MarketRecord], raw_output_dir: str, theme_key: str) -> int:
         # Market rows are stored separately from text documents.

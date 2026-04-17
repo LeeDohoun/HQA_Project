@@ -173,6 +173,10 @@ def _step_collect(args, theme_key: str) -> dict:
                     dart_api_key=dart_api_key,
                     theme_key=theme_key,
                     enabled_sources=enabled_sources,
+                    max_reports=args.max_reports,
+                    report_source=args.report_source,
+                    report_days_back=args.report_days_back,
+                    report_pages=args.report_pages,
                     raw_output_dir=str(raw_output_dir),
                 )
             )
@@ -287,11 +291,24 @@ def main():
 
     # Collection params
     parser.add_argument("--max-news", type=int, default=20)
+    parser.add_argument("--max-reports", type=int, default=10)
+    parser.add_argument("--report-source", default="naver", choices=["naver"])
+    parser.add_argument(
+        "--report-days-back",
+        type=int,
+        default=180,
+        help="Limit report collection to recent N days; set 0 to use --from-date only",
+    )
+    parser.add_argument("--report-pages", type=int, default=20)
     parser.add_argument("--forum-pages", type=int, default=3)
     parser.add_argument("--chart-pages", type=int, default=5)
     parser.add_argument("--from-date", default="20250101")
     parser.add_argument("--to-date", default="20261231")
-    parser.add_argument("--enabled-sources", default="news,dart,forum")
+    parser.add_argument(
+        "--enabled-sources",
+        default="news,dart,forum",
+        help="Comma-separated collection sources, e.g. news,dart,forum,report",
+    )
     parser.add_argument("--corp-codes-csv", default="./corp_codes.csv",
                         help="stock_code→corp_code CSV (DART 수집에 필요)")
     parser.add_argument("--theme-max-stocks", type=int, default=30,

@@ -82,6 +82,10 @@ class CollectRequest:
     enabled_sources: List[str] = field(default_factory=lambda: ["news", "dart", "forum"])
     general_news_keywords: Optional[List[str]] = None
     max_general_news: int = 20
+    max_reports: int = 10
+    report_source: str = "naver"
+    report_days_back: int = 180
+    report_pages: int = 20
     raw_output_dir: str = field(default_factory=lambda: str(get_data_dir() / "raw"))
 
 

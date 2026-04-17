@@ -31,7 +31,7 @@ from src.ingestion import (
 from src.rag.raw_layer2_builder import RawLayer2Builder
 
 
-SUPPORTED_ENABLED_SOURCES = ("news", "dart", "forum", "chart")
+SUPPORTED_ENABLED_SOURCES = ("news", "dart", "forum", "chart", "report")
 
 
 def _load_corp_code_map(csv_path: str) -> Dict[str, str]:
@@ -68,7 +68,7 @@ def _parse_enabled_sources(raw: str) -> List[str]:
 
 
 def _reset_theme_raw_files(data_dir: Path, theme_key: str) -> None:
-    for source in ("news", "dart", "forum", "chart"):
+    for source in SUPPORTED_ENABLED_SOURCES:
         path = data_dir / "raw" / source / f"{theme_key}.jsonl"
         if path.exists():
             path.unlink()
@@ -142,13 +142,22 @@ def main() -> None:
     parser.add_argument("--from-date", default="20250101")
     parser.add_argument("--to-date", default="20251231")
     parser.add_argument("--max-news", type=int, default=20)
+    parser.add_argument("--max-reports", type=int, default=10)
+    parser.add_argument("--report-source", default="naver", choices=["naver"])
+    parser.add_argument(
+        "--report-days-back",
+        type=int,
+        default=180,
+        help="리포트 수집을 최근 N일로 제한합니다. 0이면 --from-date만 사용합니다.",
+    )
+    parser.add_argument("--report-pages", type=int, default=20)
     parser.add_argument("--max-general-news", type=int, default=20)
     parser.add_argument("--forum-pages", type=int, default=3)
     parser.add_argument("--chart-pages", type=int, default=5)
     parser.add_argument(
         "--enabled-sources",
         default="news,dart,forum",
-        help="수집 소스 목록(쉼표 구분): news,dart,forum,chart",
+        help="수집 소스 목록(쉼표 구분): news,dart,forum,chart,report",
     )
     parser.add_argument("--general-news-keywords", default="")
     parser.add_argument(
@@ -195,6 +204,10 @@ def main() -> None:
                 dart_api_key=dart_api_key,
                 theme_key=theme_key,
                 enabled_sources=enabled_sources,
+                max_reports=args.max_reports,
+                report_source=args.report_source,
+                report_days_back=args.report_days_back,
+                report_pages=args.report_pages,
                 raw_output_dir=str(raw_output_dir),
             )
         )
