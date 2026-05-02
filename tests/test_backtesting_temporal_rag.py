@@ -369,3 +369,80 @@ def test_leader_backtest_writes_backend_ready_payload(tmp_path):
 
     assert risk_result["metrics"]["risk_off_count"] >= 1
     assert risk_result["risk"]["reject_counts"]["overheated_20d"] >= 1
+
+
+def test_leader_backtest_uses_point_in_time_theme_membership(tmp_path):
+    pd = pytest.importorskip("pandas")
+    from backtesting.leader_backtest import run_leader_backtest
+
+    _write_jsonl(
+        tmp_path / "raw" / "theme_targets" / "ai.jsonl",
+        [
+            {"stock_name": "Early", "stock_code": "000001"},
+            {"stock_name": "Future", "stock_code": "000002"},
+        ],
+    )
+    _write_jsonl(
+        tmp_path / "raw" / "theme_membership" / "ai.jsonl",
+        [
+            {
+                "theme_key": "ai",
+                "stock_name": "Early",
+                "stock_code": "000001",
+                "first_seen_at": "2025-01-01",
+                "last_seen_at": "",
+                "source": "test",
+                "membership_confidence": 1.0,
+            },
+            {
+                "theme_key": "ai",
+                "stock_name": "Future",
+                "stock_code": "000002",
+                "first_seen_at": "2025-04-30",
+                "last_seen_at": "",
+                "source": "test",
+                "membership_confidence": 1.0,
+            },
+        ],
+    )
+
+    dates = pd.bdate_range("2025-01-01", periods=80)
+    chart_rows = []
+    for i, day in enumerate(dates):
+        for name, code, slope in [
+            ("Early", "000001", 0.5),
+            ("Future", "000002", 3.0),
+        ]:
+            close = 100 + i * slope
+            chart_rows.append(
+                {
+                    "source_type": "chart",
+                    "stock_name": name,
+                    "stock_code": code,
+                    "timestamp": day.strftime("%Y-%m-%dT00:00:00"),
+                    "open": close - 1,
+                    "high": close + 2,
+                    "low": close - 2,
+                    "close": close,
+                    "volume": 1000 + i,
+                }
+            )
+    _write_jsonl(tmp_path / "market_data" / "ai" / "chart.jsonl", chart_rows)
+    _write_jsonl(tmp_path / "canonical_index" / "ai" / "corpus.jsonl", [])
+
+    result = run_leader_backtest(
+        data_dir=tmp_path,
+        theme="AI",
+        theme_key="ai",
+        from_date="20250228",
+        to_date="20250331",
+        top_n=1,
+        hold_days=5,
+        min_history_days=20,
+        output_dir=tmp_path / "results",
+        task_id="bt-test-membership",
+    )
+
+    assert result["metadata"]["point_in_time_universe"] is True
+    assert result["metadata"]["membership_count"] == 2
+    assert {row["stock_code"] for row in result["positions"]} == {"000001"}

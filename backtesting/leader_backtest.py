@@ -27,6 +27,11 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from backtesting.temporal_rag import normalize_ymd
 from src.config.settings import get_data_dir
+from src.ingestion.theme_membership import (
+    ThemeMembership,
+    ThemeMembershipStore,
+    active_membership_codes,
+)
 
 
 DEFAULT_LOOKBACK_BY_SOURCE: Dict[str, Optional[int]] = {
@@ -93,6 +98,7 @@ def run_leader_backtest(
     targets = load_targets(data_root, theme_key)
     prices = load_price_history(data_root, theme_key)
     docs = load_document_signals(data_root, theme_key)
+    memberships = load_theme_memberships(data_root, theme_key)
     warnings: List[str] = []
     risk_config = RiskConfig(
         min_avg_trading_value=min_avg_trading_value,
@@ -114,6 +120,11 @@ def run_leader_backtest(
         raise ValueError(f"price history not found: theme_key={theme_key}")
 
     target_by_code = {target.stock_code: target for target in targets}
+    if memberships:
+        membership_codes = {row.stock_code for row in memberships}
+        target_by_code = {code: target for code, target in target_by_code.items() if code in membership_codes}
+        if not target_by_code:
+            raise ValueError(f"theme membership found but no targets matched: theme_key={theme_key}")
     common_calendar = _build_common_calendar(prices, from_ymd, to_ymd, hold_days)
     rebalance_dates = _select_rebalance_dates(common_calendar, rebalance)
     if not rebalance_dates:
@@ -129,9 +140,15 @@ def run_leader_backtest(
     transaction_cost = transaction_cost_bps / 10000.0
 
     for as_of_ymd in rebalance_dates:
+        active_target_by_code = _active_target_by_code(target_by_code, memberships, as_of_ymd)
+        if len(active_target_by_code) < top_n:
+            warnings.append(
+                f"{as_of_ymd}: active theme universe {len(active_target_by_code)} < top_n {top_n}"
+            )
+            continue
         scored = _score_universe(
             as_of_ymd=as_of_ymd,
-            target_by_code=target_by_code,
+            target_by_code=active_target_by_code,
             prices=prices,
             doc_index=doc_index,
             hold_days=hold_days,
@@ -160,6 +177,7 @@ def run_leader_backtest(
                     "entry_date": "",
                     "exit_date": "",
                     "selected_count": 0,
+                    "active_target_count": len(active_target_by_code),
                     "eligible_count": len(eligible),
                     "risk_eligible_count": len(filtered),
                     "risk_reject_count": len(eligible) - len(filtered),
@@ -197,6 +215,7 @@ def run_leader_backtest(
                 "entry_date": selected[0]["entry_date"],
                 "exit_date": selected[0]["exit_date"],
                 "selected_count": len(selected),
+                "active_target_count": len(active_target_by_code),
                 "eligible_count": len(eligible),
                 "risk_eligible_count": len(filtered),
                 "risk_reject_count": len(eligible) - len(filtered),
@@ -306,11 +325,14 @@ def run_leader_backtest(
             "reject_counts": dict(risk_reject_counts),
         },
         "artifacts": {},
-        "warnings": warnings + _default_warnings(),
+        "warnings": warnings + _default_warnings(bool(memberships)),
         "metadata": {
             "generated_at": datetime.now().isoformat(),
             "data_dir": _display_path(data_root),
             "target_count": len(targets),
+            "membership_count": len(memberships),
+            "point_in_time_universe": bool(memberships),
+            "membership_sources": sorted({row.source for row in memberships}),
             "price_stock_count": len(prices),
             "document_signal_count": len(docs),
         },
@@ -337,6 +359,21 @@ def load_targets(data_dir: Path, theme_key: str) -> List[StockTarget]:
         if code and name:
             targets[code] = StockTarget(stock_name=name, stock_code=code)
     return list(targets.values())
+
+
+def load_theme_memberships(data_dir: Path, theme_key: str) -> List[ThemeMembership]:
+    return ThemeMembershipStore(data_dir=data_dir).load_memberships(theme_key)
+
+
+def _active_target_by_code(
+    target_by_code: Dict[str, StockTarget],
+    memberships: List[ThemeMembership],
+    as_of_ymd: str,
+) -> Dict[str, StockTarget]:
+    if not memberships:
+        return target_by_code
+    active_codes = active_membership_codes(memberships, _fmt_ymd(as_of_ymd))
+    return {code: target for code, target in target_by_code.items() if code in active_codes}
 
 
 def load_price_history(data_dir: Path, theme_key: str) -> Dict[str, pd.DataFrame]:
@@ -872,12 +909,20 @@ def _default_task_id(theme_key: str, from_ymd: str, to_ymd: str, top_n: int, hol
     return f"bt-{theme_key}-{from_ymd}-{to_ymd}-top{top_n}-h{hold_days}"
 
 
-def _default_warnings() -> List[str]:
-    return [
-        "theme_targets has no point-in-time membership date; historical theme membership may include survivorship/future-membership bias.",
+def _default_warnings(has_point_in_time_membership: bool = False) -> List[str]:
+    warnings = [
         "selection uses deterministic price/document features, not the full LLM ThemeLeaderOrchestrator.",
         "future returns are used only for evaluation after each as_of_date signal.",
     ]
+    if has_point_in_time_membership:
+        warnings.append(
+            "theme_membership may be inferred from local corpus evidence unless an official historical source is supplied."
+        )
+    else:
+        warnings.append(
+            "theme_targets has no point-in-time membership date; historical theme membership may include survivorship/future-membership bias."
+        )
+    return warnings
 
 
 def _print_summary(result: Dict[str, Any]) -> None:

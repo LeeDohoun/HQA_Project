@@ -24,6 +24,7 @@ from backtesting.leader_backtest import (
     _add_counts,
     _aggregate_leaders,
     _apply_risk_filters,
+    _active_target_by_code,
     _build_common_calendar,
     _compute_metrics,
     _default_task_id,
@@ -42,6 +43,7 @@ from backtesting.leader_backtest import (
     _write_result,
     load_document_signals,
     load_price_history,
+    load_theme_memberships,
     load_targets,
 )
 from src.config.settings import get_data_dir
@@ -67,6 +69,7 @@ def run_sweep(
     targets = load_targets(data_root, theme_key)
     prices = load_price_history(data_root, theme_key)
     docs = load_document_signals(data_root, theme_key)
+    memberships = load_theme_memberships(data_root, theme_key)
     risk_config = risk_config or RiskConfig()
     if not targets:
         targets = [
@@ -94,6 +97,7 @@ def run_sweep(
                         data_root=data_root,
                         targets=targets,
                         prices=prices,
+                        memberships=memberships,
                         doc_index=doc_index,
                         document_signal_count=len(docs),
                         theme=theme,
@@ -154,6 +158,8 @@ def run_sweep(
         "hold_days_list": hold_days_list,
         "rebalances": rebalances,
         "risk_filters": risk_config.to_dict(),
+        "point_in_time_universe": bool(memberships),
+        "membership_count": len(memberships),
         "rows": rows,
         "best_by_period": _best_by_period(rows),
     }
@@ -176,6 +182,7 @@ def _run_loaded_backtest(
     data_root: Path,
     targets: List[StockTarget],
     prices: Dict[str, Any],
+    memberships: List[Any],
     doc_index: Dict[str, Dict[str, List[str]]],
     document_signal_count: int,
     theme: str,
@@ -195,6 +202,9 @@ def _run_loaded_backtest(
     to_ymd = _require_ymd(to_date, "to_date")
     run_id = task_id or _default_task_id(theme_key, from_ymd, to_ymd, top_n, hold_days)
     target_by_code = {target.stock_code: target for target in targets}
+    if memberships:
+        membership_codes = {row.stock_code for row in memberships}
+        target_by_code = {code: target for code, target in target_by_code.items() if code in membership_codes}
     common_calendar = _build_common_calendar(prices, from_ymd, to_ymd, hold_days)
     rebalance_dates = _select_rebalance_dates(common_calendar, rebalance)
 
@@ -208,9 +218,13 @@ def _run_loaded_backtest(
     transaction_cost = transaction_cost_bps / 10000.0
 
     for as_of_ymd in rebalance_dates:
+        active_targets = _active_target_by_code(target_by_code, memberships, as_of_ymd)
+        if len(active_targets) < top_n:
+            warnings.append(f"{as_of_ymd}: active theme universe {len(active_targets)} < top_n {top_n}")
+            continue
         scored = _score_universe(
             as_of_ymd=as_of_ymd,
-            target_by_code=target_by_code,
+            target_by_code=active_targets,
             prices=prices,
             doc_index=doc_index,
             hold_days=hold_days,
@@ -239,6 +253,7 @@ def _run_loaded_backtest(
                     "entry_date": "",
                     "exit_date": "",
                     "selected_count": 0,
+                    "active_target_count": len(active_targets),
                     "eligible_count": len(eligible),
                     "risk_eligible_count": len(filtered),
                     "risk_reject_count": len(eligible) - len(filtered),
@@ -275,6 +290,7 @@ def _run_loaded_backtest(
                 "entry_date": selected[0]["entry_date"],
                 "exit_date": selected[0]["exit_date"],
                 "selected_count": len(selected),
+                "active_target_count": len(active_targets),
                 "eligible_count": len(eligible),
                 "risk_eligible_count": len(filtered),
                 "risk_reject_count": len(eligible) - len(filtered),
@@ -373,11 +389,14 @@ def _run_loaded_backtest(
             "reject_counts": dict(risk_reject_counts),
         },
         "artifacts": {},
-        "warnings": warnings + _default_warnings(),
+        "warnings": warnings + _default_warnings(bool(memberships)),
         "metadata": {
             "generated_at": datetime.now().isoformat(),
             "data_dir": _display_path(data_root),
             "target_count": len(targets),
+            "membership_count": len(memberships),
+            "point_in_time_universe": bool(memberships),
+            "membership_sources": sorted({row.source for row in memberships}),
             "price_stock_count": len(prices),
             "document_signal_count": document_signal_count,
         },

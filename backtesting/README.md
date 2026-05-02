@@ -80,6 +80,17 @@ context = rag.search_for_context(
 
 `leader_backtest.py`는 AI 테마 종목군에서 과거 시점 기준 주도주를 고르고, 보유 기간 이후 수익률로 예측/선정 결과를 평가합니다.
 
+백테스트 전에 point-in-time 테마 멤버십 근거를 만들 수 있습니다. 이 파일은 기존 raw/RAG corpus를 수정하지 않고 `data/raw/theme_membership/`에 별도로 저장됩니다.
+
+```bash
+.venv/bin/python backtesting/build_theme_membership.py \
+  --data-dir data \
+  --theme-key ai \
+  --theme-name AI
+```
+
+`leader_backtest.py`와 `sweep_leader_backtest.py`는 `data/raw/theme_membership/<theme_key>.jsonl`이 있으면 매 리밸런싱일의 활성 종목만 후보군으로 사용합니다.
+
 ```bash
 .venv/bin/python backtesting/leader_backtest.py \
   --theme AI \

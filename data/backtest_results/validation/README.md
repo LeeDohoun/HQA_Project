@@ -35,7 +35,7 @@
 
 ## 현재 추천
 
-1차 후보 전략은 `W / top5 / hold5 + breadth40 + stock risk filters`입니다.
+1차 후보 전략은 `W / top5 / hold5 + point-in-time membership + breadth40 + stock risk filters`입니다.
 
 이유:
 
@@ -44,9 +44,35 @@
 - 2025 상승 구간에서도 초과수익이 유지됨
 - top3/top7 주변 조합도 양호하여 단일 파라미터 과최적화 가능성이 낮아짐
 
+## 데이터 보완 후 재검증
+
+`data/raw/theme_membership/ai.jsonl`을 추가해 매 리밸런싱일 기준 활성 AI 테마 종목만 후보군으로 사용했습니다. 이 멤버십은 현재 공식 과거 테마 편입표가 아니라 로컬 AI 테마 corpus의 최초 관측일 기반 추정치입니다.
+
+멤버십 분포:
+
+- 총 50개 종목
+- 최초 관측 연도: 2023년 32개, 2024년 9개, 2025년 7개, 2026년 2개
+
+동일한 리스크 필터에서 재검증한 결과입니다.
+
+| 설정 | 최소 초과수익 | 평균 초과수익 | 최악 MDD | 평균 Sharpe | 해석 |
+| --- | ---: | ---: | ---: | ---: | --- |
+| W / top3 / hold5 | 20.79% | 53.46% | -29.38% | 1.400 | 공격형 후보 |
+| W / top5 / hold5 | 16.54% | 40.57% | -27.31% | 1.337 | 1차 균형 후보 |
+| W / top7 / hold5 | 12.19% | 21.95% | -24.61% | 1.042 | 방어형 후보 |
+
+`W / top5 / hold5` 세부 결과:
+
+| 기간 | 수익률 | 벤치마크 | 초과수익 | MDD | Sharpe |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 2023 | 10.03% | -10.11% | 20.14% | -13.31% | 0.966 |
+| 2024 | 61.48% | 2.63% | 58.85% | -16.23% | 1.381 |
+| 2025 | 145.41% | 78.66% | 66.75% | -27.31% | 2.030 |
+| 2026Q1 | 13.88% | -2.66% | 16.54% | -21.78% | 0.973 |
+
 ## 남은 한계
 
-- AI 테마 종목 편입일/제외일 이력이 없어 생존편향과 미래편입 편향 가능성은 남아 있습니다.
+- AI 테마 멤버십은 로컬 corpus 기반 추정치입니다. 공식 과거 테마 편입/제외 이력을 확보하면 생존편향과 미래편입 편향을 더 줄일 수 있습니다.
 - 현재 전략은 결정론적 가격/문서 feature 기반이며, LLM은 아직 상위 후보 재평가 단계에 연결되지 않았습니다.
 - 결과는 거래세/수수료 15bps 왕복 2회 기준의 단순 포트폴리오 회계입니다.
 
@@ -55,3 +81,4 @@
 - `data/backtest_results/validation/baseline_w_top5_h5/sweep-ai.csv`
 - `data/backtest_results/validation/breadth40_stockrisk_w_top5_h5/sweep-ai.csv`
 - `data/backtest_results/validation/risk_sweep_w_top357_h357/sweep-ai.csv`
+- `data/backtest_results/validation/membership_risk_sweep_w_top357_h357/sweep-ai.csv`
