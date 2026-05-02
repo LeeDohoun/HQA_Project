@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # 프로젝트 루트를 sys.path에 추가 (src/ 패키지 접근용)
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -118,6 +118,28 @@ class ThemeAnalyzeRequest(BaseModel):
     top_n: int = 3
 
 
+class BacktestResultRequest(BaseModel):
+    """Precomputed backtest result submitted by a CLI/worker/backend caller."""
+
+    model_config = ConfigDict(extra="allow")
+
+    task_id: str
+    theme: str = "AI"
+    theme_key: str = "ai"
+    status: str = "completed"
+    period: Dict[str, Any] = Field(default_factory=dict)
+    strategy: Dict[str, Any] = Field(default_factory=dict)
+    metrics: Dict[str, Any] = Field(default_factory=dict)
+    leaders: List[Dict[str, Any]] = Field(default_factory=list)
+    predictions: List[Dict[str, Any]] = Field(default_factory=list)
+    positions: List[Dict[str, Any]] = Field(default_factory=list)
+    trades: List[Dict[str, Any]] = Field(default_factory=list)
+    equity_curve: List[Dict[str, Any]] = Field(default_factory=list)
+    artifacts: Dict[str, Any] = Field(default_factory=dict)
+    warnings: List[str] = Field(default_factory=list)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
 class TradeDecisionPayload(BaseModel):
     total_score: int
     action: str
@@ -197,6 +219,16 @@ def _store_result(task_id: str, result: dict):
     _results[task_id] = result
     while len(_results) > _MAX_CACHE:
         _results.popitem(last=False)
+
+
+def _normalize_backtest_result(request: BacktestResultRequest) -> Dict[str, Any]:
+    payload = request.model_dump(mode="json")
+    payload["task_id"] = request.task_id.strip()
+    payload["mode"] = "backtest"
+    payload["result_type"] = "backtest"
+    payload.setdefault("status", "completed")
+    payload["received_at"] = datetime.now().isoformat()
+    return payload
 
 
 # ──────────────────────────────────────────────
@@ -704,6 +736,30 @@ async def get_analyze_result(task_id: str):
     if result is None:
         raise HTTPException(status_code=404, detail=f"작업을 찾을 수 없습니다: {task_id}")
     return result
+
+
+@app.post("/backtest/results", status_code=201)
+async def submit_backtest_result(request: BacktestResultRequest):
+    """Store a completed backtest result submitted by a runner or backend job."""
+    task_id = request.task_id.strip()
+    if not task_id:
+        raise HTTPException(status_code=400, detail="task_id는 비어 있을 수 없습니다.")
+
+    result = _normalize_backtest_result(request)
+    _store_result(task_id, result)
+    _publish_progress(task_id, "backtest", "completed", "백테스트 결과 저장 완료", 1.0)
+    return {
+        "task_id": task_id,
+        "status": "stored",
+        "mode": "backtest",
+        "result_url": f"/backtest/results/{task_id}",
+    }
+
+
+@app.get("/backtest/results/{task_id}")
+async def get_backtest_result(task_id: str):
+    """Fetch a stored backtest result. Shares storage with /analyze/{task_id}."""
+    return await get_analyze_result(task_id)
 
 
 @app.post("/theme/analyze", status_code=202)

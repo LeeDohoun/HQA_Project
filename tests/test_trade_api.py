@@ -27,6 +27,46 @@ def test_health_reports_runtime_port(monkeypatch):
     assert response.json()["port"] == 8123
 
 
+def test_backtest_result_submit_and_fetch():
+    client = TestClient(app)
+    payload = {
+        "task_id": "bt-ai-2025-smoke",
+        "theme": "AI",
+        "theme_key": "ai",
+        "period": {"from_date": "2025-01-01", "to_date": "2025-12-31"},
+        "strategy": {"rebalance": "monthly", "top_n": 3},
+        "metrics": {
+            "total_return_pct": 12.5,
+            "mdd_pct": -8.2,
+            "sharpe": 1.1,
+        },
+        "leaders": [
+            {"stock_name": "삼성전자", "stock_code": "005930", "leader_score": 82}
+        ],
+        "predictions": [
+            {"as_of_date": "2025-06-30", "stock_code": "005930", "horizon_days": 20}
+        ],
+    }
+
+    submit_response = client.post("/backtest/results", json=payload)
+    assert submit_response.status_code == 201
+    assert submit_response.json()["status"] == "stored"
+
+    fetch_response = client.get("/backtest/results/bt-ai-2025-smoke")
+    assert fetch_response.status_code == 200
+    body = fetch_response.json()
+    assert body["mode"] == "backtest"
+    assert body["result_type"] == "backtest"
+    assert body["theme_key"] == "ai"
+    assert body["metrics"]["sharpe"] == 1.1
+    assert body["leaders"][0]["stock_code"] == "005930"
+    assert body["received_at"]
+
+    shared_fetch_response = client.get("/analyze/bt-ai-2025-smoke")
+    assert shared_fetch_response.status_code == 200
+    assert shared_fetch_response.json()["mode"] == "backtest"
+
+
 def test_trading_preview_and_execute_endpoints(tmp_path, monkeypatch):
     orders_dir = tmp_path / "orders"
     monkeypatch.setenv("HQA_ORDERS_DIR", str(orders_dir))

@@ -1,0 +1,317 @@
+{
+  "task_id": "bt-ai-2026q1-m-top3-h60",
+  "mode": "backtest",
+  "result_type": "backtest",
+  "status": "completed",
+  "theme": "AI",
+  "theme_key": "ai",
+  "period": {
+    "from_date": "2026-01-01",
+    "to_date": "2026-03-31",
+    "rebalance": "M",
+    "rebalance_count": 1,
+    "hold_days": 60
+  },
+  "strategy": {
+    "name": "ai_theme_leader_momentum_v1",
+    "top_n": 3,
+    "min_history_days": 150,
+    "transaction_cost_bps": 15.0,
+    "prediction_model": "momentum_price_forecast_v1"
+  },
+  "metrics": {
+    "rebalance_count": 1,
+    "position_count": 3,
+    "total_return_pct": -2.71,
+    "benchmark_return_pct": 18.42,
+    "excess_return_pct": -21.13,
+    "cagr_pct": -10.65,
+    "benchmark_cagr_pct": 100.15,
+    "mdd_pct": 0.0,
+    "benchmark_mdd_pct": 0.0,
+    "sharpe": 0.0,
+    "avg_period_return_pct": -2.71,
+    "avg_benchmark_period_return_pct": 18.42,
+    "win_rate_pct": 0.0,
+    "prediction_hit_rate_pct": 33.33,
+    "avg_position_return_pct": -2.41,
+    "median_position_return_pct": -14.71
+  },
+  "leaders": [
+    {
+      "stock_name": "태성",
+      "stock_code": "323280",
+      "selection_count": 1,
+      "avg_leader_score": 79.0,
+      "avg_realized_return_pct": 36.12,
+      "win_rate_pct": 100.0
+    },
+    {
+      "stock_name": "휴림로봇",
+      "stock_code": "090710",
+      "selection_count": 1,
+      "avg_leader_score": 81.0,
+      "avg_realized_return_pct": -14.71,
+      "win_rate_pct": 0.0
+    },
+    {
+      "stock_name": "유일로보틱스",
+      "stock_code": "388720",
+      "selection_count": 1,
+      "avg_leader_score": 80.0,
+      "avg_realized_return_pct": -28.63,
+      "win_rate_pct": 0.0
+    }
+  ],
+  "predictions": [
+    {
+      "as_of_date": "2026-01-27",
+      "entry_date": "2026-01-27",
+      "exit_date": "2026-04-27",
+      "stock_name": "휴림로봇",
+      "stock_code": "090710",
+      "rank": 1,
+      "leader_score": 81,
+      "predicted_return_pct": 55.0,
+      "target_price": 23281.0,
+      "realized_return_pct": -14.71
+    },
+    {
+      "as_of_date": "2026-01-27",
+      "entry_date": "2026-01-27",
+      "exit_date": "2026-04-27",
+      "stock_name": "유일로보틱스",
+      "stock_code": "388720",
+      "rank": 2,
+      "leader_score": 80,
+      "predicted_return_pct": 55.0,
+      "target_price": 223045.0,
+      "realized_return_pct": -28.63
+    },
+    {
+      "as_of_date": "2026-01-27",
+      "entry_date": "2026-01-27",
+      "exit_date": "2026-04-27",
+      "stock_name": "태성",
+      "stock_code": "323280",
+      "rank": 3,
+      "leader_score": 79,
+      "predicted_return_pct": 55.0,
+      "target_price": 87110.0,
+      "realized_return_pct": 36.12
+    }
+  ],
+  "positions": [
+    {
+      "as_of_date": "2026-01-27",
+      "entry_date": "2026-01-27",
+      "exit_date": "2026-04-27",
+      "stock_name": "휴림로봇",
+      "stock_code": "090710",
+      "entry_price": 15020.0,
+      "exit_price": 12810.0,
+      "return_20d": 1.4109149277688604,
+      "return_60d": 1.5159128978224454,
+      "trend_150d": 2.0990371389270974,
+      "volatility_20d": 2.238093009387341,
+      "volume_ratio_20d": 0.7139556394197328,
+      "doc_signal": 9.769102466745718,
+      "doc_counts": {
+        "dart": 52,
+        "forum": 0,
+        "news": 23
+      },
+      "return_60d_rank": 1.0,
+      "return_20d_rank": 1.0,
+      "trend_150d_rank": 1.0,
+      "volume_rank": 0.4583333333333333,
+      "doc_rank": 0.7291666666666666,
+      "low_vol_rank": 0.020833333333333332,
+      "leader_score": 81,
+      "target_price": 23281.0,
+      "rank": 1,
+      "weight": 0.333333,
+      "realized_return_pct": -14.71,
+      "predicted_return_pct": 55.0
+    },
+    {
+      "as_of_date": "2026-01-27",
+      "entry_date": "2026-01-27",
+      "exit_date": "2026-04-27",
+      "stock_name": "유일로보틱스",
+      "stock_code": "388720",
+      "entry_price": 143900.0,
+      "exit_price": 102700.0,
+      "return_20d": 0.7721674876847291,
+      "return_60d": 0.7987500000000001,
+      "trend_150d": 0.8217034636418878,
+      "volatility_20d": 1.1818054637497364,
+      "volume_ratio_20d": 2.9699185204812535,
+      "doc_signal": 9.596804412745538,
+      "doc_counts": {
+        "dart": 42,
+        "forum": 0,
+        "news": 26
+      },
+      "return_60d_rank": 0.875,
+      "return_20d_rank": 0.9375,
+      "trend_150d_rank": 0.9166666666666666,
+      "volume_rank": 1.0,
+      "doc_rank": 0.6875,
+      "low_vol_rank": 0.10416666666666667,
+      "leader_score": 80,
+      "target_price": 223045.0,
+      "rank": 2,
+      "weight": 0.333333,
+      "realized_return_pct": -28.63,
+      "predicted_return_pct": 55.0
+    },
+    {
+      "as_of_date": "2026-01-27",
+      "entry_date": "2026-01-27",
+      "exit_date": "2026-04-27",
+      "stock_name": "태성",
+      "stock_code": "323280",
+      "entry_price": 56200.0,
+      "exit_price": 76500.0,
+      "return_20d": 0.13880445795339402,
+      "return_60d": 1.3367983367983367,
+      "trend_150d": 0.664346847513845,
+      "volatility_20d": 0.7452809279791891,
+      "volume_ratio_20d": 1.519080391733031,
+      "doc_signal": 13.155836150967485,
+      "doc_counts": {
+        "dart": 109,
+        "forum": 0,
+        "news": 161
+      },
+      "return_60d_rank": 0.9583333333333334,
+      "return_20d_rank": 0.6041666666666666,
+      "trend_150d_rank": 0.75,
+      "volume_rank": 0.8958333333333334,
+      "doc_rank": 0.9791666666666666,
+      "low_vol_rank": 0.4583333333333333,
+      "leader_score": 79,
+      "target_price": 87110.0,
+      "rank": 3,
+      "weight": 0.333333,
+      "realized_return_pct": 36.12,
+      "predicted_return_pct": 55.0
+    }
+  ],
+  "trades": [
+    {
+      "date": "2026-01-27",
+      "stock_name": "휴림로봇",
+      "stock_code": "090710",
+      "side": "BUY",
+      "price": 15020.0,
+      "weight": 0.333333,
+      "reason": "rank 1 leader_score 81"
+    },
+    {
+      "date": "2026-04-27",
+      "stock_name": "휴림로봇",
+      "stock_code": "090710",
+      "side": "SELL",
+      "price": 12810.0,
+      "weight": 0.333333,
+      "realized_return_pct": -14.71,
+      "reason": "holding period exit"
+    },
+    {
+      "date": "2026-01-27",
+      "stock_name": "유일로보틱스",
+      "stock_code": "388720",
+      "side": "BUY",
+      "price": 143900.0,
+      "weight": 0.333333,
+      "reason": "rank 2 leader_score 80"
+    },
+    {
+      "date": "2026-04-27",
+      "stock_name": "유일로보틱스",
+      "stock_code": "388720",
+      "side": "SELL",
+      "price": 102700.0,
+      "weight": 0.333333,
+      "realized_return_pct": -28.63,
+      "reason": "holding period exit"
+    },
+    {
+      "date": "2026-01-27",
+      "stock_name": "태성",
+      "stock_code": "323280",
+      "side": "BUY",
+      "price": 56200.0,
+      "weight": 0.333333,
+      "reason": "rank 3 leader_score 79"
+    },
+    {
+      "date": "2026-04-27",
+      "stock_name": "태성",
+      "stock_code": "323280",
+      "side": "SELL",
+      "price": 76500.0,
+      "weight": 0.333333,
+      "realized_return_pct": 36.12,
+      "reason": "holding period exit"
+    }
+  ],
+  "periods": [
+    {
+      "as_of_date": "2026-01-27",
+      "entry_date": "2026-01-27",
+      "exit_date": "2026-04-27",
+      "selected_count": 3,
+      "eligible_count": 48,
+      "portfolio_return_pct": -2.71,
+      "benchmark_return_pct": 18.42,
+      "excess_return_pct": -21.13,
+      "top_symbols": [
+        {
+          "stock_name": "휴림로봇",
+          "stock_code": "090710",
+          "leader_score": 81,
+          "realized_return_pct": -14.71
+        },
+        {
+          "stock_name": "유일로보틱스",
+          "stock_code": "388720",
+          "leader_score": 80,
+          "realized_return_pct": -28.63
+        },
+        {
+          "stock_name": "태성",
+          "stock_code": "323280",
+          "leader_score": 79,
+          "realized_return_pct": 36.12
+        }
+      ]
+    }
+  ],
+  "equity_curve": [
+    {
+      "date": "2026-04-27",
+      "equity": 0.972921,
+      "benchmark_equity": 1.184211,
+      "period_return_pct": -2.71,
+      "benchmark_return_pct": 18.42
+    }
+  ],
+  "artifacts": {
+    "result_json": "data/backtest_results/sweeps/bt-ai-2026q1-m-top3-h60.json"
+  },
+  "warnings": [
+    "theme_targets has no point-in-time membership date; historical theme membership may include survivorship/future-membership bias.",
+    "selection uses deterministic price/document features, not the full LLM ThemeLeaderOrchestrator.",
+    "future returns are used only for evaluation after each as_of_date signal."
+  ],
+  "metadata": {
+    "generated_at": "2026-05-02T16:26:25.676613",
+    "data_dir": "data",
+    "target_count": 50,
+    "price_stock_count": 50,
+    "document_signal_count": 30497
+  }
+}
