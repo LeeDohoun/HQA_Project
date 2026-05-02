@@ -1,0 +1,221 @@
+{
+  "theme": "AI",
+  "theme_key": "ai",
+  "generated_at": "2026-05-02T17:05:16.297424",
+  "config_count": 4,
+  "periods": [
+    {
+      "name": "2023",
+      "from_date": "20230101",
+      "to_date": "20231231"
+    },
+    {
+      "name": "2024",
+      "from_date": "20240101",
+      "to_date": "20241231"
+    },
+    {
+      "name": "2025",
+      "from_date": "20250101",
+      "to_date": "20251231"
+    },
+    {
+      "name": "2026q1",
+      "from_date": "20260101",
+      "to_date": "20260331"
+    }
+  ],
+  "top_ns": [
+    5
+  ],
+  "hold_days_list": [
+    5
+  ],
+  "rebalances": [
+    "W"
+  ],
+  "risk_filters": {
+    "min_avg_trading_value": 0.0,
+    "max_volatility_20d": 1.2,
+    "max_return_5d": 0.35,
+    "max_return_20d": 0.9,
+    "min_trend_150d": -1.0,
+    "min_market_breadth_pct": 40.0
+  },
+  "rows": [
+    {
+      "task_id": "bt-ai-2026q1-w-top5-h5",
+      "period": "2026q1",
+      "from_date": "2026-01-01",
+      "to_date": "2026-03-31",
+      "rebalance": "W",
+      "top_n": 5,
+      "hold_days": 5,
+      "rebalance_count": 14,
+      "risk_off_count": 0,
+      "traded_rebalance_count": 14,
+      "position_count": 70,
+      "total_return_pct": 12.17,
+      "benchmark_return_pct": -1.58,
+      "excess_return_pct": 13.75,
+      "mdd_pct": -22.06,
+      "sharpe": 0.951,
+      "win_rate_pct": 42.86,
+      "prediction_hit_rate_pct": 51.43,
+      "result_json": "data/backtest_results/validation/breadth40_stockrisk_w_top5_h5/bt-ai-2026q1-w-top5-h5.json"
+    },
+    {
+      "task_id": "bt-ai-2025-w-top5-h5",
+      "period": "2025",
+      "from_date": "2025-01-01",
+      "to_date": "2025-12-31",
+      "rebalance": "W",
+      "top_n": 5,
+      "hold_days": 5,
+      "rebalance_count": 53,
+      "risk_off_count": 5,
+      "traded_rebalance_count": 48,
+      "position_count": 240,
+      "total_return_pct": 151.44,
+      "benchmark_return_pct": 87.7,
+      "excess_return_pct": 63.74,
+      "mdd_pct": -22.04,
+      "sharpe": 2.218,
+      "win_rate_pct": 60.38,
+      "prediction_hit_rate_pct": 51.25,
+      "result_json": "data/backtest_results/validation/breadth40_stockrisk_w_top5_h5/bt-ai-2025-w-top5-h5.json"
+    },
+    {
+      "task_id": "bt-ai-2024-w-top5-h5",
+      "period": "2024",
+      "from_date": "2024-01-01",
+      "to_date": "2024-12-31",
+      "rebalance": "W",
+      "top_n": 5,
+      "hold_days": 5,
+      "rebalance_count": 53,
+      "risk_off_count": 33,
+      "traded_rebalance_count": 20,
+      "position_count": 100,
+      "total_return_pct": 42.74,
+      "benchmark_return_pct": 4.45,
+      "excess_return_pct": 38.29,
+      "mdd_pct": -14.93,
+      "sharpe": 1.077,
+      "win_rate_pct": 18.87,
+      "prediction_hit_rate_pct": 49.0,
+      "result_json": "data/backtest_results/validation/breadth40_stockrisk_w_top5_h5/bt-ai-2024-w-top5-h5.json"
+    },
+    {
+      "task_id": "bt-ai-2023-w-top5-h5",
+      "period": "2023",
+      "from_date": "2023-01-01",
+      "to_date": "2023-12-31",
+      "rebalance": "W",
+      "top_n": 5,
+      "hold_days": 5,
+      "rebalance_count": 21,
+      "risk_off_count": 10,
+      "traded_rebalance_count": 11,
+      "position_count": 55,
+      "total_return_pct": 2.88,
+      "benchmark_return_pct": -5.82,
+      "excess_return_pct": 8.7,
+      "mdd_pct": -13.31,
+      "sharpe": 0.389,
+      "win_rate_pct": 23.81,
+      "prediction_hit_rate_pct": 41.82,
+      "result_json": "data/backtest_results/validation/breadth40_stockrisk_w_top5_h5/bt-ai-2023-w-top5-h5.json"
+    }
+  ],
+  "best_by_period": {
+    "2026q1": {
+      "task_id": "bt-ai-2026q1-w-top5-h5",
+      "period": "2026q1",
+      "from_date": "2026-01-01",
+      "to_date": "2026-03-31",
+      "rebalance": "W",
+      "top_n": 5,
+      "hold_days": 5,
+      "rebalance_count": 14,
+      "risk_off_count": 0,
+      "traded_rebalance_count": 14,
+      "position_count": 70,
+      "total_return_pct": 12.17,
+      "benchmark_return_pct": -1.58,
+      "excess_return_pct": 13.75,
+      "mdd_pct": -22.06,
+      "sharpe": 0.951,
+      "win_rate_pct": 42.86,
+      "prediction_hit_rate_pct": 51.43,
+      "result_json": "data/backtest_results/validation/breadth40_stockrisk_w_top5_h5/bt-ai-2026q1-w-top5-h5.json"
+    },
+    "2025": {
+      "task_id": "bt-ai-2025-w-top5-h5",
+      "period": "2025",
+      "from_date": "2025-01-01",
+      "to_date": "2025-12-31",
+      "rebalance": "W",
+      "top_n": 5,
+      "hold_days": 5,
+      "rebalance_count": 53,
+      "risk_off_count": 5,
+      "traded_rebalance_count": 48,
+      "position_count": 240,
+      "total_return_pct": 151.44,
+      "benchmark_return_pct": 87.7,
+      "excess_return_pct": 63.74,
+      "mdd_pct": -22.04,
+      "sharpe": 2.218,
+      "win_rate_pct": 60.38,
+      "prediction_hit_rate_pct": 51.25,
+      "result_json": "data/backtest_results/validation/breadth40_stockrisk_w_top5_h5/bt-ai-2025-w-top5-h5.json"
+    },
+    "2024": {
+      "task_id": "bt-ai-2024-w-top5-h5",
+      "period": "2024",
+      "from_date": "2024-01-01",
+      "to_date": "2024-12-31",
+      "rebalance": "W",
+      "top_n": 5,
+      "hold_days": 5,
+      "rebalance_count": 53,
+      "risk_off_count": 33,
+      "traded_rebalance_count": 20,
+      "position_count": 100,
+      "total_return_pct": 42.74,
+      "benchmark_return_pct": 4.45,
+      "excess_return_pct": 38.29,
+      "mdd_pct": -14.93,
+      "sharpe": 1.077,
+      "win_rate_pct": 18.87,
+      "prediction_hit_rate_pct": 49.0,
+      "result_json": "data/backtest_results/validation/breadth40_stockrisk_w_top5_h5/bt-ai-2024-w-top5-h5.json"
+    },
+    "2023": {
+      "task_id": "bt-ai-2023-w-top5-h5",
+      "period": "2023",
+      "from_date": "2023-01-01",
+      "to_date": "2023-12-31",
+      "rebalance": "W",
+      "top_n": 5,
+      "hold_days": 5,
+      "rebalance_count": 21,
+      "risk_off_count": 10,
+      "traded_rebalance_count": 11,
+      "position_count": 55,
+      "total_return_pct": 2.88,
+      "benchmark_return_pct": -5.82,
+      "excess_return_pct": 8.7,
+      "mdd_pct": -13.31,
+      "sharpe": 0.389,
+      "win_rate_pct": 23.81,
+      "prediction_hit_rate_pct": 41.82,
+      "result_json": "data/backtest_results/validation/breadth40_stockrisk_w_top5_h5/bt-ai-2023-w-top5-h5.json"
+    }
+  },
+  "artifacts": {
+    "summary_json": "data/backtest_results/validation/breadth40_stockrisk_w_top5_h5/sweep-ai.json",
+    "summary_csv": "data/backtest_results/validation/breadth40_stockrisk_w_top5_h5/sweep-ai.csv"
+  }
+}

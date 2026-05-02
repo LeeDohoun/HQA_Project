@@ -1,0 +1,5 @@
+task_id,period,from_date,to_date,rebalance,top_n,hold_days,rebalance_count,risk_off_count,traded_rebalance_count,position_count,total_return_pct,benchmark_return_pct,excess_return_pct,mdd_pct,sharpe,win_rate_pct,prediction_hit_rate_pct,result_json
+bt-ai-2026q1-w-top5-h5,2026q1,2026-01-01,2026-03-31,W,5,5,14,0,14,70,23.49,-1.58,25.07,-27.0,1.476,57.14,50.0,data/backtest_results/validation/baseline_w_top5_h5/bt-ai-2026q1-w-top5-h5.json
+bt-ai-2025-w-top5-h5,2025,2025-01-01,2025-12-31,W,5,5,53,0,53,265,98.82,87.7,11.12,-34.58,1.528,58.49,50.57,data/backtest_results/validation/baseline_w_top5_h5/bt-ai-2025-w-top5-h5.json
+bt-ai-2024-w-top5-h5,2024,2024-01-01,2024-12-31,W,5,5,53,0,53,265,44.54,4.45,40.1,-35.02,0.908,49.06,51.32,data/backtest_results/validation/baseline_w_top5_h5/bt-ai-2024-w-top5-h5.json
+bt-ai-2023-w-top5-h5,2023,2023-01-01,2023-12-31,W,5,5,21,0,21,105,-39.58,-5.82,-33.76,-67.68,-1.168,52.38,48.57,data/backtest_results/validation/baseline_w_top5_h5/bt-ai-2023-w-top5-h5.json

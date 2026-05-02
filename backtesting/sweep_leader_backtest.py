@@ -7,6 +7,7 @@ import argparse
 import csv
 import json
 import sys
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
@@ -18,8 +19,11 @@ if str(PROJECT_ROOT) not in sys.path:
 import numpy as np
 
 from backtesting.leader_backtest import (
+    RiskConfig,
     StockTarget,
+    _add_counts,
     _aggregate_leaders,
+    _apply_risk_filters,
     _build_common_calendar,
     _compute_metrics,
     _default_task_id,
@@ -27,6 +31,8 @@ from backtesting.leader_backtest import (
     _display_path,
     _fmt_ymd,
     _index_docs,
+    _market_breadth_pct,
+    _market_filter_reason,
     _pct,
     _positions_to_trades,
     _require_ymd,
@@ -53,6 +59,7 @@ def run_sweep(
     rebalances: List[str],
     min_history_days: int,
     transaction_cost_bps: float,
+    risk_config: RiskConfig | None = None,
 ) -> Dict[str, Any]:
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -60,6 +67,7 @@ def run_sweep(
     targets = load_targets(data_root, theme_key)
     prices = load_price_history(data_root, theme_key)
     docs = load_document_signals(data_root, theme_key)
+    risk_config = risk_config or RiskConfig()
     if not targets:
         targets = [
             StockTarget(stock_name=name, stock_code=code)
@@ -97,6 +105,7 @@ def run_sweep(
                         hold_days=hold_days,
                         min_history_days=min_history_days,
                         transaction_cost_bps=transaction_cost_bps,
+                        risk_config=risk_config,
                         output_dir=out_dir,
                         task_id=task_id,
                     )
@@ -111,6 +120,8 @@ def run_sweep(
                             "top_n": top_n,
                             "hold_days": hold_days,
                             "rebalance_count": metrics.get("rebalance_count", 0),
+                            "risk_off_count": metrics.get("risk_off_count", 0),
+                            "traded_rebalance_count": metrics.get("traded_rebalance_count", 0),
                             "position_count": metrics.get("position_count", 0),
                             "total_return_pct": metrics.get("total_return_pct", 0.0),
                             "benchmark_return_pct": metrics.get("benchmark_return_pct", 0.0),
@@ -142,6 +153,7 @@ def run_sweep(
         "top_ns": top_ns,
         "hold_days_list": hold_days_list,
         "rebalances": rebalances,
+        "risk_filters": risk_config.to_dict(),
         "rows": rows,
         "best_by_period": _best_by_period(rows),
     }
@@ -175,6 +187,7 @@ def _run_loaded_backtest(
     hold_days: int,
     min_history_days: int,
     transaction_cost_bps: float,
+    risk_config: RiskConfig,
     output_dir: Path,
     task_id: str,
 ) -> Dict[str, Any]:
@@ -189,6 +202,7 @@ def _run_loaded_backtest(
     equity_curve: List[Dict[str, Any]] = []
     period_rows: List[Dict[str, Any]] = []
     warnings: List[str] = []
+    risk_reject_counts: Dict[str, int] = defaultdict(int)
     equity = 1.0
     benchmark_equity = 1.0
     transaction_cost = transaction_cost_bps / 10000.0
@@ -207,12 +221,51 @@ def _run_loaded_backtest(
             warnings.append(f"{as_of_ymd}: eligible stocks {len(eligible)} < top_n {top_n}")
             continue
 
-        ranked = sorted(eligible, key=lambda row: row["leader_score"], reverse=True)
+        benchmark_return = float(np.mean([row["realized_return"] for row in eligible]))
+        benchmark_net_return = benchmark_return - (transaction_cost * 2)
+        market_breadth_pct = _market_breadth_pct(eligible)
+        filtered, rejected = _apply_risk_filters(eligible, risk_config)
+        _add_counts(risk_reject_counts, rejected)
+        risk_off_reason = _market_filter_reason(eligible, risk_config)
+        if not risk_off_reason and len(filtered) < top_n:
+            risk_off_reason = f"risk_filters eligible stocks {len(filtered)} < top_n {top_n}"
+
+        if risk_off_reason:
+            warnings.append(f"{as_of_ymd}: {risk_off_reason}")
+            benchmark_equity *= 1.0 + benchmark_net_return
+            period_rows.append(
+                {
+                    "as_of_date": _fmt_ymd(as_of_ymd),
+                    "entry_date": "",
+                    "exit_date": "",
+                    "selected_count": 0,
+                    "eligible_count": len(eligible),
+                    "risk_eligible_count": len(filtered),
+                    "risk_reject_count": len(eligible) - len(filtered),
+                    "market_breadth_pct": market_breadth_pct,
+                    "portfolio_return_pct": 0.0,
+                    "benchmark_return_pct": _pct(benchmark_net_return),
+                    "excess_return_pct": _pct(-benchmark_net_return),
+                    "risk_off_reason": risk_off_reason,
+                    "top_symbols": [],
+                }
+            )
+            equity_curve.append(
+                {
+                    "date": _fmt_ymd(as_of_ymd),
+                    "equity": round(equity, 6),
+                    "benchmark_equity": round(benchmark_equity, 6),
+                    "period_return_pct": 0.0,
+                    "benchmark_return_pct": _pct(benchmark_net_return),
+                    "risk_off_reason": risk_off_reason,
+                }
+            )
+            continue
+
+        ranked = sorted(filtered, key=lambda row: row["leader_score"], reverse=True)
         selected = ranked[:top_n]
         selected_return = float(np.mean([row["realized_return"] for row in selected]))
         selected_net_return = selected_return - (transaction_cost * 2)
-        benchmark_return = float(np.mean([row["realized_return"] for row in eligible]))
-        benchmark_net_return = benchmark_return - (transaction_cost * 2)
         equity *= 1.0 + selected_net_return
         benchmark_equity *= 1.0 + benchmark_net_return
 
@@ -223,6 +276,9 @@ def _run_loaded_backtest(
                 "exit_date": selected[0]["exit_date"],
                 "selected_count": len(selected),
                 "eligible_count": len(eligible),
+                "risk_eligible_count": len(filtered),
+                "risk_reject_count": len(eligible) - len(filtered),
+                "market_breadth_pct": market_breadth_pct,
                 "portfolio_return_pct": _pct(selected_net_return),
                 "benchmark_return_pct": _pct(benchmark_net_return),
                 "excess_return_pct": _pct(selected_net_return - benchmark_net_return),
@@ -285,6 +341,7 @@ def _run_loaded_backtest(
             "top_n": top_n,
             "min_history_days": min_history_days,
             "transaction_cost_bps": transaction_cost_bps,
+            "risk_filters": risk_config.to_dict(),
             "prediction_model": "momentum_price_forecast_v1",
         },
         "metrics": metrics,
@@ -311,6 +368,10 @@ def _run_loaded_backtest(
         "trades": _positions_to_trades(positions),
         "periods": period_rows,
         "equity_curve": equity_curve,
+        "risk": {
+            "filters": risk_config.to_dict(),
+            "reject_counts": dict(risk_reject_counts),
+        },
         "artifacts": {},
         "warnings": warnings + _default_warnings(),
         "metadata": {
@@ -366,8 +427,20 @@ def _parse_strings(raw: str) -> List[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
+def _parse_periods(raw: str) -> List[Dict[str, str]]:
+    periods: List[Dict[str, str]] = []
+    for item in raw.split(","):
+        parts = [part.strip() for part in item.split(":")]
+        if len(parts) != 3 or not all(parts):
+            raise ValueError(f"invalid period spec: {item}")
+        periods.append({"name": parts[0], "from_date": parts[1], "to_date": parts[2]})
+    return periods
+
+
 def _default_periods() -> List[Dict[str, str]]:
     return [
+        {"name": "2023", "from_date": "20230101", "to_date": "20231231"},
+        {"name": "2024", "from_date": "20240101", "to_date": "20241231"},
         {"name": "2025", "from_date": "20250101", "to_date": "20251231"},
         {"name": "2026q1", "from_date": "20260101", "to_date": "20260331"},
     ]
@@ -382,8 +455,19 @@ def main() -> int:
     parser.add_argument("--top-ns", default="1,3,5")
     parser.add_argument("--hold-days", default="5,10,20,60")
     parser.add_argument("--rebalances", default="M,W")
+    parser.add_argument(
+        "--periods",
+        default="",
+        help="Comma-separated name:from_date:to_date specs. Defaults to 2023,2024,2025,2026q1.",
+    )
     parser.add_argument("--min-history-days", type=int, default=150)
     parser.add_argument("--transaction-cost-bps", type=float, default=15.0)
+    parser.add_argument("--min-avg-trading-value", type=float, default=0.0)
+    parser.add_argument("--max-volatility-20d", type=float, default=0.0)
+    parser.add_argument("--max-return-5d", type=float, default=0.0)
+    parser.add_argument("--max-return-20d", type=float, default=0.0)
+    parser.add_argument("--min-trend-150d", type=float, default=-1.0)
+    parser.add_argument("--min-market-breadth-pct", type=float, default=0.0)
     args = parser.parse_args()
 
     output_dir = args.output_dir or str(Path(args.data_dir) / "backtest_results" / "sweeps")
@@ -392,12 +476,20 @@ def main() -> int:
         theme=args.theme,
         theme_key=args.theme_key,
         output_dir=output_dir,
-        periods=_default_periods(),
+        periods=_parse_periods(args.periods) if args.periods else _default_periods(),
         top_ns=_parse_ints(args.top_ns),
         hold_days_list=_parse_ints(args.hold_days),
         rebalances=_parse_strings(args.rebalances),
         min_history_days=args.min_history_days,
         transaction_cost_bps=args.transaction_cost_bps,
+        risk_config=RiskConfig(
+            min_avg_trading_value=args.min_avg_trading_value,
+            max_volatility_20d=args.max_volatility_20d,
+            max_return_5d=args.max_return_5d,
+            max_return_20d=args.max_return_20d,
+            min_trend_150d=args.min_trend_150d,
+            min_market_breadth_pct=args.min_market_breadth_pct,
+        ),
     )
 
     print("[SWEEP] summary_json=", summary["artifacts"]["summary_json"])

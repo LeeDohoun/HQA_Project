@@ -13,7 +13,7 @@ import json
 import math
 import sys
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
@@ -50,6 +50,19 @@ class DocumentSignal:
     published_ymd: str
 
 
+@dataclass(frozen=True)
+class RiskConfig:
+    min_avg_trading_value: float = 0.0
+    max_volatility_20d: float = 0.0
+    max_return_5d: float = 0.0
+    max_return_20d: float = 0.0
+    min_trend_150d: float = -1.0
+    min_market_breadth_pct: float = 0.0
+
+    def to_dict(self) -> Dict[str, float]:
+        return asdict(self)
+
+
 def run_leader_backtest(
     *,
     data_dir: str | Path | None = None,
@@ -62,6 +75,12 @@ def run_leader_backtest(
     hold_days: int = 20,
     min_history_days: int = 150,
     transaction_cost_bps: float = 15.0,
+    min_avg_trading_value: float = 0.0,
+    max_volatility_20d: float = 0.0,
+    max_return_5d: float = 0.0,
+    max_return_20d: float = 0.0,
+    min_trend_150d: float = -1.0,
+    min_market_breadth_pct: float = 0.0,
     output_dir: str | Path | None = None,
     task_id: str = "",
     submit_url: str = "",
@@ -75,6 +94,14 @@ def run_leader_backtest(
     prices = load_price_history(data_root, theme_key)
     docs = load_document_signals(data_root, theme_key)
     warnings: List[str] = []
+    risk_config = RiskConfig(
+        min_avg_trading_value=min_avg_trading_value,
+        max_volatility_20d=max_volatility_20d,
+        max_return_5d=max_return_5d,
+        max_return_20d=max_return_20d,
+        min_trend_150d=min_trend_150d,
+        min_market_breadth_pct=min_market_breadth_pct,
+    )
 
     if not targets:
         warnings.append(f"theme_targets not found or empty: {theme_key}")
@@ -96,6 +123,7 @@ def run_leader_backtest(
     positions: List[Dict[str, Any]] = []
     equity_curve: List[Dict[str, Any]] = []
     period_rows: List[Dict[str, Any]] = []
+    risk_reject_counts: Dict[str, int] = defaultdict(int)
     equity = 1.0
     benchmark_equity = 1.0
     transaction_cost = transaction_cost_bps / 10000.0
@@ -114,12 +142,51 @@ def run_leader_backtest(
             warnings.append(f"{as_of_ymd}: eligible stocks {len(eligible)} < top_n {top_n}")
             continue
 
-        ranked = sorted(eligible, key=lambda row: row["leader_score"], reverse=True)
+        benchmark_return = float(np.mean([row["realized_return"] for row in eligible]))
+        benchmark_net_return = benchmark_return - (transaction_cost * 2)
+        market_breadth_pct = _market_breadth_pct(eligible)
+        filtered, rejected = _apply_risk_filters(eligible, risk_config)
+        _add_counts(risk_reject_counts, rejected)
+        risk_off_reason = _market_filter_reason(eligible, risk_config)
+        if not risk_off_reason and len(filtered) < top_n:
+            risk_off_reason = f"risk_filters eligible stocks {len(filtered)} < top_n {top_n}"
+
+        if risk_off_reason:
+            warnings.append(f"{as_of_ymd}: {risk_off_reason}")
+            benchmark_equity *= 1.0 + benchmark_net_return
+            period_rows.append(
+                {
+                    "as_of_date": _fmt_ymd(as_of_ymd),
+                    "entry_date": "",
+                    "exit_date": "",
+                    "selected_count": 0,
+                    "eligible_count": len(eligible),
+                    "risk_eligible_count": len(filtered),
+                    "risk_reject_count": len(eligible) - len(filtered),
+                    "market_breadth_pct": market_breadth_pct,
+                    "portfolio_return_pct": 0.0,
+                    "benchmark_return_pct": _pct(benchmark_net_return),
+                    "excess_return_pct": _pct(-benchmark_net_return),
+                    "risk_off_reason": risk_off_reason,
+                    "top_symbols": [],
+                }
+            )
+            equity_curve.append(
+                {
+                    "date": _fmt_ymd(as_of_ymd),
+                    "equity": round(equity, 6),
+                    "benchmark_equity": round(benchmark_equity, 6),
+                    "period_return_pct": 0.0,
+                    "benchmark_return_pct": _pct(benchmark_net_return),
+                    "risk_off_reason": risk_off_reason,
+                }
+            )
+            continue
+
+        ranked = sorted(filtered, key=lambda row: row["leader_score"], reverse=True)
         selected = ranked[:top_n]
         selected_return = float(np.mean([row["realized_return"] for row in selected]))
         selected_net_return = selected_return - (transaction_cost * 2)
-        benchmark_return = float(np.mean([row["realized_return"] for row in eligible]))
-        benchmark_net_return = benchmark_return - (transaction_cost * 2)
 
         equity *= 1.0 + selected_net_return
         benchmark_equity *= 1.0 + benchmark_net_return
@@ -131,6 +198,9 @@ def run_leader_backtest(
                 "exit_date": selected[0]["exit_date"],
                 "selected_count": len(selected),
                 "eligible_count": len(eligible),
+                "risk_eligible_count": len(filtered),
+                "risk_reject_count": len(eligible) - len(filtered),
+                "market_breadth_pct": market_breadth_pct,
                 "portfolio_return_pct": _pct(selected_net_return),
                 "benchmark_return_pct": _pct(benchmark_net_return),
                 "excess_return_pct": _pct(selected_net_return - benchmark_net_return),
@@ -213,6 +283,7 @@ def run_leader_backtest(
             "top_n": top_n,
             "min_history_days": min_history_days,
             "transaction_cost_bps": transaction_cost_bps,
+            "risk_filters": risk_config.to_dict(),
             "selection_inputs": [
                 "20d momentum",
                 "60d momentum",
@@ -230,6 +301,10 @@ def run_leader_backtest(
         "trades": _positions_to_trades(positions),
         "periods": period_rows,
         "equity_curve": equity_curve,
+        "risk": {
+            "filters": risk_config.to_dict(),
+            "reject_counts": dict(risk_reject_counts),
+        },
         "artifacts": {},
         "warnings": warnings + _default_warnings(),
         "metadata": {
@@ -304,6 +379,7 @@ def load_price_history(data_dir: Path, theme_key: str) -> Dict[str, pd.DataFrame
     for code, group in df.groupby("stock_code"):
         stock_df = group.sort_values("Date").drop_duplicates(subset=["Date"], keep="last")
         stock_df = stock_df.set_index("Date")
+        stock_df["YMD"] = stock_df.index.strftime("%Y%m%d")
         output[str(code)] = stock_df
     return output
 
@@ -409,7 +485,7 @@ def _features_for_stock(
     hold_days: int,
     min_history_days: int,
 ) -> Optional[Dict[str, Any]]:
-    ymd_index = pd.Series(df.index.strftime("%Y%m%d"), index=df.index)
+    ymd_index = df["YMD"] if "YMD" in df else pd.Series(df.index.strftime("%Y%m%d"), index=df.index)
     known = df.loc[ymd_index <= as_of_ymd]
     if known.empty:
         return None
@@ -429,6 +505,7 @@ def _features_for_stock(
     closes = known["Close"]
     returns = closes.pct_change().dropna()
     close = float(entry["Close"])
+    ret5 = _period_return(closes, 5)
     ret20 = _period_return(closes, 20)
     ret60 = _period_return(closes, 60)
     ma150 = float(closes.tail(150).mean())
@@ -436,6 +513,7 @@ def _features_for_stock(
     vol20 = float(returns.tail(20).std() * math.sqrt(252)) if len(returns) >= 20 else 1.0
     vol_ma20 = float(known["Volume"].tail(20).mean())
     volume_ratio = float(entry["Volume"]) / vol_ma20 if vol_ma20 > 0 else 0.0
+    avg_trading_value_20d = float((known["Close"].tail(20) * known["Volume"].tail(20)).mean())
     docs = _count_recent_docs(doc_index.get(code, {}), as_of_ymd)
     doc_signal = (
         math.log1p(docs.get("news", 0)) * 1.2
@@ -454,11 +532,13 @@ def _features_for_stock(
         "stock_code": code,
         "entry_price": close,
         "exit_price": float(exit_["Close"]),
+        "return_5d": ret5,
         "return_20d": ret20,
         "return_60d": ret60,
         "trend_150d": trend150,
         "volatility_20d": vol20,
         "volume_ratio_20d": volume_ratio,
+        "avg_trading_value_20d": avg_trading_value_20d,
         "doc_signal": doc_signal,
         "doc_counts": docs,
         "realized_return": realized,
@@ -489,6 +569,61 @@ def _count_recent_docs(source_index: Dict[str, List[str]], as_of_ymd: str) -> Di
     return counts
 
 
+def _apply_risk_filters(
+    rows: List[Dict[str, Any]],
+    risk_config: RiskConfig,
+) -> tuple[List[Dict[str, Any]], Dict[str, int]]:
+    passed: List[Dict[str, Any]] = []
+    rejected: Dict[str, int] = defaultdict(int)
+    for row in rows:
+        reason = _risk_reject_reason(row, risk_config)
+        if reason:
+            rejected[reason] += 1
+            continue
+        passed.append(row)
+    return passed, dict(rejected)
+
+
+def _risk_reject_reason(row: Dict[str, Any], risk_config: RiskConfig) -> str:
+    if risk_config.min_avg_trading_value > 0:
+        if float(row.get("avg_trading_value_20d") or 0.0) < risk_config.min_avg_trading_value:
+            return "low_liquidity"
+    if risk_config.max_volatility_20d > 0:
+        if float(row.get("volatility_20d") or 0.0) > risk_config.max_volatility_20d:
+            return "high_volatility"
+    if risk_config.max_return_5d > 0:
+        if float(row.get("return_5d") or 0.0) > risk_config.max_return_5d:
+            return "overheated_5d"
+    if risk_config.max_return_20d > 0:
+        if float(row.get("return_20d") or 0.0) > risk_config.max_return_20d:
+            return "overheated_20d"
+    if risk_config.min_trend_150d > -1.0:
+        if float(row.get("trend_150d") or 0.0) < risk_config.min_trend_150d:
+            return "weak_trend"
+    return ""
+
+
+def _market_breadth_pct(rows: List[Dict[str, Any]]) -> float:
+    if not rows:
+        return 0.0
+    above_ma = sum(1 for row in rows if float(row.get("trend_150d") or 0.0) >= 0.0)
+    return _pct(above_ma / len(rows))
+
+
+def _market_filter_reason(rows: List[Dict[str, Any]], risk_config: RiskConfig) -> str:
+    if risk_config.min_market_breadth_pct <= 0:
+        return ""
+    breadth_pct = _market_breadth_pct(rows)
+    if breadth_pct < risk_config.min_market_breadth_pct:
+        return f"market_breadth {breadth_pct}% < {risk_config.min_market_breadth_pct}%"
+    return ""
+
+
+def _add_counts(total: Dict[str, int], current: Dict[str, int]) -> None:
+    for key, value in current.items():
+        total[key] += value
+
+
 def _compute_metrics(
     *,
     equity_curve: List[Dict[str, Any]],
@@ -500,6 +635,8 @@ def _compute_metrics(
     if not equity_curve:
         return {
             "rebalance_count": 0,
+            "risk_off_count": 0,
+            "traded_rebalance_count": 0,
             "total_return_pct": 0.0,
             "benchmark_return_pct": 0.0,
             "excess_return_pct": 0.0,
@@ -531,8 +668,12 @@ def _compute_metrics(
         hits = sum(1 for p, r in zip(predicted, realized) if (p >= 0 and r >= 0) or (p < 0 and r < 0))
         hit_rate = hits / len(realized)
 
+    risk_off_count = sum(1 for row in equity_curve if row.get("risk_off_reason"))
+
     return {
         "rebalance_count": len(equity_curve),
+        "risk_off_count": risk_off_count,
+        "traded_rebalance_count": len(equity_curve) - risk_off_count,
         "position_count": len(positions),
         "total_return_pct": _pct(total_return),
         "benchmark_return_pct": _pct(benchmark_return),
@@ -772,6 +913,12 @@ def main() -> int:
     parser.add_argument("--hold-days", type=int, default=20)
     parser.add_argument("--min-history-days", type=int, default=150)
     parser.add_argument("--transaction-cost-bps", type=float, default=15.0)
+    parser.add_argument("--min-avg-trading-value", type=float, default=0.0)
+    parser.add_argument("--max-volatility-20d", type=float, default=0.0)
+    parser.add_argument("--max-return-5d", type=float, default=0.0)
+    parser.add_argument("--max-return-20d", type=float, default=0.0)
+    parser.add_argument("--min-trend-150d", type=float, default=-1.0)
+    parser.add_argument("--min-market-breadth-pct", type=float, default=0.0)
     parser.add_argument("--output-dir", default="")
     parser.add_argument("--task-id", default="")
     parser.add_argument("--submit-url", default="")
@@ -788,6 +935,12 @@ def main() -> int:
         hold_days=args.hold_days,
         min_history_days=args.min_history_days,
         transaction_cost_bps=args.transaction_cost_bps,
+        min_avg_trading_value=args.min_avg_trading_value,
+        max_volatility_20d=args.max_volatility_20d,
+        max_return_5d=args.max_return_5d,
+        max_return_20d=args.max_return_20d,
+        min_trend_150d=args.min_trend_150d,
+        min_market_breadth_pct=args.min_market_breadth_pct,
         output_dir=args.output_dir or None,
         task_id=args.task_id,
         submit_url=args.submit_url,

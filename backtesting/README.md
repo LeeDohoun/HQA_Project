@@ -89,6 +89,10 @@ context = rag.search_for_context(
   --rebalance W \
   --top-n 5 \
   --hold-days 5 \
+  --min-market-breadth-pct 40 \
+  --max-volatility-20d 1.2 \
+  --max-return-5d 0.35 \
+  --max-return-20d 0.9 \
   --task-id bt-ai-2025-w-top5-h5
 ```
 
@@ -113,9 +117,13 @@ context = rag.search_for_context(
   --theme AI \
   --theme-key ai \
   --rebalances W \
-  --top-ns 1,3,5 \
-  --hold-days 5 \
-  --output-dir data/backtest_results/sweeps_weekly_h5
+  --top-ns 3,5,7 \
+  --hold-days 3,5,7 \
+  --min-market-breadth-pct 40 \
+  --max-volatility-20d 1.2 \
+  --max-return-5d 0.35 \
+  --max-return-20d 0.9 \
+  --output-dir data/backtest_results/validation/risk_sweep_w_top357_h357
 ```
 
 현재 산출물과 해석은 `data/backtest_results/README.md`에 정리되어 있습니다.
