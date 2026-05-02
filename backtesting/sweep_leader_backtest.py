@@ -19,6 +19,7 @@ if str(PROJECT_ROOT) not in sys.path:
 import numpy as np
 
 from backtesting.leader_backtest import (
+    ExitConfig,
     RiskConfig,
     StockTarget,
     _add_counts,
@@ -30,8 +31,10 @@ from backtesting.leader_backtest import (
     _default_task_id,
     _default_warnings,
     _display_path,
+    _exit_counts,
     _fmt_ymd,
     _index_docs,
+    _latest_exit_date,
     _market_breadth_pct,
     _market_filter_reason,
     _pct,
@@ -62,6 +65,7 @@ def run_sweep(
     min_history_days: int,
     transaction_cost_bps: float,
     risk_config: RiskConfig | None = None,
+    exit_config: ExitConfig | None = None,
 ) -> Dict[str, Any]:
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -71,6 +75,7 @@ def run_sweep(
     docs = load_document_signals(data_root, theme_key)
     memberships = load_theme_memberships(data_root, theme_key)
     risk_config = risk_config or RiskConfig()
+    exit_config = exit_config or ExitConfig()
     if not targets:
         targets = [
             StockTarget(stock_name=name, stock_code=code)
@@ -110,6 +115,7 @@ def run_sweep(
                         min_history_days=min_history_days,
                         transaction_cost_bps=transaction_cost_bps,
                         risk_config=risk_config,
+                        exit_config=exit_config,
                         output_dir=out_dir,
                         task_id=task_id,
                     )
@@ -134,6 +140,9 @@ def run_sweep(
                             "sharpe": metrics.get("sharpe", 0.0),
                             "win_rate_pct": metrics.get("win_rate_pct", 0.0),
                             "prediction_hit_rate_pct": metrics.get("prediction_hit_rate_pct", 0.0),
+                            "stop_loss_pct": exit_config.stop_loss_pct,
+                            "take_profit_pct": exit_config.take_profit_pct,
+                            "trailing_stop_pct": exit_config.trailing_stop_pct,
                             "result_json": result["artifacts"].get("result_json", ""),
                         }
                     )
@@ -158,6 +167,7 @@ def run_sweep(
         "hold_days_list": hold_days_list,
         "rebalances": rebalances,
         "risk_filters": risk_config.to_dict(),
+        "exit_rules": exit_config.to_dict(),
         "point_in_time_universe": bool(memberships),
         "membership_count": len(memberships),
         "rows": rows,
@@ -195,6 +205,7 @@ def _run_loaded_backtest(
     min_history_days: int,
     transaction_cost_bps: float,
     risk_config: RiskConfig,
+    exit_config: ExitConfig,
     output_dir: Path,
     task_id: str,
 ) -> Dict[str, Any]:
@@ -229,6 +240,7 @@ def _run_loaded_backtest(
             doc_index=doc_index,
             hold_days=hold_days,
             min_history_days=min_history_days,
+            exit_config=exit_config,
         )
         eligible = [row for row in scored if row.get("eligible")]
         if len(eligible) < top_n:
@@ -281,6 +293,7 @@ def _run_loaded_backtest(
         selected = ranked[:top_n]
         selected_return = float(np.mean([row["realized_return"] for row in selected]))
         selected_net_return = selected_return - (transaction_cost * 2)
+        portfolio_exit_date = _latest_exit_date(selected)
         equity *= 1.0 + selected_net_return
         benchmark_equity *= 1.0 + benchmark_net_return
 
@@ -288,7 +301,7 @@ def _run_loaded_backtest(
             {
                 "as_of_date": _fmt_ymd(as_of_ymd),
                 "entry_date": selected[0]["entry_date"],
-                "exit_date": selected[0]["exit_date"],
+                "exit_date": portfolio_exit_date,
                 "selected_count": len(selected),
                 "active_target_count": len(active_targets),
                 "eligible_count": len(eligible),
@@ -311,7 +324,7 @@ def _run_loaded_backtest(
         )
         equity_curve.append(
             {
-                "date": selected[0]["exit_date"],
+                "date": portfolio_exit_date,
                 "equity": round(equity, 6),
                 "benchmark_equity": round(benchmark_equity, 6),
                 "period_return_pct": _pct(selected_net_return),
@@ -358,6 +371,7 @@ def _run_loaded_backtest(
             "min_history_days": min_history_days,
             "transaction_cost_bps": transaction_cost_bps,
             "risk_filters": risk_config.to_dict(),
+            "exit_rules": exit_config.to_dict(),
             "prediction_model": "momentum_price_forecast_v1",
         },
         "metrics": metrics,
@@ -387,6 +401,11 @@ def _run_loaded_backtest(
         "risk": {
             "filters": risk_config.to_dict(),
             "reject_counts": dict(risk_reject_counts),
+        },
+        "execution": {
+            "exit_rules": exit_config.to_dict(),
+            "exit_counts": _exit_counts(positions),
+            "same_day_ohlc_policy": "stop_or_trailing_stop_before_take_profit",
         },
         "artifacts": {},
         "warnings": warnings + _default_warnings(bool(memberships)),
@@ -487,6 +506,9 @@ def main() -> int:
     parser.add_argument("--max-return-20d", type=float, default=0.0)
     parser.add_argument("--min-trend-150d", type=float, default=-1.0)
     parser.add_argument("--min-market-breadth-pct", type=float, default=0.0)
+    parser.add_argument("--stop-loss-pct", type=float, default=0.0)
+    parser.add_argument("--take-profit-pct", type=float, default=0.0)
+    parser.add_argument("--trailing-stop-pct", type=float, default=0.0)
     args = parser.parse_args()
 
     output_dir = args.output_dir or str(Path(args.data_dir) / "backtest_results" / "sweeps")
@@ -508,6 +530,11 @@ def main() -> int:
             max_return_20d=args.max_return_20d,
             min_trend_150d=args.min_trend_150d,
             min_market_breadth_pct=args.min_market_breadth_pct,
+        ),
+        exit_config=ExitConfig(
+            stop_loss_pct=args.stop_loss_pct,
+            take_profit_pct=args.take_profit_pct,
+            trailing_stop_pct=args.trailing_stop_pct,
         ),
     )
 

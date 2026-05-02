@@ -104,8 +104,17 @@ context = rag.search_for_context(
   --max-volatility-20d 1.2 \
   --max-return-5d 0.35 \
   --max-return-20d 0.9 \
+  --trailing-stop-pct 15 \
   --task-id bt-ai-2025-w-top5-h5
 ```
+
+선택 종목은 기본적으로 `hold-days` 이후 종가로 청산합니다. 보유 기간 중 조기 청산 규칙을 시험하려면 다음 옵션을 추가할 수 있습니다.
+
+- `--stop-loss-pct`: 진입가 대비 손절률
+- `--take-profit-pct`: 진입가 대비 익절률
+- `--trailing-stop-pct`: 고점 대비 트레일링 손절률
+
+동일 일자 OHLC에서 손절/트레일링과 익절이 동시에 닿을 수 있으면 보수적으로 손절/트레일링을 먼저 적용합니다.
 
 결과 JSON은 기본적으로 `data/backtest_results/`에 저장됩니다. AI 서버가 실행 중이면 같은 payload를 백엔드 호환 저장소로 보낼 수 있습니다.
 
@@ -134,6 +143,7 @@ context = rag.search_for_context(
   --max-volatility-20d 1.2 \
   --max-return-5d 0.35 \
   --max-return-20d 0.9 \
+  --trailing-stop-pct 15 \
   --output-dir data/backtest_results/validation/risk_sweep_w_top357_h357
 ```
 

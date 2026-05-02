@@ -68,6 +68,16 @@ class RiskConfig:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class ExitConfig:
+    stop_loss_pct: float = 0.0
+    take_profit_pct: float = 0.0
+    trailing_stop_pct: float = 0.0
+
+    def to_dict(self) -> Dict[str, float]:
+        return asdict(self)
+
+
 def run_leader_backtest(
     *,
     data_dir: str | Path | None = None,
@@ -86,6 +96,9 @@ def run_leader_backtest(
     max_return_20d: float = 0.0,
     min_trend_150d: float = -1.0,
     min_market_breadth_pct: float = 0.0,
+    stop_loss_pct: float = 0.0,
+    take_profit_pct: float = 0.0,
+    trailing_stop_pct: float = 0.0,
     output_dir: str | Path | None = None,
     task_id: str = "",
     submit_url: str = "",
@@ -107,6 +120,11 @@ def run_leader_backtest(
         max_return_20d=max_return_20d,
         min_trend_150d=min_trend_150d,
         min_market_breadth_pct=min_market_breadth_pct,
+    )
+    exit_config = ExitConfig(
+        stop_loss_pct=stop_loss_pct,
+        take_profit_pct=take_profit_pct,
+        trailing_stop_pct=trailing_stop_pct,
     )
 
     if not targets:
@@ -153,6 +171,7 @@ def run_leader_backtest(
             doc_index=doc_index,
             hold_days=hold_days,
             min_history_days=min_history_days,
+            exit_config=exit_config,
         )
         eligible = [row for row in scored if row.get("eligible")]
         if len(eligible) < top_n:
@@ -205,6 +224,7 @@ def run_leader_backtest(
         selected = ranked[:top_n]
         selected_return = float(np.mean([row["realized_return"] for row in selected]))
         selected_net_return = selected_return - (transaction_cost * 2)
+        portfolio_exit_date = _latest_exit_date(selected)
 
         equity *= 1.0 + selected_net_return
         benchmark_equity *= 1.0 + benchmark_net_return
@@ -213,7 +233,7 @@ def run_leader_backtest(
             {
                 "as_of_date": _fmt_ymd(as_of_ymd),
                 "entry_date": selected[0]["entry_date"],
-                "exit_date": selected[0]["exit_date"],
+                "exit_date": portfolio_exit_date,
                 "selected_count": len(selected),
                 "active_target_count": len(active_target_by_code),
                 "eligible_count": len(eligible),
@@ -236,7 +256,7 @@ def run_leader_backtest(
         )
         equity_curve.append(
             {
-                "date": selected[0]["exit_date"],
+                "date": portfolio_exit_date,
                 "equity": round(equity, 6),
                 "benchmark_equity": round(benchmark_equity, 6),
                 "period_return_pct": _pct(selected_net_return),
@@ -303,6 +323,7 @@ def run_leader_backtest(
             "min_history_days": min_history_days,
             "transaction_cost_bps": transaction_cost_bps,
             "risk_filters": risk_config.to_dict(),
+            "exit_rules": exit_config.to_dict(),
             "selection_inputs": [
                 "20d momentum",
                 "60d momentum",
@@ -323,6 +344,11 @@ def run_leader_backtest(
         "risk": {
             "filters": risk_config.to_dict(),
             "reject_counts": dict(risk_reject_counts),
+        },
+        "execution": {
+            "exit_rules": exit_config.to_dict(),
+            "exit_counts": _exit_counts(positions),
+            "same_day_ohlc_policy": "stop_or_trailing_stop_before_take_profit",
         },
         "artifacts": {},
         "warnings": warnings + _default_warnings(bool(memberships)),
@@ -456,7 +482,9 @@ def _score_universe(
     doc_index: Dict[str, Dict[str, List[str]]],
     hold_days: int,
     min_history_days: int,
+    exit_config: ExitConfig | None = None,
 ) -> List[Dict[str, Any]]:
+    exit_config = exit_config or ExitConfig()
     raw_rows: List[Dict[str, Any]] = []
     for code, target in target_by_code.items():
         df = prices.get(code)
@@ -470,6 +498,7 @@ def _score_universe(
             doc_index=doc_index,
             hold_days=hold_days,
             min_history_days=min_history_days,
+            exit_config=exit_config,
         )
         if row:
             raw_rows.append(row)
@@ -521,7 +550,9 @@ def _features_for_stock(
     doc_index: Dict[str, Dict[str, List[str]]],
     hold_days: int,
     min_history_days: int,
+    exit_config: ExitConfig | None = None,
 ) -> Optional[Dict[str, Any]]:
+    exit_config = exit_config or ExitConfig()
     ymd_index = df["YMD"] if "YMD" in df else pd.Series(df.index.strftime("%Y%m%d"), index=df.index)
     known = df.loc[ymd_index <= as_of_ymd]
     if known.empty:
@@ -538,7 +569,6 @@ def _features_for_stock(
         return _ineligible_row(code, name, as_of_ymd, "insufficient_future")
 
     entry = df.iloc[int(full_pos)]
-    exit_ = df.iloc[exit_pos]
     closes = known["Close"]
     returns = closes.pct_change().dropna()
     close = float(entry["Close"])
@@ -558,17 +588,26 @@ def _features_for_stock(
         + math.log1p(docs.get("forum", 0)) * 0.5
         + math.log1p(docs.get("general_news", 0)) * 0.6
     )
-    realized = float(exit_["Close"]) / close - 1.0
+    exit_result = _simulate_exit(
+        df=df,
+        entry_pos=int(full_pos),
+        planned_exit_pos=exit_pos,
+        entry_price=close,
+        exit_config=exit_config,
+    )
+    realized = exit_result["exit_price"] / close - 1.0
 
     return {
         "eligible": True,
         "as_of_date": _fmt_ymd(as_of_ymd),
         "entry_date": known.index[-1].strftime("%Y-%m-%d"),
-        "exit_date": df.index[exit_pos].strftime("%Y-%m-%d"),
+        "exit_date": df.index[exit_result["exit_pos"]].strftime("%Y-%m-%d"),
+        "planned_exit_date": df.index[exit_pos].strftime("%Y-%m-%d"),
+        "exit_reason": exit_result["exit_reason"],
         "stock_name": name,
         "stock_code": code,
         "entry_price": close,
-        "exit_price": float(exit_["Close"]),
+        "exit_price": exit_result["exit_price"],
         "return_5d": ret5,
         "return_20d": ret20,
         "return_60d": ret60,
@@ -579,6 +618,63 @@ def _features_for_stock(
         "doc_signal": doc_signal,
         "doc_counts": docs,
         "realized_return": realized,
+    }
+
+
+def _simulate_exit(
+    *,
+    df: pd.DataFrame,
+    entry_pos: int,
+    planned_exit_pos: int,
+    entry_price: float,
+    exit_config: ExitConfig,
+) -> Dict[str, Any]:
+    stop_loss = max(0.0, float(exit_config.stop_loss_pct or 0.0)) / 100.0
+    take_profit = max(0.0, float(exit_config.take_profit_pct or 0.0)) / 100.0
+    trailing_stop = max(0.0, float(exit_config.trailing_stop_pct or 0.0)) / 100.0
+    stop_loss_price = entry_price * (1.0 - stop_loss) if stop_loss > 0 else None
+    take_profit_price = entry_price * (1.0 + take_profit) if take_profit > 0 else None
+    high_water = entry_price
+
+    for pos in range(entry_pos + 1, planned_exit_pos + 1):
+        row = df.iloc[pos]
+        high = float(row["High"])
+        low = float(row["Low"])
+        trailing_price = high_water * (1.0 - trailing_stop) if trailing_stop > 0 else None
+        active_stop_price = None
+        active_stop_reason = ""
+
+        for price, reason in [
+            (stop_loss_price, "stop_loss"),
+            (trailing_price, "trailing_stop"),
+        ]:
+            if price is None:
+                continue
+            if active_stop_price is None or price > active_stop_price:
+                active_stop_price = price
+                active_stop_reason = reason
+
+        if active_stop_price is not None and low <= active_stop_price:
+            return {
+                "exit_pos": pos,
+                "exit_price": float(active_stop_price),
+                "exit_reason": active_stop_reason,
+            }
+
+        if take_profit_price is not None and high >= take_profit_price:
+            return {
+                "exit_pos": pos,
+                "exit_price": float(take_profit_price),
+                "exit_reason": "take_profit",
+            }
+
+        high_water = max(high_water, high)
+
+    exit_ = df.iloc[planned_exit_pos]
+    return {
+        "exit_pos": planned_exit_pos,
+        "exit_price": float(exit_["Close"]),
+        "exit_reason": "holding_period_exit",
     }
 
 
@@ -659,6 +755,11 @@ def _market_filter_reason(rows: List[Dict[str, Any]], risk_config: RiskConfig) -
 def _add_counts(total: Dict[str, int], current: Dict[str, int]) -> None:
     for key, value in current.items():
         total[key] += value
+
+
+def _latest_exit_date(rows: List[Dict[str, Any]]) -> str:
+    dates = [str(row.get("exit_date") or "") for row in rows if row.get("exit_date")]
+    return max(dates) if dates else ""
 
 
 def _compute_metrics(
@@ -752,6 +853,13 @@ def _aggregate_leaders(positions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return leaders
 
 
+def _exit_counts(positions: List[Dict[str, Any]]) -> Dict[str, int]:
+    counts: Dict[str, int] = defaultdict(int)
+    for row in positions:
+        counts[str(row.get("exit_reason") or "holding_period_exit")] += 1
+    return dict(counts)
+
+
 def _positions_to_trades(positions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     trades: List[Dict[str, Any]] = []
     for row in positions:
@@ -775,7 +883,7 @@ def _positions_to_trades(positions: List[Dict[str, Any]]) -> List[Dict[str, Any]
                 "price": row["exit_price"],
                 "weight": row["weight"],
                 "realized_return_pct": row["realized_return_pct"],
-                "reason": "holding period exit",
+                "reason": row.get("exit_reason") or "holding_period_exit",
             }
         )
     return trades
@@ -964,6 +1072,9 @@ def main() -> int:
     parser.add_argument("--max-return-20d", type=float, default=0.0)
     parser.add_argument("--min-trend-150d", type=float, default=-1.0)
     parser.add_argument("--min-market-breadth-pct", type=float, default=0.0)
+    parser.add_argument("--stop-loss-pct", type=float, default=0.0)
+    parser.add_argument("--take-profit-pct", type=float, default=0.0)
+    parser.add_argument("--trailing-stop-pct", type=float, default=0.0)
     parser.add_argument("--output-dir", default="")
     parser.add_argument("--task-id", default="")
     parser.add_argument("--submit-url", default="")
@@ -986,6 +1097,9 @@ def main() -> int:
         max_return_20d=args.max_return_20d,
         min_trend_150d=args.min_trend_150d,
         min_market_breadth_pct=args.min_market_breadth_pct,
+        stop_loss_pct=args.stop_loss_pct,
+        take_profit_pct=args.take_profit_pct,
+        trailing_stop_pct=args.trailing_stop_pct,
         output_dir=args.output_dir or None,
         task_id=args.task_id,
         submit_url=args.submit_url,

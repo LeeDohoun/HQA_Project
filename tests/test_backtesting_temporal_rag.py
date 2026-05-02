@@ -353,6 +353,24 @@ def test_leader_backtest_writes_backend_ready_payload(tmp_path):
     assert result["leaders"][0]["stock_code"] == "000001"
     assert Path(result["artifacts"]["result_json"]).exists()
 
+    take_profit_result = run_leader_backtest(
+        data_dir=tmp_path,
+        theme="AI",
+        theme_key="ai",
+        from_date="20250228",
+        to_date="20250331",
+        top_n=1,
+        hold_days=5,
+        min_history_days=20,
+        take_profit_pct=1.0,
+        output_dir=tmp_path / "results",
+        task_id="bt-test-take-profit",
+    )
+
+    assert take_profit_result["positions"][0]["exit_reason"] == "take_profit"
+    assert take_profit_result["execution"]["exit_counts"]["take_profit"] >= 1
+    assert take_profit_result["strategy"]["exit_rules"]["take_profit_pct"] == 1.0
+
     risk_result = run_leader_backtest(
         data_dir=tmp_path,
         theme="AI",
