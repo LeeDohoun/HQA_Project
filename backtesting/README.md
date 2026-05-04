@@ -116,6 +116,29 @@ context = rag.search_for_context(
 
 동일 일자 OHLC에서 손절/트레일링과 익절이 동시에 닿을 수 있으면 보수적으로 손절/트레일링을 먼저 적용합니다.
 
+LLM이 과거 시점 문서와 feature snapshot을 읽고 후보를 재평가하게 하려면 `--llm-rerank-top-k`를 사용합니다. 이 값은 `top-n`보다 커야 실제 선택 종목이 바뀝니다. 예를 들어 `top-n 3`, `--llm-rerank-top-k 5`는 규칙 기반 상위 5개를 먼저 고른 뒤 LLM 점수로 최종 3개를 다시 선택합니다.
+
+```bash
+.venv/bin/python backtesting/leader_backtest.py \
+  --theme AI \
+  --theme-key ai \
+  --from-date 20260101 \
+  --to-date 20260116 \
+  --rebalance W \
+  --top-n 3 \
+  --hold-days 5 \
+  --min-market-breadth-pct 40 \
+  --max-volatility-20d 1.2 \
+  --max-return-5d 0.35 \
+  --max-return-20d 0.9 \
+  --trailing-stop-pct 15 \
+  --llm-rerank-top-k 5 \
+  --llm-weight 1.0 \
+  --llm-context-docs 3
+```
+
+LLM 평가는 `data/backtest_results/llm_cache/<theme_key>/`에 캐시됩니다. 같은 날짜/종목/feature 조합은 재실행 시 다시 호출하지 않습니다.
+
 결과 JSON은 기본적으로 `data/backtest_results/`에 저장됩니다. AI 서버가 실행 중이면 같은 payload를 백엔드 호환 저장소로 보낼 수 있습니다.
 
 ```bash

@@ -59,6 +59,14 @@
 
 트레일링 스탑 적용 전체 구간에서는 273개 포지션 중 58개가 `trailing_stop`, 215개가 `holding_period_exit`으로 청산되었습니다.
 
+## LLM 백테스트 파일럿
+
+Ollama `qwen2.5:14b`를 사용해 각 리밸런싱일의 point-in-time 문서와 feature snapshot을 읽고 후보를 재점수화하는 LLM rerank 백테스트를 추가했습니다.
+
+2026년 1월 파일럿에서는 `top5` 후보를 LLM이 최종 `top3`로 재선별했을 때 수익률이 `-4.16%`로, 같은 기간 기존 규칙 기반 `14.21%`보다 낮았습니다. 즉 LLM 구조는 들어갔지만 현재 프롬프트/모델을 순수 랭커로 쓰는 방식은 아직 유의미하지 않습니다.
+
+상세 결과는 `data/backtest_results/llm_final/README.md`에 정리되어 있습니다.
+
 ## 핵심 결과
 
 | 구분 | 설정 | 수익률 | 벤치마크 | 초과수익 | MDD | Sharpe |

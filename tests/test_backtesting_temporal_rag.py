@@ -353,6 +353,42 @@ def test_leader_backtest_writes_backend_ready_payload(tmp_path):
     assert result["leaders"][0]["stock_code"] == "000001"
     assert Path(result["artifacts"]["result_json"]).exists()
 
+    class FakeLLMScorer:
+        def metadata(self):
+            return {"provider": "fake", "model_name": "unit-test"}
+
+        def score(self, *, as_of_ymd, row):
+            code = row["stock_code"]
+            return {
+                "llm_score": 95 if code == "000002" else 20,
+                "llm_confidence": 90,
+                "llm_theme_fit_score": 88,
+                "llm_catalyst_score": 84,
+                "llm_risk_score": 30,
+                "llm_summary": f"fake score for {code}",
+            }
+
+    llm_result = run_leader_backtest(
+        data_dir=tmp_path,
+        theme="AI",
+        theme_key="ai",
+        from_date="20250228",
+        to_date="20250331",
+        top_n=1,
+        hold_days=5,
+        min_history_days=20,
+        llm_rerank_top_k=2,
+        llm_weight=1.0,
+        llm_scorer=FakeLLMScorer(),
+        output_dir=tmp_path / "results",
+        task_id="bt-test-llm",
+    )
+
+    assert llm_result["strategy"]["llm_rerank"]["enabled"] is True
+    assert llm_result["leaders"][0]["stock_code"] == "000002"
+    assert llm_result["positions"][0]["llm_score"] == 95
+    assert llm_result["positions"][0]["deterministic_leader_score"] > 0
+
     take_profit_result = run_leader_backtest(
         data_dir=tmp_path,
         theme="AI",
