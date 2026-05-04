@@ -1,316 +1,236 @@
-# HQA AI + Data Integration Branch
+# HQA AI + Data Integration
 
-이 브랜치는 `ai-main`의 에이전트 실행 로직과 `rag-data-pipeline`의 데이터 수집/가공/검색 자산을 합친 AI+데이터 통합 브랜치입니다.  
-핵심 목적은 수집 파이프라인을 유지한 채, 이미 생성된 데이터 자산을 에이전트가 실제로 읽고 retrieval 기반 응답과 테마 주도주 선별에 활용하도록 만드는 것입니다.
+HQA는 한국 주식 분석을 위한 AI + 데이터 통합 실행 프로젝트입니다. 이 브랜치는 데이터 수집/검색 자산과 멀티 에이전트 분석 로직을 한 실행 단위로 묶고, RAG 기반 질의응답, 종목 분석, 테마 주도주 선별, 백테스팅, dry-run 거래 판단을 제공합니다.
 
-## 1. 브랜치 한 줄 소개
+현재 `ai-data-main`의 핵심은 두 갈래입니다.
 
-기존 데이터 파이프라인 산출물을 그대로 재사용해, AI 에이전트가 retrieval와 멀티 에이전트 분석을 실제로 수행하는 통합 실행 브랜치입니다.
+- 운영/데모 경로: `main.py`, `ai_server/app.py`, `src/agents/`, `src/tools/`, `src/rag/`
+- 검증/연구 경로: `backtesting/`, `data/backtest_results/`, `data/raw/theme_membership/`
 
-## 2. 이 브랜치가 왜 존재하는가
+## 현재 상태
 
-프로젝트는 원래 크게 네 영역으로 나뉘어 있었습니다.
+- RAG와 멀티 에이전트가 기존 데이터 자산을 읽어 종목/테마 분석을 수행합니다.
+- AI 테마 주도주 백테스트가 추가되어 point-in-time 기준 검증을 수행할 수 있습니다.
+- LLM rerank와 multi-agent scorer를 백테스트에 얹을 수 있습니다.
+- 거래 API는 실제 주문 전 dry-run 시뮬레이션과 주문 로그 기록까지 검증되어 있습니다.
+- KIS 실제 주문 API 연동은 아직 TODO 상태입니다. 실계좌/모의계좌 주문 전송으로 보면 안 됩니다.
 
-- 백엔드
-- 프론트엔드
-- AI
-- 데이터
-
-이 중 AI 브랜치는 에이전트 실행, 프롬프트, LLM 호출, 최종 응답 생성에 강했고, 데이터 브랜치는 뉴스/공시/포럼/차트 수집과 raw/corpus/index 생성에 강했습니다.  
-하지만 둘이 분리돼 있으면 다음 문제가 생깁니다.
-
-- 데이터는 있는데 에이전트가 그 데이터를 바로 못 씀
-- 에이전트는 있는데 retrieval 자산과 연결이 약함
-- 실행 환경, 경로, `.env`, requirements가 따로 놀 가능성이 큼
-
-이 브랜치는 그 사이를 메우기 위해 존재합니다.  
-즉, “데이터를 생산하는 브랜치”와 “에이전트를 실행하는 브랜치”를 하나의 실제 실행 단위로 연결하는 역할입니다.
-
-## 3. 이 브랜치의 책임 범위
-
-### 담당하는 것
-
-- 데이터 수집 파이프라인 자산 재사용
-- raw / corpora / market_data / canonical_index / BM25 / vector store 관리
-- canonical index 생성 또는 로드
-- retrieval 수행
-- RAG 컨텍스트 구성
-- 에이전트 실행
-- 프롬프트 처리
-- LLM 호출
-- 응답 생성
-- 테마 주도주 자동 선별
-- AI 서버 제공
-
-### 담당하지 않는 것
-
-- 프론트엔드 UI 구현
-- 일반 백엔드 비즈니스 로직 전반
-- 사용자 인증/권한/세션 정책
-- 프로젝트 전체 오케스트레이션이나 배포 인프라 자체
-
-### 외부와 연결되는 것
-
-- 프론트엔드는 이 브랜치의 응답을 소비
-- 백엔드는 이 브랜치를 AI 분석 서비스로 호출 가능
-- 외부 LLM/Ollama, Redis, DART, Tavily, KIS 등과 선택적으로 연결
-
-## 4. 백엔드/프론트엔드와의 경계
-
-이 브랜치는 UI를 제공하는 프론트엔드 브랜치가 아닙니다.  
-또한 일반 CRUD/API 중심의 백엔드 브랜치도 아닙니다.
-
-이 브랜치는 다음 역할에 집중합니다.
-
-- 데이터를 읽는 검색/추론 계층
-- 에이전트 실행 계층
-- 분석 결과를 텍스트 또는 JSON으로 반환하는 계층
-
-연결 관점에서 보면:
-
-- 프론트엔드: 이 브랜치의 결과를 화면에 렌더링하는 소비자
-- 백엔드: 이 브랜치의 AI 분석 API를 호출하거나 중계하는 소비자
-- 이 브랜치: 데이터 + 추론 + 검색 엔진
-
-실제 연결 지점은 주로 아래입니다.
-
-- `main.py`
-- `ai_server/app.py`
-
-## 5. 프로젝트 구조
+## 프로젝트 구조
 
 ```text
 HQA_Project/
-├── main.py
-├── README.md
-├── requirements.txt
-├── Dockerfile
-├── docker-compose.yml
-├── ai_server/
-├── config/
-├── data/
-├── prompts/
-├── scripts/
+├── main.py                    # CLI 진입점
+├── ai_server/                 # FastAPI AI 서버
+├── backtesting/               # point-in-time 백테스트 도구
+├── config/                    # watchlist/trading 설정
+├── data/                      # raw, index, market data, backtest results
+├── prompts/                   # 에이전트 프롬프트
+├── scripts/                   # 헬스체크, RAG 빌드, 데모 실행
 ├── src/
-└── tests/
+│   ├── agents/                # Analyst, Quant, Chartist, RiskManager, Supervisor
+│   ├── config/                # .env 로드와 경로 설정
+│   ├── data_pipeline/         # 데이터 가공/가격 로더
+│   ├── ingestion/             # Naver, DART, KIS 등 수집 계층
+│   ├── rag/                   # canonical retriever, BM25, vector store
+│   ├── retrieval/             # fallback retrieval
+│   ├── runner/                # autonomous runner, TradeExecutor
+│   └── tools/                 # 에이전트가 사용하는 도구
+└── tests/                     # 런타임, RAG, 거래, 백테스팅 테스트
 ```
 
-### 주요 디렉터리와 역할
+## 주요 기능
 
-#### `main.py`
+### RAG 질의응답
 
-- CLI 진입점
-- 대화형 질문
-- 단일 종목 분석
-- 빠른 분석
-- 테마 주도주 자동 선별
+- `src/rag/canonical_retriever.py`를 우선 사용합니다.
+- canonical index가 없으면 기존 pipeline BM25/vector 자산으로 fallback할 수 있습니다.
+- 단일 질문 데모는 `scripts/run_agent_demo.py`에서 실행합니다.
 
-#### `ai_server/`
+### 단일 종목 분석
 
-- FastAPI 기반 AI 서버
-- `ai_server/app.py`가 핵심 진입점
-- `/health`, `/chat`, `/analyze` 등의 경로 제공
+- `AnalystAgent`, `QuantAgent`, `ChartistAgent`, `RiskManagerAgent`가 종목을 분석합니다.
+- `quick` 모드는 Quant + Chartist 중심입니다.
+- `full` 모드는 Analyst + Quant + Chartist + RiskManager 흐름입니다.
 
-#### `scripts/`
+### 테마 주도주 선별
 
-- `healthcheck.py`: 환경 점검
-- `verify_data_connection.py`: 데이터 연결 및 retrieval 가능 여부 확인
-- `run_agent_demo.py`: 단일 질문 RAG 데모
-- `run_theme_orchestrator.py`: 테마 전체를 스캔해 주도주 자동 선별
-- `build_rag.py`: raw 데이터를 retrieval 자산으로 변환
-- `run_pipeline.py`, `theme_pipeline.py`: 데이터 파이프라인 실행 경로
+- `src/agents/theme_orchestrator.py`가 테마 후보를 추출하고 멀티 에이전트로 평가합니다.
+- CLI는 `main.py --theme ...` 또는 `scripts/run_theme_orchestrator.py`를 사용합니다.
+- API는 `POST /theme/analyze`를 사용합니다.
 
-#### `src/agents/`
+### 백테스팅
 
-- `supervisor.py`: 사용자 질문의 의도를 해석하고 실행 경로 선택
-- `analyst.py`: 뉴스/포럼/DART 기반 정성 분석
-- `quant.py`: 재무/기초체력 분석
-- `chartist.py`: 차트/기술 분석
-- `risk_manager.py`: 에이전트 결과를 종합해 최종 판단 생성
-- `theme_orchestrator.py`: 테마 후보 추출, 병렬 평가, 주도주 선정
+- `backtesting/leader_backtest.py`는 과거 시점 기준 테마 주도주를 고르고, 보유 기간 이후 성과를 평가합니다.
+- `backtesting/temporal_rag.py`는 `as_of_date` 이전 문서와 차트만 사용하도록 제한합니다.
+- `backtesting/build_theme_membership.py`는 point-in-time 테마 멤버십 데이터를 만듭니다.
+- `backtesting/sweep_leader_backtest.py`는 여러 파라미터 조합을 비교합니다.
+- 상세 사용법은 `backtesting/README.md`를 보세요.
 
-#### `src/tools/`
+### LLM 백테스트 모드
 
-- 에이전트가 직접 호출하는 도구 계층
-- RAG 검색, 차트 분석, 재무 분석, 실시간 시세, 웹 검색 등을 포함
-
-#### `src/rag/`
-
-- canonical index 기반 주 검색 경로
-- `canonical_retriever.py`가 핵심 검색 게이트웨이
-- raw → canonical index 변환 로직 포함
-
-#### `src/retrieval/`
-
-- pipeline BM25/vector fallback 검색 계층
-- canonical index가 없을 때 기존 pipeline 산출물을 읽는 경량 retrieval
-
-#### `src/data_pipeline/`, `src/ingestion/`
-
-- 데이터 수집/정제/가공 보존 영역
-- 원칙적으로 유지 대상
-- 에이전트 연결을 위해 최소 수정만 허용되는 영역
-
-#### `src/config/`
-
-- `.env` / `.env-ai` 로드
-- `HQA_DATA_DIR`, traces, orders 디렉터리 설정
-
-#### `data/`
-
-- 실제 데이터 자산 저장소
-- raw, corpora, canonical index, BM25, vector store, market data, reports 포함
-
-#### `tests/`
-
-- 런타임/통합 검증
-- 환경 설정, retrieval fallback, RAG 데모, 테마 오케스트레이션 경로 검증
-
-### 처음 보는 사람이 먼저 읽어야 하는 파일
-
-1. `main.py`
-2. `src/agents/supervisor.py`
-3. `src/agents/theme_orchestrator.py`
-4. `src/tools/rag_tool.py`
-5. `src/rag/canonical_retriever.py`
-6. `ai_server/app.py`
-7. `data/canonical_index/<theme>/corpus.jsonl`
-
-## 6. 데이터 구조와 활용 방식
-
-### 데이터 종류
-
-| 데이터 종류 | 위치 | 포맷 | 생성/사용 단계 |
-|---|---|---|---|
-| raw 뉴스 | `data/raw/news/*.jsonl` | JSONL | 수집 결과, 필요 시 build 입력 |
-| raw 공시 | `data/raw/dart/*.jsonl` | JSONL | 수집 결과, 필요 시 build 입력 |
-| raw 포럼 | `data/raw/forum/*.jsonl` | JSONL | 수집 결과, 필요 시 build 입력 |
-| raw 차트 | `data/raw/chart/*.jsonl` | JSONL | 차트 fallback 입력 |
-| 테마 후보 | `data/raw/theme_targets/*.jsonl` | JSONL | 주도주 후보 추출 힌트 |
-| corpora | `data/corpora/<theme>/` | JSONL | 테마 문서 집합 |
-| market data | `data/market_data/<theme>/*.jsonl` | JSONL | Chartist / price loader 입력 |
-| canonical index | `data/canonical_index/<theme>/` | JSONL/JSON | 에이전트 1순위 retrieval 자산 |
-| pipeline BM25 | `data/bm25/*.json` | JSON | fallback retrieval |
-| pipeline vector store | `data/vector_stores/*.json` | JSON | fallback retrieval |
-| reports | `data/reports/*.json` | JSON | 수집 진단/운영 참고 |
-
-### 데이터 흐름
-
-전체 흐름은 아래처럼 볼 수 있습니다.
-
-```text
-수집(raw)
-  -> corpora / market_data
-  -> canonical index 또는 pipeline BM25/vector
-  -> retrieval
-  -> 에이전트 컨텍스트
-  -> LLM 응답 / 주도주 선정
-```
-
-### 에이전트가 데이터를 읽는 방식
-
-- 일반 RAG 질의
-  - `src/tools/rag_tool.py`
-  - `src/rag/canonical_retriever.py`
-  - canonical index 우선 검색
-  - 없으면 `src/retrieval/services.py` fallback
-
-- 테마 주도주 선별
-  - `data/raw/theme_targets/<theme>.jsonl`
-  - `data/canonical_index/<theme>/corpus.jsonl`
-  - `data/market_data/<theme>/*.jsonl`
-  - 위 자산을 함께 읽고 후보를 자동 추출
-
-### 데이터 포함 여부와 재생성 규칙
-
-- raw 데이터가 이미 있으면 그대로 사용 가능
-- canonical index가 이미 있으면 재생성 없이 로드
-- canonical index가 없고 raw만 있으면 `scripts/build_rag.py`로 선택 생성
-- 수집 파이프라인 전체 재실행은 필수가 아님
-
-## 7. 에이전트 동작 흐름
-
-### 일반 질문 / RAG 응답
-
-1. 사용자 질문 입력
-2. `SupervisorAgent`가 질의 의도 분류
-3. `RAGSearchTool`이 retrieval 수행
-4. `CanonicalRetriever`가 canonical index 또는 fallback 검색 수행
-5. 검색 결과를 컨텍스트로 정리
-6. `AnalystAgent`가 컨텍스트 기반 답변 생성
-7. 최종 응답 반환
-
-관련 모듈:
-
-- `main.py`
-- `src/agents/supervisor.py`
-- `src/tools/rag_tool.py`
-- `src/rag/canonical_retriever.py`
-- `src/agents/analyst.py`
-
-### 단일 종목 멀티 에이전트 분석
-
-1. 종목명/종목코드 입력
-2. `Supervisor` 또는 `main.py --stock` 진입
-3. `Analyst`, `Quant`, `Chartist` 실행
-4. `RiskManager`가 최종 투자 판단 생성
-
-관련 모듈:
-
-- `main.py`
-- `src/agents/graph.py`
-- `src/agents/analyst.py`
-- `src/agents/quant.py`
-- `src/agents/chartist.py`
-- `src/agents/risk_manager.py`
-
-### 테마 주도주 자동 선별
-
-1. 테마명 입력 또는 `--theme` 실행
-2. `Supervisor` 또는 `run_theme_orchestrator.py` 진입
-3. `theme_targets + corpus + market_data` 스캔
-4. 후보군 자동 추출
-5. 후보별 `Analyst`, `Quant`, `Chartist` 병렬 평가
-6. `RiskManager`가 후보 순위와 최종 의견 종합
-7. 주도주 `top_n` 반환
-
-관련 모듈:
-
-- `main.py`
-- `src/agents/supervisor.py`
-- `src/agents/theme_orchestrator.py`
-- `src/agents/risk_manager.py`
-
-### retrieval 기반 vs 순수 생성형
-
-- 기본 의도는 retrieval 기반 동작
-- 다만 일반 QA나 일부 fallback 경로에서는 순수 생성형 응답도 가능
-- 성공 기준은 retrieval가 실제 수행된 경로를 우선으로 봐야 함
-
-## 8. 설치 / 실행 / 환경설정
-
-### Python 버전
-
-- 실제 로컬 검증 기준: Python `3.12.x`
-- Dockerfile 기준: Python `3.11-slim`
-
-즉, 로컬 검증 환경과 Docker 베이스가 현재 다릅니다. 이 차이는 문서화가 필요하며, 장기적으로 맞추는 것이 좋습니다.
-
-### 설치
+기본 백테스트는 규칙 기반 점수화로도 실행됩니다. LLM을 붙일 때는 다음 옵션을 사용합니다.
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate
-python3 -m pip install -r requirements.txt
+python backtesting/leader_backtest.py \
+  --theme AI \
+  --theme-key ai \
+  --from-date 20260101 \
+  --to-date 20260116 \
+  --rebalance W \
+  --top-n 3 \
+  --hold-days 5 \
+  --llm-mode multi_agent \
+  --llm-rerank-top-k 5 \
+  --llm-weight 0.1 \
+  --llm-context-docs 3
 ```
 
-추가 런타임:
+`--llm-mode multi_agent`는 운영 오케스트레이터를 그대로 호출하지 않고, 백테스트용 feature와 문서를 `as_of_date` 기준으로 제한한 뒤 Analyst, Quant, Chartist, RiskManager 스타일의 평가를 수행합니다.
+
+### Dry-run 거래 판단
+
+- `src/runner/trade_executor.py`가 `FinalDecision`을 주문 판단으로 변환합니다.
+- `dry_run=true`이면 실제 주문 없이 simulated 주문 로그만 저장합니다.
+- 주문 로그는 기본적으로 `data/orders/<YYYY-MM-DD>/orders.jsonl`에 저장됩니다.
+- 현재 KIS 실제 주문 호출은 구현 완료 상태가 아니므로, 자동매매 실주문 시스템으로 사용하면 안 됩니다.
+
+## 데이터 구조
+
+| 경로 | 용도 |
+|---|---|
+| `data/raw/` | 뉴스, 공시, 포럼, 차트, 테마 후보 원천 데이터 |
+| `data/raw/theme_membership/` | point-in-time 테마 멤버십 데이터 |
+| `data/corpora/` | 테마별 문서 corpus |
+| `data/market_data/` | 차트/가격 데이터 |
+| `data/canonical_index/` | RAG 우선 검색 인덱스 |
+| `data/bm25/` | fallback BM25 인덱스 |
+| `data/vector_stores/` | fallback vector store |
+| `data/backtest_results/` | 백테스트 결과 JSON/CSV |
+| `data/backtest_results/llm_cache/` | LLM 평가 캐시 |
+| `data/backtest_results/llm_final/` | LLM/multi-agent 백테스트 최종 결과 |
+| `data/backtest_results/validation/` | 리스크 필터/파라미터 검증 결과 |
+| `data/orders/` | dry-run 또는 주문 실행 로그 |
+
+## 데이터 수집 파이프라인
+
+수집 파이프라인은 테마 후보 종목을 찾고, 종목별 raw 데이터를 수집한 뒤, RAG가 읽을 수 있는 Layer2/canonical index로 빌드합니다. 주요 진입점은 `scripts/theme_pipeline.py`, `scripts/run_pipeline.py`, `scripts/build_rag.py`입니다.
+
+### 전체 흐름
+
+```text
+테마 키워드
+  -> Naver theme에서 후보 종목 발견
+  -> data/raw/theme_targets/<theme_key>.jsonl 저장
+  -> news / dart / forum / chart 수집
+  -> data/raw/<source>/<theme_key>.jsonl 저장
+  -> RawLayer2Builder
+  -> data/corpora/<theme_key>/
+  -> data/market_data/<theme_key>/
+  -> data/canonical_index/<theme_key>/
+  -> RAG / 에이전트 / 백테스트에서 사용
+```
+
+### 수집 소스
+
+| 소스 | 수집기 | 필요 조건 | 저장 위치 |
+|---|---|---|---|
+| Naver News | `NaverNewsCollector` | 네트워크 | `data/raw/news/<theme_key>.jsonl` |
+| DART 공시 | `DartDisclosureCollector` | `DART_API_KEY`, `corp_code` | `data/raw/dart/<theme_key>.jsonl` |
+| Naver 종토방 | `NaverStockForumCollector` | 네트워크 | `data/raw/forum/<theme_key>.jsonl` |
+| Chart/OHLC | `NaverStockChartCollector`, optional KIS | 네트워크, 선택 KIS 키 | `data/raw/chart/<theme_key>.jsonl`, `data/market_data/<theme_key>/` |
+| Theme targets | `NaverThemeStockCollector` | Selenium/Chromium | `data/raw/theme_targets/<theme_key>.jsonl` |
+
+DART 수집은 `corp_codes.csv`에 `stock_code,corp_code` 매핑이 없거나 `DART_API_KEY`가 없으면 건너뜁니다. 차트 수집은 기본적으로 Naver 데이터를 쓰고, `KIS_APP_KEY`, `KIS_APP_SECRET`이 있으면 KIS 일봉 데이터도 보강할 수 있습니다.
+
+### 테마 수집 + RAG 빌드
+
+테마 후보를 찾고 raw 수집과 Layer2/RAG 빌드까지 실행합니다.
+
+```bash
+python scripts/theme_pipeline.py \
+  --theme AI \
+  --theme-key ai \
+  --from-date 20250101 \
+  --to-date 20251231 \
+  --theme-max-stocks 30 \
+  --enabled-sources news,dart,forum,chart \
+  --corp-codes-csv ./corp_codes.csv
+```
+
+주요 옵션:
+
+- `--theme`: Naver 테마 검색 키워드
+- `--theme-key`: 저장과 검색에 사용할 내부 키
+- `--target-mode overwrite|append`: 후보 종목 저장 방식
+- `--reuse-saved-targets`: 기존 `theme_targets`가 있으면 재사용
+- `--save-only`: 후보 종목만 저장하고 실제 수집은 건너뜀
+- `--enabled-sources`: `news,dart,forum,chart` 중 사용할 소스
+- `--update-mode append-new-stocks|overwrite`: Layer2 빌드 방식
+
+### 통합 배치 실행
+
+`scripts/run_pipeline.py`는 수집, 빌드, 분석을 한 명령으로 묶은 배치 진입점입니다.
+
+```bash
+python scripts/run_pipeline.py --theme AI --full
+```
+
+모드:
+
+- `--full`: 수집 + 빌드 + 분석
+- `--collect-and-build`: 수집 + 빌드
+- `--build-and-analyze`: 기존 raw 데이터로 빌드 + 분석
+- `--analyze-only`: 기존 canonical index로 분석만 수행
+
+운영에서는 수집 주기는 cron/systemd 같은 외부 스케줄러가 관리하고, 빌드는 수집 직후 또는 별도 주기로 실행하는 방식이 권장됩니다. 에이전트 분석 주기는 `config/watchlist.yaml`의 `schedule` 설정을 참고합니다.
+
+### RAG 자산만 다시 빌드
+
+이미 raw 데이터가 있으면 수집 없이 RAG 자산만 재생성할 수 있습니다.
+
+```bash
+python scripts/build_rag.py --theme AI --theme-key ai --mode append-new-stocks --stats
+```
+
+기존 데이터를 완전히 다시 만들고 싶을 때:
+
+```bash
+python scripts/build_rag.py --theme AI --theme-key ai --mode overwrite --stats
+```
+
+통계만 볼 때:
+
+```bash
+python scripts/build_rag.py --theme-key ai --stats-only
+```
+
+### 수집 파이프라인 주의사항
+
+- 수집은 네트워크와 외부 사이트 구조에 의존하므로 실패한 소스가 있어도 나머지 소스는 계속 진행합니다.
+- Selenium/Chromium이 필요한 테마 탐색은 로컬 브라우저/드라이버 환경에 영향을 받습니다. Docker에는 `chromium`과 `chromium-driver`가 포함됩니다.
+- `overwrite` 모드는 해당 테마 raw 파일을 다시 만드는 흐름이므로, 실험 전 기존 결과 보존이 필요한지 확인하세요.
+- raw 데이터와 canonical index는 분리되어 있습니다. raw를 수집했다고 해서 검색 품질이 바로 좋아지는 것이 아니라, Layer2/RAG 빌드가 필요합니다.
+- 백테스트는 운영 RAG와 별개로 `as_of_date` 기준 필터를 적용합니다. 과거 검증용 데이터는 `backtesting/` 도구로 다루는 것이 안전합니다.
+
+## 설치
+
+로컬 검증 환경은 Python 3.12 계열에서 사용 중이고, Docker 이미지는 Python 3.11-slim을 기준으로 합니다.
+
+```bash
+python -m venv venv
+source venv/bin/activate
+python -m pip install -r requirements.txt
+```
+
+브라우저 기반 수집 기능을 쓸 경우:
 
 ```bash
 playwright install chromium
 ```
 
-### 환경변수
+Docker 환경에서는 `Dockerfile`과 `ai_server/Dockerfile`이 `chromium`, `chromium-driver`, `scripts/` 복사를 포함합니다.
+
+## 환경 변수
 
 `.env.example`을 복사해 `.env`를 만듭니다.
 
@@ -318,7 +238,7 @@ playwright install chromium
 cp .env.example .env
 ```
 
-필수 또는 사실상 필수:
+이 프로젝트의 기본 LLM 실행 기준은 Ollama입니다.
 
 ```env
 LLM_PROVIDER=ollama
@@ -326,577 +246,274 @@ HQA_DATA_DIR=./data
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_INSTRUCT_MODEL=qwen3.5:9b
 OLLAMA_THINKING_MODEL=gemma4:e4b
-```
-
-선택:
-
-```env
 OLLAMA_THINKING_VALIDATOR_MODEL=
 OLLAMA_VISION_MODEL=llava:13b
-GOOGLE_API_KEY=
-DART_API_KEY=
-TAVILY_API_KEY=
-KIS_APP_KEY=
-KIS_APP_SECRET=
-REDIS_URL=redis://localhost:6379/0
-OCR_PROVIDER=local
-ENABLE_OCR=false
-RERANKER_PROVIDER=local
 ```
 
-참고:
+위 값이 현재 문서와 `.env.example`의 기준입니다. 다만 `.env`가 전혀 없을 때 코드 내부 fallback 기본값은 `src/agents/llm_config.py`에 정의된 `qwen2.5:14b` 계열입니다. 실제 실행 모델을 명확히 고정하려면 `.env`에 위 값을 넣어두세요.
 
-- `.env-ai`가 있으면 `.env`보다 우선
-- `LLM_PROVIDER=mock`은 smoke test용
-- `.env`가 없어도 기본값으로 부팅되지만, 실제 분석 경로는 LLM 준비가 필요
-
-### Ollama 준비
+Ollama 모델 준비:
 
 ```bash
 ollama serve
 ollama pull qwen3.5:9b
 ollama pull gemma4:e4b
+ollama pull llava:13b
 ```
 
-### 최소 실행 시나리오
+Gemini를 사용할 경우:
 
-1. 환경 점검
+```env
+LLM_PROVIDER=gemini
+GOOGLE_API_KEY=your_google_api_key_here
+# 또는
+GEMINI_API_KEY=your_google_api_key_here
+GEMINI_INSTRUCT_MODEL=gemini-2.5-flash-lite
+GEMINI_THINKING_MODEL=gemini-2.5-pro
+GEMINI_THINKING_VALIDATOR_MODEL=gemini-2.5-flash
+GEMINI_VISION_MODEL=gemini-2.5-flash
+```
+
+Smoke test만 할 때는 외부 LLM 없이 다음 값을 쓸 수 있습니다.
+
+```env
+LLM_PROVIDER=mock
+```
+
+환경 파일 로드 우선순위는 `.env-ai`가 있으면 `.env`보다 우선입니다.
+
+## 빠른 실행
+
+헬스체크:
 
 ```bash
-python3 scripts/healthcheck.py
+python scripts/healthcheck.py
 ```
 
-2. 데이터 연결 점검
+데이터 연결 확인:
 
 ```bash
-python3 scripts/verify_data_connection.py --data-dir ./data
+python scripts/verify_data_connection.py --data-dir ./data
 ```
 
-3. RAG 데모
+테마 데이터 수집 + RAG 빌드:
 
 ```bash
-python3 scripts/run_agent_demo.py --query "2차전지 시장 전망 요약" --data-dir ./data
+python scripts/theme_pipeline.py \
+  --theme AI \
+  --theme-key ai \
+  --enabled-sources news,dart,forum,chart
 ```
 
-4. 테마 주도주 선별
+기존 raw 데이터로 RAG만 다시 빌드:
 
 ```bash
-python3 scripts/run_theme_orchestrator.py --theme 2차전지 --data-dir ./data --candidate-limit 3 --top-n 2
+python scripts/build_rag.py --theme AI --theme-key ai --stats
 ```
 
-### 사용자 실행 예시
-
-대화형:
+RAG 데모:
 
 ```bash
-python3 main.py
+python scripts/run_agent_demo.py \
+  --query "2차전지 시장 전망 요약" \
+  --data-dir ./data
 ```
 
-예시 질문:
-
-- `2차전지 시장 전망 요약`
-- `에코프로 분석해줘`
-- `2차전지 주도주 찾아줘`
-- `에코프로와 에코프로비엠 비교해줘`
-
-비대화형:
+테마 주도주 선별:
 
 ```bash
-python3 main.py --stock 에코프로
-python3 main.py --quick 086520
-python3 main.py --theme 2차전지 --candidate-limit 5 --top-n 3
+python scripts/run_theme_orchestrator.py \
+  --theme 2차전지 \
+  --data-dir ./data \
+  --candidate-limit 3 \
+  --top-n 2
 ```
 
-## 9. 외부 의존성
+CLI 실행:
 
-| 외부 요소 | 용도 | 필수 여부 |
-|---|---|---|
-| Ollama | 기본 LLM 런타임 | 사실상 필수 |
-| Gemini API | Ollama 대체 LLM provider | 선택 |
-| DART API | 새 공시 수집 | 선택 |
-| Tavily API | 웹 검색 품질 개선 | 선택 |
-| DuckDuckGo | 웹 검색 fallback | 선택 |
-| Redis | 진행 상태 pub/sub, 결과 캐시 | 선택 |
-| KIS API | 실시간 시세/주문 | 선택 |
-| Playwright | 포럼/브라우저 기반 수집 | 선택 |
-| Selenium | 수집 런타임 | 선택 |
-| Chroma | 일부 레거시 RAG 경로 | 선택/레거시 |
+```bash
+python main.py
+python main.py --stock 삼성전자
+python main.py --quick 005930
+python main.py --theme 2차전지 --candidate-limit 5 --top-n 3
+python main.py --price 005930
+```
 
-## 10. 현재 상태 진단
+AI 서버 실행:
 
-### 실제 실행 근거가 있는 것
+```bash
+uvicorn ai_server.app:app --host 0.0.0.0 --port 8001
+```
 
-- `scripts/healthcheck.py` 동작 확인
-- `scripts/verify_data_connection.py` 동작 확인
-- `scripts/run_agent_demo.py`로 retrieval 기반 응답 생성 확인
-- `main.py --theme 2차전지` 실행 확인
-- 대화형 `2차전지 주도주 찾아줘` 라우팅 확인
-- `ai_server/app.py` 기반 `/health`, `/chat`, `/analyze` 경로 검증 이력 존재
+Docker Compose:
 
-### 현재 미완성 또는 주의가 필요한 것
+```bash
+docker compose up --build
+```
 
-- RAG 계층이 `src/rag`와 `src/retrieval`로 나뉘어 있어 구조적으로 겹침
-- `src/rag/retriever.py` 기반 레거시 Chroma 경로가 완전히 제거된 상태는 아님
-- Chartist는 데이터 길이가 부족하면 중립/관망으로 폴백
-- 현재 실데이터 검증은 `2차전지` 중심
-- Docker/Compose 경로는 존재하지만 로컬 CLI 경로만큼 충분히 검증되었다고 보기는 어려움
-- Docker는 Python 3.11, 로컬 검증은 3.12로 버전 차이 존재
+## API
 
-### README와 코드 사이에서 문서화가 필요한 불일치
+기본 AI 서버 포트는 `8001`입니다. `PORT` 환경변수로 런타임 표시 포트를 바꿀 수 있습니다.
 
-- 로컬 검증 기준 Python과 Dockerfile Python 버전이 다름
-- `docker-compose.yml`에는 `api(8000)`와 `ai(8001)` 두 서비스가 정의돼 있지만, 현재 주요 검증 경로는 `ai_server`와 CLI 중심
-- RAG는 주 경로가 canonical retriever이지만 레거시/폴백 계층이 함께 존재
-
-## 11. 협업 시 필요한 정보
-
-### 백엔드가 알아야 할 것
-
-- 이 브랜치는 독립 실행형 AI 분석 모듈로 볼 수 있음
-- CLI 또는 HTTP API로 호출 가능
-- 핵심 API 진입점은 `ai_server/app.py`
-
-### 프론트엔드가 알아야 할 것
-
-- UI는 이 브랜치가 제공하지 않음
-- 이 브랜치는 텍스트/JSON 응답을 반환하는 분석 엔진 역할
-- 프론트엔드는 결과를 렌더링하는 소비자
-
-### 입력 형식
-
-- 자연어 질문
-- 종목명 또는 종목코드
-- 테마명
-
-### 출력 형식
-
-- 일반 답변 텍스트
-- 단일 종목 분석 결과
-- 테마 주도주 순위
-- JSON 구조 결과
-
-### API 경로
+### 상태
 
 - `GET /health`
+
+### 채팅/질의
+
 - `POST /chat`
-- `POST /analyze`
-- `GET /analyze/{task_id}`
-- `POST /theme/analyze`
-- `GET /theme/analyze/{task_id}`
 - `POST /suggest`
 
-### 연결 시 주의사항
+### 종목 분석
 
-- `.env`와 Ollama 준비가 선행돼야 함
-- `data/`가 실제로 존재해야 함
-- 테마 데이터 품질에 따라 결과가 크게 달라질 수 있음
+- `POST /analyze`
+- `GET /analyze/{task_id}`
 
-## 12. 백엔드 연동 인터페이스
-
-이 브랜치를 백엔드에서 붙일 때는 `ai_server/app.py`를 기준으로 보면 됩니다.  
-기본 포트는 `8001`이며, `docker-compose.yml`에서는 `ai` 서비스가 이 서버를 담당합니다.
-
-### 12.1 서버 기본 정보
-
-- 기본 서버: `uvicorn ai_server.app:app --host 0.0.0.0 --port 8001`
-- 기본 포트: `8001`
-- 기본 응답 형식: JSON
-- 비동기 분석 경로: `POST /analyze` → `GET /analyze/{task_id}`
-
-### 12.2 `GET /health`
-
-서버와 기본 런타임 상태를 확인합니다.
-
-요청:
-
-```http
-GET /health
-```
-
-응답 예시:
+예시:
 
 ```json
 {
-  "status": "ok",
-  "service": "HQA AI Server",
-  "port": 8001,
-  "data_dir": "/app/data",
-  "data_dir_exists": true,
-  "env_loaded": true,
-  "env_file": "/app/.env",
-  "env_message": ".env 파일을 로드했습니다."
-}
-```
-
-설명:
-
-- `data_dir_exists=false`면 데이터 마운트 또는 경로 설정 문제 가능성이 큼
-- `env_loaded=false`면 `.env` 또는 `.env-ai` 누락 가능성이 있음
-
-### 12.3 `POST /chat`
-
-사용자 자연어 질의를 바로 보내고, `SupervisorAgent`가 적절한 흐름으로 처리한 결과를 간략 응답으로 받습니다.
-
-요청 바디:
-
-```json
-{
-  "message": "2차전지 주도주 찾아줘",
-  "session_id": "optional-session-id"
-}
-```
-
-응답 예시:
-
-```json
-{
-  "message": "1. 에코프로(086520) - leader_score 65, 보유/관망, 확신도 60%",
-  "intent": null,
-  "stocks": []
-}
-```
-
-필드 설명:
-
-- `message`: 사용자에게 바로 보여줄 수 있는 요약 응답
-- `intent`: 현재 구현상 항상 풍부하게 채워진다고 보장할 수 없음
-- `stocks`: 종목 추출 결과가 있으면 들어가지만, 테마 질문은 빈 배열일 수 있음
-
-주의:
-
-- `POST /chat`은 내부적으로 다양한 실행 흐름을 탈 수 있어서, 응답은 요약 텍스트 중심입니다.
-- 백엔드가 구조화된 분석 결과를 안정적으로 원하면 `/analyze` 또는 별도 전용 API 확장을 고려하는 것이 좋습니다.
-
-### 12.4 `POST /analyze`
-
-단일 종목 분석을 비동기로 시작합니다.  
-즉시 `task_id`와 `pending` 상태를 반환하고, 실제 결과는 `GET /analyze/{task_id}`로 조회합니다.
-
-요청 바디:
-
-```json
-{
-  "task_id": "demo-quick-086520",
-  "stock_name": "에코프로",
-  "stock_code": "086520",
-  "mode": "quick",
+  "task_id": "demo-full-005930",
+  "stock_name": "삼성전자",
+  "stock_code": "005930",
+  "mode": "full",
   "max_retries": 1
 }
 ```
 
-필드 설명:
+### 테마 분석
 
-- `task_id`: 클라이언트가 생성해서 보내는 추적용 ID
-- `stock_name`: 종목명
-- `stock_code`: 6자리 종목코드
-- `mode`: `"quick"` 또는 `"full"`
-- `max_retries`: full 분석 재시도 횟수
+- `POST /theme/analyze`
+- `GET /theme/analyze/{task_id}`
 
-즉시 응답 예시:
+예시:
 
 ```json
 {
-  "task_id": "demo-quick-086520",
-  "status": "pending"
-}
-```
-
-`mode` 설명:
-
-- `quick`
-  - `Quant + Chartist` 중심 빠른 분석
-- `full`
-  - `Analyst + Quant + Chartist + RiskManager` 전체 분석
-
-### 12.5 `GET /analyze/{task_id}`
-
-비동기 분석 결과를 조회합니다.
-
-요청:
-
-```http
-GET /analyze/demo-quick-086520
-```
-
-빠른 분석 응답 예시:
-
-```json
-{
-  "task_id": "demo-quick-086520",
-  "mode": "quick",
-  "stock": {
-    "name": "에코프로",
-    "code": "086520"
-  },
-  "scores": {
-    "quant": {
-      "total_score": 15,
-      "grade": "F",
-      "opinion": "..."
-    },
-    "chartist": {
-      "total_score": 50,
-      "signal": "중립"
-    }
-  },
-  "completed_at": "2026-04-07T12:00:00",
-  "status": "completed"
-}
-```
-
-전체 분석 응답 예시:
-
-```json
-{
-  "task_id": "demo-full-086520",
-  "mode": "full",
-  "stock": {
-    "name": "에코프로",
-    "code": "086520"
-  },
-  "scores": {
-    "analyst": {
-      "total_score": 42,
-      "hegemony_grade": "B"
-    },
-    "quant": {
-      "total_score": 15,
-      "grade": "F"
-    },
-    "chartist": {
-      "total_score": 50,
-      "signal": "중립"
-    }
-  },
-  "final_decision": {
-    "action": "보유/관망",
-    "confidence": 60,
-    "risk_level": "보통",
-    "total_score": 50,
-    "summary": "..."
-  },
-  "research_quality": null,
-  "quality_warnings": [],
-  "completed_at": "2026-04-07T12:00:00",
-  "status": "completed"
-}
-```
-
-실패 예시:
-
-```json
-{
-  "task_id": "demo-full-086520",
-  "status": "failed",
-  "error": "..."
-}
-```
-
-404 예시:
-
-```json
-{
-  "detail": "작업을 찾을 수 없습니다: demo-full-086520"
-}
-```
-
-### 12.6 `POST /theme/analyze`
-
-테마 전체를 스캔해서 후보 종목을 자동 추출하고, 멀티 에이전트 평가 후 주도주를 선별합니다.
-
-요청 바디:
-
-```json
-{
-  "task_id": "theme-2nd-battery-001",
-  "theme": "2차전지",
-  "theme_key": "",
+  "task_id": "theme-ai-001",
+  "theme": "AI",
+  "theme_key": "ai",
   "candidate_limit": 5,
   "top_n": 3
 }
 ```
 
-필드 설명:
+### 백테스트 결과 저장/조회
 
-- `task_id`: 클라이언트 추적용 ID
-- `theme`: 사용자용 테마명
-- `theme_key`: 선택값. 비우면 내부에서 정규화
-- `candidate_limit`: 평가할 후보 수
-- `top_n`: 최종 반환할 주도주 수
+- `POST /backtest/results`
+- `GET /backtest/results/{task_id}`
 
-즉시 응답 예시:
+`leader_backtest.py`에서 `--submit-url http://127.0.0.1:8001/backtest/results`를 주면 결과를 API 서버 저장소로 제출할 수 있습니다.
 
-```json
-{
-  "task_id": "theme-2nd-battery-001",
-  "status": "pending",
-  "mode": "theme"
-}
-```
+### Dry-run 거래 판단
 
-### 12.7 `GET /theme/analyze/{task_id}`
+- `GET /trading/status`
+- `POST /trading/decision/preview`
+- `POST /trading/decision/execute`
+- `GET /trading/orders`
 
-테마 주도주 선별 결과를 조회합니다. 내부 저장소는 `GET /analyze/{task_id}`와 공유합니다.
-
-응답 예시:
+예시:
 
 ```json
 {
-  "task_id": "theme-2nd-battery-001",
-  "mode": "theme",
-  "theme": "2차전지",
-  "theme_key": "2차전지",
-  "candidate_limit": 5,
-  "top_n": 3,
-  "candidate_count": 5,
-  "evaluated_count": 5,
-  "leaders": [
-    {
-      "stock_name": "에코프로",
-      "stock_code": "086520",
-      "leader_score": 65,
-      "seed_score": 100,
-      "action": "보유/관망",
-      "confidence": 60,
-      "summary": "...",
-      "risk_level": "보통",
-      "key_catalysts": ["..."],
-      "risk_factors": ["..."]
-    }
-  ],
-  "summary": "1. 에코프로(086520) - leader_score 65, 보유/관망, 확신도 60%",
-  "completed_at": "2026-04-07T12:00:00",
-  "status": "completed"
+  "stock_name": "삼성전자",
+  "stock_code": "005930",
+  "current_price": 100000,
+  "dry_run_override": true,
+  "trading_enabled_override": true,
+  "final_decision": {
+    "total_score": 88,
+    "action": "매수",
+    "action_code": "BUY",
+    "confidence": 72,
+    "risk_level": "낮음",
+    "risk_level_code": "LOW",
+    "summary": "dry-run 테스트용 매수 판단"
+  }
 }
 ```
 
-실패 예시:
+`dry_run_override=true`이면 실제 주문을 보내지 않고 simulated 로그만 남깁니다.
 
-```json
-{
-  "task_id": "theme-2nd-battery-001",
-  "mode": "theme",
-  "theme": "2차전지",
-  "theme_key": "",
-  "status": "failed",
-  "error": "테마 분석 실패",
-  "completed_at": "2026-04-07T12:00:00"
-}
-```
+## 백테스트 예시
 
-### 12.8 `POST /suggest`
-
-사용자 질문이 현재 시스템 범위 안에서 답변 가능한지 판단하고, 필요하면 교정된 질문이나 대안 질문을 제안합니다.
-
-요청 바디:
-
-```json
-{
-  "query": "2차전지 관련해서 뭐 물어볼 수 있어?"
-}
-```
-
-응답 예시:
-
-```json
-{
-  "original_query": "2차전지 관련해서 뭐 물어볼 수 있어?",
-  "is_answerable": true,
-  "corrected_query": null,
-  "suggestions": [
-    "2차전지 주도주 찾아줘",
-    "2차전지 산업 전망 요약해줘",
-    "에코프로 분석해줘"
-  ],
-  "reason": "현재 기능 범위 안의 질문으로 변환 가능"
-}
-```
-
-### 12.9 Redis 진행 상태 이벤트
-
-`/analyze`는 선택적으로 Redis pub/sub을 사용할 수 있습니다.
-
-- 채널: `hqa:progress:{task_id}`
-- 결과 키: `hqa:result:{task_id}`
-
-진행 이벤트 예시:
-
-```json
-{
-  "task_id": "demo-full-086520",
-  "agent": "quant",
-  "status": "started",
-  "message": "재무 분석 중...",
-  "progress": 0.1,
-  "timestamp": "2026-04-07T12:00:00"
-}
-```
-
-설명:
-
-- Redis가 없으면 서버는 인메모리 결과 저장으로 폴백합니다.
-- 따라서 Redis는 필수는 아니지만, 백엔드에서 실시간 진행 상태를 받고 싶다면 유용합니다.
-
-### 12.10 백엔드 연동 권장 방식
-
-권장 패턴은 아래와 같습니다.
-
-1. 단순 챗 응답이 필요하면 `POST /chat`
-2. 구조화된 종목 분석이 필요하면 `POST /analyze`
-3. 구조화된 테마 주도주 선별이 필요하면 `POST /theme/analyze`
-4. 결과 polling은 `GET /analyze/{task_id}` 또는 `GET /theme/analyze/{task_id}`
-5. 질문 입력 가이드는 `POST /suggest`
-
-현재 주의할 점:
-
-- `POST /chat`은 요약 텍스트 중심 응답이고, 구조화된 결과 보장은 약합니다.
-- 테마 주도주 데이터가 필요하면 `POST /theme/analyze` 경로를 사용하는 것이 가장 안정적입니다.
-
-## 13. README 추천 목차
-
-이 문서는 아래 순서를 기준으로 유지하는 것이 좋습니다.
-
-1. 브랜치 소개
-2. 브랜치 존재 이유
-3. 책임 범위
-4. 백엔드/프론트엔드와의 경계
-5. 프로젝트 구조
-6. 데이터 구조
-7. 에이전트 동작 방식
-8. 설치 방법
-9. 환경변수
-10. 실행 방법
-11. 사용 예시
-12. API/협업 포인트
-13. 현재 상태 진단
-14. 한계 / TODO
-
-## 14. 반드시 문서화해야 할 핵심 포인트
-
-- 수집 파이프라인은 유지 대상이라는 점
-- canonical index 우선, BM25/vector fallback이라는 retrieval 규칙
-- 이 브랜치는 UI가 아니라 AI 실행/검색 브랜치라는 점
-- `main.py`와 `ai_server/app.py`가 주요 진입점이라는 점
-- `.env` 최소값과 Ollama 준비 방법
-- raw 데이터와 retrieval 자산은 구분해서 봐야 한다는 점
-- 테마 주도주 선별은 사용자가 종목을 직접 지정하지 않아도 자동 후보 추출로 동작한다는 점
-- 현재 확실히 검증된 실행 경로와 아직 불안정한 영역을 구분해서 봐야 한다는 점
-- RAG 계층 중복은 현재 허용된 상태지만 장기적으로 정리 대상이라는 점
-
-## 15. 빠른 시작
+AI 테마 point-in-time 멤버십 생성:
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate
-python3 -m pip install -r requirements.txt
-cp .env.example .env
-ollama serve
-python3 scripts/healthcheck.py
-python3 scripts/verify_data_connection.py --data-dir ./data
-python3 scripts/run_theme_orchestrator.py --theme 2차전지 --data-dir ./data --candidate-limit 3 --top-n 2
+python backtesting/build_theme_membership.py \
+  --data-dir data \
+  --theme-key ai \
+  --theme-name AI
 ```
 
-## 16. 참고
+AI 테마 리더 백테스트:
 
-이 브랜치는 “데이터가 존재하는 상태”와 “에이전트가 그 데이터를 실제로 활용하는 상태”를 연결하는 브랜치입니다.  
-문서화와 협업의 핵심은 파일 목록보다 실행 경로, 데이터 흐름, 책임 경계, 검증 상태를 명확히 공유하는 데 있습니다.
+```bash
+python backtesting/leader_backtest.py \
+  --theme AI \
+  --theme-key ai \
+  --from-date 20250101 \
+  --to-date 20251231 \
+  --rebalance W \
+  --top-n 5 \
+  --hold-days 5 \
+  --min-market-breadth-pct 40 \
+  --max-volatility-20d 1.2 \
+  --max-return-5d 0.35 \
+  --max-return-20d 0.9 \
+  --trailing-stop-pct 15 \
+  --task-id bt-ai-2025-w-top5-h5
+```
+
+여러 조합 비교:
+
+```bash
+python backtesting/sweep_leader_backtest.py \
+  --theme AI \
+  --theme-key ai \
+  --rebalances W \
+  --top-ns 3,5,7 \
+  --hold-days 3,5,7 \
+  --min-market-breadth-pct 40 \
+  --max-volatility-20d 1.2 \
+  --max-return-5d 0.35 \
+  --max-return-20d 0.9 \
+  --trailing-stop-pct 15 \
+  --output-dir data/backtest_results/validation/risk_sweep_w_top357_h357
+```
+
+## 테스트
+
+핵심 런타임 테스트:
+
+```bash
+python -m pytest tests/test_trade_api.py tests/test_trade_executor.py tests/test_llm_config.py -q
+```
+
+백테스팅/RAG 테스트:
+
+```bash
+python -m pytest tests/test_backtesting_temporal_rag.py tests/test_canonical_rag.py -q
+```
+
+전체 테스트:
+
+```bash
+python -m pytest
+```
+
+## 주의사항
+
+- 현재 데이터 자산은 `2차전지` RAG/테마 데모 자산과 `AI` 백테스트 산출물이 함께 존재합니다.
+- `data/backtest_results/`는 결과 파일이 많아 diff가 매우 큽니다.
+- `config/watchlist.yaml`의 `trading.enabled=false`, `dry_run=true`가 안전 기본값입니다.
+- `TradeExecutor`의 KIS 주문 함수는 아직 실제 주문 구현이 완료되지 않았습니다.
+- Redis는 있으면 progress/result 저장에 사용하고, 없으면 인메모리 fallback으로 동작합니다.
+- Docker의 `api` 서비스는 8000, `ai` 서비스는 8001을 사용합니다. 주요 AI API 진입점은 `ai_server/app.py`입니다.
+
+## 문서 안내
+
+- 백테스팅 상세: `backtesting/README.md`
+- 백테스트 결과 해석: `data/backtest_results/README.md`
+- 검증 결과 해석: `data/backtest_results/validation/README.md`
+- LLM 최종 실험 결과: `data/backtest_results/llm_final/README.md`
