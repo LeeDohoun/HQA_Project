@@ -388,6 +388,59 @@ def test_leader_backtest_writes_backend_ready_payload(tmp_path):
     assert llm_result["leaders"][0]["stock_code"] == "000002"
     assert llm_result["positions"][0]["llm_score"] == 95
     assert llm_result["positions"][0]["deterministic_leader_score"] > 0
+    assert llm_result["prediction_model"] == "llm_temporal_theme_leader_v1"
+    assert llm_result["predictions"][0]["prediction_model"] == "llm_temporal_theme_leader_v1"
+
+    class FakeMultiAgentScorer:
+        def metadata(self):
+            return {
+                "provider": "fake",
+                "model_name": "unit-test",
+                "mode": "multi_agent",
+                "agents": ["analyst", "quant", "chartist", "risk_manager"],
+            }
+
+        def score(self, *, as_of_ymd, row):
+            code = row["stock_code"]
+            score = 96 if code == "000002" else 10
+            return {
+                "llm_score": score,
+                "llm_confidence": 91,
+                "llm_theme_fit_score": 88,
+                "llm_catalyst_score": 84,
+                "llm_risk_score": 30,
+                "llm_summary": f"fake multi-agent score for {code}",
+                "llm_mode": "multi_agent",
+                "llm_agent_scores": {
+                    "analyst": {"total_score": score},
+                    "quant": {"total_score": score},
+                    "chartist": {"total_score": score},
+                    "risk_manager": {"final_score": score},
+                },
+            }
+
+    multi_agent_result = run_leader_backtest(
+        data_dir=tmp_path,
+        theme="AI",
+        theme_key="ai",
+        from_date="20250228",
+        to_date="20250331",
+        top_n=1,
+        hold_days=5,
+        min_history_days=20,
+        llm_rerank_top_k=2,
+        llm_weight=1.0,
+        llm_mode="multi_agent",
+        llm_scorer=FakeMultiAgentScorer(),
+        output_dir=tmp_path / "results",
+        task_id="bt-test-multi-agent",
+    )
+
+    assert multi_agent_result["strategy"]["llm_rerank"]["mode"] == "multi_agent"
+    assert multi_agent_result["strategy"]["prediction_model"] == "multi_agent_temporal_theme_leader_v1"
+    assert multi_agent_result["prediction_model"] == "multi_agent_temporal_theme_leader_v1"
+    assert multi_agent_result["positions"][0]["llm_mode"] == "multi_agent"
+    assert "risk_manager" in multi_agent_result["positions"][0]["llm_agent_scores"]
 
     take_profit_result = run_leader_backtest(
         data_dir=tmp_path,

@@ -1,0 +1,752 @@
+{
+  "task_id": "bt-ai-2026jan02-w-top3-h5-tr15-multi-agent-v2-hybrid02-qwen14b",
+  "mode": "backtest",
+  "result_type": "backtest",
+  "status": "completed",
+  "theme": "AI",
+  "theme_key": "ai",
+  "prediction_model": "multi_agent_temporal_theme_leader_v1",
+  "period": {
+    "from_date": "2026-01-01",
+    "to_date": "2026-01-02",
+    "rebalance": "W",
+    "rebalance_count": 1,
+    "hold_days": 5
+  },
+  "strategy": {
+    "name": "ai_theme_leader_momentum_v1",
+    "top_n": 3,
+    "min_history_days": 150,
+    "transaction_cost_bps": 15.0,
+    "risk_filters": {
+      "min_avg_trading_value": 0.0,
+      "max_volatility_20d": 1.2,
+      "max_return_5d": 0.35,
+      "max_return_20d": 0.9,
+      "min_trend_150d": -1.0,
+      "min_market_breadth_pct": 40.0
+    },
+    "exit_rules": {
+      "stop_loss_pct": 0.0,
+      "take_profit_pct": 0.0,
+      "trailing_stop_pct": 15.0
+    },
+    "llm_rerank": {
+      "enabled": true,
+      "top_k": 5,
+      "weight": 0.2,
+      "context_docs": 3,
+      "mode": "multi_agent"
+    },
+    "selection_inputs": [
+      "20d momentum",
+      "60d momentum",
+      "150d trend",
+      "20d volume ratio",
+      "news/dart/forum document signal",
+      "20d volatility penalty",
+      "point-in-time LLM theme leader score"
+    ],
+    "prediction_model": "multi_agent_temporal_theme_leader_v1"
+  },
+  "metrics": {
+    "rebalance_count": 1,
+    "risk_off_count": 0,
+    "traded_rebalance_count": 1,
+    "position_count": 3,
+    "total_return_pct": -6.16,
+    "benchmark_return_pct": -4.34,
+    "excess_return_pct": -1.81,
+    "cagr_pct": -100.0,
+    "benchmark_cagr_pct": -100.0,
+    "mdd_pct": 0.0,
+    "benchmark_mdd_pct": 0.0,
+    "sharpe": 0.0,
+    "avg_period_return_pct": -6.16,
+    "avg_benchmark_period_return_pct": -4.34,
+    "win_rate_pct": 0.0,
+    "prediction_hit_rate_pct": 0.0,
+    "avg_position_return_pct": -5.86,
+    "median_position_return_pct": -5.89
+  },
+  "leaders": [
+    {
+      "stock_name": "삼성전기",
+      "stock_code": "009150",
+      "selection_count": 1,
+      "avg_leader_score": 69.0,
+      "avg_realized_return_pct": -1.48,
+      "win_rate_pct": 0.0
+    },
+    {
+      "stock_name": "고영",
+      "stock_code": "098460",
+      "selection_count": 1,
+      "avg_leader_score": 68.0,
+      "avg_realized_return_pct": -5.89,
+      "win_rate_pct": 0.0
+    },
+    {
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "selection_count": 1,
+      "avg_leader_score": 72.0,
+      "avg_realized_return_pct": -10.2,
+      "win_rate_pct": 0.0
+    }
+  ],
+  "predictions": [
+    {
+      "as_of_date": "2026-01-02",
+      "entry_date": "2026-01-02",
+      "exit_date": "2026-01-09",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "rank": 1,
+      "leader_score": 72,
+      "predicted_return_pct": 41.57,
+      "target_price": 381537.91,
+      "realized_return_pct": -10.2,
+      "prediction_model": "multi_agent_temporal_theme_leader_v1",
+      "deterministic_leader_score": 73,
+      "llm_score": 68,
+      "llm_confidence": 75,
+      "llm_theme_fit_score": 85,
+      "llm_catalyst_score": 70,
+      "llm_risk_score": 48,
+      "llm_summary": "로보티즈는 AI 테마에서 주도주로서의 가능성이 있지만, 리스크 요인을 고려하면 보수적인 접근이 필요합니다. 중장기적으로 성장 잠재력은 높으나, 단기적 위험 요소를 감안해 현재 포지션 유지가 적절할 것으로 판단됩니다.",
+      "llm_agent_scores": {
+        "analyst": {
+          "total_score": 74,
+          "theme_fit_score": 85,
+          "moat_score": 67,
+          "growth_score": 72,
+          "catalyst_score": 70,
+          "risk_score": 34,
+          "confidence": 80,
+          "summary": "로보티즈는 AI 테마에서 주도주로서의 가능성이 높습니다. 엔비디아와의 파트너십, 긍정적인 증권가 분석 및 트럼프 행정부의 로봇 산업 지원 정책 등이 주요 촉매 요인으로 작용하고 있습니다. 그러나 경제 불확실성과 시장 성장 둔화 위험도 고려해야 합니다."
+        },
+        "quant": {
+          "total_score": 52,
+          "valuation_score": 45,
+          "profitability_score": 48,
+          "growth_score": 62,
+          "stability_score": 53,
+          "risk_score": 70,
+          "confidence": 50,
+          "summary": "로보티즈의 기초체력과 재무 리스크를 보수적으로 평가하였습니다. 회사의 성장 잠재력은 높으나, 외부 환경 변화에 따른 위험 요인들이 존재합니다."
+        },
+        "chartist": {
+          "trend_score": 100,
+          "momentum_score": 90,
+          "volatility_score": 62,
+          "volume_score": 43,
+          "total_score": 80,
+          "confidence": 80,
+          "summary": "trend=100, momentum=90, volatility=62, volume=43"
+        },
+        "risk_manager": {
+          "final_score": 68,
+          "raw_final_score": 67,
+          "calibrated_final_score": 68,
+          "confidence": 75,
+          "risk_score": 48,
+          "action": "HOLD",
+          "summary": "로보티즈는 AI 테마에서 주도주로서의 가능성이 있지만, 리스크 요인을 고려하면 보수적인 접근이 필요합니다. 중장기적으로 성장 잠재력은 높으나, 단기적 위험 요소를 감안해 현재 포지션 유지가 적절할 것으로 판단됩니다."
+        }
+      },
+      "llm_mode": "multi_agent"
+    },
+    {
+      "as_of_date": "2026-01-02",
+      "entry_date": "2026-01-02",
+      "exit_date": "2026-01-09",
+      "stock_name": "삼성전기",
+      "stock_code": "009150",
+      "rank": 2,
+      "leader_score": 69,
+      "predicted_return_pct": 24.52,
+      "target_price": 336203.81,
+      "realized_return_pct": -1.48,
+      "prediction_model": "multi_agent_temporal_theme_leader_v1",
+      "deterministic_leader_score": 68,
+      "llm_score": 71,
+      "llm_confidence": 81,
+      "llm_theme_fit_score": 85,
+      "llm_catalyst_score": 80,
+      "llm_risk_score": 45,
+      "llm_summary": "삼성전기는 AI 테마에서 주도주로 적합한 성장 가능성을 보여줍니다. 실적 개선과 AI 업황 호조가 주요 촉매 요인입니다.",
+      "llm_agent_scores": {
+        "analyst": {
+          "total_score": 82,
+          "theme_fit_score": 85,
+          "moat_score": 72,
+          "growth_score": 91,
+          "catalyst_score": 80,
+          "risk_score": 30,
+          "confidence": 84,
+          "summary": "삼성전기는 AI 테마에서 주도주로 평가받을 만한 강점을 보여줍니다. 실적 개선 전망과 AI 수요 확대에 따른 성장 가능성이 높습니다."
+        },
+        "quant": {
+          "total_score": 53,
+          "valuation_score": 45,
+          "profitability_score": 48,
+          "growth_score": 62,
+          "stability_score": 57,
+          "risk_score": 60,
+          "confidence": 35,
+          "summary": "삼성전기는 AI 업황에 따른 성장 전망이 긍정적이지만, 현재까지의 재무 정보와 뉴스 분석을 바탕으로 보수적으로 평가하였습니다. 실적 개선과 성장 가능성이 있지만, 아직 구체적인 재무 데이터가 부족하여 확신을 가질 수 없습니다."
+        },
+        "chartist": {
+          "trend_score": 86,
+          "momentum_score": 76,
+          "volatility_score": 81,
+          "volume_score": 63,
+          "total_score": 78,
+          "confidence": 80,
+          "summary": "trend=86, momentum=76, volatility=81, volume=63"
+        },
+        "risk_manager": {
+          "final_score": 71,
+          "raw_final_score": 72,
+          "calibrated_final_score": 71,
+          "confidence": 81,
+          "risk_score": 45,
+          "action": "BUY",
+          "summary": "삼성전기는 AI 테마에서 주도주로 적합한 성장 가능성을 보여줍니다. 실적 개선과 AI 업황 호조가 주요 촉매 요인입니다."
+        }
+      },
+      "llm_mode": "multi_agent"
+    },
+    {
+      "as_of_date": "2026-01-02",
+      "entry_date": "2026-01-02",
+      "exit_date": "2026-01-09",
+      "stock_name": "고영",
+      "stock_code": "098460",
+      "rank": 3,
+      "leader_score": 68,
+      "predicted_return_pct": 36.54,
+      "target_price": 37071.07,
+      "realized_return_pct": -5.89,
+      "prediction_model": "multi_agent_temporal_theme_leader_v1",
+      "deterministic_leader_score": 68,
+      "llm_score": 66,
+      "llm_confidence": 75,
+      "llm_theme_fit_score": 85,
+      "llm_catalyst_score": 70,
+      "llm_risk_score": 40,
+      "llm_summary": "고영 주식은 AI 테마와 잘 부합하며, 기술적 분석에서도 긍정적인 신호가 확인됩니다. 그러나 재무 리스크 및 과열 우려로 인해 단기적으로는 보유 전략을 추천합니다.",
+      "llm_agent_scores": {
+        "analyst": {
+          "total_score": 74,
+          "theme_fit_score": 85,
+          "moat_score": 72,
+          "growth_score": 64,
+          "catalyst_score": 70,
+          "risk_score": 35,
+          "confidence": 80,
+          "summary": "고영 주식은 AI 테마와 잘 맞아떨어지는 것으로 보이며, 최근의 긍정적인 시장 반응과 고유한 경쟁력이 확인되었습니다. 그러나 과거 몇 개월 동안의 변동성과 함께 장기적으로 봤을 때의 성장 가능성에 대한 불확실성이 존재합니다."
+        },
+        "quant": {
+          "total_score": 47,
+          "valuation_score": 45,
+          "profitability_score": 42,
+          "growth_score": 53,
+          "stability_score": 48,
+          "risk_score": 70,
+          "confidence": 60,
+          "summary": "고영의 기초체력은 보수적으로 평가되며, 재무 리스크는 상대적으로 높게 나타납니다. 회사의 실적과 이익률에 대한 정보가 부족하거나 악화될 가능성이 있어 보이며, 성장성은 중립 수준입니다. 또한, 주식 가격 변동성과 관련된 위험 요소들이 존재합니다."
+        },
+        "chartist": {
+          "trend_score": 95,
+          "momentum_score": 87,
+          "volatility_score": 56,
+          "volume_score": 64,
+          "total_score": 80,
+          "confidence": 80,
+          "summary": "trend=95, momentum=87, volatility=56, volume=64"
+        },
+        "risk_manager": {
+          "final_score": 66,
+          "raw_final_score": 65,
+          "calibrated_final_score": 66,
+          "confidence": 75,
+          "risk_score": 40,
+          "action": "HOLD",
+          "summary": "고영 주식은 AI 테마와 잘 부합하며, 기술적 분석에서도 긍정적인 신호가 확인됩니다. 그러나 재무 리스크 및 과열 우려로 인해 단기적으로는 보유 전략을 추천합니다."
+        }
+      },
+      "llm_mode": "multi_agent"
+    }
+  ],
+  "positions": [
+    {
+      "as_of_date": "2026-01-02",
+      "entry_date": "2026-01-02",
+      "exit_date": "2026-01-09",
+      "planned_exit_date": "2026-01-09",
+      "exit_reason": "holding_period_exit",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "entry_price": 269500.0,
+      "exit_price": 242000.0,
+      "return_5d": -0.03405017921146958,
+      "return_20d": 0.07800000000000007,
+      "return_60d": 0.6770379589296827,
+      "trend_150d": 0.8680683918669132,
+      "volatility_20d": 0.6943539774155104,
+      "volume_ratio_20d": 0.3979602060285092,
+      "avg_trading_value_20d": 264234501750.0,
+      "doc_signal": 12.269195078067977,
+      "doc_counts": {
+        "dart": 103,
+        "forum": 0,
+        "news": 82
+      },
+      "return_60d_rank": 0.8478260869565217,
+      "return_20d_rank": 0.6086956521739131,
+      "trend_150d_rank": 0.9782608695652174,
+      "volume_rank": 0.1956521739130435,
+      "doc_rank": 0.9565217391304348,
+      "low_vol_rank": 0.391304347826087,
+      "leader_score": 72,
+      "target_price": 381537.91,
+      "deterministic_leader_score": 73,
+      "llm_score": 68,
+      "llm_confidence": 75,
+      "llm_theme_fit_score": 85,
+      "llm_catalyst_score": 70,
+      "llm_risk_score": 48,
+      "llm_summary": "로보티즈는 AI 테마에서 주도주로서의 가능성이 있지만, 리스크 요인을 고려하면 보수적인 접근이 필요합니다. 중장기적으로 성장 잠재력은 높으나, 단기적 위험 요소를 감안해 현재 포지션 유지가 적절할 것으로 판단됩니다.",
+      "llm_catalysts": [
+        "엔비디아와의 파트너십",
+        "증권가에서 긍정적인 분석"
+      ],
+      "llm_risks": [
+        "로봇 산업의 경기 둔화 가능성",
+        "글로벌 경제 불확실성"
+      ],
+      "llm_agent_scores": {
+        "analyst": {
+          "total_score": 74,
+          "theme_fit_score": 85,
+          "moat_score": 67,
+          "growth_score": 72,
+          "catalyst_score": 70,
+          "risk_score": 34,
+          "confidence": 80,
+          "summary": "로보티즈는 AI 테마에서 주도주로서의 가능성이 높습니다. 엔비디아와의 파트너십, 긍정적인 증권가 분석 및 트럼프 행정부의 로봇 산업 지원 정책 등이 주요 촉매 요인으로 작용하고 있습니다. 그러나 경제 불확실성과 시장 성장 둔화 위험도 고려해야 합니다."
+        },
+        "quant": {
+          "total_score": 52,
+          "valuation_score": 45,
+          "profitability_score": 48,
+          "growth_score": 62,
+          "stability_score": 53,
+          "risk_score": 70,
+          "confidence": 50,
+          "summary": "로보티즈의 기초체력과 재무 리스크를 보수적으로 평가하였습니다. 회사의 성장 잠재력은 높으나, 외부 환경 변화에 따른 위험 요인들이 존재합니다."
+        },
+        "chartist": {
+          "trend_score": 100,
+          "momentum_score": 90,
+          "volatility_score": 62,
+          "volume_score": 43,
+          "total_score": 80,
+          "confidence": 80,
+          "summary": "trend=100, momentum=90, volatility=62, volume=43"
+        },
+        "risk_manager": {
+          "final_score": 68,
+          "raw_final_score": 67,
+          "calibrated_final_score": 68,
+          "confidence": 75,
+          "risk_score": 48,
+          "action": "HOLD",
+          "summary": "로보티즈는 AI 테마에서 주도주로서의 가능성이 있지만, 리스크 요인을 고려하면 보수적인 접근이 필요합니다. 중장기적으로 성장 잠재력은 높으나, 단기적 위험 요소를 감안해 현재 포지션 유지가 적절할 것으로 판단됩니다."
+        }
+      },
+      "cache_hit": true,
+      "llm_model": "qwen2.5:14b",
+      "llm_provider": "ollama",
+      "llm_prompt_version": "temporal_theme_leader_multi_agent_v2",
+      "llm_context_docs": 3,
+      "llm_mode": "multi_agent",
+      "rank": 1,
+      "weight": 0.333333,
+      "realized_return_pct": -10.2,
+      "predicted_return_pct": 41.57
+    },
+    {
+      "as_of_date": "2026-01-02",
+      "entry_date": "2026-01-02",
+      "exit_date": "2026-01-09",
+      "planned_exit_date": "2026-01-09",
+      "exit_reason": "holding_period_exit",
+      "stock_name": "삼성전기",
+      "stock_code": "009150",
+      "entry_price": 270000.0,
+      "exit_price": 266000.0,
+      "return_5d": 0.07355864811133195,
+      "return_20d": 0.0714285714285714,
+      "return_60d": 0.39534883720930236,
+      "trend_150d": 0.4544018099222522,
+      "volatility_20d": 0.3467295113877952,
+      "volume_ratio_20d": 1.4104134821543852,
+      "avg_trading_value_20d": 132779530150.0,
+      "doc_signal": 8.503617643771998,
+      "doc_counts": {
+        "dart": 6,
+        "forum": 0,
+        "news": 104
+      },
+      "return_60d_rank": 0.7391304347826086,
+      "return_20d_rank": 0.5434782608695652,
+      "trend_150d_rank": 0.782608695652174,
+      "volume_rank": 0.6086956521739131,
+      "doc_rank": 0.4782608695652174,
+      "low_vol_rank": 0.9347826086956522,
+      "leader_score": 69,
+      "target_price": 336203.81,
+      "deterministic_leader_score": 68,
+      "llm_score": 71,
+      "llm_confidence": 81,
+      "llm_theme_fit_score": 85,
+      "llm_catalyst_score": 80,
+      "llm_risk_score": 45,
+      "llm_summary": "삼성전기는 AI 테마에서 주도주로 적합한 성장 가능성을 보여줍니다. 실적 개선과 AI 업황 호조가 주요 촉매 요인입니다.",
+      "llm_catalysts": [
+        "AI 업황 호조",
+        "4분기 실적 상향"
+      ],
+      "llm_risks": [
+        "기술 변화의 위험",
+        "AI 업황에 따른 시장 변동성"
+      ],
+      "llm_agent_scores": {
+        "analyst": {
+          "total_score": 82,
+          "theme_fit_score": 85,
+          "moat_score": 72,
+          "growth_score": 91,
+          "catalyst_score": 80,
+          "risk_score": 30,
+          "confidence": 84,
+          "summary": "삼성전기는 AI 테마에서 주도주로 평가받을 만한 강점을 보여줍니다. 실적 개선 전망과 AI 수요 확대에 따른 성장 가능성이 높습니다."
+        },
+        "quant": {
+          "total_score": 53,
+          "valuation_score": 45,
+          "profitability_score": 48,
+          "growth_score": 62,
+          "stability_score": 57,
+          "risk_score": 60,
+          "confidence": 35,
+          "summary": "삼성전기는 AI 업황에 따른 성장 전망이 긍정적이지만, 현재까지의 재무 정보와 뉴스 분석을 바탕으로 보수적으로 평가하였습니다. 실적 개선과 성장 가능성이 있지만, 아직 구체적인 재무 데이터가 부족하여 확신을 가질 수 없습니다."
+        },
+        "chartist": {
+          "trend_score": 86,
+          "momentum_score": 76,
+          "volatility_score": 81,
+          "volume_score": 63,
+          "total_score": 78,
+          "confidence": 80,
+          "summary": "trend=86, momentum=76, volatility=81, volume=63"
+        },
+        "risk_manager": {
+          "final_score": 71,
+          "raw_final_score": 72,
+          "calibrated_final_score": 71,
+          "confidence": 81,
+          "risk_score": 45,
+          "action": "BUY",
+          "summary": "삼성전기는 AI 테마에서 주도주로 적합한 성장 가능성을 보여줍니다. 실적 개선과 AI 업황 호조가 주요 촉매 요인입니다."
+        }
+      },
+      "cache_hit": true,
+      "llm_model": "qwen2.5:14b",
+      "llm_provider": "ollama",
+      "llm_prompt_version": "temporal_theme_leader_multi_agent_v2",
+      "llm_context_docs": 3,
+      "llm_mode": "multi_agent",
+      "rank": 2,
+      "weight": 0.333333,
+      "realized_return_pct": -1.48,
+      "predicted_return_pct": 24.52
+    },
+    {
+      "as_of_date": "2026-01-02",
+      "entry_date": "2026-01-02",
+      "exit_date": "2026-01-09",
+      "planned_exit_date": "2026-01-09",
+      "exit_reason": "holding_period_exit",
+      "stock_name": "고영",
+      "stock_code": "098460",
+      "entry_price": 27150.0,
+      "exit_price": 25550.0,
+      "return_5d": 0.14799154334038045,
+      "return_20d": -0.021621621621621623,
+      "return_60d": 0.8788927335640138,
+      "trend_150d": 0.5627998004528185,
+      "volatility_20d": 0.7996270683812885,
+      "volume_ratio_20d": 1.4543880972114385,
+      "avg_trading_value_20d": 176647891090.0,
+      "doc_signal": 10.187516964366885,
+      "doc_counts": {
+        "dart": 19,
+        "forum": 0,
+        "news": 114
+      },
+      "return_60d_rank": 0.9782608695652174,
+      "return_20d_rank": 0.2608695652173913,
+      "trend_150d_rank": 0.8695652173913043,
+      "volume_rank": 0.6304347826086957,
+      "doc_rank": 0.8478260869565217,
+      "low_vol_rank": 0.2391304347826087,
+      "leader_score": 68,
+      "target_price": 37071.07,
+      "deterministic_leader_score": 68,
+      "llm_score": 66,
+      "llm_confidence": 75,
+      "llm_theme_fit_score": 85,
+      "llm_catalyst_score": 70,
+      "llm_risk_score": 40,
+      "llm_summary": "고영 주식은 AI 테마와 잘 부합하며, 기술적 분석에서도 긍정적인 신호가 확인됩니다. 그러나 재무 리스크 및 과열 우려로 인해 단기적으로는 보유 전략을 추천합니다.",
+      "llm_catalysts": [
+        "AI 의료로봇 기대감",
+        "기관 투자자의 강한 매수세"
+      ],
+      "llm_risks": [
+        "실적이 악화될 가능성",
+        "최근의 급등으로 인한 과열 우려"
+      ],
+      "llm_agent_scores": {
+        "analyst": {
+          "total_score": 74,
+          "theme_fit_score": 85,
+          "moat_score": 72,
+          "growth_score": 64,
+          "catalyst_score": 70,
+          "risk_score": 35,
+          "confidence": 80,
+          "summary": "고영 주식은 AI 테마와 잘 맞아떨어지는 것으로 보이며, 최근의 긍정적인 시장 반응과 고유한 경쟁력이 확인되었습니다. 그러나 과거 몇 개월 동안의 변동성과 함께 장기적으로 봤을 때의 성장 가능성에 대한 불확실성이 존재합니다."
+        },
+        "quant": {
+          "total_score": 47,
+          "valuation_score": 45,
+          "profitability_score": 42,
+          "growth_score": 53,
+          "stability_score": 48,
+          "risk_score": 70,
+          "confidence": 60,
+          "summary": "고영의 기초체력은 보수적으로 평가되며, 재무 리스크는 상대적으로 높게 나타납니다. 회사의 실적과 이익률에 대한 정보가 부족하거나 악화될 가능성이 있어 보이며, 성장성은 중립 수준입니다. 또한, 주식 가격 변동성과 관련된 위험 요소들이 존재합니다."
+        },
+        "chartist": {
+          "trend_score": 95,
+          "momentum_score": 87,
+          "volatility_score": 56,
+          "volume_score": 64,
+          "total_score": 80,
+          "confidence": 80,
+          "summary": "trend=95, momentum=87, volatility=56, volume=64"
+        },
+        "risk_manager": {
+          "final_score": 66,
+          "raw_final_score": 65,
+          "calibrated_final_score": 66,
+          "confidence": 75,
+          "risk_score": 40,
+          "action": "HOLD",
+          "summary": "고영 주식은 AI 테마와 잘 부합하며, 기술적 분석에서도 긍정적인 신호가 확인됩니다. 그러나 재무 리스크 및 과열 우려로 인해 단기적으로는 보유 전략을 추천합니다."
+        }
+      },
+      "cache_hit": true,
+      "llm_model": "qwen2.5:14b",
+      "llm_provider": "ollama",
+      "llm_prompt_version": "temporal_theme_leader_multi_agent_v2",
+      "llm_context_docs": 3,
+      "llm_mode": "multi_agent",
+      "rank": 3,
+      "weight": 0.333333,
+      "realized_return_pct": -5.89,
+      "predicted_return_pct": 36.54
+    }
+  ],
+  "trades": [
+    {
+      "date": "2026-01-02",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "side": "BUY",
+      "price": 269500.0,
+      "weight": 0.333333,
+      "reason": "rank 1 leader_score 72"
+    },
+    {
+      "date": "2026-01-09",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "side": "SELL",
+      "price": 242000.0,
+      "weight": 0.333333,
+      "realized_return_pct": -10.2,
+      "reason": "holding_period_exit"
+    },
+    {
+      "date": "2026-01-02",
+      "stock_name": "삼성전기",
+      "stock_code": "009150",
+      "side": "BUY",
+      "price": 270000.0,
+      "weight": 0.333333,
+      "reason": "rank 2 leader_score 69"
+    },
+    {
+      "date": "2026-01-09",
+      "stock_name": "삼성전기",
+      "stock_code": "009150",
+      "side": "SELL",
+      "price": 266000.0,
+      "weight": 0.333333,
+      "realized_return_pct": -1.48,
+      "reason": "holding_period_exit"
+    },
+    {
+      "date": "2026-01-02",
+      "stock_name": "고영",
+      "stock_code": "098460",
+      "side": "BUY",
+      "price": 27150.0,
+      "weight": 0.333333,
+      "reason": "rank 3 leader_score 68"
+    },
+    {
+      "date": "2026-01-09",
+      "stock_name": "고영",
+      "stock_code": "098460",
+      "side": "SELL",
+      "price": 25550.0,
+      "weight": 0.333333,
+      "realized_return_pct": -5.89,
+      "reason": "holding_period_exit"
+    }
+  ],
+  "periods": [
+    {
+      "as_of_date": "2026-01-02",
+      "entry_date": "2026-01-02",
+      "exit_date": "2026-01-09",
+      "selected_count": 3,
+      "active_target_count": 48,
+      "eligible_count": 46,
+      "risk_eligible_count": 44,
+      "risk_reject_count": 2,
+      "market_breadth_pct": 78.26,
+      "portfolio_return_pct": -6.16,
+      "benchmark_return_pct": -4.34,
+      "excess_return_pct": -1.81,
+      "top_symbols": [
+        {
+          "stock_name": "로보티즈",
+          "stock_code": "108490",
+          "leader_score": 72,
+          "realized_return_pct": -10.2,
+          "deterministic_leader_score": 73,
+          "llm_score": 68,
+          "llm_confidence": 75
+        },
+        {
+          "stock_name": "삼성전기",
+          "stock_code": "009150",
+          "leader_score": 69,
+          "realized_return_pct": -1.48,
+          "deterministic_leader_score": 68,
+          "llm_score": 71,
+          "llm_confidence": 81
+        },
+        {
+          "stock_name": "고영",
+          "stock_code": "098460",
+          "leader_score": 68,
+          "realized_return_pct": -5.89,
+          "deterministic_leader_score": 68,
+          "llm_score": 66,
+          "llm_confidence": 75
+        }
+      ]
+    }
+  ],
+  "equity_curve": [
+    {
+      "date": "2026-01-09",
+      "equity": 0.938404,
+      "benchmark_equity": 0.956554,
+      "period_return_pct": -6.16,
+      "benchmark_return_pct": -4.34
+    }
+  ],
+  "risk": {
+    "filters": {
+      "min_avg_trading_value": 0.0,
+      "max_volatility_20d": 1.2,
+      "max_return_5d": 0.35,
+      "max_return_20d": 0.9,
+      "min_trend_150d": -1.0,
+      "min_market_breadth_pct": 40.0
+    },
+    "reject_counts": {
+      "overheated_5d": 1,
+      "high_volatility": 1
+    }
+  },
+  "execution": {
+    "exit_rules": {
+      "stop_loss_pct": 0.0,
+      "take_profit_pct": 0.0,
+      "trailing_stop_pct": 15.0
+    },
+    "exit_counts": {
+      "holding_period_exit": 3
+    },
+    "same_day_ohlc_policy": "stop_or_trailing_stop_before_take_profit"
+  },
+  "artifacts": {
+    "result_json": "data/backtest_results/llm_final/qwen14b_2026jan02_multi_agent_v2_top5_h5_tr15/bt-ai-2026jan02-w-top3-h5-tr15-multi-agent-v2-hybrid02-qwen14b.json"
+  },
+  "warnings": [
+    "future returns are used only for evaluation after each as_of_date signal.",
+    "selection uses point-in-time Analyst/Quant/Chartist/RiskManager reranking over a deterministic prefilter.",
+    "theme_membership may be inferred from local corpus evidence unless an official historical source is supplied."
+  ],
+  "metadata": {
+    "generated_at": "2026-05-04T14:08:13.371050",
+    "data_dir": "data",
+    "target_count": 50,
+    "membership_count": 50,
+    "point_in_time_universe": true,
+    "membership_sources": [
+      "local_corpus_inferred"
+    ],
+    "price_stock_count": 50,
+    "document_signal_count": 30497,
+    "llm": {
+      "data_dir": "/Users/leedohoun/Desktop/HQA_Project/data",
+      "theme": "AI",
+      "theme_key": "ai",
+      "model_name": "qwen2.5:14b",
+      "provider": "ollama",
+      "context_docs": 3,
+      "cache_path": "/Users/leedohoun/Desktop/HQA_Project/data/backtest_results/llm_cache/ai/qwen2.5_14b.multi_agent.jsonl",
+      "prompt_version": "temporal_theme_leader_multi_agent_v2",
+      "mode": "multi_agent",
+      "thinking_model_name": "qwen2.5:14b",
+      "agents": [
+        "analyst",
+        "quant",
+        "chartist",
+        "risk_manager"
+      ]
+    }
+  }
+}

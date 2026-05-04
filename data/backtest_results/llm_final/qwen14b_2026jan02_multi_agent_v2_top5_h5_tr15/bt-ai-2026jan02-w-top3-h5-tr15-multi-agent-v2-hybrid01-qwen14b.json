@@ -1,0 +1,752 @@
+{
+  "task_id": "bt-ai-2026jan02-w-top3-h5-tr15-multi-agent-v2-hybrid01-qwen14b",
+  "mode": "backtest",
+  "result_type": "backtest",
+  "status": "completed",
+  "theme": "AI",
+  "theme_key": "ai",
+  "prediction_model": "multi_agent_temporal_theme_leader_v1",
+  "period": {
+    "from_date": "2026-01-01",
+    "to_date": "2026-01-02",
+    "rebalance": "W",
+    "rebalance_count": 1,
+    "hold_days": 5
+  },
+  "strategy": {
+    "name": "ai_theme_leader_momentum_v1",
+    "top_n": 3,
+    "min_history_days": 150,
+    "transaction_cost_bps": 15.0,
+    "risk_filters": {
+      "min_avg_trading_value": 0.0,
+      "max_volatility_20d": 1.2,
+      "max_return_5d": 0.35,
+      "max_return_20d": 0.9,
+      "min_trend_150d": -1.0,
+      "min_market_breadth_pct": 40.0
+    },
+    "exit_rules": {
+      "stop_loss_pct": 0.0,
+      "take_profit_pct": 0.0,
+      "trailing_stop_pct": 15.0
+    },
+    "llm_rerank": {
+      "enabled": true,
+      "top_k": 5,
+      "weight": 0.1,
+      "context_docs": 3,
+      "mode": "multi_agent"
+    },
+    "selection_inputs": [
+      "20d momentum",
+      "60d momentum",
+      "150d trend",
+      "20d volume ratio",
+      "news/dart/forum document signal",
+      "20d volatility penalty",
+      "point-in-time LLM theme leader score"
+    ],
+    "prediction_model": "multi_agent_temporal_theme_leader_v1"
+  },
+  "metrics": {
+    "rebalance_count": 1,
+    "risk_off_count": 0,
+    "traded_rebalance_count": 1,
+    "position_count": 3,
+    "total_return_pct": 6.63,
+    "benchmark_return_pct": -4.34,
+    "excess_return_pct": 10.97,
+    "cagr_pct": 1520763330335.69,
+    "benchmark_cagr_pct": -100.0,
+    "mdd_pct": 0.0,
+    "benchmark_mdd_pct": 0.0,
+    "sharpe": 0.0,
+    "avg_period_return_pct": 6.63,
+    "avg_benchmark_period_return_pct": -4.34,
+    "win_rate_pct": 100.0,
+    "prediction_hit_rate_pct": 66.67,
+    "avg_position_return_pct": 6.93,
+    "median_position_return_pct": 3.55
+  },
+  "leaders": [
+    {
+      "stock_name": "더블유에스아이",
+      "stock_code": "299170",
+      "selection_count": 1,
+      "avg_leader_score": 69.0,
+      "avg_realized_return_pct": 27.44,
+      "win_rate_pct": 100.0
+    },
+    {
+      "stock_name": "에이팩트",
+      "stock_code": "200470",
+      "selection_count": 1,
+      "avg_leader_score": 69.0,
+      "avg_realized_return_pct": 3.55,
+      "win_rate_pct": 100.0
+    },
+    {
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "selection_count": 1,
+      "avg_leader_score": 72.0,
+      "avg_realized_return_pct": -10.2,
+      "win_rate_pct": 0.0
+    }
+  ],
+  "predictions": [
+    {
+      "as_of_date": "2026-01-02",
+      "entry_date": "2026-01-02",
+      "exit_date": "2026-01-09",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "rank": 1,
+      "leader_score": 72,
+      "predicted_return_pct": 41.57,
+      "target_price": 381537.91,
+      "realized_return_pct": -10.2,
+      "prediction_model": "multi_agent_temporal_theme_leader_v1",
+      "deterministic_leader_score": 73,
+      "llm_score": 68,
+      "llm_confidence": 75,
+      "llm_theme_fit_score": 85,
+      "llm_catalyst_score": 70,
+      "llm_risk_score": 48,
+      "llm_summary": "로보티즈는 AI 테마에서 주도주로서의 가능성이 있지만, 리스크 요인을 고려하면 보수적인 접근이 필요합니다. 중장기적으로 성장 잠재력은 높으나, 단기적 위험 요소를 감안해 현재 포지션 유지가 적절할 것으로 판단됩니다.",
+      "llm_agent_scores": {
+        "analyst": {
+          "total_score": 74,
+          "theme_fit_score": 85,
+          "moat_score": 67,
+          "growth_score": 72,
+          "catalyst_score": 70,
+          "risk_score": 34,
+          "confidence": 80,
+          "summary": "로보티즈는 AI 테마에서 주도주로서의 가능성이 높습니다. 엔비디아와의 파트너십, 긍정적인 증권가 분석 및 트럼프 행정부의 로봇 산업 지원 정책 등이 주요 촉매 요인으로 작용하고 있습니다. 그러나 경제 불확실성과 시장 성장 둔화 위험도 고려해야 합니다."
+        },
+        "quant": {
+          "total_score": 52,
+          "valuation_score": 45,
+          "profitability_score": 48,
+          "growth_score": 62,
+          "stability_score": 53,
+          "risk_score": 70,
+          "confidence": 50,
+          "summary": "로보티즈의 기초체력과 재무 리스크를 보수적으로 평가하였습니다. 회사의 성장 잠재력은 높으나, 외부 환경 변화에 따른 위험 요인들이 존재합니다."
+        },
+        "chartist": {
+          "trend_score": 100,
+          "momentum_score": 90,
+          "volatility_score": 62,
+          "volume_score": 43,
+          "total_score": 80,
+          "confidence": 80,
+          "summary": "trend=100, momentum=90, volatility=62, volume=43"
+        },
+        "risk_manager": {
+          "final_score": 68,
+          "raw_final_score": 67,
+          "calibrated_final_score": 68,
+          "confidence": 75,
+          "risk_score": 48,
+          "action": "HOLD",
+          "summary": "로보티즈는 AI 테마에서 주도주로서의 가능성이 있지만, 리스크 요인을 고려하면 보수적인 접근이 필요합니다. 중장기적으로 성장 잠재력은 높으나, 단기적 위험 요소를 감안해 현재 포지션 유지가 적절할 것으로 판단됩니다."
+        }
+      },
+      "llm_mode": "multi_agent"
+    },
+    {
+      "as_of_date": "2026-01-02",
+      "entry_date": "2026-01-02",
+      "exit_date": "2026-01-09",
+      "stock_name": "더블유에스아이",
+      "stock_code": "299170",
+      "rank": 2,
+      "leader_score": 69,
+      "predicted_return_pct": 39.59,
+      "target_price": 4145.9,
+      "realized_return_pct": 27.44,
+      "prediction_model": "multi_agent_temporal_theme_leader_v1",
+      "deterministic_leader_score": 70,
+      "llm_score": 59,
+      "llm_confidence": 36,
+      "llm_theme_fit_score": 35,
+      "llm_catalyst_score": 70,
+      "llm_risk_score": 74,
+      "llm_summary": "더블유에스아이는 AI 테마와의 직접적인 연관성이 떨어짐에도 불구하고, 의료기기 및 제조 분야에서 지속적으로 성장하고 있습니다. 최근 인수한 자회사를 통해 사업 영역을 확장하였으나, 이는 동시에 리스크 요인도 증가시키고 있습니다. 투자자들은 높은 변동성과 위험성을 감안해야 하며, 단기적인 추세와 모멘텀이 우호적이지만 장기적으로 AI 테마에 대한 직접적 연관성이 부족하다는 점을 고려해야 합니다.",
+      "llm_agent_scores": {
+        "analyst": {
+          "total_score": 52,
+          "theme_fit_score": 35,
+          "moat_score": 45,
+          "growth_score": 65,
+          "catalyst_score": 70,
+          "risk_score": 80,
+          "confidence": 40,
+          "summary": "더블유에스아이는 AI 테마와의 직접적인 연관성이 떨어지지만, 의료기기 및 제조 분야에서 지속적인 성장 전략을 보여주고 있습니다. 최근 인수한 자회사를 통해 사업 영역을 확장하고 있으며, 이는 장기적으로 긍정적일 수 있지만, 현재까지의 AI 테마와의 직접적인 연관성은 낮습니다."
+        },
+        "quant": {
+          "total_score": 49,
+          "valuation_score": 45,
+          "profitability_score": 45,
+          "growth_score": 55,
+          "stability_score": 50,
+          "risk_score": 70,
+          "confidence": 30,
+          "summary": "더블유에스아이는 의료기기 및 의약품 유통 사업을 주로 하며, 최근 인트로바이오파마를 인수하여 연구개발과 제조 영역으로 사업을 확장하고 있습니다. 그러나 기업의 재무 건전성과 수익성에 대한 직접적인 정보는 부족하며, 회사가 새로운 분야로 진출함에 따라 리스크 요인이 증가할 가능성이 있습니다."
+        },
+        "chartist": {
+          "trend_score": 94,
+          "momentum_score": 100,
+          "volatility_score": 54,
+          "volume_score": 60,
+          "total_score": 83,
+          "confidence": 80,
+          "summary": "trend=94, momentum=100, volatility=54, volume=60"
+        },
+        "risk_manager": {
+          "final_score": 59,
+          "raw_final_score": 58,
+          "calibrated_final_score": 59,
+          "confidence": 36,
+          "risk_score": 74,
+          "action": "HOLD",
+          "summary": "더블유에스아이는 AI 테마와의 직접적인 연관성이 떨어짐에도 불구하고, 의료기기 및 제조 분야에서 지속적으로 성장하고 있습니다. 최근 인수한 자회사를 통해 사업 영역을 확장하였으나, 이는 동시에 리스크 요인도 증가시키고 있습니다. 투자자들은 높은 변동성과 위험성을 감안해야 하며, 단기적인 추세와 모멘텀이 우호적이지만 장기적으로 AI 테마에 대한 직접적 연관성이 부족하다는 점을 고려해야 합니다."
+        }
+      },
+      "llm_mode": "multi_agent"
+    },
+    {
+      "as_of_date": "2026-01-02",
+      "entry_date": "2026-01-02",
+      "exit_date": "2026-01-09",
+      "stock_name": "에이팩트",
+      "stock_code": "200470",
+      "rank": 3,
+      "leader_score": 69,
+      "predicted_return_pct": 47.9,
+      "target_price": 10412.37,
+      "realized_return_pct": 3.55,
+      "prediction_model": "multi_agent_temporal_theme_leader_v1",
+      "deterministic_leader_score": 71,
+      "llm_score": 50,
+      "llm_confidence": 35,
+      "llm_theme_fit_score": 30,
+      "llm_catalyst_score": 35,
+      "llm_risk_score": 70,
+      "llm_summary": "에이팩트는 AI 테마와의 직접적인 연관성이 약하며 실적이 부진한 상태임에도 불구하고, 주가의 단기적인 상승세가 지속되고 있습니다. 그러나 분석 및 양적 평가에서 위험 요인과 불안정한 재무상태를 확인할 수 있어 과열 리스크와 장기 성장 가능성에 대한 우려가 존재합니다.",
+      "llm_agent_scores": {
+        "analyst": {
+          "total_score": 34,
+          "theme_fit_score": 30,
+          "moat_score": 25,
+          "growth_score": 45,
+          "catalyst_score": 35,
+          "risk_score": 70,
+          "confidence": 20,
+          "summary": "에이팩트는 AI 테마와의 직접적인 연관성이 떨어지고, 최근 실적은 부진한 경향을 보이고 있습니다. 비용 절감으로 영업손실이 감소하였으나 매출 감소가 지속되고 있어 성장 가능성은 제한적입니다. 또한, 이연법인세자산 증가와 같은 위험 요인이 존재합니다."
+        },
+        "quant": {
+          "total_score": 43,
+          "valuation_score": 45,
+          "profitability_score": 38,
+          "growth_score": 42,
+          "stability_score": 47,
+          "risk_score": 69,
+          "confidence": 0,
+          "summary": "에이팩트의 재무상태는 불안정한 것으로 보입니다. 매출 감소와 영업적자 지속, 이연법인세 자산 증가 등으로 인해 수익성과 안정성이 악화되었습니다. 또한, 비용 절감에도 불구하고 손실이 줄지 않았으며, 유형자산손상차손 발생은 추가적인 재무 리스크를 나타냅니다."
+        },
+        "chartist": {
+          "trend_score": 100,
+          "momentum_score": 100,
+          "volatility_score": 60,
+          "volume_score": 47,
+          "total_score": 84,
+          "confidence": 80,
+          "summary": "trend=100, momentum=100, volatility=60, volume=47"
+        },
+        "risk_manager": {
+          "final_score": 50,
+          "raw_final_score": 47,
+          "calibrated_final_score": 50,
+          "confidence": 35,
+          "risk_score": 70,
+          "action": "HOLD",
+          "summary": "에이팩트는 AI 테마와의 직접적인 연관성이 약하며 실적이 부진한 상태임에도 불구하고, 주가의 단기적인 상승세가 지속되고 있습니다. 그러나 분석 및 양적 평가에서 위험 요인과 불안정한 재무상태를 확인할 수 있어 과열 리스크와 장기 성장 가능성에 대한 우려가 존재합니다."
+        }
+      },
+      "llm_mode": "multi_agent"
+    }
+  ],
+  "positions": [
+    {
+      "as_of_date": "2026-01-02",
+      "entry_date": "2026-01-02",
+      "exit_date": "2026-01-09",
+      "planned_exit_date": "2026-01-09",
+      "exit_reason": "holding_period_exit",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "entry_price": 269500.0,
+      "exit_price": 242000.0,
+      "return_5d": -0.03405017921146958,
+      "return_20d": 0.07800000000000007,
+      "return_60d": 0.6770379589296827,
+      "trend_150d": 0.8680683918669132,
+      "volatility_20d": 0.6943539774155104,
+      "volume_ratio_20d": 0.3979602060285092,
+      "avg_trading_value_20d": 264234501750.0,
+      "doc_signal": 12.269195078067977,
+      "doc_counts": {
+        "dart": 103,
+        "forum": 0,
+        "news": 82
+      },
+      "return_60d_rank": 0.8478260869565217,
+      "return_20d_rank": 0.6086956521739131,
+      "trend_150d_rank": 0.9782608695652174,
+      "volume_rank": 0.1956521739130435,
+      "doc_rank": 0.9565217391304348,
+      "low_vol_rank": 0.391304347826087,
+      "leader_score": 72,
+      "target_price": 381537.91,
+      "deterministic_leader_score": 73,
+      "llm_score": 68,
+      "llm_confidence": 75,
+      "llm_theme_fit_score": 85,
+      "llm_catalyst_score": 70,
+      "llm_risk_score": 48,
+      "llm_summary": "로보티즈는 AI 테마에서 주도주로서의 가능성이 있지만, 리스크 요인을 고려하면 보수적인 접근이 필요합니다. 중장기적으로 성장 잠재력은 높으나, 단기적 위험 요소를 감안해 현재 포지션 유지가 적절할 것으로 판단됩니다.",
+      "llm_catalysts": [
+        "엔비디아와의 파트너십",
+        "증권가에서 긍정적인 분석"
+      ],
+      "llm_risks": [
+        "로봇 산업의 경기 둔화 가능성",
+        "글로벌 경제 불확실성"
+      ],
+      "llm_agent_scores": {
+        "analyst": {
+          "total_score": 74,
+          "theme_fit_score": 85,
+          "moat_score": 67,
+          "growth_score": 72,
+          "catalyst_score": 70,
+          "risk_score": 34,
+          "confidence": 80,
+          "summary": "로보티즈는 AI 테마에서 주도주로서의 가능성이 높습니다. 엔비디아와의 파트너십, 긍정적인 증권가 분석 및 트럼프 행정부의 로봇 산업 지원 정책 등이 주요 촉매 요인으로 작용하고 있습니다. 그러나 경제 불확실성과 시장 성장 둔화 위험도 고려해야 합니다."
+        },
+        "quant": {
+          "total_score": 52,
+          "valuation_score": 45,
+          "profitability_score": 48,
+          "growth_score": 62,
+          "stability_score": 53,
+          "risk_score": 70,
+          "confidence": 50,
+          "summary": "로보티즈의 기초체력과 재무 리스크를 보수적으로 평가하였습니다. 회사의 성장 잠재력은 높으나, 외부 환경 변화에 따른 위험 요인들이 존재합니다."
+        },
+        "chartist": {
+          "trend_score": 100,
+          "momentum_score": 90,
+          "volatility_score": 62,
+          "volume_score": 43,
+          "total_score": 80,
+          "confidence": 80,
+          "summary": "trend=100, momentum=90, volatility=62, volume=43"
+        },
+        "risk_manager": {
+          "final_score": 68,
+          "raw_final_score": 67,
+          "calibrated_final_score": 68,
+          "confidence": 75,
+          "risk_score": 48,
+          "action": "HOLD",
+          "summary": "로보티즈는 AI 테마에서 주도주로서의 가능성이 있지만, 리스크 요인을 고려하면 보수적인 접근이 필요합니다. 중장기적으로 성장 잠재력은 높으나, 단기적 위험 요소를 감안해 현재 포지션 유지가 적절할 것으로 판단됩니다."
+        }
+      },
+      "cache_hit": true,
+      "llm_model": "qwen2.5:14b",
+      "llm_provider": "ollama",
+      "llm_prompt_version": "temporal_theme_leader_multi_agent_v2",
+      "llm_context_docs": 3,
+      "llm_mode": "multi_agent",
+      "rank": 1,
+      "weight": 0.333333,
+      "realized_return_pct": -10.2,
+      "predicted_return_pct": 41.57
+    },
+    {
+      "as_of_date": "2026-01-02",
+      "entry_date": "2026-01-02",
+      "exit_date": "2026-01-09",
+      "planned_exit_date": "2026-01-09",
+      "exit_reason": "holding_period_exit",
+      "stock_name": "더블유에스아이",
+      "stock_code": "299170",
+      "entry_price": 2970.0,
+      "exit_price": 3785.0,
+      "return_5d": 0.25316455696202533,
+      "return_20d": 0.1578947368421053,
+      "return_60d": 0.6884593519044913,
+      "trend_150d": 0.5522053161725509,
+      "volatility_20d": 0.8440516015757489,
+      "volume_ratio_20d": 1.26351739277498,
+      "avg_trading_value_20d": 7836618230.75,
+      "doc_signal": 8.652695729923131,
+      "doc_counts": {
+        "dart": 46,
+        "forum": 0,
+        "news": 10
+      },
+      "return_60d_rank": 0.8695652173913043,
+      "return_20d_rank": 0.7608695652173914,
+      "trend_150d_rank": 0.8478260869565217,
+      "volume_rank": 0.5652173913043478,
+      "doc_rank": 0.5652173913043478,
+      "low_vol_rank": 0.17391304347826086,
+      "leader_score": 69,
+      "target_price": 4145.9,
+      "deterministic_leader_score": 70,
+      "llm_score": 59,
+      "llm_confidence": 36,
+      "llm_theme_fit_score": 35,
+      "llm_catalyst_score": 70,
+      "llm_risk_score": 74,
+      "llm_summary": "더블유에스아이는 AI 테마와의 직접적인 연관성이 떨어짐에도 불구하고, 의료기기 및 제조 분야에서 지속적으로 성장하고 있습니다. 최근 인수한 자회사를 통해 사업 영역을 확장하였으나, 이는 동시에 리스크 요인도 증가시키고 있습니다. 투자자들은 높은 변동성과 위험성을 감안해야 하며, 단기적인 추세와 모멘텀이 우호적이지만 장기적으로 AI 테마에 대한 직접적 연관성이 부족하다는 점을 고려해야 합니다.",
+      "llm_catalysts": [
+        "의료기기 및 제조 분야에서 지속적인 성장 전략",
+        "자회사 인수를 통한 사업 영역 확대"
+      ],
+      "llm_risks": [
+        "AI 테마와의 직접적인 관련성이 떨어짐",
+        "높은 변동성과 위험"
+      ],
+      "llm_agent_scores": {
+        "analyst": {
+          "total_score": 52,
+          "theme_fit_score": 35,
+          "moat_score": 45,
+          "growth_score": 65,
+          "catalyst_score": 70,
+          "risk_score": 80,
+          "confidence": 40,
+          "summary": "더블유에스아이는 AI 테마와의 직접적인 연관성이 떨어지지만, 의료기기 및 제조 분야에서 지속적인 성장 전략을 보여주고 있습니다. 최근 인수한 자회사를 통해 사업 영역을 확장하고 있으며, 이는 장기적으로 긍정적일 수 있지만, 현재까지의 AI 테마와의 직접적인 연관성은 낮습니다."
+        },
+        "quant": {
+          "total_score": 49,
+          "valuation_score": 45,
+          "profitability_score": 45,
+          "growth_score": 55,
+          "stability_score": 50,
+          "risk_score": 70,
+          "confidence": 30,
+          "summary": "더블유에스아이는 의료기기 및 의약품 유통 사업을 주로 하며, 최근 인트로바이오파마를 인수하여 연구개발과 제조 영역으로 사업을 확장하고 있습니다. 그러나 기업의 재무 건전성과 수익성에 대한 직접적인 정보는 부족하며, 회사가 새로운 분야로 진출함에 따라 리스크 요인이 증가할 가능성이 있습니다."
+        },
+        "chartist": {
+          "trend_score": 94,
+          "momentum_score": 100,
+          "volatility_score": 54,
+          "volume_score": 60,
+          "total_score": 83,
+          "confidence": 80,
+          "summary": "trend=94, momentum=100, volatility=54, volume=60"
+        },
+        "risk_manager": {
+          "final_score": 59,
+          "raw_final_score": 58,
+          "calibrated_final_score": 59,
+          "confidence": 36,
+          "risk_score": 74,
+          "action": "HOLD",
+          "summary": "더블유에스아이는 AI 테마와의 직접적인 연관성이 떨어짐에도 불구하고, 의료기기 및 제조 분야에서 지속적으로 성장하고 있습니다. 최근 인수한 자회사를 통해 사업 영역을 확장하였으나, 이는 동시에 리스크 요인도 증가시키고 있습니다. 투자자들은 높은 변동성과 위험성을 감안해야 하며, 단기적인 추세와 모멘텀이 우호적이지만 장기적으로 AI 테마에 대한 직접적 연관성이 부족하다는 점을 고려해야 합니다."
+        }
+      },
+      "cache_hit": true,
+      "llm_model": "qwen2.5:14b",
+      "llm_provider": "ollama",
+      "llm_prompt_version": "temporal_theme_leader_multi_agent_v2",
+      "llm_context_docs": 3,
+      "llm_mode": "multi_agent",
+      "rank": 2,
+      "weight": 0.333333,
+      "realized_return_pct": 27.44,
+      "predicted_return_pct": 39.59
+    },
+    {
+      "as_of_date": "2026-01-02",
+      "entry_date": "2026-01-02",
+      "exit_date": "2026-01-09",
+      "planned_exit_date": "2026-01-09",
+      "exit_reason": "holding_period_exit",
+      "stock_name": "에이팩트",
+      "stock_code": "200470",
+      "entry_price": 7040.0,
+      "exit_price": 7290.0,
+      "return_5d": 0.1282051282051282,
+      "return_20d": 0.3183520599250935,
+      "return_60d": 0.4883720930232558,
+      "trend_150d": 0.8667138059041894,
+      "volatility_20d": 0.736110923722663,
+      "volume_ratio_20d": 0.5984169287964278,
+      "avg_trading_value_20d": 11212561639.0,
+      "doc_signal": 8.387423134727175,
+      "doc_counts": {
+        "dart": 73,
+        "forum": 0,
+        "news": 4
+      },
+      "return_60d_rank": 0.782608695652174,
+      "return_20d_rank": 0.9347826086956522,
+      "trend_150d_rank": 0.9565217391304348,
+      "volume_rank": 0.30434782608695654,
+      "doc_rank": 0.45652173913043476,
+      "low_vol_rank": 0.32608695652173914,
+      "leader_score": 69,
+      "target_price": 10412.37,
+      "deterministic_leader_score": 71,
+      "llm_score": 50,
+      "llm_confidence": 35,
+      "llm_theme_fit_score": 30,
+      "llm_catalyst_score": 35,
+      "llm_risk_score": 70,
+      "llm_summary": "에이팩트는 AI 테마와의 직접적인 연관성이 약하며 실적이 부진한 상태임에도 불구하고, 주가의 단기적인 상승세가 지속되고 있습니다. 그러나 분석 및 양적 평가에서 위험 요인과 불안정한 재무상태를 확인할 수 있어 과열 리스크와 장기 성장 가능성에 대한 우려가 존재합니다.",
+      "llm_catalysts": [
+        "비용 절감으로 인한 손익 개선",
+        "이전 연도의 유휴 장비 처분에 따른 수익"
+      ],
+      "llm_risks": [
+        "반도체 경기 침체로 인한 매출 감소",
+        "유형자산손상차손 및 이연법인세 자산 증가"
+      ],
+      "llm_agent_scores": {
+        "analyst": {
+          "total_score": 34,
+          "theme_fit_score": 30,
+          "moat_score": 25,
+          "growth_score": 45,
+          "catalyst_score": 35,
+          "risk_score": 70,
+          "confidence": 20,
+          "summary": "에이팩트는 AI 테마와의 직접적인 연관성이 떨어지고, 최근 실적은 부진한 경향을 보이고 있습니다. 비용 절감으로 영업손실이 감소하였으나 매출 감소가 지속되고 있어 성장 가능성은 제한적입니다. 또한, 이연법인세자산 증가와 같은 위험 요인이 존재합니다."
+        },
+        "quant": {
+          "total_score": 43,
+          "valuation_score": 45,
+          "profitability_score": 38,
+          "growth_score": 42,
+          "stability_score": 47,
+          "risk_score": 69,
+          "confidence": 0,
+          "summary": "에이팩트의 재무상태는 불안정한 것으로 보입니다. 매출 감소와 영업적자 지속, 이연법인세 자산 증가 등으로 인해 수익성과 안정성이 악화되었습니다. 또한, 비용 절감에도 불구하고 손실이 줄지 않았으며, 유형자산손상차손 발생은 추가적인 재무 리스크를 나타냅니다."
+        },
+        "chartist": {
+          "trend_score": 100,
+          "momentum_score": 100,
+          "volatility_score": 60,
+          "volume_score": 47,
+          "total_score": 84,
+          "confidence": 80,
+          "summary": "trend=100, momentum=100, volatility=60, volume=47"
+        },
+        "risk_manager": {
+          "final_score": 50,
+          "raw_final_score": 47,
+          "calibrated_final_score": 50,
+          "confidence": 35,
+          "risk_score": 70,
+          "action": "HOLD",
+          "summary": "에이팩트는 AI 테마와의 직접적인 연관성이 약하며 실적이 부진한 상태임에도 불구하고, 주가의 단기적인 상승세가 지속되고 있습니다. 그러나 분석 및 양적 평가에서 위험 요인과 불안정한 재무상태를 확인할 수 있어 과열 리스크와 장기 성장 가능성에 대한 우려가 존재합니다."
+        }
+      },
+      "cache_hit": true,
+      "llm_model": "qwen2.5:14b",
+      "llm_provider": "ollama",
+      "llm_prompt_version": "temporal_theme_leader_multi_agent_v2",
+      "llm_context_docs": 3,
+      "llm_mode": "multi_agent",
+      "rank": 3,
+      "weight": 0.333333,
+      "realized_return_pct": 3.55,
+      "predicted_return_pct": 47.9
+    }
+  ],
+  "trades": [
+    {
+      "date": "2026-01-02",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "side": "BUY",
+      "price": 269500.0,
+      "weight": 0.333333,
+      "reason": "rank 1 leader_score 72"
+    },
+    {
+      "date": "2026-01-09",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "side": "SELL",
+      "price": 242000.0,
+      "weight": 0.333333,
+      "realized_return_pct": -10.2,
+      "reason": "holding_period_exit"
+    },
+    {
+      "date": "2026-01-02",
+      "stock_name": "더블유에스아이",
+      "stock_code": "299170",
+      "side": "BUY",
+      "price": 2970.0,
+      "weight": 0.333333,
+      "reason": "rank 2 leader_score 69"
+    },
+    {
+      "date": "2026-01-09",
+      "stock_name": "더블유에스아이",
+      "stock_code": "299170",
+      "side": "SELL",
+      "price": 3785.0,
+      "weight": 0.333333,
+      "realized_return_pct": 27.44,
+      "reason": "holding_period_exit"
+    },
+    {
+      "date": "2026-01-02",
+      "stock_name": "에이팩트",
+      "stock_code": "200470",
+      "side": "BUY",
+      "price": 7040.0,
+      "weight": 0.333333,
+      "reason": "rank 3 leader_score 69"
+    },
+    {
+      "date": "2026-01-09",
+      "stock_name": "에이팩트",
+      "stock_code": "200470",
+      "side": "SELL",
+      "price": 7290.0,
+      "weight": 0.333333,
+      "realized_return_pct": 3.55,
+      "reason": "holding_period_exit"
+    }
+  ],
+  "periods": [
+    {
+      "as_of_date": "2026-01-02",
+      "entry_date": "2026-01-02",
+      "exit_date": "2026-01-09",
+      "selected_count": 3,
+      "active_target_count": 48,
+      "eligible_count": 46,
+      "risk_eligible_count": 44,
+      "risk_reject_count": 2,
+      "market_breadth_pct": 78.26,
+      "portfolio_return_pct": 6.63,
+      "benchmark_return_pct": -4.34,
+      "excess_return_pct": 10.97,
+      "top_symbols": [
+        {
+          "stock_name": "로보티즈",
+          "stock_code": "108490",
+          "leader_score": 72,
+          "realized_return_pct": -10.2,
+          "deterministic_leader_score": 73,
+          "llm_score": 68,
+          "llm_confidence": 75
+        },
+        {
+          "stock_name": "더블유에스아이",
+          "stock_code": "299170",
+          "leader_score": 69,
+          "realized_return_pct": 27.44,
+          "deterministic_leader_score": 70,
+          "llm_score": 59,
+          "llm_confidence": 36
+        },
+        {
+          "stock_name": "에이팩트",
+          "stock_code": "200470",
+          "leader_score": 69,
+          "realized_return_pct": 3.55,
+          "deterministic_leader_score": 71,
+          "llm_score": 50,
+          "llm_confidence": 35
+        }
+      ]
+    }
+  ],
+  "equity_curve": [
+    {
+      "date": "2026-01-09",
+      "equity": 1.066294,
+      "benchmark_equity": 0.956554,
+      "period_return_pct": 6.63,
+      "benchmark_return_pct": -4.34
+    }
+  ],
+  "risk": {
+    "filters": {
+      "min_avg_trading_value": 0.0,
+      "max_volatility_20d": 1.2,
+      "max_return_5d": 0.35,
+      "max_return_20d": 0.9,
+      "min_trend_150d": -1.0,
+      "min_market_breadth_pct": 40.0
+    },
+    "reject_counts": {
+      "overheated_5d": 1,
+      "high_volatility": 1
+    }
+  },
+  "execution": {
+    "exit_rules": {
+      "stop_loss_pct": 0.0,
+      "take_profit_pct": 0.0,
+      "trailing_stop_pct": 15.0
+    },
+    "exit_counts": {
+      "holding_period_exit": 3
+    },
+    "same_day_ohlc_policy": "stop_or_trailing_stop_before_take_profit"
+  },
+  "artifacts": {
+    "result_json": "data/backtest_results/llm_final/qwen14b_2026jan02_multi_agent_v2_top5_h5_tr15/bt-ai-2026jan02-w-top3-h5-tr15-multi-agent-v2-hybrid01-qwen14b.json"
+  },
+  "warnings": [
+    "future returns are used only for evaluation after each as_of_date signal.",
+    "selection uses point-in-time Analyst/Quant/Chartist/RiskManager reranking over a deterministic prefilter.",
+    "theme_membership may be inferred from local corpus evidence unless an official historical source is supplied."
+  ],
+  "metadata": {
+    "generated_at": "2026-05-04T14:08:13.339435",
+    "data_dir": "data",
+    "target_count": 50,
+    "membership_count": 50,
+    "point_in_time_universe": true,
+    "membership_sources": [
+      "local_corpus_inferred"
+    ],
+    "price_stock_count": 50,
+    "document_signal_count": 30497,
+    "llm": {
+      "data_dir": "/Users/leedohoun/Desktop/HQA_Project/data",
+      "theme": "AI",
+      "theme_key": "ai",
+      "model_name": "qwen2.5:14b",
+      "provider": "ollama",
+      "context_docs": 3,
+      "cache_path": "/Users/leedohoun/Desktop/HQA_Project/data/backtest_results/llm_cache/ai/qwen2.5_14b.multi_agent.jsonl",
+      "prompt_version": "temporal_theme_leader_multi_agent_v2",
+      "mode": "multi_agent",
+      "thinking_model_name": "qwen2.5:14b",
+      "agents": [
+        "analyst",
+        "quant",
+        "chartist",
+        "risk_manager"
+      ]
+    }
+  }
+}

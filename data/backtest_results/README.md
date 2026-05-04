@@ -65,6 +65,8 @@ Ollama `qwen2.5:14b`를 사용해 각 리밸런싱일의 point-in-time 문서와
 
 2026년 1월 파일럿에서는 `top5` 후보를 LLM이 최종 `top3`로 재선별했을 때 수익률이 `-4.16%`로, 같은 기간 기존 규칙 기반 `14.21%`보다 낮았습니다. 즉 LLM 구조는 들어갔지만 현재 프롬프트/모델을 순수 랭커로 쓰는 방식은 아직 유의미하지 않습니다.
 
+이후 프로젝트의 멀티 에이전트 구조를 반영한 `--llm-mode multi_agent` 백테스트를 추가했습니다. 결과 JSON에는 `Analyst`, `Quant`, `Chartist`, `RiskManager`별 점수가 `llm_agent_scores`로 저장됩니다. 2026-01-02 단일 리밸런싱 파일럿에서는 멀티 에이전트 100% 랭킹도 기존 규칙 기반보다 낮았고, `llm_weight=0.1`에서만 기존 성과를 유지했습니다. 따라서 현재 권장은 LLM을 최종 랭커가 아니라 낮은 가중치의 보조 feature/설명 계층으로 쓰는 것입니다.
+
 상세 결과는 `data/backtest_results/llm_final/README.md`에 정리되어 있습니다.
 
 ## 핵심 결과
@@ -95,6 +97,6 @@ Ollama `qwen2.5:14b`를 사용해 각 리밸런싱일의 point-in-time 문서와
 ## 주의사항
 
 - 결과는 point-in-time 가격/문서/멤버십 필터를 적용합니다. 단, 멤버십은 공식 과거 편입표가 아니라 로컬 corpus 최초 관측일 기반 추정치입니다.
-- 전략은 LLM 전체 오케스트레이터가 아니라 결정론적 가격/문서 feature 기반입니다.
+- 기본 전략은 결정론적 가격/문서 feature 기반입니다. LLM 옵션을 켜면 point-in-time 단일 LLM 또는 백테스트용 멀티 에이전트 rerank가 추가됩니다.
 - 미래 수익률은 선정 이후 평가에만 사용됩니다.
 - 백엔드 서버가 떠 있으면 결과 JSON payload를 `POST /backtest/results`로 저장할 수 있습니다.

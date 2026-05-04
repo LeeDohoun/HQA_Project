@@ -118,6 +118,8 @@ context = rag.search_for_context(
 
 LLM이 과거 시점 문서와 feature snapshot을 읽고 후보를 재평가하게 하려면 `--llm-rerank-top-k`를 사용합니다. 이 값은 `top-n`보다 커야 실제 선택 종목이 바뀝니다. 예를 들어 `top-n 3`, `--llm-rerank-top-k 5`는 규칙 기반 상위 5개를 먼저 고른 뒤 LLM 점수로 최종 3개를 다시 선택합니다.
 
+기본 LLM 모드는 단일 LLM 점수화입니다. 프로젝트의 멀티 에이전트 구조를 백테스트에 반영하려면 `--llm-mode multi_agent`를 추가합니다. 이 모드는 `Analyst`, `Quant`, `Chartist`, `RiskManager` 흐름으로 후보를 평가하되, 운영 오케스트레이터를 그대로 호출하지는 않습니다. 운영 오케스트레이터는 현재 시점 데이터 접근 가능성이 있어 백테스트에는 맞지 않기 때문에, 백테스트용 구현은 모든 문서/feature를 `as_of_date` 이전으로 제한합니다.
+
 ```bash
 .venv/bin/python backtesting/leader_backtest.py \
   --theme AI \
@@ -132,10 +134,13 @@ LLM이 과거 시점 문서와 feature snapshot을 읽고 후보를 재평가하
   --max-return-5d 0.35 \
   --max-return-20d 0.9 \
   --trailing-stop-pct 15 \
+  --llm-mode multi_agent \
   --llm-rerank-top-k 5 \
-  --llm-weight 1.0 \
+  --llm-weight 0.1 \
   --llm-context-docs 3
 ```
+
+멀티 에이전트 모드의 최종 점수는 프로젝트 `RiskManagerAgent.quick_decision`과 같은 가중치인 Analyst 40%, Quant 35%, Chartist 25%로 보정됩니다. `RiskManager` LLM은 요약/행동/리스크 판단을 만들지만, 최종 랭킹 점수는 이 가중치로 보정해 LLM이 Quant 리스크를 무시하고 점수를 과도하게 덮어쓰지 않도록 했습니다.
 
 LLM 평가는 `data/backtest_results/llm_cache/<theme_key>/`에 캐시됩니다. 같은 날짜/종목/feature 조합은 재실행 시 다시 호출하지 않습니다.
 

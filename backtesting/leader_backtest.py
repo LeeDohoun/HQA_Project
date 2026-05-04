@@ -102,6 +102,7 @@ def run_leader_backtest(
     llm_rerank_top_k: int = 0,
     llm_weight: float = 1.0,
     llm_context_docs: int = 5,
+    llm_mode: str = "single",
     llm_cache_path: str | Path | None = None,
     output_dir: str | Path | None = None,
     task_id: str = "",
@@ -133,11 +134,13 @@ def run_leader_backtest(
     )
     llm_weight = _clip(llm_weight, 0.0, 1.0)
     llm_rerank_top_k = max(0, int(llm_rerank_top_k or 0))
+    llm_mode = str(llm_mode or "single").strip().lower()
     llm_scorer_obj = llm_scorer
     if llm_scorer_obj is None and llm_rerank_top_k > 0:
-        from backtesting.llm_signal import TemporalLLMStockScorer
+        from backtesting.llm_signal import TemporalLLMStockScorer, TemporalMultiAgentStockScorer
 
-        llm_scorer_obj = TemporalLLMStockScorer(
+        scorer_cls = TemporalMultiAgentStockScorer if llm_mode in {"multi", "multi_agent", "agents"} else TemporalLLMStockScorer
+        llm_scorer_obj = scorer_cls(
             data_dir=data_root,
             theme=theme,
             theme_key=theme_key,
@@ -312,6 +315,13 @@ def run_leader_backtest(
         hold_days=hold_days,
     )
     leaders = _aggregate_leaders(positions)
+    prediction_model = (
+        "multi_agent_temporal_theme_leader_v1"
+        if llm_enabled and llm_metadata.get("mode") == "multi_agent"
+        else "llm_temporal_theme_leader_v1"
+        if llm_enabled
+        else "momentum_price_forecast_v1"
+    )
     predictions = [
         {
             key: row[key]
@@ -328,6 +338,7 @@ def run_leader_backtest(
                 "realized_return_pct",
             ]
         }
+        | {"prediction_model": prediction_model}
         | _optional_prediction_payload(row)
         for row in positions
     ]
@@ -339,6 +350,7 @@ def run_leader_backtest(
         "status": "completed",
         "theme": theme,
         "theme_key": theme_key,
+        "prediction_model": prediction_model,
         "period": {
             "from_date": _fmt_ymd(from_ymd),
             "to_date": _fmt_ymd(to_ymd),
@@ -358,6 +370,7 @@ def run_leader_backtest(
                 "top_k": max(top_n, llm_rerank_top_k) if llm_enabled else 0,
                 "weight": llm_weight if llm_enabled else 0.0,
                 "context_docs": llm_context_docs if llm_enabled else 0,
+                "mode": llm_metadata.get("mode", llm_mode if llm_enabled else ""),
             },
             "selection_inputs": [
                 "20d momentum",
@@ -368,7 +381,7 @@ def run_leader_backtest(
                 "20d volatility penalty",
                 "point-in-time LLM theme leader score" if llm_enabled else "",
             ],
-            "prediction_model": "llm_temporal_theme_leader_v1" if llm_enabled else "momentum_price_forecast_v1",
+            "prediction_model": prediction_model,
         },
         "metrics": metrics,
         "leaders": leaders,
@@ -387,7 +400,7 @@ def run_leader_backtest(
             "same_day_ohlc_policy": "stop_or_trailing_stop_before_take_profit",
         },
         "artifacts": {},
-        "warnings": warnings + _default_warnings(bool(memberships), llm_enabled),
+        "warnings": warnings + _default_warnings(bool(memberships), llm_enabled, llm_metadata.get("mode", "")),
         "metadata": {
             "generated_at": datetime.now().isoformat(),
             "data_dir": _display_path(data_root),
@@ -823,6 +836,8 @@ def _optional_prediction_payload(row: Dict[str, Any]) -> Dict[str, Any]:
             "llm_catalyst_score",
             "llm_risk_score",
             "llm_summary",
+            "llm_agent_scores",
+            "llm_mode",
         ]
         if key in row
     }
@@ -1131,9 +1146,14 @@ def _default_task_id(theme_key: str, from_ymd: str, to_ymd: str, top_n: int, hol
 def _default_warnings(
     has_point_in_time_membership: bool = False,
     has_llm_rerank: bool = False,
+    llm_mode: str = "",
 ) -> List[str]:
     warnings = ["future returns are used only for evaluation after each as_of_date signal."]
-    if has_llm_rerank:
+    if has_llm_rerank and llm_mode == "multi_agent":
+        warnings.append(
+            "selection uses point-in-time Analyst/Quant/Chartist/RiskManager reranking over a deterministic prefilter."
+        )
+    elif has_llm_rerank:
         warnings.append(
             "selection uses point-in-time LLM reranking over a deterministic prefilter, not the full production ThemeLeaderOrchestrator."
         )
@@ -1202,6 +1222,7 @@ def main() -> int:
     )
     parser.add_argument("--llm-weight", type=float, default=1.0)
     parser.add_argument("--llm-context-docs", type=int, default=5)
+    parser.add_argument("--llm-mode", choices=["single", "multi_agent"], default="single")
     parser.add_argument("--llm-cache-path", default="")
     parser.add_argument("--output-dir", default="")
     parser.add_argument("--task-id", default="")
@@ -1231,6 +1252,7 @@ def main() -> int:
         llm_rerank_top_k=args.llm_rerank_top_k,
         llm_weight=args.llm_weight,
         llm_context_docs=args.llm_context_docs,
+        llm_mode=args.llm_mode,
         llm_cache_path=args.llm_cache_path or None,
         output_dir=args.output_dir or None,
         task_id=args.task_id,
