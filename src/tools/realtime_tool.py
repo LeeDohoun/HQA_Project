@@ -22,7 +22,30 @@ from pathlib import Path
 # 상위 디렉토리 import 경로 추가
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from utils.kis_auth import call_api, is_api_available, KISConfig
+from utils.kis_auth import (
+    KISConfig,
+    call_api,
+    is_api_available,
+    is_trading_api_available,
+)
+
+
+def _to_int(value: Any, default: int = 0) -> int:
+    try:
+        if value in (None, ""):
+            return default
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _to_float(value: Any, default: float = 0.0) -> float:
+    try:
+        if value in (None, ""):
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 # ==========================================
@@ -135,6 +158,19 @@ class TradeRecord:
     side: str           # 매수/매도 구분
 
 
+@dataclass
+class StockHolding:
+    """국내주식 보유 잔고"""
+    stock_code: str
+    stock_name: str
+    holding_quantity: int
+    orderable_quantity: int
+    current_price: int = 0
+    evaluation_amount: int = 0
+    profit_loss: int = 0
+    profit_loss_rate: float = 0.0
+
+
 # ==========================================
 # API 함수 - 현재가 조회
 # ==========================================
@@ -157,8 +193,8 @@ def inquire_price(
     Returns:
         StockPrice 객체 또는 None
     """
-    if not is_api_available():
-        print("⚠️ KIS API 키가 설정되지 않았습니다.")
+    if not is_api_available(paper=paper):
+        print("[WARN] KIS API 키가 설정되지 않았습니다.")
         return None
     
     path = "/uapi/domestic-stock/v1/quotations/inquire-price"
@@ -172,7 +208,7 @@ def inquire_price(
     resp = call_api("GET", path, tr_id, params=params, paper=paper)
     
     if resp.get("rt_cd") != "0":
-        print(f"❌ 현재가 조회 실패: {resp.get('msg1', 'Unknown error')}")
+        print(f"[ERROR] 현재가 조회 실패: {resp.get('msg1', 'Unknown error')}")
         return None
     
     output = resp.get("output", {})
@@ -180,22 +216,22 @@ def inquire_price(
     return StockPrice(
         code=stock_code,
         name=output.get("hts_kor_isnm", ""),
-        current_price=int(output.get("stck_prpr", 0)),
-        change=int(output.get("prdy_vrss", 0)),
-        change_rate=float(output.get("prdy_ctrt", 0)),
-        open_price=int(output.get("stck_oprc", 0)),
-        high_price=int(output.get("stck_hgpr", 0)),
-        low_price=int(output.get("stck_lwpr", 0)),
-        volume=int(output.get("acml_vol", 0)),
-        volume_amount=int(output.get("acml_tr_pbmn", 0)) // 1_000_000,
-        prev_close=int(output.get("stck_prdy_clpr", 0)),
-        market_cap=int(output.get("hts_avls", 0)),
-        per=float(output.get("per", 0)),
-        pbr=float(output.get("pbr", 0)),
-        eps=int(output.get("eps", 0)),
-        bps=int(output.get("bps", 0)),
-        high_52w=int(output.get("stck_dryy_hgpr", 0)),
-        low_52w=int(output.get("stck_dryy_lwpr", 0)),
+        current_price=_to_int(output.get("stck_prpr")),
+        change=_to_int(output.get("prdy_vrss")),
+        change_rate=_to_float(output.get("prdy_ctrt")),
+        open_price=_to_int(output.get("stck_oprc")),
+        high_price=_to_int(output.get("stck_hgpr")),
+        low_price=_to_int(output.get("stck_lwpr")),
+        volume=_to_int(output.get("acml_vol")),
+        volume_amount=_to_int(output.get("acml_tr_pbmn")) // 1_000_000,
+        prev_close=_to_int(output.get("stck_prdy_clpr")),
+        market_cap=_to_int(output.get("hts_avls")),
+        per=_to_float(output.get("per")),
+        pbr=_to_float(output.get("pbr")),
+        eps=_to_int(output.get("eps")),
+        bps=_to_int(output.get("bps")),
+        high_52w=_to_int(output.get("stck_dryy_hgpr")),
+        low_52w=_to_int(output.get("stck_dryy_lwpr")),
     )
 
 
@@ -221,7 +257,7 @@ def inquire_asking_price(
     Returns:
         OrderBook 객체 또는 None
     """
-    if not is_api_available():
+    if not is_api_available(paper=paper):
         return None
     
     path = "/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn"
@@ -235,7 +271,7 @@ def inquire_asking_price(
     resp = call_api("GET", path, tr_id, params=params, paper=paper)
     
     if resp.get("rt_cd") != "0":
-        print(f"❌ 호가 조회 실패: {resp.get('msg1')}")
+        print(f"[ERROR] 호가 조회 실패: {resp.get('msg1')}")
         return None
     
     output = resp.get("output1", {})
@@ -291,7 +327,7 @@ def inquire_daily_price(
     Returns:
         OHLCV 리스트
     """
-    if not is_api_available():
+    if not is_api_available(paper=paper):
         return []
     
     path = "/uapi/domestic-stock/v1/quotations/inquire-daily-price"
@@ -307,7 +343,7 @@ def inquire_daily_price(
     resp = call_api("GET", path, tr_id, params=params, paper=paper)
     
     if resp.get("rt_cd") != "0":
-        print(f"❌ 일봉 조회 실패: {resp.get('msg1')}")
+        print(f"[ERROR] 일봉 조회 실패: {resp.get('msg1')}")
         return []
     
     output = resp.get("output", [])
@@ -354,7 +390,7 @@ def inquire_time_dailychartprice(
     Returns:
         OHLCV 리스트 (API가 반환하는 순서, 보통 최신→과거)
     """
-    if not is_api_available():
+    if not is_api_available(paper=paper):
         return []
 
     path = "/uapi/domestic-stock/v1/quotations/inquire-time-dailychartprice"
@@ -385,7 +421,7 @@ def inquire_time_dailychartprice(
     resp = call_api("GET", path, tr_id, params=params, paper=paper)
 
     if resp.get("rt_cd") != "0":
-        print(f"❌ 일별분봉 조회 실패: {resp.get('msg1')}")
+        print(f"[ERROR] 일별분봉 조회 실패: {resp.get('msg1')}")
         return []
 
     output = resp.get("output2", [])
@@ -427,7 +463,7 @@ def inquire_ccnl(
     Returns:
         TradeRecord 리스트
     """
-    if not is_api_available():
+    if not is_api_available(paper=paper):
         return []
     
     path = "/uapi/domestic-stock/v1/quotations/inquire-ccnl"
@@ -441,7 +477,7 @@ def inquire_ccnl(
     resp = call_api("GET", path, tr_id, params=params, paper=paper)
     
     if resp.get("rt_cd") != "0":
-        print(f"❌ 체결 조회 실패: {resp.get('msg1')}")
+        print(f"[ERROR] 체결 조회 실패: {resp.get('msg1')}")
         return []
     
     output = resp.get("output", [])
@@ -462,6 +498,175 @@ def inquire_ccnl(
         ))
     
     return result
+
+
+# ==========================================
+# API 함수 - 국내주식 잔고 조회
+# ==========================================
+def inquire_balance(paper: bool = True) -> Dict[str, Any]:
+    """
+    국내주식 잔고 조회.
+
+    API: 주식잔고조회
+    경로: /uapi/domestic-stock/v1/trading/inquire-balance
+    """
+    if not is_trading_api_available(paper=paper):
+        return {
+            "rt_cd": "-1",
+            "msg1": (
+                "KIS 잔고조회 설정이 부족합니다. "
+                "KIS_APP_KEY/KIS_APP_SECRET/KIS_ACCOUNT_NO 또는 "
+                "KIS_PAPER_APP_KEY/KIS_PAPER_APP_SECRET/KIS_PAPER_ACCOUNT_NO를 확인하세요."
+            ),
+        }
+
+    cano, account_product_code = KISConfig.get_account(paper)
+    tr_id = "VTTC8434R" if paper else "TTTC8434R"
+    params = {
+        "CANO": cano,
+        "ACNT_PRDT_CD": account_product_code,
+        "AFHR_FLPR_YN": "N",
+        "OFL_YN": "",
+        "INQR_DVSN": "02",
+        "UNPR_DVSN": "01",
+        "FUND_STTL_ICLD_YN": "N",
+        "FNCG_AMT_AUTO_RDPT_YN": "N",
+        "PRCS_DVSN": "00",
+        "CTX_AREA_FK100": "",
+        "CTX_AREA_NK100": "",
+    }
+
+    response = call_api(
+        "GET",
+        "/uapi/domestic-stock/v1/trading/inquire-balance",
+        tr_id,
+        params=params,
+        paper=paper,
+    )
+    response.setdefault("request", {})
+    response["request"].update({"paper": paper, "tr_id": tr_id})
+    return response
+
+
+def get_domestic_stock_holdings(paper: bool = True) -> List[StockHolding]:
+    """국내주식 보유 잔고 목록."""
+    response = inquire_balance(paper=paper)
+    if response.get("rt_cd") != "0":
+        print(f"[ERROR] 잔고 조회 실패: {response.get('msg1', 'Unknown error')}")
+        return []
+
+    output = response.get("output1") or []
+    holdings: List[StockHolding] = []
+    for item in output:
+        stock_code = item.get("pdno") or item.get("PDNO") or ""
+        holding_quantity = _to_int(item.get("hldg_qty"))
+        orderable_quantity = _to_int(item.get("ord_psbl_qty"), holding_quantity)
+        if not stock_code or holding_quantity <= 0:
+            continue
+
+        holdings.append(
+            StockHolding(
+                stock_code=stock_code,
+                stock_name=item.get("prdt_name") or item.get("prdt_abrv_name") or "",
+                holding_quantity=holding_quantity,
+                orderable_quantity=orderable_quantity,
+                current_price=_to_int(item.get("prpr")),
+                evaluation_amount=_to_int(item.get("evlu_amt")),
+                profit_loss=_to_int(item.get("evlu_pfls_amt")),
+                profit_loss_rate=_to_float(item.get("evlu_pfls_rt")),
+            )
+        )
+    return holdings
+
+
+# ==========================================
+# API 함수 - 국내주식 현금 주문
+# ==========================================
+def place_domestic_stock_order(
+    stock_code: str,
+    side: str,
+    quantity: int,
+    price: Optional[int] = None,
+    *,
+    paper: bool = True,
+    order_division: str = "",
+) -> Dict[str, Any]:
+    """
+    국내주식 현금 주문.
+
+    API: 주식주문(현금)
+    경로: /uapi/domestic-stock/v1/trading/order-cash
+
+    Args:
+        stock_code: 종목코드 6자리
+        side: "BUY" 또는 "SELL"
+        quantity: 주문 수량
+        price: 지정가 주문 가격. None이면 시장가 주문으로 보냅니다.
+        paper: True면 모의투자 서버(VTS) 사용
+        order_division: KIS 주문구분. 빈 값이면 price 유무에 따라 자동 선택
+
+    Returns:
+        KIS API 원문 응답에 request metadata를 더한 dict
+    """
+    normalized_side = side.upper().strip()
+    if normalized_side not in {"BUY", "SELL"}:
+        return {"rt_cd": "-1", "msg1": f"지원하지 않는 주문 방향: {side}"}
+    if quantity <= 0:
+        return {"rt_cd": "-1", "msg1": "주문 수량은 1주 이상이어야 합니다."}
+    if not is_trading_api_available(paper=paper):
+        return {
+            "rt_cd": "-1",
+            "msg1": (
+                "KIS 주문 API 설정이 부족합니다. "
+                "KIS_APP_KEY/KIS_APP_SECRET/KIS_ACCOUNT_NO 또는 "
+                "KIS_PAPER_APP_KEY/KIS_PAPER_APP_SECRET/KIS_PAPER_ACCOUNT_NO를 확인하세요."
+            ),
+        }
+
+    cano, account_product_code = KISConfig.get_account(paper)
+    order_price = 0 if price is None else int(price)
+    order_type = order_division or ("01" if price is None else "00")
+    tr_id = _domestic_order_tr_id(normalized_side, paper=paper)
+
+    body = {
+        "CANO": cano,
+        "ACNT_PRDT_CD": account_product_code,
+        "PDNO": stock_code,
+        "ORD_DVSN": order_type,
+        "ORD_QTY": str(int(quantity)),
+        "ORD_UNPR": str(order_price),
+        "CTAC_TLNO": "",
+        "SLL_TYPE": "01",
+        "ALGO_NO": "",
+    }
+
+    response = call_api(
+        "POST",
+        "/uapi/domestic-stock/v1/trading/order-cash",
+        tr_id,
+        body=body,
+        paper=paper,
+        hashkey=True,
+    )
+    response.setdefault("request", {})
+    response["request"].update(
+        {
+            "paper": paper,
+            "tr_id": tr_id,
+            "side": normalized_side,
+            "stock_code": stock_code,
+            "quantity": int(quantity),
+            "price": order_price,
+            "order_division": order_type,
+        }
+    )
+    return response
+
+
+def _domestic_order_tr_id(side: str, *, paper: bool) -> str:
+    if paper:
+        return "VTTC0802U" if side == "BUY" else "VTTC0801U"
+    return "TTTC0802U" if side == "BUY" else "TTTC0801U"
 
 
 # ==========================================
@@ -492,10 +697,10 @@ class KISRealtimeTool:
             paper: True면 모의투자, False면 실전투자
         """
         self.paper = paper
-        self._available = is_api_available()
+        self._available = is_api_available(paper=paper)
         
         if not self._available:
-            print("⚠️ KIS API 키가 설정되지 않았습니다.")
+            print("[WARN] KIS API 키가 설정되지 않았습니다.")
             print("   .env 파일에 다음 값을 설정하세요:")
             print("   - KIS_APP_KEY")
             print("   - KIS_APP_SECRET")
@@ -538,6 +743,35 @@ class KISRealtimeTool:
     def get_trade_records(self, stock_code: str, count: int = 30) -> List[TradeRecord]:
         """체결 내역 조회"""
         return inquire_ccnl(stock_code, count, paper=self.paper)
+
+    def get_holdings(self) -> List[StockHolding]:
+        """국내주식 보유 잔고 조회."""
+        return get_domestic_stock_holdings(paper=self.paper)
+
+    def get_holding_quantity(self, stock_code: str, *, orderable: bool = True) -> int:
+        """특정 종목의 보유 또는 주문 가능 수량."""
+        for holding in self.get_holdings():
+            if holding.stock_code == stock_code:
+                return holding.orderable_quantity if orderable else holding.holding_quantity
+        return 0
+
+    def place_order(
+        self,
+        stock_code: str,
+        side: str,
+        quantity: int,
+        price: Optional[int] = None,
+        order_division: str = "",
+    ) -> Dict[str, Any]:
+        """국내주식 현금 주문."""
+        return place_domestic_stock_order(
+            stock_code=stock_code,
+            side=side,
+            quantity=quantity,
+            price=price,
+            paper=self.paper,
+            order_division=order_division,
+        )
     
     def get_quote_summary(self, stock_code: str) -> str:
         """
@@ -627,7 +861,7 @@ def create_realtime_tools():
         orderbook = kis_tool.get_orderbook(stock_code)
         
         if orderbook is None:
-            return f"❌ {stock_code} 호가 조회 실패"
+            return f"[ERROR] {stock_code} 호가 조회 실패"
         
         lines = [f"📋 {stock_code} 호가창", "━" * 50]
         lines.append(f"{'매도잔량':>12} {'매도호가':>12} | {'매수호가':<12} {'매수잔량':<12}")
@@ -666,7 +900,7 @@ def create_realtime_tools():
         candles = kis_tool.get_daily_ohlcv(stock_code, count=days)
         
         if not candles:
-            return f"❌ {stock_code} 일봉 조회 실패"
+            return f"[ERROR] {stock_code} 일봉 조회 실패"
         
         lines = [f"📈 {stock_code} 일봉 (최근 {len(candles)}일)", "━" * 60]
         lines.append(f"{'날짜':<10} {'시가':>10} {'고가':>10} {'저가':>10} {'종가':>10} {'거래량':>12}")

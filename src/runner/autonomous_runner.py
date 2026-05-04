@@ -117,7 +117,7 @@ class AutonomousRunner:
         print(f"\n{'='*60}")
         print(f"🤖 [자율 에이전트] 분석 시작 — {now.strftime('%Y-%m-%d %H:%M:%S KST')}")
         print(f"   감시 종목: {len(watchlist)}개")
-        print(f"   매매 모드: {'🧪 시뮬레이션 (dry_run)' if self._executor.is_dry_run else '🔴 실전 매매'}")
+        print(f"   매매 모드: {self._trading_mode_label()}")
         if not self._executor.is_enabled:
             print(f"   매매 상태: ⏸️  비활성 (분석만 실행)")
         print(f"{'='*60}\n")
@@ -211,7 +211,7 @@ class AutonomousRunner:
         if decision:
             print(
                 f"   → 최종판단: {decision.action.value} "
-                f"({decision.total_score}/270, 확신:{decision.confidence}%)"
+                f"({decision.total_score}/100, 확신:{decision.confidence}%)"
             )
 
         return result
@@ -272,8 +272,13 @@ class AutonomousRunner:
 
         elif self._executor.should_sell(decision):
             print(f"   📉 매도 조건 충족! (점수:{decision.total_score})")
+            quantity = self._get_sell_quantity(stock_code)
+            if quantity <= 0:
+                reason = "보유 또는 주문 가능 수량 없음"
+                print(f"   ⏸️  매도 대기 — {reason}")
+                return {"status": "no_action", "reason": reason}
             return self._executor.execute_sell(
-                stock_name, stock_code, decision, quantity=0, current_price=current_price
+                stock_name, stock_code, decision, quantity=quantity, current_price=current_price
             )
 
         else:
@@ -284,17 +289,45 @@ class AutonomousRunner:
     def _get_current_price(self, stock_code: str) -> Optional[int]:
         """KIS API로 현재가 조회"""
         try:
-            from src.tools.realtime_tool import KISRealtimeTool
-
-            tool = KISRealtimeTool()
+            tool = self._get_realtime_tool()
             if tool.is_available:
                 quote = tool.get_current_price(stock_code)
+                if quote and hasattr(quote, "current_price"):
+                    return int(quote.current_price)
                 if quote and isinstance(quote, dict):
                     return int(quote.get("stck_prpr", 0))
         except Exception as e:
             logger.debug(f"[Runner] 현재가 조회 실패: {e}")
 
         return None
+
+    def _get_sell_quantity(self, stock_code: str) -> int:
+        """KIS 잔고조회로 매도 가능한 수량 조회."""
+        try:
+            tool = self._get_realtime_tool()
+            if not tool.is_available:
+                return 0
+            return int(tool.get_holding_quantity(stock_code, orderable=True))
+        except Exception as e:
+            logger.debug(f"[Runner] 보유수량 조회 실패: {e}")
+            return 0
+
+    def _get_realtime_tool(self):
+        """거래 계좌 모드에 맞춘 KIS 도구 생성."""
+        from src.tools.realtime_tool import KISRealtimeTool
+
+        return KISRealtimeTool(paper=self._is_paper_account())
+
+    def _is_paper_account(self) -> bool:
+        trading_config = self._config.get("trading", {})
+        return trading_config.get("account_type", "paper") == "paper"
+
+    def _trading_mode_label(self) -> str:
+        if self._executor.is_dry_run:
+            return "🧪 시뮬레이션 (dry_run)"
+        if self._is_paper_account():
+            return "🧪 KIS 모의투자 주문"
+        return "🔴 KIS 실전 주문"
 
     # ──────────────────────────────────────────────
     # 반복 실행 (스케줄)
