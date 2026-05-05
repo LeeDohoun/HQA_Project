@@ -355,6 +355,42 @@ export const chartApi = {
     )
 };
 
+export type BulkAnalysisFailure = {
+  stockName: string;
+  stockCode: string;
+  reason: string;
+};
+
+export type BulkAnalysisResponse = {
+  total: number;
+  submitted: number;
+  failed: number;
+  tasks: AnalysisTaskResponse[];
+  failures: BulkAnalysisFailure[];
+};
+
+type BulkAnalysisWire = {
+  total: number;
+  submitted: number;
+  failed: number;
+  tasks: AnalysisTaskResponseWire[];
+  failures: { stock_name?: string; stockName?: string; stock_code?: string; stockCode?: string; reason: string }[];
+};
+
+function mapBulk(wire: BulkAnalysisWire): BulkAnalysisResponse {
+  return {
+    total: wire.total,
+    submitted: wire.submitted,
+    failed: wire.failed,
+    tasks: wire.tasks.map(mapTask),
+    failures: (wire.failures ?? []).map((f) => ({
+      stockName: f.stockName ?? f.stock_name ?? "",
+      stockCode: f.stockCode ?? f.stock_code ?? "",
+      reason: f.reason
+    }))
+  };
+}
+
 export const analysisApi = {
   submit: async (payload: AnalysisRequest) =>
     mapTask(await api<AnalysisTaskResponseWire>("/api/v1/analysis", {
@@ -366,8 +402,78 @@ export const analysisApi = {
         max_retries: payload.maxRetries
       })
     })),
+  bulk: async (mode: "full" | "quick" = "quick", maxRetries = 0) =>
+    mapBulk(await api<BulkAnalysisWire>(
+      `/api/v1/analysis/bulk?mode=${mode}&maxRetries=${maxRetries}`,
+      { method: "POST" }
+    )),
   result: async (taskId: string) =>
     mapResult(await api<AnalysisResultWire>(`/api/v1/analysis/${taskId}`))
+};
+
+export type AutoTradeStatus = {
+  enabled: boolean;
+  aiStatus: Record<string, unknown>;
+};
+
+export type DirectBuyResult = {
+  stockName: string;
+  stockCode: string;
+  quantity: number;
+  limitPrice: number;
+  success?: boolean;
+  response?: Record<string, unknown>;
+  error?: string;
+};
+
+type AutoTradeStatusWire = {
+  enabled: boolean;
+  ai_status?: Record<string, unknown> | null;
+  aiStatus?: Record<string, unknown> | null;
+};
+
+function mapAutoTradeStatus(wire: AutoTradeStatusWire): AutoTradeStatus {
+  return {
+    enabled: !!wire.enabled,
+    aiStatus: (wire.aiStatus ?? wire.ai_status ?? {}) as Record<string, unknown>
+  };
+}
+
+export const tradingApi = {
+  status: async () =>
+    mapAutoTradeStatus(await api<AutoTradeStatusWire>("/api/v1/trading/status")),
+  setAuto: async (enabled: boolean) =>
+    mapAutoTradeStatus(
+      await api<AutoTradeStatusWire>("/api/v1/trading/auto", {
+        method: "POST",
+        body: JSON.stringify({ enabled })
+      })
+    ),
+  buy: (payload: { stockName: string; stockCode: string; quantity: number; limitPrice: number }) =>
+    api<DirectBuyResult>("/api/v1/trading/buy", {
+      method: "POST",
+      body: JSON.stringify({
+        stockName: payload.stockName,
+        stockCode: payload.stockCode,
+        quantity: payload.quantity,
+        limitPrice: payload.limitPrice
+      })
+    }),
+  orders: (params?: { date?: string; limit?: number }) => {
+    const search = new URLSearchParams();
+    if (params?.date) search.set("date", params.date);
+    if (params?.limit) search.set("limit", String(params.limit));
+    const qs = search.toString();
+    return api<Record<string, unknown>>(`/api/v1/trading/orders${qs ? `?${qs}` : ""}`);
+  }
+};
+
+export const chatApi = {
+  send: (message: string, sessionId?: string) =>
+    api<Record<string, unknown>>("/api/v1/chat", {
+      method: "POST",
+      body: JSON.stringify({ message, sessionId })
+    })
 };
 
 export function eventStreamUrl(path: string) {

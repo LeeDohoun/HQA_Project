@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { analysisApi, authApi, chartApi, stockApi } from "@/lib/api";
+import { analysisApi, authApi, chartApi, stockApi, tradingApi } from "@/lib/api";
 import { StatusPill } from "@/components/common/status-pill";
 import type {
   AnalysisMode,
@@ -72,6 +72,7 @@ export default function DashboardPage() {
   const [submitting, setSubmitting] = useState(false);
   const [task, setTask] = useState<AnalysisTaskResponse | null>(null);
   const [autoTradeEnabled, setAutoTradeEnabled] = useState(false);
+  const [bulkAnalyzing, setBulkAnalyzing] = useState(false);
   const [buyQuantity, setBuyQuantity] = useState("1");
   const [buyPrice, setBuyPrice] = useState("");
   const [timeframe, setTimeframe] = useState<ChartTimeframe>("1m");
@@ -105,6 +106,12 @@ export default function DashboardPage() {
       .finally(() => {
         if (active) setLoadingUser(false);
       });
+
+    tradingApi.status()
+      .then((status) => {
+        if (active) setAutoTradeEnabled(status.enabled);
+      })
+      .catch(() => { /* 무시: 자동매매 상태는 fail-safe로 OFF 유지 */ });
 
     return () => { active = false; };
   }, [router]);
@@ -190,21 +197,67 @@ export default function DashboardPage() {
     }
   }
 
-  function handleBuy() {
+  async function handleBuy() {
     if (!selected) {
       setMessage("종목을 먼저 선택해주세요.");
       return;
     }
-    const confirmed = window.confirm(`${selected.name} ${buyQuantity || "1"}주를 ${buyPrice || "시장가"}로 매수할까요?`);
-    if (confirmed) setMessage("매수 API 연결 전 단계입니다.");
+    const qty = Math.max(1, parseInt(buyQuantity || "1", 10) || 1);
+    const price = Math.max(0, parseInt(buyPrice || "0", 10) || 0);
+    const priceLabel = price > 0 ? `${price.toLocaleString("ko-KR")}원` : "시장가";
+    const confirmed = window.confirm(`${selected.name} ${qty}주를 ${priceLabel}로 매수할까요?`);
+    if (!confirmed) return;
+    try {
+      const result = await tradingApi.buy({
+        stockName: selected.name,
+        stockCode: selected.code,
+        quantity: qty,
+        limitPrice: price
+      });
+      if (result.success) {
+        setMessage(`${selected.name} ${qty}주 매수 주문이 접수되었습니다.`);
+      } else {
+        const reason = result.error
+          ?? (typeof result.response?.msg1 === "string" ? (result.response.msg1 as string) : "매수 주문이 거부되었습니다.");
+        setMessage(`매수 실패: ${reason}`);
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "매수 요청에 실패했습니다.");
+    }
   }
 
-  function handleAutoTrade() {
+  async function handleBulkAnalyze() {
+    if (bulkAnalyzing) return;
+    const confirmed = window.confirm("워치리스트의 모든 종목을 분석할까요?");
+    if (!confirmed) return;
+    setBulkAnalyzing(true);
+    setMessage("");
+    try {
+      const result = await analysisApi.bulk("quick", 0);
+      if (result.submitted === 0) {
+        setMessage("분석할 종목이 없습니다. (워치리스트 비어 있음)");
+      } else {
+        const failedNote = result.failed > 0 ? ` (실패 ${result.failed}건)` : "";
+        setMessage(`${result.submitted}개 종목 분석을 시작했습니다${failedNote}. 분석 내역에서 확인하세요.`);
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "전체 분석 요청에 실패했습니다.");
+    } finally {
+      setBulkAnalyzing(false);
+    }
+  }
+
+  async function handleAutoTrade() {
     const next = !autoTradeEnabled;
     const confirmed = window.confirm(next ? "자동매매를 켤까요?" : "자동매매를 끌까요?");
     if (!confirmed) return;
-    setAutoTradeEnabled(next);
-    setMessage(next ? "자동매매를 켰습니다." : "자동매매를 껐습니다.");
+    try {
+      const status = await tradingApi.setAuto(next);
+      setAutoTradeEnabled(status.enabled);
+      setMessage(status.enabled ? "자동매매를 켰습니다." : "자동매매를 껐습니다.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "자동매매 토글에 실패했습니다.");
+    }
   }
 
   async function logout() {
@@ -275,6 +328,15 @@ export default function DashboardPage() {
         </div>
 
         <div className="topbar-actions">
+          <button
+            className="button-ghost"
+            onClick={handleBulkAnalyze}
+            type="button"
+            disabled={bulkAnalyzing}
+            style={{ fontSize: "0.8rem" }}
+          >
+            {bulkAnalyzing ? "분석 요청 중..." : "전체 종목 분석"}
+          </button>
           <button
             className={autoTradeEnabled ? "button-secondary" : "button-ghost"}
             onClick={handleAutoTrade}
