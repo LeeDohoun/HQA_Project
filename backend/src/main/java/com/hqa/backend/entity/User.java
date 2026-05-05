@@ -41,6 +41,11 @@ public class User {
 
     @Column(name = "is_active")
     private boolean active = true;
+
+    @Column(name = "auto_trade_enabled", nullable = false,
+            columnDefinition = "BOOLEAN NOT NULL DEFAULT false")
+    private boolean autoTradeEnabled = false;
+
     private OffsetDateTime createdAt = OffsetDateTime.now();
     private OffsetDateTime updatedAt = OffsetDateTime.now();
 
@@ -118,6 +123,14 @@ public class User {
 
     public void setActive(boolean active) {
         this.active = active;
+    }
+
+    public boolean isAutoTradeEnabled() {
+        return autoTradeEnabled;
+    }
+
+    public void setAutoTradeEnabled(boolean autoTradeEnabled) {
+        this.autoTradeEnabled = autoTradeEnabled;
     }
 
     public OffsetDateTime getCreatedAt() {

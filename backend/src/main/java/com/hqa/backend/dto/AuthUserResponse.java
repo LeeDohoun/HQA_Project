@@ -12,6 +12,7 @@ public record AuthUserResponse(
         boolean active,
         boolean kisConfigured,
         boolean surveyCompleted,
+        boolean autoTradeEnabled,
         OffsetDateTime createdAt
 ) {
 }

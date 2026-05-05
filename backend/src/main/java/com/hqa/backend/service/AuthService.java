@@ -176,6 +176,7 @@ public class AuthService {
                 user.isActive(),
                 user.getSecret() != null && !isBlank(user.getSecret().getKisAppKey()),
                 user.getPreference() != null,
+                user.isAutoTradeEnabled(),
                 user.getCreatedAt()
         );
     }

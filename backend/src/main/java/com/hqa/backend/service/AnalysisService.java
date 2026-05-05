@@ -28,6 +28,60 @@ public class AnalysisService {
         this.stockCatalogService = stockCatalogService;
     }
 
+    public BulkAnalysisResponse submitBulkFromWatchlist(AnalysisMode mode, int maxRetries) {
+        Map<String, Object> tradingStatus;
+        try {
+            tradingStatus = aiServerClient.getTradingStatus();
+        } catch (Exception e) {
+            throw new ApiException(ErrorCode.SERVICE_UNAVAILABLE, 503,
+                    "AI 서버에서 워치리스트를 가져오지 못했습니다", e.getMessage());
+        }
+
+        List<Map<String, Object>> watchlist = extractWatchlist(tradingStatus);
+        List<AnalysisTaskResponse> submitted = new ArrayList<>();
+        List<BulkAnalysisResponse.BulkAnalysisFailure> failures = new ArrayList<>();
+
+        for (Map<String, Object> entry : watchlist) {
+            String code = String.valueOf(entry.getOrDefault("code", entry.get("stock_code")));
+            String name = String.valueOf(entry.getOrDefault("name",
+                    entry.getOrDefault("stock_name", code)));
+            if (code == null || code.isBlank() || "null".equals(code)) {
+                failures.add(new BulkAnalysisResponse.BulkAnalysisFailure(name, code,
+                        "stock code missing"));
+                continue;
+            }
+            AnalysisRequest req = new AnalysisRequest();
+            req.setStockName(name);
+            req.setStockCode(code);
+            req.setMode(mode);
+            req.setMaxRetries(maxRetries);
+            try {
+                submitted.add(submit(req));
+            } catch (Exception e) {
+                failures.add(new BulkAnalysisResponse.BulkAnalysisFailure(name, code,
+                        e.getMessage()));
+            }
+        }
+        return new BulkAnalysisResponse(
+                watchlist.size(), submitted.size(), failures.size(), submitted, failures);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> extractWatchlist(Map<String, Object> status) {
+        Object runtime = status.get("runtime");
+        if (runtime instanceof Map<?, ?> runtimeMap) {
+            Object wl = ((Map<String, Object>) runtimeMap).get("watchlist");
+            if (wl instanceof List<?> list) {
+                return (List<Map<String, Object>>) list;
+            }
+        }
+        Object wl = status.get("watchlist");
+        if (wl instanceof List<?> list) {
+            return (List<Map<String, Object>>) list;
+        }
+        return List.of();
+    }
+
     public AnalysisTaskResponse submit(AnalysisRequest request) {
         String taskId = UUID.randomUUID().toString();
         TaskMeta meta = new TaskMeta(taskId, request.getStockName(), request.getStockCode(), request.getMode(), request.getMaxRetries());

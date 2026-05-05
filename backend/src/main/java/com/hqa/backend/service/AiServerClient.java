@@ -4,10 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hqa.backend.config.HqaProperties;
 import com.hqa.backend.dto.ErrorCode;
-import com.hqa.backend.dto.RecommendItem;
-import com.hqa.backend.entity.enums.EventType;
 import com.hqa.backend.exception.ApiException;
-import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,37 +30,7 @@ public class AiServerClient {
     }
 
     public void submitAnalysis(Map<String, Object> payload) {
-        try {
-            String requestBody = objectMapper.writeValueAsString(payload);
-            webClient.post()
-                    .uri(properties.getAiServerUrl() + "/analyze")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(requestBody)
-                    .retrieve()
-                    .toBodilessEntity()
-                    .block();
-        } catch (WebClientRequestException exception) {
-            throw new ApiException(
-                    ErrorCode.SERVICE_UNAVAILABLE,
-                    503,
-                    "AI 서버에 연결할 수 없습니다",
-                    properties.getAiServerUrl()
-            );
-        } catch (WebClientResponseException exception) {
-            throw new ApiException(
-                    ErrorCode.ANALYSIS_FAILED,
-                    502,
-                    "AI 서버가 분석 요청을 처리하지 못했습니다",
-                    exception.getStatusCode() + " " + exception.getResponseBodyAsString()
-            );
-        } catch (Exception exception) {
-            throw new ApiException(
-                    ErrorCode.ANALYSIS_FAILED,
-                    500,
-                    "AI 요청 본문을 생성하지 못했습니다",
-                    exception.getMessage()
-            );
-        }
+        postBodiless("/analyze", payload, "AI 서버가 분석 요청을 처리하지 못했습니다");
     }
 
     public Map<String, Object> getAnalysis(String taskId) {
@@ -77,10 +44,75 @@ public class AiServerClient {
     }
 
     public Map<String, Object> suggest(Map<String, Object> payload) {
+        return postForMap("/suggest", payload, "AI 서버가 추천 요청을 처리하지 못했습니다");
+    }
+
+    public Map<String, Object> chat(Map<String, Object> payload) {
+        return postForMap("/chat", payload, "AI 서버가 채팅 요청을 처리하지 못했습니다");
+    }
+
+    public Map<String, Object> getTradingStatus() {
+        String response = webClient.get()
+                .uri(properties.getAiServerUrl() + "/trading/status")
+                .retrieve()
+                .bodyToMono(String.class)
+                .onErrorReturn("{}")
+                .block();
+        return parseMap(response);
+    }
+
+    public Map<String, Object> getTradingOrders(String date, int limit) {
+        StringBuilder uri = new StringBuilder(properties.getAiServerUrl())
+                .append("/trading/orders?limit=")
+                .append(limit);
+        if (date != null && !date.isBlank()) {
+            uri.append("&date=").append(date);
+        }
+        String response = webClient.get()
+                .uri(uri.toString())
+                .retrieve()
+                .bodyToMono(String.class)
+                .onErrorReturn("{}")
+                .block();
+        return parseMap(response);
+    }
+
+    public Map<String, Object> previewTradeDecision(Map<String, Object> payload) {
+        return postForMap("/trading/decision/preview", payload, "AI 서버가 매매 미리보기를 처리하지 못했습니다");
+    }
+
+    public Map<String, Object> executeTradeDecision(Map<String, Object> payload) {
+        return postForMap("/trading/decision/execute", payload, "AI 서버가 매매 실행을 처리하지 못했습니다");
+    }
+
+    private void postBodiless(String path, Map<String, Object> payload, String failureMessage) {
+        try {
+            String requestBody = objectMapper.writeValueAsString(payload);
+            webClient.post()
+                    .uri(properties.getAiServerUrl() + path)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(requestBody)
+                    .retrieve()
+                    .toBodilessEntity()
+                    .block();
+        } catch (WebClientRequestException exception) {
+            throw new ApiException(ErrorCode.SERVICE_UNAVAILABLE, 503,
+                    "AI 서버에 연결할 수 없습니다", properties.getAiServerUrl());
+        } catch (WebClientResponseException exception) {
+            throw new ApiException(ErrorCode.ANALYSIS_FAILED, 502,
+                    failureMessage,
+                    exception.getStatusCode() + " " + exception.getResponseBodyAsString());
+        } catch (Exception exception) {
+            throw new ApiException(ErrorCode.ANALYSIS_FAILED, 500,
+                    "AI 요청 본문을 생성하지 못했습니다", exception.getMessage());
+        }
+    }
+
+    private Map<String, Object> postForMap(String path, Map<String, Object> payload, String failureMessage) {
         try {
             String requestBody = objectMapper.writeValueAsString(payload);
             String response = webClient.post()
-                    .uri(properties.getAiServerUrl() + "/suggest")
+                    .uri(properties.getAiServerUrl() + path)
                     .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(requestBody)
                     .retrieve()
@@ -88,43 +120,16 @@ public class AiServerClient {
                     .block();
             return parseMap(response);
         } catch (WebClientRequestException exception) {
-            throw new ApiException(
-                    ErrorCode.SERVICE_UNAVAILABLE,
-                    503,
-                    "AI 서버에 연결할 수 없습니다",
-                    properties.getAiServerUrl()
-            );
+            throw new ApiException(ErrorCode.SERVICE_UNAVAILABLE, 503,
+                    "AI 서버에 연결할 수 없습니다", properties.getAiServerUrl());
         } catch (WebClientResponseException exception) {
-            throw new ApiException(
-                    ErrorCode.ANALYSIS_FAILED,
-                    502,
-                    "AI 서버가 추천 요청을 처리하지 못했습니다",
-                    exception.getStatusCode() + " " + exception.getResponseBodyAsString()
-            );
+            log.warn("[AiServerClient] {} failed: {} {}", path, exception.getStatusCode(), exception.getResponseBodyAsString());
+            throw new ApiException(ErrorCode.ANALYSIS_FAILED, 502,
+                    failureMessage,
+                    exception.getStatusCode() + " " + exception.getResponseBodyAsString());
         } catch (Exception exception) {
-            throw new ApiException(
-                    ErrorCode.ANALYSIS_FAILED,
-                    500,
-                    "AI 요청 본문을 생성하지 못했습니다",
-                    exception.getMessage()
-            );
-        }
-    }
-
-    public List<RecommendItem> recommend(EventType eventType) {
-        try {
-            String requestBody = objectMapper.writeValueAsString(Map.of("event_type", eventType.name()));
-            String response = webClient.post()
-                    .uri(properties.getAiServerUrl() + "/recommend")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(requestBody)
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .block();
-            return objectMapper.readValue(response, new TypeReference<>() {});
-        } catch (Exception exception) {
-            log.error("[AiServerClient] recommend call failed: {}", exception.getMessage());
-            return List.of();
+            throw new ApiException(ErrorCode.ANALYSIS_FAILED, 500,
+                    "AI 요청 본문을 생성하지 못했습니다", exception.getMessage());
         }
     }
 

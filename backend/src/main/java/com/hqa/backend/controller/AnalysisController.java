@@ -26,6 +26,14 @@ public class AnalysisController {
         return analysisService.submit(request);
     }
 
+    @PostMapping("/bulk")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public BulkAnalysisResponse createBulk(
+            @RequestParam(defaultValue = "quick") AnalysisMode mode,
+            @RequestParam(defaultValue = "0") int maxRetries) {
+        return analysisService.submitBulkFromWatchlist(mode, Math.max(0, Math.min(3, maxRetries)));
+    }
+
     @GetMapping("/{taskId}")
     public AnalysisResultResponse getResult(@PathVariable String taskId) {
         return analysisService.getResult(taskId);
