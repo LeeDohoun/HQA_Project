@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from pydantic import BaseModel, ConfigDict, Field
+
 from src.agents.analyst import AnalystAgent
 from src.agents.chartist import ChartistAgent, ChartistScore
 from src.agents.context import AgentContextPacket, EvidenceItem
@@ -33,6 +35,37 @@ class ThemeCandidate:
     market_rows: int = 0
     source_coverage: int = 0
     seed_score: int = 0
+
+
+class ThemeAnalystEvaluation(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    moat_score: int = 20
+    growth_score: int = 15
+    grade: str = "C"
+    summary: str = ""
+    key_points: List[str] = Field(default_factory=list)
+    catalysts: List[str] = Field(default_factory=list)
+    risks: List[str] = Field(default_factory=list)
+    contrarian_view: str = ""
+
+
+class ThemeQuantEvaluation(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    valuation_score: int = 12
+    profitability_score: int = 12
+    growth_score: int = 12
+    stability_score: int = 12
+    valuation_analysis: str = ""
+    profitability_analysis: str = ""
+    growth_analysis: str = ""
+    stability_analysis: str = ""
+    opinion: str = ""
+    per: Optional[float] = None
+    pbr: Optional[float] = None
+    roe: Optional[float] = None
+    debt_ratio: Optional[float] = None
 
 
 class ThemeLeaderOrchestrator:
@@ -319,7 +352,12 @@ class ThemeLeaderOrchestrator:
   "contrarian_view": ""
 }}
 """
-        data = self._invoke_json(self.analyst.thinking_llm, prompt)
+        data = self._invoke_json(
+            self.analyst.thinking_llm,
+            prompt,
+            ThemeAnalystEvaluation,
+            label=f"analyst:{candidate.stock_name}",
+        )
         if not data:
             return self._fallback_analyst(theme, candidate, context, source_counts)
 
@@ -393,7 +431,12 @@ class ThemeLeaderOrchestrator:
   "debt_ratio": null
 }}
 """
-        data = self._invoke_json(self.instruct_llm, prompt)
+        data = self._invoke_json(
+            self.instruct_llm,
+            prompt,
+            ThemeQuantEvaluation,
+            label=f"quant:{candidate.stock_name}",
+        )
         if not data:
             return self._fallback_quant(theme, candidate, context, source_counts)
 
@@ -720,19 +763,105 @@ class ThemeLeaderOrchestrator:
             return "D"
         return "F"
 
-    def _invoke_json(self, llm: Any, prompt: str) -> Dict[str, Any]:
+    def _invoke_json(
+        self,
+        llm: Any,
+        prompt: str,
+        schema: type[BaseModel],
+        *,
+        label: str = "theme_orchestrator",
+    ) -> Dict[str, Any]:
+        try:
+            structured_llm = self._build_structured_llm(llm, schema)
+            if structured_llm is not None:
+                structured = structured_llm.invoke(prompt)
+                return self._validate_structured_payload(structured, schema)
+        except Exception as exc:
+            logger.warning(
+                "Theme orchestration structured output failed (%s): %s",
+                label,
+                exc,
+            )
+
         try:
             response = llm.invoke(prompt)
-            content = getattr(response, "content", "")
-            if not isinstance(content, str):
-                content = str(content)
-            match = re.search(r"\{[\s\S]*\}", content)
-            if not match:
+            content = self._response_to_text(getattr(response, "content", response))
+            payload = self._extract_first_json_object(content)
+            if not payload:
+                if content.lstrip().startswith("[mock:"):
+                    logger.debug(
+                        "Theme orchestration mock response did not include JSON (%s)",
+                        label,
+                    )
+                    return {}
+                logger.warning(
+                    "Theme orchestration JSON payload missing (%s): %.200s",
+                    label,
+                    content,
+                )
                 return {}
-            return json.loads(match.group())
+            return self._validate_structured_payload(payload, schema)
         except Exception as exc:
-            logger.warning("Theme orchestration JSON parse failed: %s", exc)
+            logger.warning("Theme orchestration JSON parse failed (%s): %s", label, exc)
             return {}
+
+    @staticmethod
+    def _build_structured_llm(llm: Any, schema: type[BaseModel]):
+        if not hasattr(llm, "with_structured_output"):
+            return None
+        try:
+            # Ollama는 json_schema/json_mode를 지원하므로 우선 구조화 응답을 강제한다.
+            return llm.with_structured_output(schema, method="json_schema")
+        except Exception:
+            return llm.with_structured_output(schema, method="json_mode")
+
+    @staticmethod
+    def _validate_structured_payload(payload: Any, schema: type[BaseModel]) -> Dict[str, Any]:
+        if isinstance(payload, BaseModel):
+            return payload.model_dump()
+        if not isinstance(payload, dict):
+            raise TypeError(f"Expected dict payload for {schema.__name__}, got {type(payload).__name__}")
+        return schema.model_validate(payload).model_dump()
+
+    @staticmethod
+    def _response_to_text(content: Any) -> str:
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            chunks: List[str] = []
+            for item in content:
+                if isinstance(item, str):
+                    chunks.append(item)
+                elif isinstance(item, dict):
+                    text = item.get("text") or item.get("content") or ""
+                    if text:
+                        chunks.append(str(text))
+                else:
+                    chunks.append(str(item))
+            return "\n".join(chunk for chunk in chunks if chunk)
+        return str(content)
+
+    @staticmethod
+    def _extract_first_json_object(text: str) -> Dict[str, Any]:
+        if not text:
+            return {}
+
+        cleaned = text.strip()
+        if cleaned.startswith("```"):
+            cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+            cleaned = re.sub(r"\s*```$", "", cleaned)
+
+        decoder = json.JSONDecoder()
+        for index, char in enumerate(cleaned):
+            if char != "{":
+                continue
+            try:
+                payload, _end = decoder.raw_decode(cleaned[index:])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                return payload
+        return {}
 
     @staticmethod
     def _iter_jsonl(path: Path) -> Iterable[Dict[str, Any]]:

@@ -1,0 +1,1171 @@
+{
+  "task_id": "bt-ai-2025-m-top1-h20",
+  "mode": "backtest",
+  "result_type": "backtest",
+  "status": "completed",
+  "theme": "AI",
+  "theme_key": "ai",
+  "period": {
+    "from_date": "2025-01-01",
+    "to_date": "2025-12-31",
+    "rebalance": "M",
+    "rebalance_count": 12,
+    "hold_days": 20
+  },
+  "strategy": {
+    "name": "ai_theme_leader_momentum_v1",
+    "top_n": 1,
+    "min_history_days": 150,
+    "transaction_cost_bps": 15.0,
+    "prediction_model": "momentum_price_forecast_v1"
+  },
+  "metrics": {
+    "rebalance_count": 12,
+    "position_count": 12,
+    "total_return_pct": 0.97,
+    "benchmark_return_pct": 105.8,
+    "excess_return_pct": -104.82,
+    "cagr_pct": 0.98,
+    "benchmark_cagr_pct": 106.31,
+    "mdd_pct": -72.63,
+    "benchmark_mdd_pct": -10.16,
+    "sharpe": 0.715,
+    "avg_period_return_pct": 9.23,
+    "avg_benchmark_period_return_pct": 6.69,
+    "win_rate_pct": 58.33,
+    "prediction_hit_rate_pct": 58.33,
+    "avg_position_return_pct": 9.53,
+    "median_position_return_pct": 8.34
+  },
+  "leaders": [
+    {
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "selection_count": 5,
+      "avg_leader_score": 86.2,
+      "avg_realized_return_pct": 27.03,
+      "win_rate_pct": 80.0
+    },
+    {
+      "stock_name": "휴림로봇",
+      "stock_code": "090710",
+      "selection_count": 2,
+      "avg_leader_score": 85.5,
+      "avg_realized_return_pct": 35.28,
+      "win_rate_pct": 50.0
+    },
+    {
+      "stock_name": "산돌",
+      "stock_code": "419120",
+      "selection_count": 2,
+      "avg_leader_score": 83.0,
+      "avg_realized_return_pct": -26.45,
+      "win_rate_pct": 50.0
+    },
+    {
+      "stock_name": "더블유에스아이",
+      "stock_code": "299170",
+      "selection_count": 1,
+      "avg_leader_score": 86.0,
+      "avg_realized_return_pct": 8.81,
+      "win_rate_pct": 100.0
+    },
+    {
+      "stock_name": "심텍",
+      "stock_code": "222800",
+      "selection_count": 1,
+      "avg_leader_score": 83.0,
+      "avg_realized_return_pct": -14.1,
+      "win_rate_pct": 0.0
+    },
+    {
+      "stock_name": "태성",
+      "stock_code": "323280",
+      "selection_count": 1,
+      "avg_leader_score": 79.0,
+      "avg_realized_return_pct": -33.11,
+      "win_rate_pct": 0.0
+    }
+  ],
+  "predictions": [
+    {
+      "as_of_date": "2025-01-31",
+      "entry_date": "2025-01-31",
+      "exit_date": "2025-02-28",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "rank": 1,
+      "leader_score": 87,
+      "predicted_return_pct": 55.0,
+      "target_price": 65642.5,
+      "realized_return_pct": -28.1
+    },
+    {
+      "as_of_date": "2025-02-28",
+      "entry_date": "2025-02-28",
+      "exit_date": "2025-03-31",
+      "stock_name": "태성",
+      "stock_code": "323280",
+      "rank": 1,
+      "leader_score": 79,
+      "predicted_return_pct": 29.43,
+      "target_price": 47888.89,
+      "realized_return_pct": -33.11
+    },
+    {
+      "as_of_date": "2025-03-31",
+      "entry_date": "2025-03-31",
+      "exit_date": "2025-04-28",
+      "stock_name": "산돌",
+      "stock_code": "419120",
+      "rank": 1,
+      "leader_score": 84,
+      "predicted_return_pct": 7.69,
+      "target_price": 7387.24,
+      "realized_return_pct": 7.87
+    },
+    {
+      "as_of_date": "2025-04-30",
+      "entry_date": "2025-04-30",
+      "exit_date": "2025-06-02",
+      "stock_name": "더블유에스아이",
+      "stock_code": "299170",
+      "rank": 1,
+      "leader_score": 86,
+      "predicted_return_pct": 15.17,
+      "target_price": 2066.23,
+      "realized_return_pct": 8.81
+    },
+    {
+      "as_of_date": "2025-05-30",
+      "entry_date": "2025-05-30",
+      "exit_date": "2025-07-01",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "rank": 1,
+      "leader_score": 85,
+      "predicted_return_pct": 55.0,
+      "target_price": 92690.0,
+      "realized_return_pct": 17.39
+    },
+    {
+      "as_of_date": "2025-06-30",
+      "entry_date": "2025-06-30",
+      "exit_date": "2025-07-28",
+      "stock_name": "휴림로봇",
+      "stock_code": "090710",
+      "rank": 1,
+      "leader_score": 87,
+      "predicted_return_pct": 55.0,
+      "target_price": 5417.25,
+      "realized_return_pct": -22.46
+    },
+    {
+      "as_of_date": "2025-07-31",
+      "entry_date": "2025-07-31",
+      "exit_date": "2025-08-29",
+      "stock_name": "산돌",
+      "stock_code": "419120",
+      "rank": 1,
+      "leader_score": 82,
+      "predicted_return_pct": 55.0,
+      "target_price": 28210.0,
+      "realized_return_pct": -60.77
+    },
+    {
+      "as_of_date": "2025-08-29",
+      "entry_date": "2025-08-29",
+      "exit_date": "2025-09-26",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "rank": 1,
+      "leader_score": 85,
+      "predicted_return_pct": 29.27,
+      "target_price": 117506.79,
+      "realized_return_pct": 63.92
+    },
+    {
+      "as_of_date": "2025-09-30",
+      "entry_date": "2025-09-30",
+      "exit_date": "2025-11-04",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "rank": 1,
+      "leader_score": 88,
+      "predicted_return_pct": 55.0,
+      "target_price": 249085.0,
+      "realized_return_pct": 67.39
+    },
+    {
+      "as_of_date": "2025-10-31",
+      "entry_date": "2025-10-31",
+      "exit_date": "2025-11-28",
+      "stock_name": "심텍",
+      "stock_code": "222800",
+      "rank": 1,
+      "leader_score": 83,
+      "predicted_return_pct": 55.0,
+      "target_price": 97805.0,
+      "realized_return_pct": -14.1
+    },
+    {
+      "as_of_date": "2025-11-28",
+      "entry_date": "2025-11-28",
+      "exit_date": "2025-12-29",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "rank": 1,
+      "leader_score": 86,
+      "predicted_return_pct": 55.0,
+      "target_price": 361925.0,
+      "realized_return_pct": 14.56
+    },
+    {
+      "as_of_date": "2025-12-30",
+      "entry_date": "2025-12-30",
+      "exit_date": "2026-02-02",
+      "stock_name": "휴림로봇",
+      "stock_code": "090710",
+      "rank": 1,
+      "leader_score": 84,
+      "predicted_return_pct": 55.0,
+      "target_price": 11547.5,
+      "realized_return_pct": 93.02
+    }
+  ],
+  "positions": [
+    {
+      "as_of_date": "2025-01-31",
+      "entry_date": "2025-01-31",
+      "exit_date": "2025-02-28",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "entry_price": 42350.0,
+      "exit_price": 30450.0,
+      "return_20d": 0.9697674418604652,
+      "return_60d": 1.36328125,
+      "trend_150d": 0.9779552566437812,
+      "volatility_20d": 1.1004028247462518,
+      "volume_ratio_20d": 1.8045737355955407,
+      "doc_signal": 8.210496419592165,
+      "doc_counts": {
+        "dart": 34,
+        "forum": 0,
+        "news": 10
+      },
+      "return_60d_rank": 1.0,
+      "return_20d_rank": 0.9777777777777777,
+      "trend_150d_rank": 1.0,
+      "volume_rank": 0.8222222222222222,
+      "doc_rank": 0.8777777777777778,
+      "low_vol_rank": 0.13333333333333333,
+      "leader_score": 87,
+      "target_price": 65642.5,
+      "rank": 1,
+      "weight": 1.0,
+      "realized_return_pct": -28.1,
+      "predicted_return_pct": 55.0
+    },
+    {
+      "as_of_date": "2025-02-28",
+      "entry_date": "2025-02-28",
+      "exit_date": "2025-03-31",
+      "stock_name": "태성",
+      "stock_code": "323280",
+      "entry_price": 37000.0,
+      "exit_price": 24750.0,
+      "return_20d": 0.22112211221122102,
+      "return_60d": 0.2847222222222223,
+      "trend_150d": 0.4915826363655911,
+      "volatility_20d": 0.7799679055613536,
+      "volume_ratio_20d": 0.47139336187704733,
+      "doc_signal": 11.831148845057442,
+      "doc_counts": {
+        "dart": 88,
+        "forum": 0,
+        "news": 69
+      },
+      "return_60d_rank": 0.7111111111111111,
+      "return_20d_rank": 0.8888888888888888,
+      "trend_150d_rank": 0.9555555555555556,
+      "volume_rank": 0.6444444444444445,
+      "doc_rank": 1.0,
+      "low_vol_rank": 0.28888888888888886,
+      "leader_score": 79,
+      "target_price": 47888.89,
+      "rank": 1,
+      "weight": 1.0,
+      "realized_return_pct": -33.11,
+      "predicted_return_pct": 29.43
+    },
+    {
+      "as_of_date": "2025-03-31",
+      "entry_date": "2025-03-31",
+      "exit_date": "2025-04-28",
+      "stock_name": "산돌",
+      "stock_code": "419120",
+      "entry_price": 6860.0,
+      "exit_price": 7400.0,
+      "return_20d": 0.023880597014925398,
+      "return_60d": 0.17465753424657526,
+      "trend_150d": 0.06259939280034699,
+      "volatility_20d": 0.27704701107727925,
+      "volume_ratio_20d": 1.0334426215994041,
+      "doc_signal": 9.631288690082586,
+      "doc_counts": {
+        "dart": 43,
+        "forum": 0,
+        "news": 26
+      },
+      "return_60d_rank": 0.7391304347826086,
+      "return_20d_rank": 0.8913043478260869,
+      "trend_150d_rank": 0.8260869565217391,
+      "volume_rank": 0.782608695652174,
+      "doc_rank": 0.9565217391304348,
+      "low_vol_rank": 0.8913043478260869,
+      "leader_score": 84,
+      "target_price": 7387.24,
+      "rank": 1,
+      "weight": 1.0,
+      "realized_return_pct": 7.87,
+      "predicted_return_pct": 7.69
+    },
+    {
+      "as_of_date": "2025-04-30",
+      "entry_date": "2025-04-30",
+      "exit_date": "2025-06-02",
+      "stock_name": "더블유에스아이",
+      "stock_code": "299170",
+      "entry_price": 1794.0,
+      "exit_price": 1952.0,
+      "return_20d": 0.15816655907036803,
+      "return_60d": 0.14413265306122458,
+      "trend_150d": 0.14709794025371714,
+      "volatility_20d": 0.44177229447123856,
+      "volume_ratio_20d": 1.4474259304055415,
+      "doc_signal": 7.990672319210272,
+      "doc_counts": {
+        "dart": 38,
+        "forum": 0,
+        "news": 7
+      },
+      "return_60d_rank": 0.8695652173913043,
+      "return_20d_rank": 0.8695652173913043,
+      "trend_150d_rank": 0.8913043478260869,
+      "volume_rank": 0.8913043478260869,
+      "doc_rank": 0.7608695652173914,
+      "low_vol_rank": 0.9130434782608695,
+      "leader_score": 86,
+      "target_price": 2066.23,
+      "rank": 1,
+      "weight": 1.0,
+      "realized_return_pct": 8.81,
+      "predicted_return_pct": 15.17
+    },
+    {
+      "as_of_date": "2025-05-30",
+      "entry_date": "2025-05-30",
+      "exit_date": "2025-07-01",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "entry_price": 59800.0,
+      "exit_price": 70200.0,
+      "return_20d": 0.7208633093525181,
+      "return_60d": 0.8600311041990669,
+      "trend_150d": 0.9289866261228228,
+      "volatility_20d": 1.3021235109020943,
+      "volume_ratio_20d": 0.5789679290503559,
+      "doc_signal": 9.30838563887146,
+      "doc_counts": {
+        "dart": 59,
+        "forum": 0,
+        "news": 13
+      },
+      "return_60d_rank": 1.0,
+      "return_20d_rank": 1.0,
+      "trend_150d_rank": 1.0,
+      "volume_rank": 0.5531914893617021,
+      "doc_rank": 0.9361702127659575,
+      "low_vol_rank": 0.0425531914893617,
+      "leader_score": 85,
+      "target_price": 92690.0,
+      "rank": 1,
+      "weight": 1.0,
+      "realized_return_pct": 17.39,
+      "predicted_return_pct": 55.0
+    },
+    {
+      "as_of_date": "2025-06-30",
+      "entry_date": "2025-06-30",
+      "exit_date": "2025-07-28",
+      "stock_name": "휴림로봇",
+      "stock_code": "090710",
+      "entry_price": 3495.0,
+      "exit_price": 2710.0,
+      "return_20d": 0.6966019417475728,
+      "return_60d": 0.7732115677321156,
+      "trend_150d": 0.8030334296326866,
+      "volatility_20d": 0.9820063046401575,
+      "volume_ratio_20d": 3.697554486857456,
+      "doc_signal": 9.21140820420904,
+      "doc_counts": {
+        "dart": 45,
+        "forum": 0,
+        "news": 17
+      },
+      "return_60d_rank": 0.9574468085106383,
+      "return_20d_rank": 0.9787234042553191,
+      "trend_150d_rank": 0.9574468085106383,
+      "volume_rank": 1.0,
+      "doc_rank": 0.8936170212765957,
+      "low_vol_rank": 0.1276595744680851,
+      "leader_score": 87,
+      "target_price": 5417.25,
+      "rank": 1,
+      "weight": 1.0,
+      "realized_return_pct": -22.46,
+      "predicted_return_pct": 55.0
+    },
+    {
+      "as_of_date": "2025-07-31",
+      "entry_date": "2025-07-31",
+      "exit_date": "2025-08-29",
+      "stock_name": "산돌",
+      "stock_code": "419120",
+      "entry_price": 18200.0,
+      "exit_price": 7140.0,
+      "return_20d": 0.9912472647702406,
+      "return_60d": 1.5561797752808988,
+      "trend_150d": 1.3193971266662703,
+      "volatility_20d": 1.194889061450443,
+      "volume_ratio_20d": 0.40645836132199936,
+      "doc_signal": 10.468679611786452,
+      "doc_counts": {
+        "dart": 53,
+        "forum": 0,
+        "news": 41
+      },
+      "return_60d_rank": 1.0,
+      "return_20d_rank": 1.0,
+      "trend_150d_rank": 1.0,
+      "volume_rank": 0.19148936170212766,
+      "doc_rank": 0.9787234042553191,
+      "low_vol_rank": 0.02127659574468085,
+      "leader_score": 82,
+      "target_price": 28210.0,
+      "rank": 1,
+      "weight": 1.0,
+      "realized_return_pct": -60.77,
+      "predicted_return_pct": 55.0
+    },
+    {
+      "as_of_date": "2025-08-29",
+      "entry_date": "2025-08-29",
+      "exit_date": "2025-09-26",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "entry_price": 90900.0,
+      "exit_price": 149000.0,
+      "return_20d": 0.10989010989010994,
+      "return_60d": 0.3348017621145374,
+      "trend_150d": 0.6865919956459086,
+      "volatility_20d": 1.0115659956029541,
+      "volume_ratio_20d": 1.7950548231966568,
+      "doc_signal": 10.780102570195744,
+      "doc_counts": {
+        "dart": 71,
+        "forum": 0,
+        "news": 37
+      },
+      "return_60d_rank": 0.8723404255319149,
+      "return_20d_rank": 0.9574468085106383,
+      "trend_150d_rank": 1.0,
+      "volume_rank": 0.851063829787234,
+      "doc_rank": 0.9787234042553191,
+      "low_vol_rank": 0.0425531914893617,
+      "leader_score": 85,
+      "target_price": 117506.79,
+      "rank": 1,
+      "weight": 1.0,
+      "realized_return_pct": 63.92,
+      "predicted_return_pct": 29.27
+    },
+    {
+      "as_of_date": "2025-09-30",
+      "entry_date": "2025-09-30",
+      "exit_date": "2025-11-04",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "entry_price": 160700.0,
+      "exit_price": 269000.0,
+      "return_20d": 0.5617103984450924,
+      "return_60d": 1.2762039660056659,
+      "trend_150d": 1.4424719579292944,
+      "volatility_20d": 1.0356886433946193,
+      "volume_ratio_20d": 1.2015534280032432,
+      "doc_signal": 11.50278607759444,
+      "doc_counts": {
+        "dart": 87,
+        "forum": 0,
+        "news": 53
+      },
+      "return_60d_rank": 1.0,
+      "return_20d_rank": 0.9574468085106383,
+      "trend_150d_rank": 1.0,
+      "volume_rank": 0.9148936170212766,
+      "doc_rank": 0.9787234042553191,
+      "low_vol_rank": 0.0425531914893617,
+      "leader_score": 88,
+      "target_price": 249085.0,
+      "rank": 1,
+      "weight": 1.0,
+      "realized_return_pct": 67.39,
+      "predicted_return_pct": 55.0
+    },
+    {
+      "as_of_date": "2025-10-31",
+      "entry_date": "2025-10-31",
+      "exit_date": "2025-11-28",
+      "stock_name": "심텍",
+      "stock_code": "222800",
+      "entry_price": 63100.0,
+      "exit_price": 54200.0,
+      "return_20d": 0.5541871921182266,
+      "return_60d": 1.7375271149674623,
+      "trend_150d": 1.3607612301399246,
+      "volatility_20d": 0.8453775120695002,
+      "volume_ratio_20d": 0.6678520551987782,
+      "doc_signal": 10.00964519005895,
+      "doc_counts": {
+        "dart": 54,
+        "forum": 0,
+        "news": 27
+      },
+      "return_60d_rank": 0.9791666666666666,
+      "return_20d_rank": 0.9166666666666666,
+      "trend_150d_rank": 0.9583333333333334,
+      "volume_rank": 0.4583333333333333,
+      "doc_rank": 0.9375,
+      "low_vol_rank": 0.22916666666666666,
+      "leader_score": 83,
+      "target_price": 97805.0,
+      "rank": 1,
+      "weight": 1.0,
+      "realized_return_pct": -14.1,
+      "predicted_return_pct": 55.0
+    },
+    {
+      "as_of_date": "2025-11-28",
+      "entry_date": "2025-11-28",
+      "exit_date": "2025-12-29",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "entry_price": 233500.0,
+      "exit_price": 267500.0,
+      "return_20d": 0.05895691609977316,
+      "return_60d": 1.5687568756875687,
+      "trend_150d": 1.1255420056256318,
+      "volatility_20d": 1.2565462678334522,
+      "volume_ratio_20d": 1.5796582733776365,
+      "doc_signal": 12.115137678090129,
+      "doc_counts": {
+        "dart": 103,
+        "forum": 0,
+        "news": 72
+      },
+      "return_60d_rank": 0.9791666666666666,
+      "return_20d_rank": 0.8541666666666666,
+      "trend_150d_rank": 1.0,
+      "volume_rank": 0.8541666666666666,
+      "doc_rank": 0.9583333333333334,
+      "low_vol_rank": 0.10416666666666667,
+      "leader_score": 86,
+      "target_price": 361925.0,
+      "rank": 1,
+      "weight": 1.0,
+      "realized_return_pct": 14.56,
+      "predicted_return_pct": 55.0
+    },
+    {
+      "as_of_date": "2025-12-30",
+      "entry_date": "2025-12-30",
+      "exit_date": "2026-02-02",
+      "stock_name": "휴림로봇",
+      "stock_code": "090710",
+      "entry_price": 7450.0,
+      "exit_price": 14380.0,
+      "return_20d": 0.40831758034026455,
+      "return_60d": 1.2713414634146343,
+      "trend_150d": 0.9384719463646063,
+      "volatility_20d": 1.2538307832668891,
+      "volume_ratio_20d": 1.27045871835119,
+      "doc_signal": 9.769102466745718,
+      "doc_counts": {
+        "dart": 52,
+        "forum": 0,
+        "news": 23
+      },
+      "return_60d_rank": 1.0,
+      "return_20d_rank": 1.0,
+      "trend_150d_rank": 1.0,
+      "volume_rank": 0.6666666666666666,
+      "doc_rank": 0.7916666666666666,
+      "low_vol_rank": 0.020833333333333332,
+      "leader_score": 84,
+      "target_price": 11547.5,
+      "rank": 1,
+      "weight": 1.0,
+      "realized_return_pct": 93.02,
+      "predicted_return_pct": 55.0
+    }
+  ],
+  "trades": [
+    {
+      "date": "2025-01-31",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "side": "BUY",
+      "price": 42350.0,
+      "weight": 1.0,
+      "reason": "rank 1 leader_score 87"
+    },
+    {
+      "date": "2025-02-28",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "side": "SELL",
+      "price": 30450.0,
+      "weight": 1.0,
+      "realized_return_pct": -28.1,
+      "reason": "holding period exit"
+    },
+    {
+      "date": "2025-02-28",
+      "stock_name": "태성",
+      "stock_code": "323280",
+      "side": "BUY",
+      "price": 37000.0,
+      "weight": 1.0,
+      "reason": "rank 1 leader_score 79"
+    },
+    {
+      "date": "2025-03-31",
+      "stock_name": "태성",
+      "stock_code": "323280",
+      "side": "SELL",
+      "price": 24750.0,
+      "weight": 1.0,
+      "realized_return_pct": -33.11,
+      "reason": "holding period exit"
+    },
+    {
+      "date": "2025-03-31",
+      "stock_name": "산돌",
+      "stock_code": "419120",
+      "side": "BUY",
+      "price": 6860.0,
+      "weight": 1.0,
+      "reason": "rank 1 leader_score 84"
+    },
+    {
+      "date": "2025-04-28",
+      "stock_name": "산돌",
+      "stock_code": "419120",
+      "side": "SELL",
+      "price": 7400.0,
+      "weight": 1.0,
+      "realized_return_pct": 7.87,
+      "reason": "holding period exit"
+    },
+    {
+      "date": "2025-04-30",
+      "stock_name": "더블유에스아이",
+      "stock_code": "299170",
+      "side": "BUY",
+      "price": 1794.0,
+      "weight": 1.0,
+      "reason": "rank 1 leader_score 86"
+    },
+    {
+      "date": "2025-06-02",
+      "stock_name": "더블유에스아이",
+      "stock_code": "299170",
+      "side": "SELL",
+      "price": 1952.0,
+      "weight": 1.0,
+      "realized_return_pct": 8.81,
+      "reason": "holding period exit"
+    },
+    {
+      "date": "2025-05-30",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "side": "BUY",
+      "price": 59800.0,
+      "weight": 1.0,
+      "reason": "rank 1 leader_score 85"
+    },
+    {
+      "date": "2025-07-01",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "side": "SELL",
+      "price": 70200.0,
+      "weight": 1.0,
+      "realized_return_pct": 17.39,
+      "reason": "holding period exit"
+    },
+    {
+      "date": "2025-06-30",
+      "stock_name": "휴림로봇",
+      "stock_code": "090710",
+      "side": "BUY",
+      "price": 3495.0,
+      "weight": 1.0,
+      "reason": "rank 1 leader_score 87"
+    },
+    {
+      "date": "2025-07-28",
+      "stock_name": "휴림로봇",
+      "stock_code": "090710",
+      "side": "SELL",
+      "price": 2710.0,
+      "weight": 1.0,
+      "realized_return_pct": -22.46,
+      "reason": "holding period exit"
+    },
+    {
+      "date": "2025-07-31",
+      "stock_name": "산돌",
+      "stock_code": "419120",
+      "side": "BUY",
+      "price": 18200.0,
+      "weight": 1.0,
+      "reason": "rank 1 leader_score 82"
+    },
+    {
+      "date": "2025-08-29",
+      "stock_name": "산돌",
+      "stock_code": "419120",
+      "side": "SELL",
+      "price": 7140.0,
+      "weight": 1.0,
+      "realized_return_pct": -60.77,
+      "reason": "holding period exit"
+    },
+    {
+      "date": "2025-08-29",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "side": "BUY",
+      "price": 90900.0,
+      "weight": 1.0,
+      "reason": "rank 1 leader_score 85"
+    },
+    {
+      "date": "2025-09-26",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "side": "SELL",
+      "price": 149000.0,
+      "weight": 1.0,
+      "realized_return_pct": 63.92,
+      "reason": "holding period exit"
+    },
+    {
+      "date": "2025-09-30",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "side": "BUY",
+      "price": 160700.0,
+      "weight": 1.0,
+      "reason": "rank 1 leader_score 88"
+    },
+    {
+      "date": "2025-11-04",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "side": "SELL",
+      "price": 269000.0,
+      "weight": 1.0,
+      "realized_return_pct": 67.39,
+      "reason": "holding period exit"
+    },
+    {
+      "date": "2025-10-31",
+      "stock_name": "심텍",
+      "stock_code": "222800",
+      "side": "BUY",
+      "price": 63100.0,
+      "weight": 1.0,
+      "reason": "rank 1 leader_score 83"
+    },
+    {
+      "date": "2025-11-28",
+      "stock_name": "심텍",
+      "stock_code": "222800",
+      "side": "SELL",
+      "price": 54200.0,
+      "weight": 1.0,
+      "realized_return_pct": -14.1,
+      "reason": "holding period exit"
+    },
+    {
+      "date": "2025-11-28",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "side": "BUY",
+      "price": 233500.0,
+      "weight": 1.0,
+      "reason": "rank 1 leader_score 86"
+    },
+    {
+      "date": "2025-12-29",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "side": "SELL",
+      "price": 267500.0,
+      "weight": 1.0,
+      "realized_return_pct": 14.56,
+      "reason": "holding period exit"
+    },
+    {
+      "date": "2025-12-30",
+      "stock_name": "휴림로봇",
+      "stock_code": "090710",
+      "side": "BUY",
+      "price": 7450.0,
+      "weight": 1.0,
+      "reason": "rank 1 leader_score 84"
+    },
+    {
+      "date": "2026-02-02",
+      "stock_name": "휴림로봇",
+      "stock_code": "090710",
+      "side": "SELL",
+      "price": 14380.0,
+      "weight": 1.0,
+      "realized_return_pct": 93.02,
+      "reason": "holding period exit"
+    }
+  ],
+  "periods": [
+    {
+      "as_of_date": "2025-01-31",
+      "entry_date": "2025-01-31",
+      "exit_date": "2025-02-28",
+      "selected_count": 1,
+      "eligible_count": 45,
+      "portfolio_return_pct": -28.4,
+      "benchmark_return_pct": 3.62,
+      "excess_return_pct": -32.01,
+      "top_symbols": [
+        {
+          "stock_name": "로보티즈",
+          "stock_code": "108490",
+          "leader_score": 87,
+          "realized_return_pct": -28.1
+        }
+      ]
+    },
+    {
+      "as_of_date": "2025-02-28",
+      "entry_date": "2025-02-28",
+      "exit_date": "2025-03-31",
+      "selected_count": 1,
+      "eligible_count": 45,
+      "portfolio_return_pct": -33.41,
+      "benchmark_return_pct": -10.16,
+      "excess_return_pct": -23.25,
+      "top_symbols": [
+        {
+          "stock_name": "태성",
+          "stock_code": "323280",
+          "leader_score": 79,
+          "realized_return_pct": -33.11
+        }
+      ]
+    },
+    {
+      "as_of_date": "2025-03-31",
+      "entry_date": "2025-03-31",
+      "exit_date": "2025-04-28",
+      "selected_count": 1,
+      "eligible_count": 46,
+      "portfolio_return_pct": 7.57,
+      "benchmark_return_pct": 3.33,
+      "excess_return_pct": 4.24,
+      "top_symbols": [
+        {
+          "stock_name": "산돌",
+          "stock_code": "419120",
+          "leader_score": 84,
+          "realized_return_pct": 7.87
+        }
+      ]
+    },
+    {
+      "as_of_date": "2025-04-30",
+      "entry_date": "2025-04-30",
+      "exit_date": "2025-06-02",
+      "selected_count": 1,
+      "eligible_count": 46,
+      "portfolio_return_pct": 8.51,
+      "benchmark_return_pct": 5.8,
+      "excess_return_pct": 2.71,
+      "top_symbols": [
+        {
+          "stock_name": "더블유에스아이",
+          "stock_code": "299170",
+          "leader_score": 86,
+          "realized_return_pct": 8.81
+        }
+      ]
+    },
+    {
+      "as_of_date": "2025-05-30",
+      "entry_date": "2025-05-30",
+      "exit_date": "2025-07-01",
+      "selected_count": 1,
+      "eligible_count": 47,
+      "portfolio_return_pct": 17.09,
+      "benchmark_return_pct": 16.88,
+      "excess_return_pct": 0.21,
+      "top_symbols": [
+        {
+          "stock_name": "로보티즈",
+          "stock_code": "108490",
+          "leader_score": 85,
+          "realized_return_pct": 17.39
+        }
+      ]
+    },
+    {
+      "as_of_date": "2025-06-30",
+      "entry_date": "2025-06-30",
+      "exit_date": "2025-07-28",
+      "selected_count": 1,
+      "eligible_count": 47,
+      "portfolio_return_pct": -22.76,
+      "benchmark_return_pct": 1.18,
+      "excess_return_pct": -23.94,
+      "top_symbols": [
+        {
+          "stock_name": "휴림로봇",
+          "stock_code": "090710",
+          "leader_score": 87,
+          "realized_return_pct": -22.46
+        }
+      ]
+    },
+    {
+      "as_of_date": "2025-07-31",
+      "entry_date": "2025-07-31",
+      "exit_date": "2025-08-29",
+      "selected_count": 1,
+      "eligible_count": 47,
+      "portfolio_return_pct": -61.07,
+      "benchmark_return_pct": -4.47,
+      "excess_return_pct": -56.59,
+      "top_symbols": [
+        {
+          "stock_name": "산돌",
+          "stock_code": "419120",
+          "leader_score": 82,
+          "realized_return_pct": -60.77
+        }
+      ]
+    },
+    {
+      "as_of_date": "2025-08-29",
+      "entry_date": "2025-08-29",
+      "exit_date": "2025-09-26",
+      "selected_count": 1,
+      "eligible_count": 47,
+      "portfolio_return_pct": 63.62,
+      "benchmark_return_pct": 14.69,
+      "excess_return_pct": 48.92,
+      "top_symbols": [
+        {
+          "stock_name": "로보티즈",
+          "stock_code": "108490",
+          "leader_score": 85,
+          "realized_return_pct": 63.92
+        }
+      ]
+    },
+    {
+      "as_of_date": "2025-09-30",
+      "entry_date": "2025-09-30",
+      "exit_date": "2025-11-04",
+      "selected_count": 1,
+      "eligible_count": 47,
+      "portfolio_return_pct": 67.09,
+      "benchmark_return_pct": 21.26,
+      "excess_return_pct": 45.83,
+      "top_symbols": [
+        {
+          "stock_name": "로보티즈",
+          "stock_code": "108490",
+          "leader_score": 88,
+          "realized_return_pct": 67.39
+        }
+      ]
+    },
+    {
+      "as_of_date": "2025-10-31",
+      "entry_date": "2025-10-31",
+      "exit_date": "2025-11-28",
+      "selected_count": 1,
+      "eligible_count": 48,
+      "portfolio_return_pct": -14.4,
+      "benchmark_return_pct": -3.99,
+      "excess_return_pct": -10.41,
+      "top_symbols": [
+        {
+          "stock_name": "심텍",
+          "stock_code": "222800",
+          "leader_score": 83,
+          "realized_return_pct": -14.1
+        }
+      ]
+    },
+    {
+      "as_of_date": "2025-11-28",
+      "entry_date": "2025-11-28",
+      "exit_date": "2025-12-29",
+      "selected_count": 1,
+      "eligible_count": 48,
+      "portfolio_return_pct": 14.26,
+      "benchmark_return_pct": 7.75,
+      "excess_return_pct": 6.51,
+      "top_symbols": [
+        {
+          "stock_name": "로보티즈",
+          "stock_code": "108490",
+          "leader_score": 86,
+          "realized_return_pct": 14.56
+        }
+      ]
+    },
+    {
+      "as_of_date": "2025-12-30",
+      "entry_date": "2025-12-30",
+      "exit_date": "2026-02-02",
+      "selected_count": 1,
+      "eligible_count": 48,
+      "portfolio_return_pct": 92.72,
+      "benchmark_return_pct": 24.42,
+      "excess_return_pct": 68.3,
+      "top_symbols": [
+        {
+          "stock_name": "휴림로봇",
+          "stock_code": "090710",
+          "leader_score": 84,
+          "realized_return_pct": 93.02
+        }
+      ]
+    }
+  ],
+  "equity_curve": [
+    {
+      "date": "2025-02-28",
+      "equity": 0.716008,
+      "benchmark_equity": 1.036151,
+      "period_return_pct": -28.4,
+      "benchmark_return_pct": 3.62
+    },
+    {
+      "date": "2025-03-31",
+      "equity": 0.476803,
+      "benchmark_equity": 0.930847,
+      "period_return_pct": -33.41,
+      "benchmark_return_pct": -10.16
+    },
+    {
+      "date": "2025-04-28",
+      "equity": 0.512906,
+      "benchmark_equity": 0.961887,
+      "period_return_pct": 7.57,
+      "benchmark_return_pct": 3.33
+    },
+    {
+      "date": "2025-06-02",
+      "equity": 0.556539,
+      "benchmark_equity": 1.017636,
+      "period_return_pct": 8.51,
+      "benchmark_return_pct": 5.8
+    },
+    {
+      "date": "2025-07-01",
+      "equity": 0.651659,
+      "benchmark_equity": 1.189458,
+      "period_return_pct": 17.09,
+      "benchmark_return_pct": 16.88
+    },
+    {
+      "date": "2025-07-28",
+      "equity": 0.503337,
+      "benchmark_equity": 1.203442,
+      "period_return_pct": -22.76,
+      "benchmark_return_pct": 1.18
+    },
+    {
+      "date": "2025-08-29",
+      "equity": 0.195953,
+      "benchmark_equity": 1.149593,
+      "period_return_pct": -61.07,
+      "benchmark_return_pct": -4.47
+    },
+    {
+      "date": "2025-09-26",
+      "equity": 0.320611,
+      "benchmark_equity": 1.318506,
+      "period_return_pct": 63.62,
+      "benchmark_return_pct": 14.69
+    },
+    {
+      "date": "2025-11-04",
+      "equity": 0.535718,
+      "benchmark_equity": 1.598837,
+      "period_return_pct": 67.09,
+      "benchmark_return_pct": 21.26
+    },
+    {
+      "date": "2025-11-28",
+      "equity": 0.45855,
+      "benchmark_equity": 1.535022,
+      "period_return_pct": -14.4,
+      "benchmark_return_pct": -3.99
+    },
+    {
+      "date": "2025-12-29",
+      "equity": 0.523944,
+      "benchmark_equity": 1.654054,
+      "period_return_pct": 14.26,
+      "benchmark_return_pct": 7.75
+    },
+    {
+      "date": "2026-02-02",
+      "equity": 1.009745,
+      "benchmark_equity": 2.057962,
+      "period_return_pct": 92.72,
+      "benchmark_return_pct": 24.42
+    }
+  ],
+  "artifacts": {
+    "result_json": "data/backtest_results/sweeps/bt-ai-2025-m-top1-h20.json"
+  },
+  "warnings": [
+    "theme_targets has no point-in-time membership date; historical theme membership may include survivorship/future-membership bias.",
+    "selection uses deterministic price/document features, not the full LLM ThemeLeaderOrchestrator.",
+    "future returns are used only for evaluation after each as_of_date signal."
+  ],
+  "metadata": {
+    "generated_at": "2026-05-02T16:22:59.393982",
+    "data_dir": "data",
+    "target_count": 50,
+    "price_stock_count": 50,
+    "document_signal_count": 30497
+  }
+}

@@ -1,0 +1,1363 @@
+{
+  "task_id": "bt-ai-2026q1-w-top1-h5",
+  "mode": "backtest",
+  "result_type": "backtest",
+  "status": "completed",
+  "theme": "AI",
+  "theme_key": "ai",
+  "period": {
+    "from_date": "2026-01-01",
+    "to_date": "2026-03-31",
+    "rebalance": "W",
+    "rebalance_count": 14,
+    "hold_days": 5
+  },
+  "strategy": {
+    "name": "ai_theme_leader_momentum_v1",
+    "top_n": 1,
+    "min_history_days": 150,
+    "transaction_cost_bps": 15.0,
+    "prediction_model": "momentum_price_forecast_v1"
+  },
+  "metrics": {
+    "rebalance_count": 14,
+    "position_count": 14,
+    "total_return_pct": -18.38,
+    "benchmark_return_pct": -1.58,
+    "excess_return_pct": -16.8,
+    "cagr_pct": -56.54,
+    "benchmark_cagr_pct": -6.31,
+    "mdd_pct": -35.18,
+    "benchmark_mdd_pct": -20.88,
+    "sharpe": -0.934,
+    "avg_period_return_pct": -1.12,
+    "avg_benchmark_period_return_pct": 0.08,
+    "win_rate_pct": 21.43,
+    "prediction_hit_rate_pct": 28.57,
+    "avg_position_return_pct": -0.82,
+    "median_position_return_pct": -2.95
+  },
+  "leaders": [
+    {
+      "stock_name": "제주반도체",
+      "stock_code": "080220",
+      "selection_count": 4,
+      "avg_leader_score": 83.0,
+      "avg_realized_return_pct": 1.02,
+      "win_rate_pct": 50.0
+    },
+    {
+      "stock_name": "휴림로봇",
+      "stock_code": "090710",
+      "selection_count": 2,
+      "avg_leader_score": 85.5,
+      "avg_realized_return_pct": 6.86,
+      "win_rate_pct": 50.0
+    },
+    {
+      "stock_name": "삼성전기",
+      "stock_code": "009150",
+      "selection_count": 2,
+      "avg_leader_score": 81.0,
+      "avg_realized_return_pct": 2.79,
+      "win_rate_pct": 50.0
+    },
+    {
+      "stock_name": "태성",
+      "stock_code": "323280",
+      "selection_count": 2,
+      "avg_leader_score": 84.0,
+      "avg_realized_return_pct": -3.5,
+      "win_rate_pct": 0.0
+    },
+    {
+      "stock_name": "에이디테크놀로지",
+      "stock_code": "200710",
+      "selection_count": 1,
+      "avg_leader_score": 81.0,
+      "avg_realized_return_pct": -2.6,
+      "win_rate_pct": 0.0
+    },
+    {
+      "stock_name": "더블유에스아이",
+      "stock_code": "299170",
+      "selection_count": 1,
+      "avg_leader_score": 83.0,
+      "avg_realized_return_pct": -3.3,
+      "win_rate_pct": 0.0
+    },
+    {
+      "stock_name": "리노공업",
+      "stock_code": "058470",
+      "selection_count": 1,
+      "avg_leader_score": 86.0,
+      "avg_realized_return_pct": -10.63,
+      "win_rate_pct": 0.0
+    },
+    {
+      "stock_name": "한화에어로스페이스",
+      "stock_code": "012450",
+      "selection_count": 1,
+      "avg_leader_score": 82.0,
+      "avg_realized_return_pct": -11.29,
+      "win_rate_pct": 0.0
+    }
+  ],
+  "predictions": [
+    {
+      "as_of_date": "2026-01-02",
+      "entry_date": "2026-01-02",
+      "exit_date": "2026-01-09",
+      "stock_name": "제주반도체",
+      "stock_code": "080220",
+      "rank": 1,
+      "leader_score": 85,
+      "predicted_return_pct": 55.0,
+      "target_price": 47507.5,
+      "realized_return_pct": 0.16
+    },
+    {
+      "as_of_date": "2026-01-09",
+      "entry_date": "2026-01-09",
+      "exit_date": "2026-01-16",
+      "stock_name": "더블유에스아이",
+      "stock_code": "299170",
+      "rank": 1,
+      "leader_score": 83,
+      "predicted_return_pct": 55.0,
+      "target_price": 5866.75,
+      "realized_return_pct": -3.3
+    },
+    {
+      "as_of_date": "2026-01-16",
+      "entry_date": "2026-01-16",
+      "exit_date": "2026-01-27",
+      "stock_name": "휴림로봇",
+      "stock_code": "090710",
+      "rank": 1,
+      "leader_score": 85,
+      "predicted_return_pct": 55.0,
+      "target_price": 19855.5,
+      "realized_return_pct": 17.25
+    },
+    {
+      "as_of_date": "2026-01-23",
+      "entry_date": "2026-01-23",
+      "exit_date": "2026-01-30",
+      "stock_name": "휴림로봇",
+      "stock_code": "090710",
+      "rank": 1,
+      "leader_score": 86,
+      "predicted_return_pct": 55.0,
+      "target_price": 23684.0,
+      "realized_return_pct": -3.53
+    },
+    {
+      "as_of_date": "2026-01-30",
+      "entry_date": "2026-01-30",
+      "exit_date": "2026-02-06",
+      "stock_name": "제주반도체",
+      "stock_code": "080220",
+      "rank": 1,
+      "leader_score": 83,
+      "predicted_return_pct": 55.0,
+      "target_price": 67115.0,
+      "realized_return_pct": -2.54
+    },
+    {
+      "as_of_date": "2026-02-06",
+      "entry_date": "2026-02-06",
+      "exit_date": "2026-02-13",
+      "stock_name": "태성",
+      "stock_code": "323280",
+      "rank": 1,
+      "leader_score": 83,
+      "predicted_return_pct": 55.0,
+      "target_price": 113460.0,
+      "realized_return_pct": -2.32
+    },
+    {
+      "as_of_date": "2026-02-13",
+      "entry_date": "2026-02-13",
+      "exit_date": "2026-02-25",
+      "stock_name": "제주반도체",
+      "stock_code": "080220",
+      "rank": 1,
+      "leader_score": 84,
+      "predicted_return_pct": 55.0,
+      "target_price": 70912.5,
+      "realized_return_pct": -4.92
+    },
+    {
+      "as_of_date": "2026-02-20",
+      "entry_date": "2026-02-20",
+      "exit_date": "2026-02-27",
+      "stock_name": "제주반도체",
+      "stock_code": "080220",
+      "rank": 1,
+      "leader_score": 80,
+      "predicted_return_pct": 55.0,
+      "target_price": 70835.0,
+      "realized_return_pct": 11.38
+    },
+    {
+      "as_of_date": "2026-02-27",
+      "entry_date": "2026-02-27",
+      "exit_date": "2026-03-09",
+      "stock_name": "태성",
+      "stock_code": "323280",
+      "rank": 1,
+      "leader_score": 85,
+      "predicted_return_pct": 55.0,
+      "target_price": 122450.0,
+      "realized_return_pct": -4.68
+    },
+    {
+      "as_of_date": "2026-03-06",
+      "entry_date": "2026-03-06",
+      "exit_date": "2026-03-13",
+      "stock_name": "리노공업",
+      "stock_code": "058470",
+      "rank": 1,
+      "leader_score": 86,
+      "predicted_return_pct": 55.0,
+      "target_price": 196850.0,
+      "realized_return_pct": -10.63
+    },
+    {
+      "as_of_date": "2026-03-13",
+      "entry_date": "2026-03-13",
+      "exit_date": "2026-03-20",
+      "stock_name": "한화에어로스페이스",
+      "stock_code": "012450",
+      "rank": 1,
+      "leader_score": 82,
+      "predicted_return_pct": 39.36,
+      "target_price": 2073732.79,
+      "realized_return_pct": -11.29
+    },
+    {
+      "as_of_date": "2026-03-20",
+      "entry_date": "2026-03-20",
+      "exit_date": "2026-03-27",
+      "stock_name": "삼성전기",
+      "stock_code": "009150",
+      "rank": 1,
+      "leader_score": 79,
+      "predicted_return_pct": 55.0,
+      "target_price": 719975.0,
+      "realized_return_pct": -6.57
+    },
+    {
+      "as_of_date": "2026-03-27",
+      "entry_date": "2026-03-27",
+      "exit_date": "2026-04-03",
+      "stock_name": "에이디테크놀로지",
+      "stock_code": "200710",
+      "rank": 1,
+      "leader_score": 81,
+      "predicted_return_pct": 55.0,
+      "target_price": 89590.0,
+      "realized_return_pct": -2.6
+    },
+    {
+      "as_of_date": "2026-03-31",
+      "entry_date": "2026-03-31",
+      "exit_date": "2026-04-07",
+      "stock_name": "삼성전기",
+      "stock_code": "009150",
+      "rank": 1,
+      "leader_score": 83,
+      "predicted_return_pct": 27.59,
+      "target_price": 519930.99,
+      "realized_return_pct": 12.15
+    }
+  ],
+  "positions": [
+    {
+      "as_of_date": "2026-01-02",
+      "entry_date": "2026-01-02",
+      "exit_date": "2026-01-09",
+      "stock_name": "제주반도체",
+      "stock_code": "080220",
+      "entry_price": 30650.0,
+      "exit_price": 30700.0,
+      "return_20d": 0.6030334728033473,
+      "return_60d": 0.6943062465450525,
+      "trend_150d": 0.760212871855737,
+      "volatility_20d": 0.9279913364801167,
+      "volume_ratio_20d": 6.802507730785225,
+      "doc_signal": 10.355476142294949,
+      "doc_counts": {
+        "dart": 83,
+        "forum": 0,
+        "news": 21
+      },
+      "return_60d_rank": 0.8958333333333334,
+      "return_20d_rank": 1.0,
+      "trend_150d_rank": 0.9166666666666666,
+      "volume_rank": 1.0,
+      "doc_rank": 0.875,
+      "low_vol_rank": 0.125,
+      "leader_score": 85,
+      "target_price": 47507.5,
+      "rank": 1,
+      "weight": 1.0,
+      "realized_return_pct": 0.16,
+      "predicted_return_pct": 55.0
+    },
+    {
+      "as_of_date": "2026-01-09",
+      "entry_date": "2026-01-09",
+      "exit_date": "2026-01-16",
+      "stock_name": "더블유에스아이",
+      "stock_code": "299170",
+      "entry_price": 3785.0,
+      "exit_price": 3660.0,
+      "return_20d": 0.6710816777041944,
+      "return_60d": 1.0853994490358128,
+      "trend_150d": 0.9302361160691519,
+      "volatility_20d": 1.0160551518525884,
+      "volume_ratio_20d": 2.459036796831488,
+      "doc_signal": 8.652695729923131,
+      "doc_counts": {
+        "dart": 46,
+        "forum": 0,
+        "news": 10
+      },
+      "return_60d_rank": 0.9791666666666666,
+      "return_20d_rank": 1.0,
+      "trend_150d_rank": 0.9791666666666666,
+      "volume_rank": 0.9166666666666666,
+      "doc_rank": 0.5625,
+      "low_vol_rank": 0.10416666666666667,
+      "leader_score": 83,
+      "target_price": 5866.75,
+      "rank": 1,
+      "weight": 1.0,
+      "realized_return_pct": -3.3,
+      "predicted_return_pct": 55.0
+    },
+    {
+      "as_of_date": "2026-01-16",
+      "entry_date": "2026-01-16",
+      "exit_date": "2026-01-27",
+      "stock_name": "휴림로봇",
+      "stock_code": "090710",
+      "entry_price": 12810.0,
+      "exit_price": 15020.0,
+      "return_20d": 1.220103986135182,
+      "return_60d": 1.0236966824644549,
+      "trend_150d": 1.9366365081305785,
+      "volatility_20d": 1.3987417048571187,
+      "volume_ratio_20d": 1.958380449592018,
+      "doc_signal": 9.769102466745718,
+      "doc_counts": {
+        "dart": 52,
+        "forum": 0,
+        "news": 23
+      },
+      "return_60d_rank": 1.0,
+      "return_20d_rank": 1.0,
+      "trend_150d_rank": 1.0,
+      "volume_rank": 0.75,
+      "doc_rank": 0.7916666666666666,
+      "low_vol_rank": 0.041666666666666664,
+      "leader_score": 85,
+      "target_price": 19855.5,
+      "rank": 1,
+      "weight": 1.0,
+      "realized_return_pct": 17.25,
+      "predicted_return_pct": 55.0
+    },
+    {
+      "as_of_date": "2026-01-23",
+      "entry_date": "2026-01-23",
+      "exit_date": "2026-01-30",
+      "stock_name": "휴림로봇",
+      "stock_code": "090710",
+      "entry_price": 15280.0,
+      "exit_price": 14740.0,
+      "return_20d": 1.7681159420289854,
+      "return_60d": 1.513157894736842,
+      "trend_150d": 2.267703625554241,
+      "volatility_20d": 2.209734359380477,
+      "volume_ratio_20d": 2.4784447159607708,
+      "doc_signal": 9.769102466745718,
+      "doc_counts": {
+        "dart": 52,
+        "forum": 0,
+        "news": 23
+      },
+      "return_60d_rank": 1.0,
+      "return_20d_rank": 1.0,
+      "trend_150d_rank": 1.0,
+      "volume_rank": 0.9791666666666666,
+      "doc_rank": 0.75,
+      "low_vol_rank": 0.020833333333333332,
+      "leader_score": 86,
+      "target_price": 23684.0,
+      "rank": 1,
+      "weight": 1.0,
+      "realized_return_pct": -3.53,
+      "predicted_return_pct": 55.0
+    },
+    {
+      "as_of_date": "2026-01-30",
+      "entry_date": "2026-01-30",
+      "exit_date": "2026-02-06",
+      "stock_name": "제주반도체",
+      "stock_code": "080220",
+      "entry_price": 43300.0,
+      "exit_price": 42200.0,
+      "return_20d": 0.41272430668841764,
+      "return_60d": 1.0817307692307692,
+      "trend_150d": 1.17794424865115,
+      "volatility_20d": 0.96367462337539,
+      "volume_ratio_20d": 4.414272730717645,
+      "doc_signal": 10.459889794682505,
+      "doc_counts": {
+        "dart": 83,
+        "forum": 0,
+        "news": 23
+      },
+      "return_60d_rank": 0.9375,
+      "return_20d_rank": 0.8541666666666666,
+      "trend_150d_rank": 0.9583333333333334,
+      "volume_rank": 0.9375,
+      "doc_rank": 0.7708333333333334,
+      "low_vol_rank": 0.22916666666666666,
+      "leader_score": 83,
+      "target_price": 67115.0,
+      "rank": 1,
+      "weight": 1.0,
+      "realized_return_pct": -2.54,
+      "predicted_return_pct": 55.0
+    },
+    {
+      "as_of_date": "2026-02-06",
+      "entry_date": "2026-02-06",
+      "exit_date": "2026-02-13",
+      "stock_name": "태성",
+      "stock_code": "323280",
+      "entry_price": 73200.0,
+      "exit_price": 71500.0,
+      "return_20d": 0.9263157894736842,
+      "return_60d": 0.8007380073800738,
+      "trend_150d": 1.0208712936889182,
+      "volatility_20d": 1.0527073092072445,
+      "volume_ratio_20d": 0.5801427123058781,
+      "doc_signal": 13.197588020331679,
+      "doc_counts": {
+        "dart": 111,
+        "forum": 0,
+        "news": 163
+      },
+      "return_60d_rank": 0.9375,
+      "return_20d_rank": 0.9791666666666666,
+      "trend_150d_rank": 0.9375,
+      "volume_rank": 0.4583333333333333,
+      "doc_rank": 0.9791666666666666,
+      "low_vol_rank": 0.16666666666666666,
+      "leader_score": 83,
+      "target_price": 113460.0,
+      "rank": 1,
+      "weight": 1.0,
+      "realized_return_pct": -2.32,
+      "predicted_return_pct": 55.0
+    },
+    {
+      "as_of_date": "2026-02-13",
+      "entry_date": "2026-02-13",
+      "exit_date": "2026-02-25",
+      "stock_name": "제주반도체",
+      "stock_code": "080220",
+      "entry_price": 45750.0,
+      "exit_price": 43500.0,
+      "return_20d": 0.48298217179902747,
+      "return_60d": 1.494547437295529,
+      "trend_150d": 1.1038867871311107,
+      "volatility_20d": 1.0440691680505454,
+      "volume_ratio_20d": 1.7153372360779116,
+      "doc_signal": 10.459889794682505,
+      "doc_counts": {
+        "dart": 83,
+        "forum": 0,
+        "news": 23
+      },
+      "return_60d_rank": 0.9583333333333334,
+      "return_20d_rank": 0.9583333333333334,
+      "trend_150d_rank": 0.9583333333333334,
+      "volume_rank": 0.9375,
+      "doc_rank": 0.6875,
+      "low_vol_rank": 0.16666666666666666,
+      "leader_score": 84,
+      "target_price": 70912.5,
+      "rank": 1,
+      "weight": 1.0,
+      "realized_return_pct": -4.92,
+      "predicted_return_pct": 55.0
+    },
+    {
+      "as_of_date": "2026-02-20",
+      "entry_date": "2026-02-20",
+      "exit_date": "2026-02-27",
+      "stock_name": "제주반도체",
+      "stock_code": "080220",
+      "entry_price": 45700.0,
+      "exit_price": 50900.0,
+      "return_20d": 0.5335570469798658,
+      "return_60d": 1.405263157894737,
+      "trend_150d": 1.0628453121802668,
+      "volatility_20d": 1.0306669783734443,
+      "volume_ratio_20d": 0.6186097612848666,
+      "doc_signal": 10.459889794682505,
+      "doc_counts": {
+        "dart": 83,
+        "forum": 0,
+        "news": 23
+      },
+      "return_60d_rank": 0.9583333333333334,
+      "return_20d_rank": 0.9791666666666666,
+      "trend_150d_rank": 0.9583333333333334,
+      "volume_rank": 0.5416666666666666,
+      "doc_rank": 0.6875,
+      "low_vol_rank": 0.16666666666666666,
+      "leader_score": 80,
+      "target_price": 70835.0,
+      "rank": 1,
+      "weight": 1.0,
+      "realized_return_pct": 11.38,
+      "predicted_return_pct": 55.0
+    },
+    {
+      "as_of_date": "2026-02-27",
+      "entry_date": "2026-02-27",
+      "exit_date": "2026-03-09",
+      "stock_name": "태성",
+      "stock_code": "323280",
+      "entry_price": 79000.0,
+      "exit_price": 75300.0,
+      "return_20d": 0.40569395017793597,
+      "return_60d": 1.0334620334620332,
+      "trend_150d": 0.9831806200577382,
+      "volatility_20d": 1.1602609732625244,
+      "volume_ratio_20d": 1.3935722235136565,
+      "doc_signal": 12.964078041068756,
+      "doc_counts": {
+        "dart": 111,
+        "forum": 0,
+        "news": 134
+      },
+      "return_60d_rank": 0.9166666666666666,
+      "return_20d_rank": 0.9583333333333334,
+      "trend_150d_rank": 0.8958333333333334,
+      "volume_rank": 0.9166666666666666,
+      "doc_rank": 0.9791666666666666,
+      "low_vol_rank": 0.10416666666666667,
+      "leader_score": 85,
+      "target_price": 122450.0,
+      "rank": 1,
+      "weight": 1.0,
+      "realized_return_pct": -4.68,
+      "predicted_return_pct": 55.0
+    },
+    {
+      "as_of_date": "2026-03-06",
+      "entry_date": "2026-03-06",
+      "exit_date": "2026-03-13",
+      "stock_name": "리노공업",
+      "stock_code": "058470",
+      "entry_price": 127000.0,
+      "exit_price": 113500.0,
+      "return_20d": 0.341077085533263,
+      "return_60d": 0.9242424242424243,
+      "trend_150d": 1.0133057846872506,
+      "volatility_20d": 0.9332565512888576,
+      "volume_ratio_20d": 1.1642905730089852,
+      "doc_signal": 10.343817762844624,
+      "doc_counts": {
+        "dart": 22,
+        "forum": 0,
+        "news": 109
+      },
+      "return_60d_rank": 0.9375,
+      "return_20d_rank": 0.9791666666666666,
+      "trend_150d_rank": 1.0,
+      "volume_rank": 0.8125,
+      "doc_rank": 0.5,
+      "low_vol_rank": 0.6875,
+      "leader_score": 86,
+      "target_price": 196850.0,
+      "rank": 1,
+      "weight": 1.0,
+      "realized_return_pct": -10.63,
+      "predicted_return_pct": 55.0
+    },
+    {
+      "as_of_date": "2026-03-13",
+      "entry_date": "2026-03-13",
+      "exit_date": "2026-03-20",
+      "stock_name": "한화에어로스페이스",
+      "stock_code": "012450",
+      "entry_price": 1488000.0,
+      "exit_price": 1320000.0,
+      "return_20d": 0.24727577535624468,
+      "return_60d": 0.6121343445287106,
+      "trend_150d": 0.43179718772452014,
+      "volatility_20d": 0.9233150682034373,
+      "volume_ratio_20d": 0.73036227019019,
+      "doc_signal": 10.899464338098594,
+      "doc_counts": {
+        "dart": 57,
+        "forum": 0,
+        "news": 54
+      },
+      "return_60d_rank": 0.875,
+      "return_20d_rank": 0.9791666666666666,
+      "trend_150d_rank": 0.7916666666666666,
+      "volume_rank": 0.7083333333333334,
+      "doc_rank": 0.6458333333333334,
+      "low_vol_rank": 0.75,
+      "leader_score": 82,
+      "target_price": 2073732.79,
+      "rank": 1,
+      "weight": 1.0,
+      "realized_return_pct": -11.29,
+      "predicted_return_pct": 39.36
+    },
+    {
+      "as_of_date": "2026-03-20",
+      "entry_date": "2026-03-20",
+      "exit_date": "2026-03-27",
+      "stock_name": "삼성전기",
+      "stock_code": "009150",
+      "entry_price": 464500.0,
+      "exit_price": 434000.0,
+      "return_20d": 0.29748603351955305,
+      "return_60d": 0.7969052224371374,
+      "trend_150d": 0.8136643699224555,
+      "volatility_20d": 0.968565107122366,
+      "volume_ratio_20d": 0.7004416118298409,
+      "doc_signal": 9.922538075824665,
+      "doc_counts": {
+        "dart": 12,
+        "forum": 0,
+        "news": 157
+      },
+      "return_60d_rank": 0.875,
+      "return_20d_rank": 0.9791666666666666,
+      "trend_150d_rank": 0.9583333333333334,
+      "volume_rank": 0.5416666666666666,
+      "doc_rank": 0.4375,
+      "low_vol_rank": 0.6041666666666666,
+      "leader_score": 79,
+      "target_price": 719975.0,
+      "rank": 1,
+      "weight": 1.0,
+      "realized_return_pct": -6.57,
+      "predicted_return_pct": 55.0
+    },
+    {
+      "as_of_date": "2026-03-27",
+      "entry_date": "2026-03-27",
+      "exit_date": "2026-04-03",
+      "stock_name": "에이디테크놀로지",
+      "stock_code": "200710",
+      "entry_price": 57800.0,
+      "exit_price": 56300.0,
+      "return_20d": 0.2297872340425533,
+      "return_60d": 1.0942028985507246,
+      "trend_150d": 0.8515947847814713,
+      "volatility_20d": 1.3840848284846727,
+      "volume_ratio_20d": 0.9669808031951239,
+      "doc_signal": 10.472329946270648,
+      "doc_counts": {
+        "dart": 97,
+        "forum": 0,
+        "news": 19
+      },
+      "return_60d_rank": 0.9791666666666666,
+      "return_20d_rank": 0.9791666666666666,
+      "trend_150d_rank": 0.9791666666666666,
+      "volume_rank": 0.8958333333333334,
+      "doc_rank": 0.4791666666666667,
+      "low_vol_rank": 0.125,
+      "leader_score": 81,
+      "target_price": 89590.0,
+      "rank": 1,
+      "weight": 1.0,
+      "realized_return_pct": -2.6,
+      "predicted_return_pct": 55.0
+    },
+    {
+      "as_of_date": "2026-03-31",
+      "entry_date": "2026-03-31",
+      "exit_date": "2026-04-07",
+      "stock_name": "삼성전기",
+      "stock_code": "009150",
+      "entry_price": 407500.0,
+      "exit_price": 457000.0,
+      "return_20d": -0.003667481662591676,
+      "return_60d": 0.5825242718446602,
+      "trend_150d": 0.5149036781489551,
+      "volatility_20d": 0.858413830425215,
+      "volume_ratio_20d": 1.0641263130201981,
+      "doc_signal": 9.876080661207837,
+      "doc_counts": {
+        "dart": 12,
+        "forum": 0,
+        "news": 151
+      },
+      "return_60d_rank": 0.9583333333333334,
+      "return_20d_rank": 0.8333333333333334,
+      "trend_150d_rank": 0.9583333333333334,
+      "volume_rank": 0.8333333333333334,
+      "doc_rank": 0.3958333333333333,
+      "low_vol_rank": 0.9166666666666666,
+      "leader_score": 83,
+      "target_price": 519930.99,
+      "rank": 1,
+      "weight": 1.0,
+      "realized_return_pct": 12.15,
+      "predicted_return_pct": 27.59
+    }
+  ],
+  "trades": [
+    {
+      "date": "2026-01-02",
+      "stock_name": "제주반도체",
+      "stock_code": "080220",
+      "side": "BUY",
+      "price": 30650.0,
+      "weight": 1.0,
+      "reason": "rank 1 leader_score 85"
+    },
+    {
+      "date": "2026-01-09",
+      "stock_name": "제주반도체",
+      "stock_code": "080220",
+      "side": "SELL",
+      "price": 30700.0,
+      "weight": 1.0,
+      "realized_return_pct": 0.16,
+      "reason": "holding period exit"
+    },
+    {
+      "date": "2026-01-09",
+      "stock_name": "더블유에스아이",
+      "stock_code": "299170",
+      "side": "BUY",
+      "price": 3785.0,
+      "weight": 1.0,
+      "reason": "rank 1 leader_score 83"
+    },
+    {
+      "date": "2026-01-16",
+      "stock_name": "더블유에스아이",
+      "stock_code": "299170",
+      "side": "SELL",
+      "price": 3660.0,
+      "weight": 1.0,
+      "realized_return_pct": -3.3,
+      "reason": "holding period exit"
+    },
+    {
+      "date": "2026-01-16",
+      "stock_name": "휴림로봇",
+      "stock_code": "090710",
+      "side": "BUY",
+      "price": 12810.0,
+      "weight": 1.0,
+      "reason": "rank 1 leader_score 85"
+    },
+    {
+      "date": "2026-01-27",
+      "stock_name": "휴림로봇",
+      "stock_code": "090710",
+      "side": "SELL",
+      "price": 15020.0,
+      "weight": 1.0,
+      "realized_return_pct": 17.25,
+      "reason": "holding period exit"
+    },
+    {
+      "date": "2026-01-23",
+      "stock_name": "휴림로봇",
+      "stock_code": "090710",
+      "side": "BUY",
+      "price": 15280.0,
+      "weight": 1.0,
+      "reason": "rank 1 leader_score 86"
+    },
+    {
+      "date": "2026-01-30",
+      "stock_name": "휴림로봇",
+      "stock_code": "090710",
+      "side": "SELL",
+      "price": 14740.0,
+      "weight": 1.0,
+      "realized_return_pct": -3.53,
+      "reason": "holding period exit"
+    },
+    {
+      "date": "2026-01-30",
+      "stock_name": "제주반도체",
+      "stock_code": "080220",
+      "side": "BUY",
+      "price": 43300.0,
+      "weight": 1.0,
+      "reason": "rank 1 leader_score 83"
+    },
+    {
+      "date": "2026-02-06",
+      "stock_name": "제주반도체",
+      "stock_code": "080220",
+      "side": "SELL",
+      "price": 42200.0,
+      "weight": 1.0,
+      "realized_return_pct": -2.54,
+      "reason": "holding period exit"
+    },
+    {
+      "date": "2026-02-06",
+      "stock_name": "태성",
+      "stock_code": "323280",
+      "side": "BUY",
+      "price": 73200.0,
+      "weight": 1.0,
+      "reason": "rank 1 leader_score 83"
+    },
+    {
+      "date": "2026-02-13",
+      "stock_name": "태성",
+      "stock_code": "323280",
+      "side": "SELL",
+      "price": 71500.0,
+      "weight": 1.0,
+      "realized_return_pct": -2.32,
+      "reason": "holding period exit"
+    },
+    {
+      "date": "2026-02-13",
+      "stock_name": "제주반도체",
+      "stock_code": "080220",
+      "side": "BUY",
+      "price": 45750.0,
+      "weight": 1.0,
+      "reason": "rank 1 leader_score 84"
+    },
+    {
+      "date": "2026-02-25",
+      "stock_name": "제주반도체",
+      "stock_code": "080220",
+      "side": "SELL",
+      "price": 43500.0,
+      "weight": 1.0,
+      "realized_return_pct": -4.92,
+      "reason": "holding period exit"
+    },
+    {
+      "date": "2026-02-20",
+      "stock_name": "제주반도체",
+      "stock_code": "080220",
+      "side": "BUY",
+      "price": 45700.0,
+      "weight": 1.0,
+      "reason": "rank 1 leader_score 80"
+    },
+    {
+      "date": "2026-02-27",
+      "stock_name": "제주반도체",
+      "stock_code": "080220",
+      "side": "SELL",
+      "price": 50900.0,
+      "weight": 1.0,
+      "realized_return_pct": 11.38,
+      "reason": "holding period exit"
+    },
+    {
+      "date": "2026-02-27",
+      "stock_name": "태성",
+      "stock_code": "323280",
+      "side": "BUY",
+      "price": 79000.0,
+      "weight": 1.0,
+      "reason": "rank 1 leader_score 85"
+    },
+    {
+      "date": "2026-03-09",
+      "stock_name": "태성",
+      "stock_code": "323280",
+      "side": "SELL",
+      "price": 75300.0,
+      "weight": 1.0,
+      "realized_return_pct": -4.68,
+      "reason": "holding period exit"
+    },
+    {
+      "date": "2026-03-06",
+      "stock_name": "리노공업",
+      "stock_code": "058470",
+      "side": "BUY",
+      "price": 127000.0,
+      "weight": 1.0,
+      "reason": "rank 1 leader_score 86"
+    },
+    {
+      "date": "2026-03-13",
+      "stock_name": "리노공업",
+      "stock_code": "058470",
+      "side": "SELL",
+      "price": 113500.0,
+      "weight": 1.0,
+      "realized_return_pct": -10.63,
+      "reason": "holding period exit"
+    },
+    {
+      "date": "2026-03-13",
+      "stock_name": "한화에어로스페이스",
+      "stock_code": "012450",
+      "side": "BUY",
+      "price": 1488000.0,
+      "weight": 1.0,
+      "reason": "rank 1 leader_score 82"
+    },
+    {
+      "date": "2026-03-20",
+      "stock_name": "한화에어로스페이스",
+      "stock_code": "012450",
+      "side": "SELL",
+      "price": 1320000.0,
+      "weight": 1.0,
+      "realized_return_pct": -11.29,
+      "reason": "holding period exit"
+    },
+    {
+      "date": "2026-03-20",
+      "stock_name": "삼성전기",
+      "stock_code": "009150",
+      "side": "BUY",
+      "price": 464500.0,
+      "weight": 1.0,
+      "reason": "rank 1 leader_score 79"
+    },
+    {
+      "date": "2026-03-27",
+      "stock_name": "삼성전기",
+      "stock_code": "009150",
+      "side": "SELL",
+      "price": 434000.0,
+      "weight": 1.0,
+      "realized_return_pct": -6.57,
+      "reason": "holding period exit"
+    },
+    {
+      "date": "2026-03-27",
+      "stock_name": "에이디테크놀로지",
+      "stock_code": "200710",
+      "side": "BUY",
+      "price": 57800.0,
+      "weight": 1.0,
+      "reason": "rank 1 leader_score 81"
+    },
+    {
+      "date": "2026-04-03",
+      "stock_name": "에이디테크놀로지",
+      "stock_code": "200710",
+      "side": "SELL",
+      "price": 56300.0,
+      "weight": 1.0,
+      "realized_return_pct": -2.6,
+      "reason": "holding period exit"
+    },
+    {
+      "date": "2026-03-31",
+      "stock_name": "삼성전기",
+      "stock_code": "009150",
+      "side": "BUY",
+      "price": 407500.0,
+      "weight": 1.0,
+      "reason": "rank 1 leader_score 83"
+    },
+    {
+      "date": "2026-04-07",
+      "stock_name": "삼성전기",
+      "stock_code": "009150",
+      "side": "SELL",
+      "price": 457000.0,
+      "weight": 1.0,
+      "realized_return_pct": 12.15,
+      "reason": "holding period exit"
+    }
+  ],
+  "periods": [
+    {
+      "as_of_date": "2026-01-02",
+      "entry_date": "2026-01-02",
+      "exit_date": "2026-01-09",
+      "selected_count": 1,
+      "eligible_count": 48,
+      "portfolio_return_pct": -0.14,
+      "benchmark_return_pct": -3.86,
+      "excess_return_pct": 3.73,
+      "top_symbols": [
+        {
+          "stock_name": "제주반도체",
+          "stock_code": "080220",
+          "leader_score": 85,
+          "realized_return_pct": 0.16
+        }
+      ]
+    },
+    {
+      "as_of_date": "2026-01-09",
+      "entry_date": "2026-01-09",
+      "exit_date": "2026-01-16",
+      "selected_count": 1,
+      "eligible_count": 48,
+      "portfolio_return_pct": -3.6,
+      "benchmark_return_pct": 7.26,
+      "excess_return_pct": -10.86,
+      "top_symbols": [
+        {
+          "stock_name": "더블유에스아이",
+          "stock_code": "299170",
+          "leader_score": 83,
+          "realized_return_pct": -3.3
+        }
+      ]
+    },
+    {
+      "as_of_date": "2026-01-16",
+      "entry_date": "2026-01-16",
+      "exit_date": "2026-01-27",
+      "selected_count": 1,
+      "eligible_count": 48,
+      "portfolio_return_pct": 16.95,
+      "benchmark_return_pct": 4.24,
+      "excess_return_pct": 12.71,
+      "top_symbols": [
+        {
+          "stock_name": "휴림로봇",
+          "stock_code": "090710",
+          "leader_score": 85,
+          "realized_return_pct": 17.25
+        }
+      ]
+    },
+    {
+      "as_of_date": "2026-01-23",
+      "entry_date": "2026-01-23",
+      "exit_date": "2026-01-30",
+      "selected_count": 1,
+      "eligible_count": 48,
+      "portfolio_return_pct": -3.83,
+      "benchmark_return_pct": 10.91,
+      "excess_return_pct": -14.74,
+      "top_symbols": [
+        {
+          "stock_name": "휴림로봇",
+          "stock_code": "090710",
+          "leader_score": 86,
+          "realized_return_pct": -3.53
+        }
+      ]
+    },
+    {
+      "as_of_date": "2026-01-30",
+      "entry_date": "2026-01-30",
+      "exit_date": "2026-02-06",
+      "selected_count": 1,
+      "eligible_count": 48,
+      "portfolio_return_pct": -2.84,
+      "benchmark_return_pct": -7.35,
+      "excess_return_pct": 4.51,
+      "top_symbols": [
+        {
+          "stock_name": "제주반도체",
+          "stock_code": "080220",
+          "leader_score": 83,
+          "realized_return_pct": -2.54
+        }
+      ]
+    },
+    {
+      "as_of_date": "2026-02-06",
+      "entry_date": "2026-02-06",
+      "exit_date": "2026-02-13",
+      "selected_count": 1,
+      "eligible_count": 48,
+      "portfolio_return_pct": -2.62,
+      "benchmark_return_pct": 0.83,
+      "excess_return_pct": -3.45,
+      "top_symbols": [
+        {
+          "stock_name": "태성",
+          "stock_code": "323280",
+          "leader_score": 83,
+          "realized_return_pct": -2.32
+        }
+      ]
+    },
+    {
+      "as_of_date": "2026-02-13",
+      "entry_date": "2026-02-13",
+      "exit_date": "2026-02-25",
+      "selected_count": 1,
+      "eligible_count": 48,
+      "portfolio_return_pct": -5.22,
+      "benchmark_return_pct": 3.35,
+      "excess_return_pct": -8.57,
+      "top_symbols": [
+        {
+          "stock_name": "제주반도체",
+          "stock_code": "080220",
+          "leader_score": 84,
+          "realized_return_pct": -4.92
+        }
+      ]
+    },
+    {
+      "as_of_date": "2026-02-20",
+      "entry_date": "2026-02-20",
+      "exit_date": "2026-02-27",
+      "selected_count": 1,
+      "eligible_count": 48,
+      "portfolio_return_pct": 11.08,
+      "benchmark_return_pct": 1.09,
+      "excess_return_pct": 9.99,
+      "top_symbols": [
+        {
+          "stock_name": "제주반도체",
+          "stock_code": "080220",
+          "leader_score": 80,
+          "realized_return_pct": 11.38
+        }
+      ]
+    },
+    {
+      "as_of_date": "2026-02-27",
+      "entry_date": "2026-02-27",
+      "exit_date": "2026-03-09",
+      "selected_count": 1,
+      "eligible_count": 48,
+      "portfolio_return_pct": -4.98,
+      "benchmark_return_pct": -13.66,
+      "excess_return_pct": 8.68,
+      "top_symbols": [
+        {
+          "stock_name": "태성",
+          "stock_code": "323280",
+          "leader_score": 85,
+          "realized_return_pct": -4.68
+        }
+      ]
+    },
+    {
+      "as_of_date": "2026-03-06",
+      "entry_date": "2026-03-06",
+      "exit_date": "2026-03-13",
+      "selected_count": 1,
+      "eligible_count": 48,
+      "portfolio_return_pct": -10.93,
+      "benchmark_return_pct": -1.56,
+      "excess_return_pct": -9.37,
+      "top_symbols": [
+        {
+          "stock_name": "리노공업",
+          "stock_code": "058470",
+          "leader_score": 86,
+          "realized_return_pct": -10.63
+        }
+      ]
+    },
+    {
+      "as_of_date": "2026-03-13",
+      "entry_date": "2026-03-13",
+      "exit_date": "2026-03-20",
+      "selected_count": 1,
+      "eligible_count": 48,
+      "portfolio_return_pct": -11.59,
+      "benchmark_return_pct": 3.44,
+      "excess_return_pct": -15.03,
+      "top_symbols": [
+        {
+          "stock_name": "한화에어로스페이스",
+          "stock_code": "012450",
+          "leader_score": 82,
+          "realized_return_pct": -11.29
+        }
+      ]
+    },
+    {
+      "as_of_date": "2026-03-20",
+      "entry_date": "2026-03-20",
+      "exit_date": "2026-03-27",
+      "selected_count": 1,
+      "eligible_count": 48,
+      "portfolio_return_pct": -6.87,
+      "benchmark_return_pct": -3.31,
+      "excess_return_pct": -3.56,
+      "top_symbols": [
+        {
+          "stock_name": "삼성전기",
+          "stock_code": "009150",
+          "leader_score": 79,
+          "realized_return_pct": -6.57
+        }
+      ]
+    },
+    {
+      "as_of_date": "2026-03-27",
+      "entry_date": "2026-03-27",
+      "exit_date": "2026-04-03",
+      "selected_count": 1,
+      "eligible_count": 48,
+      "portfolio_return_pct": -2.9,
+      "benchmark_return_pct": -4.64,
+      "excess_return_pct": 1.75,
+      "top_symbols": [
+        {
+          "stock_name": "에이디테크놀로지",
+          "stock_code": "200710",
+          "leader_score": 81,
+          "realized_return_pct": -2.6
+        }
+      ]
+    },
+    {
+      "as_of_date": "2026-03-31",
+      "entry_date": "2026-03-31",
+      "exit_date": "2026-04-07",
+      "selected_count": 1,
+      "eligible_count": 48,
+      "portfolio_return_pct": 11.85,
+      "benchmark_return_pct": 4.36,
+      "excess_return_pct": 7.49,
+      "top_symbols": [
+        {
+          "stock_name": "삼성전기",
+          "stock_code": "009150",
+          "leader_score": 83,
+          "realized_return_pct": 12.15
+        }
+      ]
+    }
+  ],
+  "equity_curve": [
+    {
+      "date": "2026-01-09",
+      "equity": 0.998631,
+      "benchmark_equity": 0.961353,
+      "period_return_pct": -0.14,
+      "benchmark_return_pct": -3.86
+    },
+    {
+      "date": "2026-01-16",
+      "equity": 0.962656,
+      "benchmark_equity": 1.031117,
+      "period_return_pct": -3.6,
+      "benchmark_return_pct": 7.26
+    },
+    {
+      "date": "2026-01-27",
+      "equity": 1.125846,
+      "benchmark_equity": 1.074848,
+      "period_return_pct": 16.95,
+      "benchmark_return_pct": 4.24
+    },
+    {
+      "date": "2026-01-30",
+      "equity": 1.082681,
+      "benchmark_equity": 1.192099,
+      "period_return_pct": -3.83,
+      "benchmark_return_pct": 10.91
+    },
+    {
+      "date": "2026-02-06",
+      "equity": 1.051928,
+      "benchmark_equity": 1.104435,
+      "period_return_pct": -2.84,
+      "benchmark_return_pct": -7.35
+    },
+    {
+      "date": "2026-02-13",
+      "equity": 1.024343,
+      "benchmark_equity": 1.113613,
+      "period_return_pct": -2.62,
+      "benchmark_return_pct": 0.83
+    },
+    {
+      "date": "2026-02-25",
+      "equity": 0.970892,
+      "benchmark_equity": 1.1509,
+      "period_return_pct": -5.22,
+      "benchmark_return_pct": 3.35
+    },
+    {
+      "date": "2026-02-27",
+      "equity": 1.078453,
+      "benchmark_equity": 1.163434,
+      "period_return_pct": 11.08,
+      "benchmark_return_pct": 1.09
+    },
+    {
+      "date": "2026-03-09",
+      "equity": 1.024708,
+      "benchmark_equity": 1.004511,
+      "period_return_pct": -4.98,
+      "benchmark_return_pct": -13.66
+    },
+    {
+      "date": "2026-03-13",
+      "equity": 0.912708,
+      "benchmark_equity": 0.988884,
+      "period_return_pct": -10.93,
+      "benchmark_return_pct": -1.56
+    },
+    {
+      "date": "2026-03-20",
+      "equity": 0.806922,
+      "benchmark_equity": 1.022918,
+      "period_return_pct": -11.59,
+      "benchmark_return_pct": 3.44
+    },
+    {
+      "date": "2026-03-27",
+      "equity": 0.751517,
+      "benchmark_equity": 0.989061,
+      "period_return_pct": -6.87,
+      "benchmark_return_pct": -3.31
+    },
+    {
+      "date": "2026-04-03",
+      "equity": 0.72976,
+      "benchmark_equity": 0.943151,
+      "period_return_pct": -2.9,
+      "benchmark_return_pct": -4.64
+    },
+    {
+      "date": "2026-04-07",
+      "equity": 0.816216,
+      "benchmark_equity": 0.984234,
+      "period_return_pct": 11.85,
+      "benchmark_return_pct": 4.36
+    }
+  ],
+  "artifacts": {
+    "result_json": "data/backtest_results/sweeps_weekly_h5/bt-ai-2026q1-w-top1-h5.json"
+  },
+  "warnings": [
+    "theme_targets has no point-in-time membership date; historical theme membership may include survivorship/future-membership bias.",
+    "selection uses deterministic price/document features, not the full LLM ThemeLeaderOrchestrator.",
+    "future returns are used only for evaluation after each as_of_date signal."
+  ],
+  "metadata": {
+    "generated_at": "2026-05-02T16:36:57.056533",
+    "data_dir": "data",
+    "target_count": 50,
+    "price_stock_count": 50,
+    "document_signal_count": 30497
+  }
+}

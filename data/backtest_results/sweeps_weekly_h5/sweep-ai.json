@@ -1,0 +1,189 @@
+{
+  "theme": "AI",
+  "theme_key": "ai",
+  "generated_at": "2026-05-02T16:37:39.534440",
+  "config_count": 6,
+  "periods": [
+    {
+      "name": "2025",
+      "from_date": "20250101",
+      "to_date": "20251231"
+    },
+    {
+      "name": "2026q1",
+      "from_date": "20260101",
+      "to_date": "20260331"
+    }
+  ],
+  "top_ns": [
+    1,
+    3,
+    5
+  ],
+  "hold_days_list": [
+    5
+  ],
+  "rebalances": [
+    "W"
+  ],
+  "rows": [
+    {
+      "task_id": "bt-ai-2026q1-w-top3-h5",
+      "period": "2026q1",
+      "from_date": "2026-01-01",
+      "to_date": "2026-03-31",
+      "rebalance": "W",
+      "top_n": 3,
+      "hold_days": 5,
+      "rebalance_count": 14,
+      "position_count": 42,
+      "total_return_pct": 35.74,
+      "benchmark_return_pct": -1.58,
+      "excess_return_pct": 37.31,
+      "mdd_pct": -26.27,
+      "sharpe": 1.896,
+      "win_rate_pct": 57.14,
+      "prediction_hit_rate_pct": 47.62,
+      "result_json": "data/backtest_results/sweeps_weekly_h5/bt-ai-2026q1-w-top3-h5.json"
+    },
+    {
+      "task_id": "bt-ai-2026q1-w-top5-h5",
+      "period": "2026q1",
+      "from_date": "2026-01-01",
+      "to_date": "2026-03-31",
+      "rebalance": "W",
+      "top_n": 5,
+      "hold_days": 5,
+      "rebalance_count": 14,
+      "position_count": 70,
+      "total_return_pct": 23.49,
+      "benchmark_return_pct": -1.58,
+      "excess_return_pct": 25.07,
+      "mdd_pct": -27.0,
+      "sharpe": 1.476,
+      "win_rate_pct": 57.14,
+      "prediction_hit_rate_pct": 50.0,
+      "result_json": "data/backtest_results/sweeps_weekly_h5/bt-ai-2026q1-w-top5-h5.json"
+    },
+    {
+      "task_id": "bt-ai-2026q1-w-top1-h5",
+      "period": "2026q1",
+      "from_date": "2026-01-01",
+      "to_date": "2026-03-31",
+      "rebalance": "W",
+      "top_n": 1,
+      "hold_days": 5,
+      "rebalance_count": 14,
+      "position_count": 14,
+      "total_return_pct": -18.38,
+      "benchmark_return_pct": -1.58,
+      "excess_return_pct": -16.8,
+      "mdd_pct": -35.18,
+      "sharpe": -0.934,
+      "win_rate_pct": 21.43,
+      "prediction_hit_rate_pct": 28.57,
+      "result_json": "data/backtest_results/sweeps_weekly_h5/bt-ai-2026q1-w-top1-h5.json"
+    },
+    {
+      "task_id": "bt-ai-2025-w-top5-h5",
+      "period": "2025",
+      "from_date": "2025-01-01",
+      "to_date": "2025-12-31",
+      "rebalance": "W",
+      "top_n": 5,
+      "hold_days": 5,
+      "rebalance_count": 53,
+      "position_count": 265,
+      "total_return_pct": 98.82,
+      "benchmark_return_pct": 87.7,
+      "excess_return_pct": 11.12,
+      "mdd_pct": -34.58,
+      "sharpe": 1.528,
+      "win_rate_pct": 58.49,
+      "prediction_hit_rate_pct": 50.57,
+      "result_json": "data/backtest_results/sweeps_weekly_h5/bt-ai-2025-w-top5-h5.json"
+    },
+    {
+      "task_id": "bt-ai-2025-w-top3-h5",
+      "period": "2025",
+      "from_date": "2025-01-01",
+      "to_date": "2025-12-31",
+      "rebalance": "W",
+      "top_n": 3,
+      "hold_days": 5,
+      "rebalance_count": 53,
+      "position_count": 159,
+      "total_return_pct": 23.62,
+      "benchmark_return_pct": 87.7,
+      "excess_return_pct": -64.08,
+      "mdd_pct": -41.8,
+      "sharpe": 0.617,
+      "win_rate_pct": 49.06,
+      "prediction_hit_rate_pct": 47.8,
+      "result_json": "data/backtest_results/sweeps_weekly_h5/bt-ai-2025-w-top3-h5.json"
+    },
+    {
+      "task_id": "bt-ai-2025-w-top1-h5",
+      "period": "2025",
+      "from_date": "2025-01-01",
+      "to_date": "2025-12-31",
+      "rebalance": "W",
+      "top_n": 1,
+      "hold_days": 5,
+      "rebalance_count": 53,
+      "position_count": 53,
+      "total_return_pct": 16.1,
+      "benchmark_return_pct": 87.7,
+      "excess_return_pct": -71.6,
+      "mdd_pct": -76.02,
+      "sharpe": 0.771,
+      "win_rate_pct": 52.83,
+      "prediction_hit_rate_pct": 52.83,
+      "result_json": "data/backtest_results/sweeps_weekly_h5/bt-ai-2025-w-top1-h5.json"
+    }
+  ],
+  "best_by_period": {
+    "2026q1": {
+      "task_id": "bt-ai-2026q1-w-top3-h5",
+      "period": "2026q1",
+      "from_date": "2026-01-01",
+      "to_date": "2026-03-31",
+      "rebalance": "W",
+      "top_n": 3,
+      "hold_days": 5,
+      "rebalance_count": 14,
+      "position_count": 42,
+      "total_return_pct": 35.74,
+      "benchmark_return_pct": -1.58,
+      "excess_return_pct": 37.31,
+      "mdd_pct": -26.27,
+      "sharpe": 1.896,
+      "win_rate_pct": 57.14,
+      "prediction_hit_rate_pct": 47.62,
+      "result_json": "data/backtest_results/sweeps_weekly_h5/bt-ai-2026q1-w-top3-h5.json"
+    },
+    "2025": {
+      "task_id": "bt-ai-2025-w-top5-h5",
+      "period": "2025",
+      "from_date": "2025-01-01",
+      "to_date": "2025-12-31",
+      "rebalance": "W",
+      "top_n": 5,
+      "hold_days": 5,
+      "rebalance_count": 53,
+      "position_count": 265,
+      "total_return_pct": 98.82,
+      "benchmark_return_pct": 87.7,
+      "excess_return_pct": 11.12,
+      "mdd_pct": -34.58,
+      "sharpe": 1.528,
+      "win_rate_pct": 58.49,
+      "prediction_hit_rate_pct": 50.57,
+      "result_json": "data/backtest_results/sweeps_weekly_h5/bt-ai-2025-w-top5-h5.json"
+    }
+  },
+  "artifacts": {
+    "summary_json": "data/backtest_results/sweeps_weekly_h5/sweep-ai.json",
+    "summary_csv": "data/backtest_results/sweeps_weekly_h5/sweep-ai.csv"
+  }
+}

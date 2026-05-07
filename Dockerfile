@@ -29,6 +29,8 @@ WORKDIR /app
 # 런타임 시스템 패키지
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    chromium \
+    chromium-driver \
     && rm -rf /var/lib/apt/lists/*
 
 # 빌드된 패키지 복사
@@ -39,6 +41,7 @@ COPY src/ ./src/
 COPY ai_server/ ./ai_server/
 COPY prompts/ ./prompts/
 COPY config/ ./config/
+COPY scripts/ ./scripts/
 
 # 데이터/DB 디렉토리 생성
 RUN mkdir -p /app/database /app/data/files /app/data/token /app/logs
@@ -52,6 +55,8 @@ USER hqa
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app \
+    CHROME_BINARY=/usr/bin/chromium \
+    CHROMEDRIVER=/usr/bin/chromedriver \
     ENV=production \
     PORT=8000
 
