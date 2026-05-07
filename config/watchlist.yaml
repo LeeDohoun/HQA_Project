@@ -1,0 +1,65 @@
+# ==========================================
+# HQA Autonomous Agent — 감시 종목 설정
+# ==========================================
+
+# ── 분석 스케줄 ──
+schedule:
+  enabled: true
+  interval_minutes: 60          # 분석 주기 (분)
+  market_hours_only: true       # 장중(09:00~15:30)에만 실행
+  timezone: "Asia/Seoul"
+
+# ── 감시 종목 ──
+watchlist:
+  - name: "삼성전자"
+    code: "005930"
+    mode: "full"               # "full" | "quick"
+    priority: 1
+
+  - name: "SK하이닉스"
+    code: "000660"
+    mode: "full"
+    priority: 2
+
+  # - name: "NAVER"
+  #   code: "035420"
+  #   mode: "quick"
+  #   priority: 3
+
+# ── 매매 설정 ──
+trading:
+  enabled: false               # ⚠️ true로 변경 시 실제 주문 실행
+  dry_run: true                # true면 주문 시뮬레이션만 (로그만 남김)
+  account_type: "paper"        # "paper" (모의투자) | "real" (실전)
+
+  # 리스크 제한 (서킷 브레이커)
+  max_daily_buy_amount: 1000000    # 일일 최대 매수 금액 (원)
+  max_position_ratio: 0.25          # 종목당 최대 비중 (25%)
+  stop_loss_pct: 10                 # 손절 기준 (%)
+  cooldown_minutes: 30              # 동일 종목 재주문 대기 (분)
+
+  # 자동 매수 조건 (FinalDecision 기반)
+  auto_buy_conditions:
+    min_total_score: 70              # 종합 점수 최소값
+    min_confidence: 60               # 확신도 최소값
+    allowed_actions:                  # 허용 투자 행동
+      - "STRONG_BUY"
+      - "BUY"
+    max_risk_level: "MEDIUM"         # 최대 허용 리스크
+
+  # 자동 매도 조건
+  auto_sell_conditions:
+    max_total_score: 30
+    allowed_actions:
+      - "SELL"
+      - "STRONG_SELL"
+
+# ── 트레이싱 ──
+tracing:
+  debug: false
+  traces_dir: "./data/traces"
+
+# ── 알림 (향후 확장) ──
+notification:
+  enabled: false
+  # webhook_url: "https://hooks.slack.com/..."
