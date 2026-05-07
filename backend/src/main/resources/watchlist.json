@@ -1,0 +1,12 @@
+{
+  "stocks": [
+    { "name": "Samsung Electronics", "code": "005930", "market": "KOSPI" },
+    { "name": "SK hynix", "code": "000660", "market": "KOSPI" },
+    { "name": "NAVER", "code": "035420", "market": "KOSPI" },
+    { "name": "Kakao", "code": "035720", "market": "KOSPI" },
+    { "name": "LG Energy Solution", "code": "373220", "market": "KOSPI" },
+    { "name": "Samsung Biologics", "code": "207940", "market": "KOSPI" },
+    { "name": "Hyundai Motor", "code": "005380", "market": "KOSPI" },
+    { "name": "POSCO Holdings", "code": "005490", "market": "KOSPI" }
+  ]
+}

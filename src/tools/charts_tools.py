@@ -84,6 +84,20 @@ class TechnicalIndicators:
     def to_dict(self) -> Dict:
         """딕셔너리 변환"""
         return {
+            # 에이전트 내부 계산용 raw key
+            "current_price": self.current_price,
+            "price_change": self.price_change,
+            "rsi": self.rsi_14,
+            "macd": self.macd,
+            "macd_signal": self.macd_signal,
+            "macd_histogram": self.macd_histogram,
+            "bb_position": self.bb_position,
+            "bb_width": self.bb_width,
+            "atr": self.atr_14,
+            "atr_percent": self.atr_percent,
+            "volume_ratio": self.volume_ratio,
+
+            # 표시/리포트용 포맷 데이터
             "종목코드": self.stock_code,
             "종목명": self.stock_name,
             "기준일": self.date,
@@ -157,8 +171,8 @@ class TechnicalIndicators:
 class TechnicalAnalyzer:
     """기술적 지표 계산기"""
     
-    def __init__(self):
-        self.price_loader = PriceLoader()
+    def __init__(self, data_dir: Optional[str] = None, theme_key: Optional[str] = None):
+        self.price_loader = PriceLoader(data_dir=data_dir, theme_key=theme_key)
     
     def analyze(self, stock_code: str, stock_name: str = "Unknown", days: int = 300) -> TechnicalIndicators:
         """
@@ -563,9 +577,14 @@ if HAS_CREWAI:
 # 직접 사용 가능한 함수
 # ============================================================
 
-def analyze_stock(stock_code: str, stock_name: str = "Unknown") -> TechnicalIndicators:
+def analyze_stock(
+    stock_code: str,
+    stock_name: str = "Unknown",
+    data_dir: Optional[str] = None,
+    theme_key: Optional[str] = None,
+) -> TechnicalIndicators:
     """종목 기술적 분석"""
-    analyzer = TechnicalAnalyzer()
+    analyzer = TechnicalAnalyzer(data_dir=data_dir, theme_key=theme_key)
     return analyzer.analyze(stock_code, stock_name)
 
 

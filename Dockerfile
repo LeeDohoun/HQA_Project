@@ -17,8 +17,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Python 패키지 설치
-COPY requirements-prod.txt .
-RUN pip install --no-cache-dir --prefix=/install -r requirements-prod.txt
+COPY requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 
 # ── Stage 2: Runtime ──
@@ -29,13 +29,19 @@ WORKDIR /app
 # 런타임 시스템 패키지
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    chromium \
+    chromium-driver \
     && rm -rf /var/lib/apt/lists/*
 
 # 빌드된 패키지 복사
 COPY --from=builder /install /usr/local
 
-# 애플리케이션 코드 복사
-COPY . .
+# 애플리케이션 코드 및 프롬프트 복사
+COPY src/ ./src/
+COPY ai_server/ ./ai_server/
+COPY prompts/ ./prompts/
+COPY config/ ./config/
+COPY scripts/ ./scripts/
 
 # 데이터/DB 디렉토리 생성
 RUN mkdir -p /app/database /app/data/files /app/data/token /app/logs
@@ -48,6 +54,9 @@ USER hqa
 # 환경변수
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app \
+    CHROME_BINARY=/usr/bin/chromium \
+    CHROMEDRIVER=/usr/bin/chromedriver \
     ENV=production \
     PORT=8000
 
@@ -59,7 +68,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 EXPOSE ${PORT}
 
 # 서버 실행
-CMD ["uvicorn", "backend.app:app", \
+CMD ["uvicorn", "ai_server.app:app", \
      "--host", "0.0.0.0", \
      "--port", "8000", \
      "--workers", "4", \

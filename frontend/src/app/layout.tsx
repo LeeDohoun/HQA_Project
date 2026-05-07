@@ -1,20 +1,15 @@
-// 파일: frontend/src/app/layout.tsx
-import type { Metadata } from 'next';
-import './globals.css';
+import type { Metadata } from "next";
+import "./globals.css";
 
 export const metadata: Metadata = {
-  title: 'HQA - AI 주식 분석',
-  description: 'Hegemony Quantitative Analyst - AI 멀티 에이전트 주식 분석 서비스',
+  title: "HQA 투자 분석",
+  description: "HQA 투자 분석 서비스를 위한 프런트엔드"
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ko">
-      <body className="bg-gray-50 min-h-screen">{children}</body>
+      <body>{children}</body>
     </html>
   );
 }

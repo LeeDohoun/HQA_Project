@@ -1,0 +1,9 @@
+{
+  "theme_key": "ai",
+  "theme_name": "AI",
+  "membership_count": 50,
+  "method": "local_corpus_inferred",
+  "storage_format": "jsonl",
+  "updated_at": "2026-05-02T13:19:08Z",
+  "notes": "Point-in-time membership evidence. local_corpus_inferred rows are not official historical theme membership records."
+}

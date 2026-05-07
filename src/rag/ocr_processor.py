@@ -461,16 +461,24 @@ def get_ocr_processor(
     Returns:
         OCR 프로세서 인스턴스
     """
-    if _PADDLEOCR_AVAILABLE:
+    import os
+    
+    # 환경 변수 ENABLE_OCR가 "true"로 명시적으로 설정된 경우에만 VLM 로드 (기본값: false)
+    # 이미지/PDF 수집이 아직 파이프라인에 포함되지 않아 자원 절약을 위해 비활성화 해놓음
+    enable_ocr = os.getenv("ENABLE_OCR", "false").lower() == "true"
+    
+    if enable_ocr and _PADDLEOCR_AVAILABLE:
         return PaddleOCRProcessor(
             use_gpu=use_gpu,
             use_vllm_server=use_vllm_server,
             vllm_server_url=vllm_server_url
         )
     elif fallback_to_legacy:
+        if not enable_ocr:
+            print("ℹ️ ENABLE_OCR=false 로 설정되어 있어 VLM 대신 가벼운 레거시 모드(PyMuPDF)를 사용합니다.")
         return LegacyOCRProcessor()
     else:
         raise ImportError(
-            "PaddleOCR-VL이 설치되어 있지 않습니다.\n"
+            "PaddleOCR-VL이 설치되어 있지 않거나 비활성화되어 있습니다.\n"
             f"{check_paddleocr_availability()['install_cmd']}"
         )

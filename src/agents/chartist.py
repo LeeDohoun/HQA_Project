@@ -12,16 +12,12 @@ Chartist Agent - 기술적 분석 전문 에이전트
 """
 
 from typing import Dict, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from crewai import Agent, Task, Crew, Process
 from src.agents.llm_config import get_instruct_llm
+from src.agents.context import AgentContextPacket, EvidenceItem
 from src.tools.charts_tools import (
-    TechnicalAnalysisTool,
-    RSIAnalysisTool,
-    MACDAnalysisTool,
-    BollingerBandTool,
-    TrendAnalysisTool,
+    TechnicalAnalyzer,
     analyze_stock
 )
 
@@ -57,6 +53,7 @@ class ChartistScore:
     mid_term_opinion: str = ""  # 중기 의견
     stop_loss: str = ""  # 손절가
     target_price: str = ""  # 목표가
+    analysis_packet: Dict = field(default_factory=dict)
 
 
 class ChartistAgent:
@@ -64,19 +61,15 @@ class ChartistAgent:
     
     def __init__(self):
         self.llm = get_instruct_llm()
-        
-        # 기술적 분석 도구들
-        self.tools = [
-            TechnicalAnalysisTool(),
-            RSIAnalysisTool(),
-            MACDAnalysisTool(),
-            BollingerBandTool(),
-            TrendAnalysisTool()
-        ]
+        self.analyzer = TechnicalAnalyzer()
     
     def analyze_technicals(self, stock_name: str, stock_code: str) -> str:
         """
         종목의 기술적 분석 수행
+
+        Primary path:
+        - direct technical analyzer
+        - no CrewAI tool wrapper orchestration
         
         Args:
             stock_name: 종목명
@@ -85,97 +78,8 @@ class ChartistAgent:
         Returns:
             기술적 분석 리포트 (문자열)
         """
-        # 에이전트 설정
-        chartist = Agent(
-            role='Senior Technical Analyst',
-            goal=f'{stock_name}({stock_code})의 차트를 분석하여 단기/중기 매매 타이밍과 추세를 판단',
-            backstory="""
-                당신은 15년 경력의 기술적 분석 전문가입니다.
-                RSI, MACD, 볼린저밴드, 이동평균선 등 다양한 지표를 종합하여
-                정확한 매매 타이밍과 추세를 판단하는 능력이 탁월합니다.
-                감정에 휘둘리지 않고 오직 차트와 지표만으로 객관적인 분석을 제공합니다.
-            """,
-            tools=self.tools,
-            llm=self.llm,
-            function_calling_llm=self.llm,
-            verbose=True,
-            allow_delegation=False,
-            max_rpm=5
-        )
-        
-        # 태스크 설정
-        analysis_task = Task(
-            description=f"""
-                '{stock_name}'(종목코드: {stock_code})의 기술적 분석을 수행하세요.
-                
-                [분석 단계]
-                1. Technical Analysis 도구로 종합 지표를 확인하세요.
-                2. 각 지표의 의미를 해석하고 종합적인 판단을 내리세요.
-                
-                [평가 항목]
-                A. 추세 분석 (0~25점)
-                   - 150일 이동평균선 위/아래 여부
-                   - 이평선 배열 (정배열/역배열/혼조)
-                   - 골든크로스/데드크로스 발생 여부
-                
-                B. 모멘텀 분석 (0~25점)
-                   - RSI: 과매수(70+)/과매도(30-)/중립
-                   - MACD: 히스토그램 방향, 시그널 크로스
-                   - 스토캐스틱: 과매수/과매도 구간
-                
-                C. 변동성 분석 (0~25점)
-                   - 볼린저밴드 위치 (상단돌파/하단돌파/밴드내)
-                   - ATR 기반 변동성 수준
-                   - 밴드폭 (수축/확장)
-                
-                D. 거래량 분석 (0~25점)
-                   - 20일 평균 대비 거래량
-                   - 거래량 동반 여부
-                
-                3. 최종 매매 의견을 제시하세요 (반드시 한글로 작성).
-            """,
-            expected_output=f"""
-                # {stock_name} 기술적 분석 보고서
-                
-                ## 1. 지표 요약
-                (주요 기술적 지표 수치 정리)
-                
-                ## 2. 세부 분석
-                ### A. 추세 분석 (XX/25점)
-                - 이평선 분석 내용...
-                
-                ### B. 모멘텀 분석 (XX/25점)
-                - RSI, MACD 분석 내용...
-                
-                ### C. 변동성 분석 (XX/25점)
-                - 볼린저밴드 분석 내용...
-                
-                ### D. 거래량 분석 (XX/25점)
-                - 거래량 분석 내용...
-                
-                ## 3. 종합 점수: XX / 100점
-                
-                ## 4. 매매 의견
-                - **단기(1-2주):** 매수/관망/매도
-                - **중기(1-3개월):** 매수/관망/매도
-                - **손절가:** XXX원 (ATR 기반)
-                - **목표가:** XXX원
-                
-                ## 5. 핵심 요약 (한 줄)
-            """,
-            agent=chartist
-        )
-        
-        # 크루 실행
-        crew = Crew(
-            agents=[chartist],
-            tasks=[analysis_task],
-            process=Process.sequential,
-            verbose=True
-        )
-        
-        result = crew.kickoff()
-        return result
+        result = self.analyzer.analyze(stock_code, stock_name=stock_name)
+        return result.summary()
     
     def quick_check(self, stock_code: str) -> dict:
         """
@@ -342,7 +246,8 @@ class ChartistAgent:
                 short_term_opinion=check_result["signal"],
                 mid_term_opinion=check_result["signal"],
                 stop_loss=f"-{check_result['indicators'].get('atr', 0) * 2:.0f}원 (2ATR)",
-                target_price=f"+{check_result['indicators'].get('atr', 0) * 3:.0f}원 (3ATR)"
+                target_price=f"+{check_result['indicators'].get('atr', 0) * 3:.0f}원 (3ATR)",
+                analysis_packet=self._build_packet(stock_name, stock_code, check_result).to_dict(),
             )
             
         except Exception as e:
@@ -365,7 +270,8 @@ class ChartistAgent:
             short_term_opinion="관망",
             mid_term_opinion="관망",
             stop_loss="N/A",
-            target_price="N/A"
+            target_price="N/A",
+            analysis_packet=self._build_error_packet(stock_code, error).to_dict(),
         )
     
     def generate_report(self, score: ChartistScore, stock_name: str) -> str:
@@ -423,6 +329,57 @@ class ChartistAgent:
 - 볼린저밴드 위치: {score.bb_position}
 - 거래량 비율: {score.volume_ratio:.2f}x
 """
+
+    def _build_packet(self, stock_name: str, stock_code: str, check_result: dict) -> AgentContextPacket:
+        indicators = check_result.get("indicators", {})
+        return AgentContextPacket(
+            agent_name="chartist",
+            stock_name=stock_name,
+            stock_code=stock_code,
+            summary=check_result.get("signal", ""),
+            key_points=[
+                s for s in [
+                    ", ".join(check_result.get("trend_signals", [])[:2]),
+                    ", ".join(check_result.get("momentum_signals", [])[:2]),
+                    ", ".join(check_result.get("volatility_signals", [])[:2]),
+                    ", ".join(check_result.get("volume_signals", [])[:2]),
+                ] if s
+            ],
+            risks=[
+                f"RSI={indicators.get('rsi', 0):.1f}",
+                f"MACD={indicators.get('macd_histogram', 0):.2f}",
+                f"거래량비율={indicators.get('volume_ratio', 0):.2f}",
+            ],
+            contrarian_view="기술적 신호는 단기 구간에 민감하므로 펀더멘털과 충돌할 수 있음",
+            evidence=[
+                EvidenceItem(
+                    source="chart",
+                    title="기술 지표",
+                    snippet=str(indicators),
+                )
+            ],
+            score=check_result.get("total_score", 0),
+            confidence=min(100, max(0, check_result.get("total_score", 0))),
+            grade=check_result.get("signal", ""),
+            signal=check_result.get("signal", ""),
+            next_action="risk_manager_review",
+            source_tags=["charts", "technical"],
+        )
+
+    def _build_error_packet(self, stock_code: str, error: str) -> AgentContextPacket:
+        return AgentContextPacket(
+            agent_name="chartist",
+            stock_name="",
+            stock_code=stock_code,
+            summary=f"오류로 기본값 반환: {error}",
+            risks=[error],
+            contrarian_view="데이터 오류로 판단 신뢰도가 낮음",
+            score=50,
+            confidence=30,
+            grade="중립",
+            next_action="manual_review",
+            source_tags=["error_recovery"],
+        )
 
 
 # 테스트

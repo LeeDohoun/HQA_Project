@@ -11,12 +11,21 @@ Risk Manager Agent (리스크 매니저 에이전트)
 모델: Thinking (깊은 추론)
 """
 
-from typing import Dict, Optional, List
+import json
+import logging
+import re
+from typing import Any, Dict, List
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 
-from src.agents.llm_config import get_thinking_llm
+from pydantic import BaseModel, ConfigDict, Field
+
+from src.agents.llm_config import get_llm_info, get_thinking_llm, get_thinking_validator_llm
+from src.agents.context import AgentContextPacket
+from src.utils.prompt_loader import load_prompt_optional
+
+logger = logging.getLogger(__name__)
 
 
 class InvestmentAction(Enum):
@@ -64,6 +73,11 @@ class AgentScores:
     chartist_total: int = 0  # 총점 (0-100)
     chartist_signal: str = ""  # 매수/중립/매도
 
+    # 구조화된 중간 컨텍스트
+    analyst_context: Dict[str, Any] = field(default_factory=dict)
+    quant_context: Dict[str, Any] = field(default_factory=dict)
+    chartist_context: Dict[str, Any] = field(default_factory=dict)
+
 
 @dataclass
 class FinalDecision:
@@ -96,9 +110,36 @@ class FinalDecision:
     # 최종 의견
     summary: str  # 한 줄 요약
     detailed_reasoning: str  # 상세 추론 과정
+
+    # 교차 검증 메타데이터
+    validation_status: str = "disabled"  # disabled | passed | warning | unavailable
+    validation_summary: str = ""
+    validator_model: str = ""
+    primary_model: str = ""
+    validator_action: str = ""
+    validator_confidence: int = 0
     
     # 메타데이터
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+
+
+class FinalDecisionPayload(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    total_score: int = 50
+    action: str = "HOLD"
+    confidence: int = 50
+    risk_level: str = "MEDIUM"
+    risk_factors: List[str] = Field(default_factory=list)
+    position_size: str = "25%"
+    entry_strategy: str = ""
+    exit_strategy: str = ""
+    stop_loss: str = ""
+    signal_alignment: str = ""
+    key_catalysts: List[str] = Field(default_factory=list)
+    contrarian_view: str = ""
+    summary: str = ""
+    detailed_reasoning: str = ""
 
 
 class RiskManagerAgent:
@@ -110,6 +151,10 @@ class RiskManagerAgent:
     
     def __init__(self):
         self.llm = get_thinking_llm()
+        self.validator_llm = get_thinking_validator_llm()
+        llm_info = get_llm_info()
+        self.primary_model_name = llm_info.get("thinking_model", "")
+        self.validator_model_name = llm_info.get("thinking_validator_model", "")
     
     def make_decision(
         self,
@@ -134,25 +179,123 @@ class RiskManagerAgent:
         prompt = self._build_decision_prompt(stock_name, stock_code, scores)
         
         try:
-            response = self.llm.invoke(prompt)
-            response_text = response.content.strip()
-            
-            # JSON 파싱
-            import json
-            import re
-            
-            json_match = re.search(r'\{[\s\S]*\}', response_text)
-            if json_match:
-                result = json.loads(json_match.group())
-            else:
-                raise ValueError("JSON 형식 응답 없음")
-            
-            # FinalDecision 생성
-            return self._parse_decision(stock_name, stock_code, result)
-            
+            primary_decision = self._invoke_decision_llm(
+                self.llm,
+                stock_name,
+                stock_code,
+                prompt,
+            )
+
+            if not self.validator_llm:
+                primary_decision.validation_status = "disabled"
+                primary_decision.validation_summary = "보조 최종판단 모델이 설정되지 않아 단일 모델로 결정했습니다."
+                primary_decision.primary_model = self.primary_model_name
+                return primary_decision
+
+            try:
+                validator_decision = self._invoke_decision_llm(
+                    self.validator_llm,
+                    stock_name,
+                    stock_code,
+                    prompt,
+                )
+            except Exception as validator_error:
+                primary_decision.validation_status = "unavailable"
+                primary_decision.validation_summary = (
+                    f"보조 모델 검증 실패: {str(validator_error)[:160]}"
+                )
+                primary_decision.primary_model = self.primary_model_name
+                primary_decision.validator_model = self.validator_model_name
+                return primary_decision
+
+            return self._reconcile_decisions(primary_decision, validator_decision)
+
         except Exception as e:
             print(f"❌ 판단 오류: {e}")
             return self._default_decision(stock_name, stock_code, scores)
+
+    def _invoke_decision_llm(
+        self,
+        llm: Any,
+        stock_name: str,
+        stock_code: str,
+        prompt: str,
+    ) -> FinalDecision:
+        """단일 LLM 호출 결과를 FinalDecision으로 변환"""
+        try:
+            structured_llm = self._build_structured_llm(llm)
+            if structured_llm is not None:
+                structured = structured_llm.invoke(prompt)
+                result = self._validate_payload(structured)
+                return self._parse_decision(stock_name, stock_code, result)
+        except Exception as exc:
+            logger.warning("RiskManager structured output failed: %s", exc)
+
+        response = llm.invoke(prompt)
+        response_text = self._response_to_text(getattr(response, "content", response)).strip()
+        payload = self._extract_first_json_object(response_text)
+        if not payload:
+            raise ValueError("JSON 형식 응답 없음")
+
+        result = self._validate_payload(payload)
+        return self._parse_decision(stock_name, stock_code, result)
+
+    @staticmethod
+    def _build_structured_llm(llm: Any):
+        if not hasattr(llm, "with_structured_output"):
+            return None
+        try:
+            return llm.with_structured_output(FinalDecisionPayload, method="json_schema")
+        except Exception:
+            return llm.with_structured_output(FinalDecisionPayload, method="json_mode")
+
+    @staticmethod
+    def _validate_payload(payload: Any) -> Dict[str, Any]:
+        if isinstance(payload, BaseModel):
+            return payload.model_dump()
+        if not isinstance(payload, dict):
+            raise TypeError(f"Expected dict payload, got {type(payload).__name__}")
+        return FinalDecisionPayload.model_validate(payload).model_dump()
+
+    @staticmethod
+    def _response_to_text(content: Any) -> str:
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            chunks: List[str] = []
+            for item in content:
+                if isinstance(item, str):
+                    chunks.append(item)
+                elif isinstance(item, dict):
+                    text = item.get("text") or item.get("content") or ""
+                    if text:
+                        chunks.append(str(text))
+                else:
+                    chunks.append(str(item))
+            return "\n".join(chunk for chunk in chunks if chunk)
+        return str(content)
+
+    @staticmethod
+    def _extract_first_json_object(text: str) -> Dict[str, Any]:
+        if not text:
+            return {}
+
+        cleaned = text.strip()
+        if cleaned.startswith("```"):
+            cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+            cleaned = re.sub(r"\s*```$", "", cleaned)
+
+        decoder = json.JSONDecoder()
+        for index, char in enumerate(cleaned):
+            if char != "{":
+                continue
+            try:
+                payload, _end = decoder.raw_decode(cleaned[index:])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                return payload
+        return {}
     
     def _build_decision_prompt(
         self,
@@ -161,91 +304,24 @@ class RiskManagerAgent:
         scores: AgentScores
     ) -> str:
         """결정 프롬프트 구성"""
-        return f"""
-당신은 20년 경력의 헤지펀드 포트폴리오 매니저입니다.
-3명의 전문가(애널리스트, 퀀트, 차티스트)가 '{stock_name}'({stock_code})을 분석했습니다.
-이들의 분석을 종합하여 최종 투자 결정을 내려주세요.
+        analyst_context = self._format_context_packet(scores.analyst_context, "analyst")
+        quant_context = self._format_context_packet(scores.quant_context, "quant")
+        chartist_context = self._format_context_packet(scores.chartist_context, "chartist")
 
----
-
-## 📊 에이전트별 분석 결과
-
-### 1. Analyst (헤게모니/펀더멘털 분석)
-- **독점력 점수:** {scores.analyst_moat_score} / 40점
-- **성장성 점수:** {scores.analyst_growth_score} / 30점
-- **총점:** {scores.analyst_total} / 70점
-- **등급:** {scores.analyst_grade}
-- **의견:** {scores.analyst_opinion or "제공되지 않음"}
-
-### 2. Quant (재무/정량 분석)
-- **밸류에이션:** {scores.quant_valuation_score} / 25점
-- **수익성:** {scores.quant_profitability_score} / 25점
-- **성장성:** {scores.quant_growth_score} / 25점
-- **안정성:** {scores.quant_stability_score} / 25점
-- **총점:** {scores.quant_total} / 100점
-- **의견:** {scores.quant_opinion or "제공되지 않음"}
-
-### 3. Chartist (기술적 분석)
-- **추세:** {scores.chartist_trend_score} / 30점
-- **모멘텀:** {scores.chartist_momentum_score} / 30점
-- **변동성:** {scores.chartist_volatility_score} / 20점
-- **거래량:** {scores.chartist_volume_score} / 20점
-- **총점:** {scores.chartist_total} / 100점
-- **신호:** {scores.chartist_signal or "제공되지 않음"}
-
----
-
-## 🎯 판단 기준
-
-1. **신호 일치도 분석**
-   - 3개 에이전트 의견이 일치하는가?
-   - 상충되는 신호가 있다면 어떻게 조율할 것인가?
-
-2. **리스크 평가**
-   - 각 에이전트가 제시한 리스크를 종합
-   - 포지션 사이징에 반영
-
-3. **타이밍 판단**
-   - 펀더멘털은 좋지만 기술적으로 과매수?
-   - 밸류에이션은 비싸지만 성장성이 높은가?
-
-4. **최종 결정**
-   - 매수/매도/관망 결정
-   - 확신도와 포지션 크기 권고
-
----
-
-## 📝 응답 형식 (JSON)
-
-다음 JSON 형식으로 응답하세요:
-
-{{
-    "total_score": <0-100 정수>,
-    "action": "<STRONG_BUY|BUY|HOLD|REDUCE|SELL|STRONG_SELL>",
-    "confidence": <0-100 정수>,
-    "risk_level": "<VERY_LOW|LOW|MEDIUM|HIGH|VERY_HIGH>",
-    "risk_factors": ["<리스크1>", "<리스크2>", "<리스크3>"],
-    "position_size": "<0%|25%|50%|75%|100%>",
-    "entry_strategy": "<진입 전략 1-2문장>",
-    "exit_strategy": "<청산 전략 1-2문장>",
-    "stop_loss": "<손절 기준>",
-    "signal_alignment": "<신호 일치도 분석 2-3문장>",
-    "key_catalysts": ["<촉매1>", "<촉매2>"],
-    "contrarian_view": "<반대 의견/주의사항 1-2문장>",
-    "summary": "<한 줄 요약>",
-    "detailed_reasoning": "<상세 추론 과정 5-10문장>"
-}}
-
-점수 기준:
-- 90-100: 적극 매수 (STRONG_BUY)
-- 70-89: 매수 (BUY)
-- 50-69: 보유/관망 (HOLD)
-- 30-49: 비중 축소 (REDUCE)
-- 10-29: 매도 (SELL)
-- 0-9: 적극 매도 (STRONG_SELL)
-
-JSON만 출력하세요.
-"""
+        return load_prompt_optional(
+            "risk_manager",
+            "decision",
+            fallback=self._decision_fallback_prompt(),
+            stock_name=stock_name,
+            stock_code=stock_code,
+            analyst_total=scores.analyst_total,
+            analyst_grade=scores.analyst_grade,
+            quant_total=scores.quant_total,
+            chartist_total=scores.chartist_total,
+            analyst_context=analyst_context,
+            quant_context=quant_context,
+            chartist_context=chartist_context,
+        )
     
     def _parse_decision(
         self,
@@ -289,8 +365,192 @@ JSON만 출력하세요.
             key_catalysts=result.get("key_catalysts", [])[:5],
             contrarian_view=result.get("contrarian_view", ""),
             summary=result.get("summary", ""),
-            detailed_reasoning=result.get("detailed_reasoning", "")
+            detailed_reasoning=result.get("detailed_reasoning", ""),
         )
+
+    def _reconcile_decisions(
+        self,
+        primary: FinalDecision,
+        validator: FinalDecision,
+    ) -> FinalDecision:
+        """주 모델과 검증 모델의 최종 판단을 병합"""
+        primary_rank = self._action_rank(primary.action)
+        validator_rank = self._action_rank(validator.action)
+        disagreement = abs(primary_rank - validator_rank)
+
+        merged = FinalDecision(
+            stock_name=primary.stock_name,
+            stock_code=primary.stock_code,
+            total_score=round((primary.total_score + validator.total_score) / 2),
+            action=primary.action,
+            confidence=round((primary.confidence + validator.confidence) / 2),
+            risk_level=self._max_risk_level(primary.risk_level, validator.risk_level),
+            risk_factors=self._merge_unique(primary.risk_factors, validator.risk_factors, limit=5),
+            position_size=self._more_conservative_position(primary.position_size, validator.position_size),
+            entry_strategy=primary.entry_strategy,
+            exit_strategy=primary.exit_strategy,
+            stop_loss=primary.stop_loss or validator.stop_loss,
+            signal_alignment=primary.signal_alignment,
+            key_catalysts=self._merge_unique(primary.key_catalysts, validator.key_catalysts, limit=5),
+            contrarian_view=self._merge_text(primary.contrarian_view, validator.contrarian_view),
+            summary=primary.summary,
+            detailed_reasoning=primary.detailed_reasoning,
+            validation_status="passed",
+            validation_summary="주 모델과 보조 모델의 최종 판단이 대체로 일치했습니다.",
+            validator_model=self.validator_model_name,
+            primary_model=self.primary_model_name,
+            validator_action=validator.action.value,
+            validator_confidence=validator.confidence,
+        )
+
+        if disagreement == 0:
+            return merged
+
+        if disagreement == 1:
+            merged.validation_status = "warning"
+            merged.confidence = max(20, merged.confidence - 10)
+            merged.summary = (
+                f"{primary.summary} [검증 보류: 보조 모델은 {validator.action.value} 의견]"
+            ).strip()
+            merged.validation_summary = (
+                f"주 모델은 {primary.action.value}, 보조 모델은 {validator.action.value}로 "
+                "인접 단계에서 엇갈렸습니다. 주 판단을 유지하되 확신도를 낮췄습니다."
+            )
+            return merged
+
+        conservative = validator if validator_rank < primary_rank else primary
+        merged.action = conservative.action
+        merged.total_score = min(primary.total_score, validator.total_score)
+        merged.confidence = max(15, min(primary.confidence, validator.confidence) - 15)
+        merged.position_size = self._more_conservative_position(
+            primary.position_size,
+            validator.position_size,
+        )
+        merged.entry_strategy = conservative.entry_strategy or merged.entry_strategy
+        merged.exit_strategy = conservative.exit_strategy or merged.exit_strategy
+        merged.stop_loss = conservative.stop_loss or merged.stop_loss
+        merged.summary = (
+            f"{primary.summary} [교차 검증 충돌: 보수적 결론 {conservative.action.value} 채택]"
+        ).strip()
+        merged.contrarian_view = self._merge_text(
+            primary.contrarian_view,
+            validator.contrarian_view,
+        )
+        merged.validation_status = "warning"
+        merged.validation_summary = (
+            f"주 모델은 {primary.action.value}, 보조 모델은 {validator.action.value}로 "
+            "의견 차이가 커서 더 보수적인 결론을 채택했습니다."
+        )
+        return merged
+
+    def _action_rank(self, action: InvestmentAction) -> int:
+        ranks = {
+            InvestmentAction.STRONG_SELL: 0,
+            InvestmentAction.SELL: 1,
+            InvestmentAction.REDUCE: 2,
+            InvestmentAction.HOLD: 3,
+            InvestmentAction.BUY: 4,
+            InvestmentAction.STRONG_BUY: 5,
+        }
+        return ranks[action]
+
+    def _risk_rank(self, risk_level: RiskLevel) -> int:
+        ranks = {
+            RiskLevel.VERY_LOW: 0,
+            RiskLevel.LOW: 1,
+            RiskLevel.MEDIUM: 2,
+            RiskLevel.HIGH: 3,
+            RiskLevel.VERY_HIGH: 4,
+        }
+        return ranks[risk_level]
+
+    def _max_risk_level(self, left: RiskLevel, right: RiskLevel) -> RiskLevel:
+        return left if self._risk_rank(left) >= self._risk_rank(right) else right
+
+    def _more_conservative_position(self, left: str, right: str) -> str:
+        def _parse(value: str) -> int:
+            try:
+                return int(value.replace("%", "").strip())
+            except Exception:
+                return 25
+
+        return f"{min(_parse(left), _parse(right))}%"
+
+    def _merge_unique(self, left: List[str], right: List[str], limit: int = 5) -> List[str]:
+        merged: List[str] = []
+        for item in left + right:
+            normalized = item.strip()
+            if normalized and normalized not in merged:
+                merged.append(normalized)
+            if len(merged) >= limit:
+                break
+        return merged
+
+    def _merge_text(self, left: str, right: str) -> str:
+        texts = [text.strip() for text in [left, right] if text and text.strip()]
+        if not texts:
+            return ""
+        if len(texts) == 1 or texts[0] == texts[1]:
+            return texts[0]
+        return f"{texts[0]}\n\n[검증 보조 의견] {texts[1]}"
+
+    def _format_context_packet(self, packet: Dict[str, Any], fallback_name: str) -> str:
+        if not packet:
+            return f"- {fallback_name}: 없음"
+
+        try:
+            ctx = AgentContextPacket(**packet)
+            return ctx.to_prompt_block()
+        except Exception:
+            return f"- {fallback_name}: {packet}"
+
+    def _decision_fallback_prompt(self) -> str:
+        """기본 결정 프롬프트"""
+        return """
+당신은 20년 경력의 헤지펀드 포트폴리오 매니저입니다.
+아래의 구조화된 컨텍스트와 점수를 함께 검토하여, 종목 '{stock_name}'({stock_code})에 대한 최종 투자 결정을 내려주세요.
+
+---
+
+## 1. 요약 점수
+- Analyst 총점: {analyst_total} / 70점
+- Analyst 등급: {analyst_grade}
+- Quant 총점: {quant_total} / 100점
+- Chartist 총점: {chartist_total} / 100점
+
+## 2. 구조화된 중간 컨텍스트
+
+### Analyst Packet
+{analyst_context}
+
+### Quant Packet
+{quant_context}
+
+### Chartist Packet
+{chartist_context}
+
+---
+
+다음 JSON 형식으로만 응답하세요.
+{
+  "total_score": 0,
+  "action": "STRONG_BUY",
+  "confidence": 0,
+  "risk_level": "MEDIUM",
+  "risk_factors": ["", "", ""],
+  "position_size": "25%",
+  "entry_strategy": "",
+  "exit_strategy": "",
+  "stop_loss": "",
+  "signal_alignment": "",
+  "key_catalysts": ["", ""],
+  "contrarian_view": "",
+  "summary": "",
+  "detailed_reasoning": ""
+}
+
+JSON만 출력하세요.
+"""
     
     def _default_decision(
         self,
@@ -322,7 +582,11 @@ JSON만 출력하세요.
             key_catalysts=["추가 분석 필요"],
             contrarian_view="데이터 부족으로 보수적 접근 권장",
             summary="분석 오류 - 관망 권고",
-            detailed_reasoning="분석 과정에서 오류가 발생하여 보수적으로 관망 의견을 제시합니다."
+            detailed_reasoning="분석 과정에서 오류가 발생하여 보수적으로 관망 의견을 제시합니다.",
+            validation_status="unavailable",
+            validation_summary="주 모델 판단 자체가 실패하여 교차 검증을 수행하지 못했습니다.",
+            validator_model=self.validator_model_name,
+            primary_model=self.primary_model_name,
         )
     
     def generate_report(self, decision: FinalDecision) -> str:
@@ -368,6 +632,7 @@ JSON만 출력하세요.
 | **확신도** | {decision.confidence}% |
 | **리스크 수준** | {risk_emoji.get(decision.risk_level, "🟡")} {decision.risk_level.value} |
 | **권장 비중** | {decision.position_size} |
+| **교차 검증** | {decision.validation_status} |
 
 ---
 
@@ -387,6 +652,12 @@ JSON만 출력하세요.
 
 ## 🔄 반대 의견
 {decision.contrarian_view}
+
+## 🧪 교차 검증
+- 주 모델: {decision.primary_model or "미설정"}
+- 보조 모델: {decision.validator_model or "미설정"}
+- 보조 모델 의견: {decision.validator_action or "없음"} / 확신도 {decision.validator_confidence}%
+- 검증 요약: {decision.validation_summary or "없음"}
 
 ---
 

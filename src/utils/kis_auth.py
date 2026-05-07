@@ -18,9 +18,9 @@ import requests
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
-from dotenv import load_dotenv
+from src.config.settings import get_data_dir, load_project_env
 
-load_dotenv()
+load_project_env()
 
 
 # ==========================================
@@ -36,7 +36,7 @@ class KISConfig:
     VTS_DOMAIN = "https://openapivts.koreainvestment.com:29443"
     
     # 토큰 저장 경로
-    TOKEN_DIR = Path(__file__).parent.parent.parent / "data" / "token"
+    TOKEN_DIR = get_data_dir() / "token"
     
     # API 키 (환경변수에서 로드)
     APP_KEY = os.getenv("KIS_APP_KEY") or os.getenv("KIS_API_KEY")

@@ -1,568 +1,902 @@
-# HQA Project (Hegemony Quantitative Analyst)
+# HQA AI + Data Integration Branch
 
-> 🤖 **AI 멀티 에이전트 기반 한국 주식 분석 시스템** — CLI · Streamlit · **REST API · Next.js**
+이 브랜치는 `ai-main`의 에이전트 실행 로직과 `rag-data-pipeline`의 데이터 수집/가공/검색 자산을 합친 AI+데이터 통합 브랜치입니다.  
+핵심 목적은 수집 파이프라인을 유지한 채, 이미 생성된 데이터 자산을 에이전트가 실제로 읽고 retrieval 기반 응답과 테마 주도주 선별에 활용하도록 만드는 것입니다.
 
-## 📋 개요
+## 1. 브랜치 한 줄 소개
 
-HQA(Hegemony Quantitative Analyst)는 Google Gemini AI와 LangGraph를 활용한 멀티 에이전트 주식 분석 시스템입니다. 6개의 전문 에이전트가 협력하여 기업의 **헤게모니(시장 지배력)** 를 중심으로 종합적인 투자 분석을 제공합니다.
+기존 데이터 파이프라인 산출물을 그대로 재사용해, AI 에이전트가 retrieval와 멀티 에이전트 분석을 실제로 수행하는 통합 실행 브랜치입니다.
 
-### ✨ 주요 특징
+## 2. 이 브랜치가 왜 존재하는가
 
-- 🔄 **LangGraph 상태 머신**: Supervisor가 조율하는 6개 전문 에이전트 (병렬 실행 + 품질 게이트 + 피드백 루프)
-- 🔍 **Hybrid Search**: BM25 키워드 검색 + Vector 의미 검색 → RRF 병합 → Qwen3 리랭킹
-- 📊 **실시간 시세**: 한국투자증권 공식 REST API 연동
-- 📝 **PaddleOCR-VL-1.5**: 0.9B VLM 기반 문서 OCR (표/차트/수식/도장 인식)
-- 🧠 **RAG 기반 분석**: ChromaDB + Snowflake Arctic Korean 임베딩 (1024차원)
-- ⚡ **병렬 실행**: ThreadPoolExecutor로 Analyst/Quant/Chartist 동시 실행
-- 💾 **대화 메모리**: 10턴 컨텍스트 유지, 후속 질문 자동 감지
-- 🛡️ **데이터 품질 관리**: Plan A→B 폴백, 품질 등급(A~D) 기반 행동 강령
-- 💻 **다양한 인터페이스**: CLI + Streamlit 대시보드
+프로젝트는 원래 크게 네 영역으로 나뉘어 있었습니다.
 
-### 🚀 v1.0 프로덕션 기능 (NEW)
+- 백엔드
+- 프론트엔드
+- AI
+- 데이터
 
-- 🌐 **FastAPI REST API**: 비동기 백엔드, SSE 실시간 스트리밍
-- 📡 **SSE 실시간 진행**: 에이전트별 분석 진행 상황 실시간 전달
-- 📋 **Task Queue**: Celery + Redis 백그라운드 분석 (선택)
-- 🗄️ **PostgreSQL**: SQLAlchemy 비동기 ORM, Alembic 마이그레이션
-- 🔌 **GPU 의존성 제거**: OCR(Upstage API), Reranker(Cohere API) 프로바이더 패턴
-- 🐳 **Docker Compose**: API + Worker + Redis + PostgreSQL 원클릭 배포
-- 🔒 **보안**: Rate Limiting, CORS, API 키 인증, AWS Secrets Manager
-- 📈 **LangSmith 모니터링**: 에이전트 트레이싱 및 성능 추적
-- 🎯 **쿼리 제안**: Answerability Check — 시스템 범위 밖 질문 교정
-- ⚛️ **Next.js 프론트엔드**: React 기반 SPA (SSE 스트리밍 연동)
+이 중 AI 브랜치는 에이전트 실행, 프롬프트, LLM 호출, 최종 응답 생성에 강했고, 데이터 브랜치는 뉴스/공시/포럼/차트 수집과 raw/corpus/index 생성에 강했습니다.  
+하지만 둘이 분리돼 있으면 다음 문제가 생깁니다.
 
-## 🏗️ 시스템 아키텍처
+- 데이터는 있는데 에이전트가 그 데이터를 바로 못 씀
+- 에이전트는 있는데 retrieval 자산과 연결이 약함
+- 실행 환경, 경로, `.env`, requirements가 따로 놀 가능성이 큼
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                          User Interface                          │
-│               (CLI / Streamlit Dashboard / Chat)                 │
-└───────────────────────────────┬──────────────────────────────────┘
-                                │
-                                ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                    🎯 Supervisor (Instruct)                      │
-│          자연어 의도 분석 · 라우팅 · 대화 메모리(10턴)           │
-└───────────────────────────────┬──────────────────────────────────┘
-                                │
-                    ┌───── LangGraph 워크플로우 ─────┐
-                    │                                 │
-        ┌───────────┼───────────────┐                 │
-        ▼           ▼               ▼                 │
-┌───────────┐ ┌───────────┐ ┌───────────┐            │
-│  Analyst  │ │   Quant   │ │ Chartist  │  ← 병렬    │
-│ (Instruct │ │ (Instruct)│ │ (Instruct)│    실행    │
-│ +Thinking)│ │           │ │           │            │
-├───────────┤ ├───────────┤ ├───────────┤            │
-│Researcher │ │재무 크롤링│ │기술적 지표│            │
-│→Strategist│ │→웹 폴백   │ │RSI/MACD/BB│            │
-│(Plan A→B) │ │PER/PBR/ROE│ │Trend/Vol  │            │
-└─────┬─────┘ └─────┬─────┘ └─────┬─────┘            │
-      │             │             │                   │
-      ▼             ▼             ▼                   │
-┌──────────────────────────────────────────┐          │
-│          🔍 Quality Gate                 │          │
-│    품질 D등급 → RetryResearch (최대 1회) │          │
-└─────────────────────┬────────────────────┘          │
-                      ▼                               │
-┌──────────────────────────────────────────┐          │
-│         🎯 Risk Manager (Thinking)       │          │
-│      3개 점수 종합 → 최종 투자 판단       │          │
-└──────────────────────────────────────────┘          │
-                    └─────────────────────────────────┘
-                                │
-                                ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                          🔧 Tools Layer                          │
-├──────────────┬───────────────┬──────────────┬───────────────────┤
-│  KIS API     │  RAG Tool     │ Chart Tools  │  Search Tool      │
-│  (실시간)    │ (Hybrid검색)  │  (차트생성)  │  (Tavily/DDG)     │
-└──────────────┴───────────────┴──────────────┴───────────────────┘
-                                │
-┌──────────────────────────────────────────────────────────────────┐
-│                      💾 Storage Layer                            │
-├────────────────────┬─────────────────┬──────────────────────────┤
-│   ChromaDB         │  BM25 Index     │  대화 메모리             │
-│  (벡터 저장소)     │ (키워드 검색)   │  (10턴 + LRU 캐시)      │
-└────────────────────┴─────────────────┴──────────────────────────┘
-```
+이 브랜치는 그 사이를 메우기 위해 존재합니다.  
+즉, “데이터를 생산하는 브랜치”와 “에이전트를 실행하는 브랜치”를 하나의 실제 실행 단위로 연결하는 역할입니다.
 
-### Hybrid Search 파이프라인
+## 3. 이 브랜치의 책임 범위
 
-```
-Query ──┬── Vector Search (Snowflake Arctic, k=20) ──┐
-        │                                             ├── RRF 병합 ── Qwen3 Rerank ── Top 3
-        └── BM25 Keyword Search (k=20) ──────────────┘
-```
+### 담당하는 것
 
-### LangGraph 워크플로우
+- 데이터 수집 파이프라인 자산 재사용
+- raw / corpora / market_data / canonical_index / BM25 / vector store 관리
+- canonical index 생성 또는 로드
+- retrieval 수행
+- RAG 컨텍스트 구성
+- 에이전트 실행
+- 프롬프트 처리
+- LLM 호출
+- 응답 생성
+- 테마 주도주 자동 선별
+- AI 서버 제공
 
-```
-START → [Analyst | Quant | Chartist] (병렬 Fan-out)
-    ↓
-Quality Gate (Fan-in)
-    ├── 품질 D등급 + 재시도 가능 → Retry Research → Quality Gate (피드백 루프)
-    └── 통과 → Risk Manager → END
-```
+### 담당하지 않는 것
 
-## 📁 프로젝트 구조
+- 프론트엔드 UI 구현
+- 일반 백엔드 비즈니스 로직 전반
+- 사용자 인증/권한/세션 정책
+- 프로젝트 전체 오케스트레이션이나 배포 인프라 자체
 
-```
+### 외부와 연결되는 것
+
+- 프론트엔드는 이 브랜치의 응답을 소비
+- 백엔드는 이 브랜치를 AI 분석 서비스로 호출 가능
+- 외부 LLM/Ollama, Redis, DART, Tavily, KIS 등과 선택적으로 연결
+
+## 4. 백엔드/프론트엔드와의 경계
+
+이 브랜치는 UI를 제공하는 프론트엔드 브랜치가 아닙니다.  
+또한 일반 CRUD/API 중심의 백엔드 브랜치도 아닙니다.
+
+이 브랜치는 다음 역할에 집중합니다.
+
+- 데이터를 읽는 검색/추론 계층
+- 에이전트 실행 계층
+- 분석 결과를 텍스트 또는 JSON으로 반환하는 계층
+
+연결 관점에서 보면:
+
+- 프론트엔드: 이 브랜치의 결과를 화면에 렌더링하는 소비자
+- 백엔드: 이 브랜치의 AI 분석 API를 호출하거나 중계하는 소비자
+- 이 브랜치: 데이터 + 추론 + 검색 엔진
+
+실제 연결 지점은 주로 아래입니다.
+
+- `main.py`
+- `ai_server/app.py`
+
+## 5. 프로젝트 구조
+
+```text
 HQA_Project/
-├── main.py                     # CLI 엔트리포인트
-├── pipeline_runner.py          # 데이터 파이프라인 CLI
-├── requirements.txt            # 패키지 의존성 (개발)
-├── requirements-prod.txt       # 패키지 의존성 (프로덕션, GPU 불필요)
-├── Dockerfile                  # Docker 이미지 빌드
-├── docker-compose.yml          # 프로덕션 스택 (API+Redis+PostgreSQL)
-├── alembic.ini                 # DB 마이그레이션 설정
-│
-├── backend/                    # ★ FastAPI 프로덕션 백엔드
-│   ├── app.py                  # FastAPI 메인 + 미들웨어
-│   ├── config.py               # 환경 설정 (Pydantic Settings)
-│   ├── api/
-│   │   ├── schemas.py          # 요청/응답 Pydantic 스키마
-│   │   ├── dependencies.py     # 의존성 주입 (API 키 검증 등)
-│   │   └── routes/
-│   │       ├── health.py       # 헬스체크 엔드포인트
-│   │       ├── stocks.py       # 종목 검색 / 실시간 시세
-│   │       └── analysis.py     # 분석 요청/결과/SSE/대화/쿼리 제안
-│   ├── services/
-│   │   └── analysis_service.py # 비즈니스 로직 (인메모리 + Celery)
-│   ├── tasks/
-│   │   ├── celery_app.py       # Celery 설정
-│   │   └── analysis_tasks.py   # 백그라운드 분석 태스크
-│   ├── database/
-│   │   ├── connection.py       # SQLAlchemy Async 연결
-│   │   └── models.py           # DB 모델 (User, Analysis, Chat)
-│   └── middleware/
-│       ├── rate_limit.py       # IP 기반 Rate Limiting
-│       └── error_handler.py    # 전역 에러 핸들링
-│
-├── frontend/                   # ★ Next.js 프론트엔드
-│   ├── package.json
-│   ├── next.config.js
-│   └── src/
-│       ├── lib/api.ts          # API 클라이언트 (SSE 포함)
-│       └── app/
-│           ├── layout.tsx
-│           ├── globals.css
-│           └── page.tsx        # 메인 페이지 (검색→분석→결과)
-│
-├── dashboard/
-│   └── app.py                  # Streamlit 대시보드 (내부용)
-│
-├── alembic/                    # DB 마이그레이션
-│   ├── env.py
-│   └── versions/
-│
-└── src/
-    ├── __init__.py
-    │
-    ├── agents/                 # AI 에이전트
-    │   ├── __init__.py
-    │   ├── llm_config.py       # LLM 설정 (Gemini Instruct/Thinking/Vision)
-    │   ├── supervisor.py       # Supervisor: 쿼리 분석 · 라우팅 · 메모리
-    │   ├── analyst.py          # Analyst: Researcher + Strategist 통합 래퍼
-    │   ├── researcher.py       # Researcher (Instruct): 정보 수집 · Plan A↔B 폴백
-    │   ├── strategist.py       # Strategist (Thinking): 헤게모니 판단 · 품질 행동강령
-    │   ├── quant.py            # Quant (Instruct): 재무 분석 · 웹 폴백
-    │   ├── chartist.py         # Chartist (Instruct): 기술적 분석
-    │   ├── risk_manager.py     # Risk Manager (Thinking): 최종 투자 판단
-    │   └── graph.py            # LangGraph 상태 머신 워크플로우
-    │
-    ├── rag/                    # RAG 파이프라인
-    │   ├── __init__.py
-    │   ├── ocr_processor.py    # PaddleOCR-VL-1.5 문서 OCR
-    │   ├── ocr_provider.py     # ★ OCR 프로바이더 (Local/Upstage API)
-    │   ├── document_loader.py  # 문서 로딩 및 전처리
-    │   ├── text_splitter.py    # 텍스트 청킹 (1000자/200 오버랩)
-    │   ├── embeddings.py       # Snowflake Arctic Korean 임베딩 (1024dim)
-    │   ├── vector_store.py     # ChromaDB 벡터 저장소
-    │   ├── bm25_index.py       # BM25 키워드 검색 인덱스 (Hybrid Search)
-    │   ├── retriever.py        # 통합 검색기 (Vector + BM25 + Rerank)
-    │   ├── reranker.py         # Qwen3-Reranker-0.6B 리랭커
-    │   └── reranker_provider.py # ★ Reranker 프로바이더 (Local/Cohere API)
-    │
-    ├── data_pipeline/          # 데이터 수집/가공
-    │   ├── __init__.py
-    │   ├── data_ingestion.py   # 텍스트 전용 RAG 인제스션
-    │   ├── crawler.py          # 웹 크롤러 (네이버 금융)
-    │   ├── dart_collector.py   # DART 공시 수집
-    │   ├── news_crawler.py     # 뉴스 크롤러
-    │   └── price_loader.py     # 가격 데이터 로더
-    │
-    ├── database/               # 데이터베이스
-    │   ├── raw_data_store.py   # 원시 데이터 저장
-    │   └── vector_store.py     # 레거시 벡터 스토어
-    │
-    ├── tools/                  # 에이전트 도구
-    │   ├── __init__.py
-    │   ├── realtime_tool.py    # KIS 실시간 시세 API
-    │   ├── web_search_tool.py  # 웹 검색 (Tavily/DuckDuckGo)
-    │   ├── finance_tool.py     # 종목 코드 매핑
-    │   ├── charts_tools.py     # 차트 생성 도구
-    │   ├── rag_tool.py         # RAG 검색 도구
-    │   └── search_tool.py      # 검색 도구
-    │
-    └── utils/                  # 유틸리티
-        ├── __init__.py
-        ├── stock_mapper.py     # 종목명 ↔ 코드 매핑
-        ├── memory.py           # 대화 메모리 (10턴, LRU 캐시)
-        ├── parallel.py         # 병렬 실행 (ThreadPoolExecutor)
-        └── kis_auth.py         # KIS API 인증 모듈
+├── main.py
+├── README.md
+├── requirements.txt
+├── Dockerfile
+├── docker-compose.yml
+├── ai_server/
+├── config/
+├── data/
+├── prompts/
+├── scripts/
+├── src/
+└── tests/
 ```
 
-## 🚀 실행 방법
+### 주요 디렉터리와 역할
 
-### 환경 설정
+#### `main.py`
+
+- CLI 진입점
+- 대화형 질문
+- 단일 종목 분석
+- 빠른 분석
+- 테마 주도주 자동 선별
+
+#### `ai_server/`
+
+- FastAPI 기반 AI 서버
+- `ai_server/app.py`가 핵심 진입점
+- `/health`, `/chat`, `/analyze` 등의 경로 제공
+
+#### `scripts/`
+
+- `healthcheck.py`: 환경 점검
+- `verify_data_connection.py`: 데이터 연결 및 retrieval 가능 여부 확인
+- `run_agent_demo.py`: 단일 질문 RAG 데모
+- `run_theme_orchestrator.py`: 테마 전체를 스캔해 주도주 자동 선별
+- `build_rag.py`: raw 데이터를 retrieval 자산으로 변환
+- `run_pipeline.py`, `theme_pipeline.py`: 데이터 파이프라인 실행 경로
+
+#### `src/agents/`
+
+- `supervisor.py`: 사용자 질문의 의도를 해석하고 실행 경로 선택
+- `analyst.py`: 뉴스/포럼/DART 기반 정성 분석
+- `quant.py`: 재무/기초체력 분석
+- `chartist.py`: 차트/기술 분석
+- `risk_manager.py`: 에이전트 결과를 종합해 최종 판단 생성
+- `theme_orchestrator.py`: 테마 후보 추출, 병렬 평가, 주도주 선정
+
+#### `src/tools/`
+
+- 에이전트가 직접 호출하는 도구 계층
+- RAG 검색, 차트 분석, 재무 분석, 실시간 시세, 웹 검색 등을 포함
+
+#### `src/rag/`
+
+- canonical index 기반 주 검색 경로
+- `canonical_retriever.py`가 핵심 검색 게이트웨이
+- raw → canonical index 변환 로직 포함
+
+#### `src/retrieval/`
+
+- pipeline BM25/vector fallback 검색 계층
+- canonical index가 없을 때 기존 pipeline 산출물을 읽는 경량 retrieval
+
+#### `src/data_pipeline/`, `src/ingestion/`
+
+- 데이터 수집/정제/가공 보존 영역
+- 원칙적으로 유지 대상
+- 에이전트 연결을 위해 최소 수정만 허용되는 영역
+
+#### `src/config/`
+
+- `.env` / `.env-ai` 로드
+- `HQA_DATA_DIR`, traces, orders 디렉터리 설정
+
+#### `data/`
+
+- 실제 데이터 자산 저장소
+- raw, corpora, canonical index, BM25, vector store, market data, reports 포함
+
+#### `tests/`
+
+- 런타임/통합 검증
+- 환경 설정, retrieval fallback, RAG 데모, 테마 오케스트레이션 경로 검증
+
+### 처음 보는 사람이 먼저 읽어야 하는 파일
+
+1. `main.py`
+2. `src/agents/supervisor.py`
+3. `src/agents/theme_orchestrator.py`
+4. `src/tools/rag_tool.py`
+5. `src/rag/canonical_retriever.py`
+6. `ai_server/app.py`
+7. `data/canonical_index/<theme>/corpus.jsonl`
+
+## 6. 데이터 구조와 활용 방식
+
+### 데이터 종류
+
+| 데이터 종류 | 위치 | 포맷 | 생성/사용 단계 |
+|---|---|---|---|
+| raw 뉴스 | `data/raw/news/*.jsonl` | JSONL | 수집 결과, 필요 시 build 입력 |
+| raw 공시 | `data/raw/dart/*.jsonl` | JSONL | 수집 결과, 필요 시 build 입력 |
+| raw 포럼 | `data/raw/forum/*.jsonl` | JSONL | 수집 결과, 필요 시 build 입력 |
+| raw 차트 | `data/raw/chart/*.jsonl` | JSONL | 차트 fallback 입력 |
+| 테마 후보 | `data/raw/theme_targets/*.jsonl` | JSONL | 주도주 후보 추출 힌트 |
+| corpora | `data/corpora/<theme>/` | JSONL | 테마 문서 집합 |
+| market data | `data/market_data/<theme>/*.jsonl` | JSONL | Chartist / price loader 입력 |
+| canonical index | `data/canonical_index/<theme>/` | JSONL/JSON | 에이전트 1순위 retrieval 자산 |
+| pipeline BM25 | `data/bm25/*.json` | JSON | fallback retrieval |
+| pipeline vector store | `data/vector_stores/*.json` | JSON | fallback retrieval |
+| reports | `data/reports/*.json` | JSON | 수집 진단/운영 참고 |
+
+### 데이터 흐름
+
+전체 흐름은 아래처럼 볼 수 있습니다.
+
+```text
+수집(raw)
+  -> corpora / market_data
+  -> canonical index 또는 pipeline BM25/vector
+  -> retrieval
+  -> 에이전트 컨텍스트
+  -> LLM 응답 / 주도주 선정
+```
+
+### 에이전트가 데이터를 읽는 방식
+
+- 일반 RAG 질의
+  - `src/tools/rag_tool.py`
+  - `src/rag/canonical_retriever.py`
+  - canonical index 우선 검색
+  - 없으면 `src/retrieval/services.py` fallback
+
+- 테마 주도주 선별
+  - `data/raw/theme_targets/<theme>.jsonl`
+  - `data/canonical_index/<theme>/corpus.jsonl`
+  - `data/market_data/<theme>/*.jsonl`
+  - 위 자산을 함께 읽고 후보를 자동 추출
+
+### 데이터 포함 여부와 재생성 규칙
+
+- raw 데이터가 이미 있으면 그대로 사용 가능
+- canonical index가 이미 있으면 재생성 없이 로드
+- canonical index가 없고 raw만 있으면 `scripts/build_rag.py`로 선택 생성
+- 수집 파이프라인 전체 재실행은 필수가 아님
+
+## 7. 에이전트 동작 흐름
+
+### 일반 질문 / RAG 응답
+
+1. 사용자 질문 입력
+2. `SupervisorAgent`가 질의 의도 분류
+3. `RAGSearchTool`이 retrieval 수행
+4. `CanonicalRetriever`가 canonical index 또는 fallback 검색 수행
+5. 검색 결과를 컨텍스트로 정리
+6. `AnalystAgent`가 컨텍스트 기반 답변 생성
+7. 최종 응답 반환
+
+관련 모듈:
+
+- `main.py`
+- `src/agents/supervisor.py`
+- `src/tools/rag_tool.py`
+- `src/rag/canonical_retriever.py`
+- `src/agents/analyst.py`
+
+### 단일 종목 멀티 에이전트 분석
+
+1. 종목명/종목코드 입력
+2. `Supervisor` 또는 `main.py --stock` 진입
+3. `Analyst`, `Quant`, `Chartist` 실행
+4. `RiskManager`가 최종 투자 판단 생성
+
+관련 모듈:
+
+- `main.py`
+- `src/agents/graph.py`
+- `src/agents/analyst.py`
+- `src/agents/quant.py`
+- `src/agents/chartist.py`
+- `src/agents/risk_manager.py`
+
+### 테마 주도주 자동 선별
+
+1. 테마명 입력 또는 `--theme` 실행
+2. `Supervisor` 또는 `run_theme_orchestrator.py` 진입
+3. `theme_targets + corpus + market_data` 스캔
+4. 후보군 자동 추출
+5. 후보별 `Analyst`, `Quant`, `Chartist` 병렬 평가
+6. `RiskManager`가 후보 순위와 최종 의견 종합
+7. 주도주 `top_n` 반환
+
+관련 모듈:
+
+- `main.py`
+- `src/agents/supervisor.py`
+- `src/agents/theme_orchestrator.py`
+- `src/agents/risk_manager.py`
+
+### retrieval 기반 vs 순수 생성형
+
+- 기본 의도는 retrieval 기반 동작
+- 다만 일반 QA나 일부 fallback 경로에서는 순수 생성형 응답도 가능
+- 성공 기준은 retrieval가 실제 수행된 경로를 우선으로 봐야 함
+
+## 8. 설치 / 실행 / 환경설정
+
+### Python 버전
+
+- 실제 로컬 검증 기준: Python `3.12.x`
+- Dockerfile 기준: Python `3.11-slim`
+
+즉, 로컬 검증 환경과 Docker 베이스가 현재 다릅니다. 이 차이는 문서화가 필요하며, 장기적으로 맞추는 것이 좋습니다.
+
+### 설치
 
 ```bash
-# 기본 패키지 설치
-pip install -r requirements.txt
-
-# LangGraph + BM25 (권장)
-pip install langgraph rank-bm25
-
-# PaddleOCR-VL-1.5 (PDF 문서 OCR)
-# GPU 버전 (CUDA 12.6)
-pip install paddlepaddle-gpu==3.2.1 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
-# 또는 CPU 버전
-pip install paddlepaddle==3.2.1
-# PaddleOCR 설치
-pip install -U "paddleocr[doc-parser]"
+python3 -m venv venv
+source venv/bin/activate
+python3 -m pip install -r requirements.txt
 ```
 
-```env
-# .env 파일 설정
-GOOGLE_API_KEY=your_gemini_api_key          # 필수
-DART_API_KEY=your_dart_api_key              # DART 공시 (선택)
-TAVILY_API_KEY=your_tavily_api_key          # 웹 검색 (선택)
-KIS_APP_KEY=your_kis_app_key                # 실시간 시세 (선택)
-KIS_APP_SECRET=your_kis_app_secret
-KIS_ACCOUNT_NO=your_account_number
-KIS_ACCOUNT_PROD_CODE=01
-```
-
-### CLI 모드
+추가 런타임:
 
 ```bash
-# 대화형 모드 (Supervisor 기반, 메모리 유지)
-python main.py
-
-# 종목 분석 (전체 — LangGraph 워크플로우)
-python main.py -s 삼성전자
-python main.py --stock 005930
-
-# 빠른 분석 (Quant + Chartist만)
-python main.py -q 현대차
-
-# 실시간 시세
-python main.py -p SK하이닉스
-python main.py --price 000660
+playwright install chromium
 ```
 
-### 데이터 파이프라인
+### 환경변수
+
+`.env.example`을 복사해 `.env`를 만듭니다.
 
 ```bash
-# PDF 문서 인덱싱
-python pipeline_runner.py ingest report.pdf --stock-code 005930
-
-# 디렉토리 일괄 인덱싱
-python pipeline_runner.py index-dir ./reports/ --stock-code 005930
-
-# RAG 검색 테스트
-python pipeline_runner.py search "삼성전자 반도체 실적"
-
-# 인덱스 상태 확인
-python pipeline_runner.py status
-```
-
-### 대시보드 모드
-
-```bash
-streamlit run dashboard/app.py
-```
-
-### 🌐 프로덕션 웹 서비스 (NEW)
-
-#### 옵션 A: 로컬 개발 (Redis 없이)
-```bash
-# FastAPI 백엔드 (자동 리로드)
-uvicorn backend.app:app --reload --host 0.0.0.0 --port 8000
-
-# API 문서: http://localhost:8000/docs
-# 헬스체크: http://localhost:8000/health
-
-# Next.js 프론트엔드
-cd frontend && npm install && npm run dev
-# → http://localhost:3000
-```
-
-#### 옵션 B: Docker Compose (프로덕션)
-```bash
-# .env 파일 준비
 cp .env.example .env
-# → GOOGLE_API_KEY 등 필수 값 입력
-
-# 프로덕션 스택 시작 (API + Redis + PostgreSQL + Worker)
-docker-compose up -d
-
-# DB 마이그레이션
-docker-compose exec api alembic upgrade head
-
-# 로그 확인
-docker-compose logs -f api
-
-# 종료
-docker-compose down
 ```
 
-#### 옵션 C: GPU 없이 프로덕션 (Upstage + Cohere)
+필수 또는 사실상 필수:
+
 ```env
-# .env
-OCR_PROVIDER=upstage
-UPSTAGE_API_KEY=your_key
-RERANKER_PROVIDER=cohere
-COHERE_API_KEY=your_key
+LLM_PROVIDER=ollama
+HQA_DATA_DIR=./data
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_INSTRUCT_MODEL=qwen3.5:9b
+OLLAMA_THINKING_MODEL=gemma4:e4b
 ```
 
-#### API 사용 예시
+선택:
+
+```env
+OLLAMA_THINKING_VALIDATOR_MODEL=
+OLLAMA_VISION_MODEL=llava:13b
+GOOGLE_API_KEY=
+DART_API_KEY=
+TAVILY_API_KEY=
+KIS_APP_KEY=
+KIS_APP_SECRET=
+REDIS_URL=redis://localhost:6379/0
+OCR_PROVIDER=local
+ENABLE_OCR=false
+RERANKER_PROVIDER=local
+```
+
+참고:
+
+- `.env-ai`가 있으면 `.env`보다 우선
+- `LLM_PROVIDER=mock`은 smoke test용
+- `.env`가 없어도 기본값으로 부팅되지만, 실제 분석 경로는 LLM 준비가 필요
+
+### Ollama 준비
+
 ```bash
-# 종목 검색
-curl http://localhost:8000/api/v1/stocks/search?q=삼성전자
-
-# 분석 요청 (비동기)
-curl -X POST http://localhost:8000/api/v1/analysis \
-  -H "Content-Type: application/json" \
-  -d '{"stock_name": "삼성전자", "stock_code": "005930", "mode": "full"}'
-
-# 결과 조회
-curl http://localhost:8000/api/v1/analysis/{task_id}
-
-# SSE 스트리밍 (실시간 진행)
-curl -N http://localhost:8000/api/v1/analysis/{task_id}/stream
-
-# 대화
-curl -X POST http://localhost:8000/api/v1/analysis/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "삼성전자 분석해줘"}'
+ollama serve
+ollama pull qwen3.5:9b
+ollama pull gemma4:e4b
 ```
 
-## 🤖 에이전트 상세
+### 최소 실행 시나리오
 
-### Supervisor (조율자) — `Instruct`
-- **역할**: 사용자 의도 분석 · 에이전트 라우팅 · 대화 메모리 관리
-- **기능**: 규칙 기반 빠른 분석 → LLM 상세 분석 (2단계)
-- **의도 분류**: 종목분석 · 빠른분석 · 산업분석 · 이슈분석 · 시세조회 · 종목비교 · 테마탐색 · 일반QA
-- **메모리**: 최근 10턴 대화 컨텍스트 유지, 후속 질문 자동 감지 ("그럼 하이닉스는?")
+1. 환경 점검
 
-### Analyst (분석가) — `Instruct` + `Thinking`
-내부적으로 두 개의 하위 에이전트로 구성:
-
-#### Researcher (Instruct — 빠른 수집)
-- **역할**: 정보 수집 · 요약 · 품질 평가
-- **전략**: 모든 검색에 Plan A → Plan B 폴백
-  - 리포트: RAG → 웹검색 / 뉴스: 웹검색 → RAG / 정책: 웹검색 → RAG / 산업: RAG → 웹검색
-- **품질 관리**: `ResearchResult.evaluate_quality()` → A/B/C/D 등급, 경고 목록
-- **출력**: `ResearchResult` (report_summary, news, policy, industry, 품질 점수)
-
-#### Strategist (Thinking — 깊은 추론)
-- **역할**: 헤게모니(시장 지배력) 분석 · 독점력/성장성 평가
-- **행동 강령**: 데이터 품질 등급별 분석 톤 조정
-  - D등급: 2단계 하향, C등급: 1단계 하향, B등급: 기본+주의 문구, A등급: 확신 있는 톤
-- **출력**: `HegemonyScore` (moat 0~40 + growth 0~30 = 총 0~70점)
-
-### Quant (퀀트) — `Instruct`
-- **역할**: 재무 지표 분석 · 밸류에이션
-- **전략**: Plan A (네이버 금융 크롤링) → Plan B (웹 검색 + LLM JSON 추출)
-- **지표**: PER/PBR/ROE/부채비율 등
-- **출력**: `QuantScore` (valuation/profitability/growth/stability 각 0~25, 총 0~100점)
-
-### Chartist (차티스트) — `Instruct`
-- **역할**: 기술적 분석 (차트 지표 기반)
-- **지표**: RSI, MACD, Bollinger Band, 이동평균선, 거래량
-- **출력**: `ChartistScore` (trend/momentum/volatility/volume, 총 0~100점)
-
-### Risk Manager (리스크 관리자) — `Thinking`
-- **역할**: 3개 에이전트 결과 종합 → 최종 투자 판단
-- **입력**: `AgentScores` (Analyst 70 + Quant 100 + Chartist 100 = 270점 만점)
-- **출력**: `FinalDecision` (투자 행동, 리스크 레벨, 목표가, 손절가, 포지션 사이징)
-
-## 🔍 Hybrid Search (BM25 + Vector)
-
-벡터 검색만으로는 금융 용어(PER, EBITDA, YOY 등)나 숫자 매칭이 약합니다.
-BM25 키워드 검색을 추가하여 두 검색 결과를 Reciprocal Rank Fusion(RRF)으로 병합합니다.
-
-| 검색 방식 | 강점 | 예시 |
-|-----------|------|------|
-| **Vector (의미)** | 유의어·문맥 이해 | "수익성 좋은 기업" ↔ "ROE 높은 종목" |
-| **BM25 (키워드)** | 정확한 용어 매칭 | "PER 12.5배", "EBITDA 3조" |
-| **Hybrid (RRF)** | 둘 다 결합 | 의미적 유사도 + 키워드 정확도 |
-
-### 토크나이저 특징 (금융 특화)
-- 금융 약어 보호: `PER`, `ROE`, `EBITDA`, `EV/EBITDA` 등
-- 숫자+단위 패턴: `12.5배`, `3.2%`, `1,200억`
-- 한글 형태소 분리 (형태소 분석기 불필요)
-- 종목코드 추출: 4자리 이상 숫자
-
-## ⚡ LangGraph 워크플로우
-
-기존의 순차적 에이전트 호출을 LangGraph 상태 머신으로 대체합니다.
-
-### 핵심 개선점
-| 기능 | 기존 (v0.3) | LangGraph (v0.4) |
-|------|-------------|-------------------|
-| **실행 방식** | ThreadPoolExecutor 병렬 | StateGraph Fan-out/Fan-in |
-| **에러 복구** | try/except 기본값 | 노드별 독립 에러 처리 |
-| **품질 관리** | 없음 | Quality Gate + 재시도 루프 |
-| **데이터 흐름** | 함수 리턴값 전달 | `AnalysisState` TypedDict |
-| **확장성** | 코드 수정 필요 | 노드/엣지 추가로 확장 |
-
-### Graceful Degradation
-- `langgraph` 미설치 → 자동으로 기존 병렬 실행 방식 폴백
-- `rank-bm25` 미설치 → 자동으로 벡터 검색만 사용
-- 각 에이전트 오류 → 기본값으로 대체 후 계속 진행
-
-## 📚 기술 스택
-
-| 분류 | 기술 | 용도 |
-|------|------|------|
-| **LLM (Instruct)** | Gemini 2.5 Flash Lite | Supervisor, Researcher, Quant, Chartist |
-| **LLM (Thinking)** | Gemini 2.5 Flash Preview | Strategist, Risk Manager |
-| **오케스트레이션** | LangGraph (선택) | 상태 머신 워크플로우, 조건부 라우팅 |
-| **병렬 실행** | ThreadPoolExecutor (폴백) | 에이전트 동시 실행 |
-| **문서 OCR** | PaddleOCR-VL-1.5 (0.9B) | PDF → Markdown 텍스트 변환 |
-| **임베딩** | Snowflake Arctic Korean | 1024차원, 8192토큰, 한국어 최적화 |
-| **벡터 DB** | ChromaDB | 벡터 유사도 검색 |
-| **키워드 검색** | rank-bm25 (선택) | BM25 Okapi 키워드 매칭 |
-| **리랭커** | Qwen3-Reranker-0.6B | 검색 결과 재순위 |
-| **결과 병합** | RRF (Reciprocal Rank Fusion) | Vector + BM25 점수 통합 |
-| **웹 검색** | Tavily (1차) / DuckDuckGo (2차) | 실시간 뉴스/정보 |
-| **주식 데이터** | 한국투자증권 REST API | 실시간 시세, 일봉/분봉 |
-| **재무 크롤링** | 네이버 금융 + 웹 폴백 | PER/PBR/ROE 수집 |
-| **대시보드** | Streamlit + Plotly | 웹 UI, 인터랙티브 차트 |
-| **대화 메모리** | ConversationMemory | 10턴 히스토리, LRU 캐시 |
-
-## ⚙️ API 설정
-
-### Google Gemini API (필수)
-1. [Google AI Studio](https://aistudio.google.com/) 접속
-2. API Key 발급
-3. `.env` 파일에 설정
-
-```env
-GOOGLE_API_KEY=AIzaxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```bash
+python3 scripts/healthcheck.py
 ```
 
-### 한국투자증권 API (선택 — 실시간 시세)
-1. [KIS Developers](https://apiportal.koreainvestment.com/) 가입
-2. 앱 생성 후 APP KEY, APP SECRET 발급
+2. 데이터 연결 점검
 
-```env
-KIS_APP_KEY=PSxxxxxxxxxxx
-KIS_APP_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-KIS_ACCOUNT_NO=12345678-01
-KIS_ACCOUNT_PROD_CODE=01
+```bash
+python3 scripts/verify_data_connection.py --data-dir ./data
 ```
 
-### Tavily API (선택 — 웹 검색)
-1. [Tavily](https://tavily.com/) 가입 (월 1,000건 무료)
+3. RAG 데모
 
-```env
-TAVILY_API_KEY=tvly-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```bash
+python3 scripts/run_agent_demo.py --query "2차전지 시장 전망 요약" --data-dir ./data
 ```
 
-### DART API (선택 — 공시)
-1. [DART](https://opendart.fss.or.kr/) 가입
+4. 테마 주도주 선별
 
-```env
-DART_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```bash
+python3 scripts/run_theme_orchestrator.py --theme 2차전지 --data-dir ./data --candidate-limit 3 --top-n 2
 ```
 
-## 📝 변경 이력
+### 사용자 실행 예시
 
-### v0.4.0 (2026-02) - LangGraph + Hybrid Search
+대화형:
 
-#### 🆕 새로 생성된 파일
-- `src/agents/graph.py` — LangGraph 상태 머신 워크플로우
-- `src/rag/bm25_index.py` — BM25 키워드 검색 인덱스 (금융 특화 토크나이저)
+```bash
+python3 main.py
+```
 
-#### 🔄 주요 변경사항
+예시 질문:
 
-**LangGraph 워크플로우**
-- `SupervisorAgent._execute_stock_analysis()` → `run_stock_analysis()` 위임
-- `AnalysisState` TypedDict로 상태 관리
-- 5개 노드: analyst, quant, chartist, quality_gate, risk_manager
-- 조건부 엣지: 품질 D등급 → retry_research 피드백 루프
-- `langgraph` 미설치 시 `_fallback_parallel_analysis()` 자동 폴백
+- `2차전지 시장 전망 요약`
+- `에코프로 분석해줘`
+- `2차전지 주도주 찾아줘`
+- `에코프로와 에코프로비엠 비교해줘`
 
-**Hybrid Search (BM25 + Vector)**
-- `RAGRetriever`에 `use_hybrid`, `bm25_weight`, `vector_weight` 파라미터 추가
-- 문서 인덱싱 시 ChromaDB + BM25 인덱스 동시 업데이트
-- `retrieve()`: Vector + BM25 → RRF 병합 → Qwen3 리랭킹
-- `rank-bm25` 미설치 시 벡터 검색만 사용 (graceful degradation)
-- BM25 인덱스 JSON 영속화
+비대화형:
 
-**변경된 파일**:
-- `src/agents/supervisor.py` — LangGraph 통합, `_execute_stock_analysis()` 대체
-- `src/agents/__init__.py` — graph 모듈 export 추가
-- `src/rag/retriever.py` — Hybrid Search 통합, BM25 인덱스 연동
-- `src/rag/__init__.py` — BM25 모듈 export 추가
-- `main.py` — `_run_full_analysis()` → LangGraph 워크플로우 사용
-- `dashboard/app.py` — 전체 분석 → LangGraph 워크플로우 사용
-- `requirements.txt` — `langgraph>=0.2.0`, `rank-bm25>=0.2.2` 추가
+```bash
+python3 main.py --stock 에코프로
+python3 main.py --quick 086520
+python3 main.py --theme 2차전지 --candidate-limit 5 --top-n 3
+```
 
----
+## 9. 외부 의존성
 
-### v0.3.0 (2026-02) - 병렬 실행 · 메모리 · 품질 관리
+| 외부 요소 | 용도 | 필수 여부 |
+|---|---|---|
+| Ollama | 기본 LLM 런타임 | 사실상 필수 |
+| Gemini API | Ollama 대체 LLM provider | 선택 |
+| DART API | 새 공시 수집 | 선택 |
+| Tavily API | 웹 검색 품질 개선 | 선택 |
+| DuckDuckGo | 웹 검색 fallback | 선택 |
+| Redis | 진행 상태 pub/sub, 결과 캐시 | 선택 |
+| KIS API | 실시간 시세/주문 | 선택 |
+| Playwright | 포럼/브라우저 기반 수집 | 선택 |
+| Selenium | 수집 런타임 | 선택 |
+| Chroma | 일부 레거시 RAG 경로 | 선택/레거시 |
 
-#### 🆕 새로 생성된 파일
-- `src/utils/parallel.py` — ThreadPoolExecutor 병렬 실행 유틸리티
-- `src/utils/memory.py` — ConversationMemory (10턴, LRU 캐시)
+## 10. 현재 상태 진단
 
-#### 🔄 주요 변경사항
+### 실제 실행 근거가 있는 것
 
-**에이전트 개선**
-- `Researcher`: 모든 검색 메서드에 Plan A → Plan B 폴백 로직 추가
-- `ResearchResult`: 품질 평가 시스템 (`evaluate_quality()`, A~D 등급)
-- `Strategist`: 데이터 품질 등급별 행동 강령 (D: 2단계 하향, A: 확신)
-- `Quant`: 네이버 금융 크롤링 → 웹 검색 폴백 (`_web_search_fallback`)
+- `scripts/healthcheck.py` 동작 확인
+- `scripts/verify_data_connection.py` 동작 확인
+- `scripts/run_agent_demo.py`로 retrieval 기반 응답 생성 확인
+- `main.py --theme 2차전지` 실행 확인
+- 대화형 `2차전지 주도주 찾아줘` 라우팅 확인
+- `ai_server/app.py` 기반 `/health`, `/chat`, `/analyze` 경로 검증 이력 존재
 
-**병렬 실행**
-- Analyst + Quant + Chartist 동시 실행 (ThreadPoolExecutor)
-- 에이전트 오류 시 기본값 대체 후 계속 진행
+### 현재 미완성 또는 주의가 필요한 것
 
-**대화 메모리**
-- SupervisorAgent에 `ConversationMemory` 통합
-- 후속 질문 자동 감지 ("그럼", "그것은", "아까" 등)
-- 분석 결과 LRU 캐시
+- RAG 계층이 `src/rag`와 `src/retrieval`로 나뉘어 있어 구조적으로 겹침
+- `src/rag/retriever.py` 기반 레거시 Chroma 경로가 완전히 제거된 상태는 아님
+- Chartist는 데이터 길이가 부족하면 중립/관망으로 폴백
+- 현재 실데이터 검증은 `2차전지` 중심
+- Docker/Compose 경로는 존재하지만 로컬 CLI 경로만큼 충분히 검증되었다고 보기는 어려움
+- Docker는 Python 3.11, 로컬 검증은 3.12로 버전 차이 존재
 
----
+### README와 코드 사이에서 문서화가 필요한 불일치
 
-### v0.2.0 (2026-02) — PaddleOCR-VL 전환
+- 로컬 검증 기준 Python과 Dockerfile Python 버전이 다름
+- `docker-compose.yml`에는 `api(8000)`와 `ai(8001)` 두 서비스가 정의돼 있지만, 현재 주요 검증 경로는 `ai_server`와 CLI 중심
+- RAG는 주 경로가 canonical retriever이지만 레거시/폴백 계층이 함께 존재
 
-- PaddleOCR-VL-1.5로 문서 OCR 전환 (0.9B 경량 VLM)
-- 멀티모달 임베딩 제거, 텍스트 전용 RAG
-- Qwen3-Reranker-0.6B 리랭킹 추가
-- Snowflake Arctic Korean 임베딩 (1024dim, 8192 tokens)
+## 11. 협업 시 필요한 정보
 
----
+### 백엔드가 알아야 할 것
 
-### v0.1.0 (2025-01) — 초기 버전
+- 이 브랜치는 독립 실행형 AI 분석 모듈로 볼 수 있음
+- CLI 또는 HTTP API로 호출 가능
+- 핵심 API 진입점은 `ai_server/app.py`
 
-- KIS REST API 연동 (실시간 시세)
-- Streamlit 대시보드
-- 기본 멀티 에이전트 구조
+### 프론트엔드가 알아야 할 것
 
-## 📄 라이선스
+- UI는 이 브랜치가 제공하지 않음
+- 이 브랜치는 텍스트/JSON 응답을 반환하는 분석 엔진 역할
+- 프론트엔드는 결과를 렌더링하는 소비자
 
-MIT License
+### 입력 형식
 
-## 👥 기여
+- 자연어 질문
+- 종목명 또는 종목코드
+- 테마명
 
-이슈 및 PR 환영합니다!
+### 출력 형식
 
----
+- 일반 답변 텍스트
+- 단일 종목 분석 결과
+- 테마 주도주 순위
+- JSON 구조 결과
 
-**⚠️ 면책조항**: 이 프로젝트는 교육 및 연구 목적으로 개발되었습니다. 실제 투자 결정에 사용하기 전에 전문가와 상담하시기 바랍니다.
+### API 경로
+
+- `GET /health`
+- `POST /chat`
+- `POST /analyze`
+- `GET /analyze/{task_id}`
+- `POST /theme/analyze`
+- `GET /theme/analyze/{task_id}`
+- `POST /suggest`
+
+### 연결 시 주의사항
+
+- `.env`와 Ollama 준비가 선행돼야 함
+- `data/`가 실제로 존재해야 함
+- 테마 데이터 품질에 따라 결과가 크게 달라질 수 있음
+
+## 12. 백엔드 연동 인터페이스
+
+이 브랜치를 백엔드에서 붙일 때는 `ai_server/app.py`를 기준으로 보면 됩니다.  
+기본 포트는 `8001`이며, `docker-compose.yml`에서는 `ai` 서비스가 이 서버를 담당합니다.
+
+### 12.1 서버 기본 정보
+
+- 기본 서버: `uvicorn ai_server.app:app --host 0.0.0.0 --port 8001`
+- 기본 포트: `8001`
+- 기본 응답 형식: JSON
+- 비동기 분석 경로: `POST /analyze` → `GET /analyze/{task_id}`
+
+### 12.2 `GET /health`
+
+서버와 기본 런타임 상태를 확인합니다.
+
+요청:
+
+```http
+GET /health
+```
+
+응답 예시:
+
+```json
+{
+  "status": "ok",
+  "service": "HQA AI Server",
+  "port": 8001,
+  "data_dir": "/app/data",
+  "data_dir_exists": true,
+  "env_loaded": true,
+  "env_file": "/app/.env",
+  "env_message": ".env 파일을 로드했습니다."
+}
+```
+
+설명:
+
+- `data_dir_exists=false`면 데이터 마운트 또는 경로 설정 문제 가능성이 큼
+- `env_loaded=false`면 `.env` 또는 `.env-ai` 누락 가능성이 있음
+
+### 12.3 `POST /chat`
+
+사용자 자연어 질의를 바로 보내고, `SupervisorAgent`가 적절한 흐름으로 처리한 결과를 간략 응답으로 받습니다.
+
+요청 바디:
+
+```json
+{
+  "message": "2차전지 주도주 찾아줘",
+  "session_id": "optional-session-id"
+}
+```
+
+응답 예시:
+
+```json
+{
+  "message": "1. 에코프로(086520) - leader_score 65, 보유/관망, 확신도 60%",
+  "intent": null,
+  "stocks": []
+}
+```
+
+필드 설명:
+
+- `message`: 사용자에게 바로 보여줄 수 있는 요약 응답
+- `intent`: 현재 구현상 항상 풍부하게 채워진다고 보장할 수 없음
+- `stocks`: 종목 추출 결과가 있으면 들어가지만, 테마 질문은 빈 배열일 수 있음
+
+주의:
+
+- `POST /chat`은 내부적으로 다양한 실행 흐름을 탈 수 있어서, 응답은 요약 텍스트 중심입니다.
+- 백엔드가 구조화된 분석 결과를 안정적으로 원하면 `/analyze` 또는 별도 전용 API 확장을 고려하는 것이 좋습니다.
+
+### 12.4 `POST /analyze`
+
+단일 종목 분석을 비동기로 시작합니다.  
+즉시 `task_id`와 `pending` 상태를 반환하고, 실제 결과는 `GET /analyze/{task_id}`로 조회합니다.
+
+요청 바디:
+
+```json
+{
+  "task_id": "demo-quick-086520",
+  "stock_name": "에코프로",
+  "stock_code": "086520",
+  "mode": "quick",
+  "max_retries": 1
+}
+```
+
+필드 설명:
+
+- `task_id`: 클라이언트가 생성해서 보내는 추적용 ID
+- `stock_name`: 종목명
+- `stock_code`: 6자리 종목코드
+- `mode`: `"quick"` 또는 `"full"`
+- `max_retries`: full 분석 재시도 횟수
+
+즉시 응답 예시:
+
+```json
+{
+  "task_id": "demo-quick-086520",
+  "status": "pending"
+}
+```
+
+`mode` 설명:
+
+- `quick`
+  - `Quant + Chartist` 중심 빠른 분석
+- `full`
+  - `Analyst + Quant + Chartist + RiskManager` 전체 분석
+
+### 12.5 `GET /analyze/{task_id}`
+
+비동기 분석 결과를 조회합니다.
+
+요청:
+
+```http
+GET /analyze/demo-quick-086520
+```
+
+빠른 분석 응답 예시:
+
+```json
+{
+  "task_id": "demo-quick-086520",
+  "mode": "quick",
+  "stock": {
+    "name": "에코프로",
+    "code": "086520"
+  },
+  "scores": {
+    "quant": {
+      "total_score": 15,
+      "grade": "F",
+      "opinion": "..."
+    },
+    "chartist": {
+      "total_score": 50,
+      "signal": "중립"
+    }
+  },
+  "completed_at": "2026-04-07T12:00:00",
+  "status": "completed"
+}
+```
+
+전체 분석 응답 예시:
+
+```json
+{
+  "task_id": "demo-full-086520",
+  "mode": "full",
+  "stock": {
+    "name": "에코프로",
+    "code": "086520"
+  },
+  "scores": {
+    "analyst": {
+      "total_score": 42,
+      "hegemony_grade": "B"
+    },
+    "quant": {
+      "total_score": 15,
+      "grade": "F"
+    },
+    "chartist": {
+      "total_score": 50,
+      "signal": "중립"
+    }
+  },
+  "final_decision": {
+    "action": "보유/관망",
+    "confidence": 60,
+    "risk_level": "보통",
+    "total_score": 50,
+    "summary": "..."
+  },
+  "research_quality": null,
+  "quality_warnings": [],
+  "completed_at": "2026-04-07T12:00:00",
+  "status": "completed"
+}
+```
+
+실패 예시:
+
+```json
+{
+  "task_id": "demo-full-086520",
+  "status": "failed",
+  "error": "..."
+}
+```
+
+404 예시:
+
+```json
+{
+  "detail": "작업을 찾을 수 없습니다: demo-full-086520"
+}
+```
+
+### 12.6 `POST /theme/analyze`
+
+테마 전체를 스캔해서 후보 종목을 자동 추출하고, 멀티 에이전트 평가 후 주도주를 선별합니다.
+
+요청 바디:
+
+```json
+{
+  "task_id": "theme-2nd-battery-001",
+  "theme": "2차전지",
+  "theme_key": "",
+  "candidate_limit": 5,
+  "top_n": 3
+}
+```
+
+필드 설명:
+
+- `task_id`: 클라이언트 추적용 ID
+- `theme`: 사용자용 테마명
+- `theme_key`: 선택값. 비우면 내부에서 정규화
+- `candidate_limit`: 평가할 후보 수
+- `top_n`: 최종 반환할 주도주 수
+
+즉시 응답 예시:
+
+```json
+{
+  "task_id": "theme-2nd-battery-001",
+  "status": "pending",
+  "mode": "theme"
+}
+```
+
+### 12.7 `GET /theme/analyze/{task_id}`
+
+테마 주도주 선별 결과를 조회합니다. 내부 저장소는 `GET /analyze/{task_id}`와 공유합니다.
+
+응답 예시:
+
+```json
+{
+  "task_id": "theme-2nd-battery-001",
+  "mode": "theme",
+  "theme": "2차전지",
+  "theme_key": "2차전지",
+  "candidate_limit": 5,
+  "top_n": 3,
+  "candidate_count": 5,
+  "evaluated_count": 5,
+  "leaders": [
+    {
+      "stock_name": "에코프로",
+      "stock_code": "086520",
+      "leader_score": 65,
+      "seed_score": 100,
+      "action": "보유/관망",
+      "confidence": 60,
+      "summary": "...",
+      "risk_level": "보통",
+      "key_catalysts": ["..."],
+      "risk_factors": ["..."]
+    }
+  ],
+  "summary": "1. 에코프로(086520) - leader_score 65, 보유/관망, 확신도 60%",
+  "completed_at": "2026-04-07T12:00:00",
+  "status": "completed"
+}
+```
+
+실패 예시:
+
+```json
+{
+  "task_id": "theme-2nd-battery-001",
+  "mode": "theme",
+  "theme": "2차전지",
+  "theme_key": "",
+  "status": "failed",
+  "error": "테마 분석 실패",
+  "completed_at": "2026-04-07T12:00:00"
+}
+```
+
+### 12.8 `POST /suggest`
+
+사용자 질문이 현재 시스템 범위 안에서 답변 가능한지 판단하고, 필요하면 교정된 질문이나 대안 질문을 제안합니다.
+
+요청 바디:
+
+```json
+{
+  "query": "2차전지 관련해서 뭐 물어볼 수 있어?"
+}
+```
+
+응답 예시:
+
+```json
+{
+  "original_query": "2차전지 관련해서 뭐 물어볼 수 있어?",
+  "is_answerable": true,
+  "corrected_query": null,
+  "suggestions": [
+    "2차전지 주도주 찾아줘",
+    "2차전지 산업 전망 요약해줘",
+    "에코프로 분석해줘"
+  ],
+  "reason": "현재 기능 범위 안의 질문으로 변환 가능"
+}
+```
+
+### 12.9 Redis 진행 상태 이벤트
+
+`/analyze`는 선택적으로 Redis pub/sub을 사용할 수 있습니다.
+
+- 채널: `hqa:progress:{task_id}`
+- 결과 키: `hqa:result:{task_id}`
+
+진행 이벤트 예시:
+
+```json
+{
+  "task_id": "demo-full-086520",
+  "agent": "quant",
+  "status": "started",
+  "message": "재무 분석 중...",
+  "progress": 0.1,
+  "timestamp": "2026-04-07T12:00:00"
+}
+```
+
+설명:
+
+- Redis가 없으면 서버는 인메모리 결과 저장으로 폴백합니다.
+- 따라서 Redis는 필수는 아니지만, 백엔드에서 실시간 진행 상태를 받고 싶다면 유용합니다.
+
+### 12.10 백엔드 연동 권장 방식
+
+권장 패턴은 아래와 같습니다.
+
+1. 단순 챗 응답이 필요하면 `POST /chat`
+2. 구조화된 종목 분석이 필요하면 `POST /analyze`
+3. 구조화된 테마 주도주 선별이 필요하면 `POST /theme/analyze`
+4. 결과 polling은 `GET /analyze/{task_id}` 또는 `GET /theme/analyze/{task_id}`
+5. 질문 입력 가이드는 `POST /suggest`
+
+현재 주의할 점:
+
+- `POST /chat`은 요약 텍스트 중심 응답이고, 구조화된 결과 보장은 약합니다.
+- 테마 주도주 데이터가 필요하면 `POST /theme/analyze` 경로를 사용하는 것이 가장 안정적입니다.
+
+## 13. README 추천 목차
+
+이 문서는 아래 순서를 기준으로 유지하는 것이 좋습니다.
+
+1. 브랜치 소개
+2. 브랜치 존재 이유
+3. 책임 범위
+4. 백엔드/프론트엔드와의 경계
+5. 프로젝트 구조
+6. 데이터 구조
+7. 에이전트 동작 방식
+8. 설치 방법
+9. 환경변수
+10. 실행 방법
+11. 사용 예시
+12. API/협업 포인트
+13. 현재 상태 진단
+14. 한계 / TODO
+
+## 14. 반드시 문서화해야 할 핵심 포인트
+
+- 수집 파이프라인은 유지 대상이라는 점
+- canonical index 우선, BM25/vector fallback이라는 retrieval 규칙
+- 이 브랜치는 UI가 아니라 AI 실행/검색 브랜치라는 점
+- `main.py`와 `ai_server/app.py`가 주요 진입점이라는 점
+- `.env` 최소값과 Ollama 준비 방법
+- raw 데이터와 retrieval 자산은 구분해서 봐야 한다는 점
+- 테마 주도주 선별은 사용자가 종목을 직접 지정하지 않아도 자동 후보 추출로 동작한다는 점
+- 현재 확실히 검증된 실행 경로와 아직 불안정한 영역을 구분해서 봐야 한다는 점
+- RAG 계층 중복은 현재 허용된 상태지만 장기적으로 정리 대상이라는 점
+
+## 15. 빠른 시작
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+python3 -m pip install -r requirements.txt
+cp .env.example .env
+ollama serve
+python3 scripts/healthcheck.py
+python3 scripts/verify_data_connection.py --data-dir ./data
+python3 scripts/run_theme_orchestrator.py --theme 2차전지 --data-dir ./data --candidate-limit 3 --top-n 2
+```
+
+## 16. 참고
+
+이 브랜치는 “데이터가 존재하는 상태”와 “에이전트가 그 데이터를 실제로 활용하는 상태”를 연결하는 브랜치입니다.  
+문서화와 협업의 핵심은 파일 목록보다 실행 경로, 데이터 흐름, 책임 경계, 검증 상태를 명확히 공유하는 데 있습니다.

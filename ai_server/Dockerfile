@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY ai_server/requirements.txt .
+COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 
@@ -23,6 +23,8 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    chromium \
+    chromium-driver \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /install /usr/local
@@ -30,6 +32,9 @@ COPY --from=builder /install /usr/local
 # 애플리케이션 코드 복사
 COPY src/ ./src/
 COPY ai_server/ ./ai_server/
+COPY prompts/ ./prompts/
+COPY config/ ./config/
+COPY scripts/ ./scripts/
 
 # 데이터/DB 디렉토리 생성
 RUN mkdir -p /app/database /app/data/files /app/data/token /app/logs
@@ -41,6 +46,9 @@ USER hqa
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app \
+    CHROME_BINARY=/usr/bin/chromium \
+    CHROMEDRIVER=/usr/bin/chromedriver \
     ENV=production \
     PORT=8001
 

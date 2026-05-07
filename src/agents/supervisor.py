@@ -22,6 +22,7 @@ from src.utils.stock_mapper import StockMapper, get_mapper
 from src.utils.memory import ConversationMemory
 from src.utils.parallel import run_agents_parallel, is_error
 from src.agents.graph import run_stock_analysis, is_langgraph_available
+from src.utils.prompt_loader import load_prompt_optional
 
 
 class Intent(Enum):
@@ -209,9 +210,33 @@ class SupervisorAgent:
             "AI": "AI",
             "인공지능": "AI",
         }
-        
+        theme_trigger_keywords = [
+            "관련주",
+            "테마",
+            "수혜주",
+            "추천",
+            "주도주",
+            "대장주",
+            "대표주",
+            "탑픽",
+            "선별",
+            "랭킹",
+            "순위",
+        ]
+
         for keyword, industry in industry_keywords.items():
             if keyword in query:
+                if any(kw in query for kw in theme_trigger_keywords):
+                    analysis.intent = Intent.THEME_SCREENING
+                    analysis.theme = industry
+                    analysis.required_agents = ["analyst", "quant", "chartist", "risk_manager"]
+                    analysis.execution_plan = [
+                        "extract_theme_candidates",
+                        "evaluate_candidates_parallel",
+                        "rank_leaders",
+                    ]
+                    analysis.confidence = 0.9
+                    return analysis
                 if any(kw in query for kw in ["산업", "업종", "섹터", "동향", "전망"]):
                     analysis.intent = Intent.INDUSTRY_ANALYSIS
                     analysis.industry = industry
@@ -222,14 +247,18 @@ class SupervisorAgent:
                     return analysis
         
         # 테마/관련주
-        if any(kw in query for kw in ["관련주", "테마", "수혜주", "추천"]):
+        if any(kw in query for kw in theme_trigger_keywords):
             # 테마 추출
             for keyword, industry in industry_keywords.items():
                 if keyword in query:
                     analysis.intent = Intent.THEME_SCREENING
                     analysis.theme = industry
-                    analysis.required_tools = ["web_search"]
-                    analysis.execution_plan = ["search_theme_stocks"]
+                    analysis.required_agents = ["analyst", "quant", "chartist", "risk_manager"]
+                    analysis.execution_plan = [
+                        "extract_theme_candidates",
+                        "evaluate_candidates_parallel",
+                        "rank_leaders",
+                    ]
                     analysis.confidence = 0.8
                     return analysis
         
@@ -262,44 +291,13 @@ class SupervisorAgent:
         if context_hint:
             history_section += f"\n{context_hint}\n"
         
-        prompt = f"""
-사용자 쿼리를 분석하세요.
-{history_section}
-쿼리: "{query}"
-
-다음 JSON 형식으로 응답하세요:
-{{
-    "intent": "stock_analysis | quick_analysis | industry | issue | price | comparison | theme | general",
-    "stocks": [
-        {{"name": "종목명", "code": "종목코드"}}
-    ],
-    "industry": "산업명 또는 null",
-    "issue": "이슈/키워드 또는 null",
-    "theme": "테마 또는 null",
-    "confidence": 0.0~1.0,
-    "needs_clarification": true/false,
-    "clarification_message": "추가 질문 (필요시)"
-}}
-
-의도 분류 기준:
-- stock_analysis: 특정 종목 심층 분석 요청
-- quick_analysis: 빠른/간단한 분석 요청
-- industry: 산업/업종 동향 분석
-- issue: 글로벌 이슈/정책 영향 분석
-- price: 실시간 가격/시세 조회
-- comparison: 2개 이상 종목 비교
-- theme: 테마/관련주 탐색
-- general: 일반 질문
-
-종목코드 참고 (주요 종목):
-- 삼성전자: 005930
-- SK하이닉스: 000660
-- 현대차: 005380
-- 네이버: 035420
-- 카카오: 035720
-
-JSON만 응답하세요.
-"""
+        prompt = load_prompt_optional(
+            "supervisor",
+            "routing",
+            fallback=self._routing_fallback_prompt(),
+            query=query,
+            conversation_history=history_section or "없음",
+        )
         
         try:
             response = self.llm.invoke(prompt)
@@ -345,6 +343,38 @@ JSON만 응답하세요.
         quick_result.confidence = max(quick_result.confidence, 0.5)
         self._set_execution_plan(quick_result)
         return quick_result
+
+    def _routing_fallback_prompt(self) -> str:
+        """라우팅용 기본 프롬프트"""
+        return """
+사용자 쿼리를 분석하세요.
+{conversation_history}
+쿼리: "{query}"
+
+다음 JSON 형식으로 응답하세요:
+{
+    "intent": "stock_analysis | quick_analysis | industry | issue | price | comparison | theme | general",
+    "stocks": [{"name": "종목명", "code": "종목코드"}],
+    "industry": "산업명 또는 null",
+    "issue": "이슈/키워드 또는 null",
+    "theme": "테마 또는 null",
+    "confidence": 0.0~1.0,
+    "needs_clarification": true/false,
+    "clarification_message": "추가 질문 (필요시)"
+}
+
+의도 분류 기준:
+- stock_analysis: 특정 종목 심층 분석 요청
+- quick_analysis: 빠른/간단한 분석 요청
+- industry: 산업/업종 동향 분석
+- issue: 글로벌 이슈/정책 영향 분석
+- price: 실시간 가격/시세 조회
+- comparison: 2개 이상 종목 비교
+- theme: 테마/관련주 탐색
+- general: 일반 질문
+
+JSON만 응답하세요.
+"""
     
     def _set_execution_plan(self, analysis: QueryAnalysis):
         """의도에 따른 실행 계획 설정"""
@@ -397,10 +427,12 @@ JSON만 응답하세요.
             ]
             
         elif analysis.intent == Intent.THEME_SCREENING:
-            analysis.required_tools = ["web_search"]
+            analysis.required_agents = ["analyst", "quant", "chartist", "risk_manager"]
             analysis.execution_plan = [
-                "1. Web Search: 테마 관련주 검색",
-                "2. 종목 리스트 정리",
+                "1. Theme data scan: corpus/theme_targets/market_data 스캔",
+                "2. Candidate extraction: 후보군 자동 추출",
+                "3. Parallel agent evaluation: Analyst/Quant/Chartist 병렬 평가",
+                "4. Risk Manager ranking: 주도주 순위 확정",
             ]
     
     def execute(self, query: str) -> Dict[str, Any]:
@@ -558,7 +590,7 @@ JSON만 응답하세요.
         if not analysis.stocks:
             return {"status": "error", "message": "조회할 종목을 찾을 수 없습니다."}
         
-        if "realtime" not in self.tools or not self.tools["realtime"].is_available():
+        if "realtime" not in self.tools or not self.tools["realtime"].is_available:
             return {"status": "error", "message": "실시간 시세 API가 설정되지 않았습니다."}
         
         stock = analysis.stocks[0]
@@ -580,18 +612,14 @@ JSON만 응답하세요.
         
         print(f"\n🏭 {industry} 산업 분석 시작...")
         
-        # Researcher의 산업 분석 기능 활용
-        from src.agents.researcher import ResearcherAgent
-        researcher = ResearcherAgent()
+        # 통합 AnalystAgent로 산업 분석
+        from src.agents.analyst import AnalystAgent
+        analyst = AnalystAgent()
         
         # 산업 관련 정보 수집
-        news = researcher._search_news(industry)
-        policy = researcher._search_policy(industry)
-        industry_info = researcher._search_industry(industry)
-        
-        # Strategist로 분석
-        from src.agents.strategist import StrategistAgent
-        strategist = StrategistAgent()
+        news = analyst._search_news(industry)
+        policy = analyst._search_policy(industry)
+        industry_info = analyst._search_industry(industry)
         
         analysis_prompt = f"""
 {industry} 산업에 대해 분석하세요:
@@ -613,7 +641,7 @@ JSON만 응답하세요.
 5. 관련 종목 추천
 """
         
-        response = strategist.llm.invoke(analysis_prompt)
+        response = analyst.llm.invoke(analysis_prompt)
         
         return {
             "status": "success",
@@ -629,14 +657,11 @@ JSON만 응답하세요.
         
         print(f"\n🌍 '{issue}' 이슈 분석 시작...")
         
-        from src.agents.researcher import ResearcherAgent
-        from src.agents.strategist import StrategistAgent
-        
-        researcher = ResearcherAgent()
-        strategist = StrategistAgent()
+        from src.agents.analyst import AnalystAgent
+        analyst = AnalystAgent()
         
         # 이슈 관련 정보 수집
-        news = researcher._search_news(issue)
+        news = analyst._search_news(issue)
         
         # 영향 분석
         analysis_prompt = f"""
@@ -653,7 +678,7 @@ JSON만 응답하세요.
 5. 투자 전략 제안
 """
         
-        response = strategist.llm.invoke(analysis_prompt)
+        response = analyst.llm.invoke(analysis_prompt)
         
         return {
             "status": "success",
@@ -709,21 +734,22 @@ JSON만 응답하세요.
     def _execute_theme_screening(self, analysis: QueryAnalysis) -> Dict[str, Any]:
         """테마/관련주 탐색"""
         theme = analysis.theme or analysis.original_query
-        
-        print(f"\n🔍 '{theme}' 관련주 탐색 중...")
-        
-        from src.agents.researcher import ResearcherAgent
-        researcher = ResearcherAgent()
-        
-        # 웹 검색으로 관련주 탐색
-        search_result = researcher._search_news(f"{theme} 관련주 수혜주")
-        
-        return {
-            "status": "success",
-            "theme": theme,
-            "search_result": search_result,
-            "message": f"'{theme}' 관련주 정보를 검색했습니다. 위 결과를 참고하세요.",
-        }
+
+        print(f"\n🔍 '{theme}' 테마 주도주 선별 중...")
+
+        from src.agents import ThemeLeaderOrchestrator
+
+        orchestrator = ThemeLeaderOrchestrator()
+        result = orchestrator.run(theme=theme, candidate_limit=5, top_n=3)
+
+        if result.get("status") != "success":
+            return result
+
+        result["message"] = (
+            f"'{theme}' 테마 데이터를 스캔해 후보를 추출하고, "
+            "Analyst/Quant/Chartist/Risk Manager를 통해 주도주를 선정했습니다."
+        )
+        return result
     
     def _execute_general_qa(self, analysis: QueryAnalysis) -> Dict[str, Any]:
         """일반 질문 처리 (대화 맥락 포함)"""

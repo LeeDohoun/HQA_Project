@@ -1,0 +1,44 @@
+server:
+  port: ${PORT:8000}
+
+spring:
+  application:
+    name: hqa-backend
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/hqa}
+    username: ${DATABASE_USERNAME:postgres}
+    password: ${DATABASE_PASSWORD:}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    property-naming-strategy: SNAKE_CASE
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+hqa:
+  env: ${ENV:local}
+  app-version: ${APP_VERSION:1.0.0}
+  cors-origins: ${CORS_ORIGINS:http://localhost:3000,http://localhost:8501}
+  secret-key: ${SECRET_KEY:change-me-in-production}
+  rate-limit-per-minute: ${RATE_LIMIT_PER_MINUTE:30}
+  ai-server-url: ${AI_SERVER_URL:http://localhost:8001}
+  redis-url: ${REDIS_URL:redis://localhost:6379/0}
+  kis-app-key: ${KIS_APP_KEY:}
+  kis-app-secret: ${KIS_APP_SECRET:}
+  kis-account-no: ${KIS_ACCOUNT_NO:}

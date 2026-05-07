@@ -14,6 +14,8 @@ from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 
+from src.config.settings import get_data_dir
+
 
 @dataclass
 class RawReport:
@@ -94,7 +96,7 @@ class RawDataStore:
     def __init__(
         self,
         db_url: Optional[str] = None,
-        files_dir: str = "./data/files",
+        files_dir: Optional[str] = None,
         # legacy parameter - ignored, kept for backward compatibility
         db_path: Optional[str] = None,
     ):
@@ -105,7 +107,7 @@ class RawDataStore:
             db_path: (무시됨) 하위 호환성용
         """
         self.db_url = db_url or _get_default_dsn()
-        self.files_dir = Path(files_dir)
+        self.files_dir = Path(files_dir) if files_dir else get_data_dir() / "files"
 
         # 디렉토리 생성
         self.files_dir.mkdir(parents=True, exist_ok=True)

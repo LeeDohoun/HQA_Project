@@ -13,13 +13,13 @@ Quant Agent (퀀트 에이전트)
 """
 
 from typing import Dict, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from src.agents.llm_config import get_instruct_llm
+from src.agents.context import AgentContextPacket, EvidenceItem
 from src.tools.finance_tool import (
     QuantitativeAnalyzer,
     QuantitativeAnalysis,
-    FinancialAnalysisTool,
 )
 
 # 웹 검색 폴백 (선택적)
@@ -55,6 +55,7 @@ class QuantScore:
     # 최종 의견
     opinion: str = ""
     grade: str = "C"  # A/B/C/D/F
+    analysis_packet: Dict = field(default_factory=dict)
 
 
 class QuantAgent:
@@ -99,6 +100,7 @@ class QuantAgent:
         # ── Plan A: 네이버 금융 크롤링 ──
         try:
             analysis: QuantitativeAnalysis = self.analyzer.analyze(stock_code)
+            metrics = self._metrics_from_analysis(analysis)
             
             return QuantScore(
                 valuation_score=analysis.valuation_score,
@@ -106,16 +108,17 @@ class QuantAgent:
                 growth_score=analysis.growth_score,
                 stability_score=analysis.stability_score,
                 total_score=analysis.total_score,
-                valuation_analysis=analysis.valuation_detail,
-                profitability_analysis=analysis.profitability_detail,
-                growth_analysis=analysis.growth_detail,
-                stability_analysis=analysis.stability_detail,
-                per=analysis.metrics.get("PER"),
-                pbr=analysis.metrics.get("PBR"),
-                roe=analysis.metrics.get("ROE"),
-                debt_ratio=analysis.metrics.get("부채비율"),
-                opinion=analysis.summary,
-                grade=self._calculate_grade(analysis.total_score)
+                valuation_analysis=self._valuation_detail(analysis),
+                profitability_analysis=self._profitability_detail(analysis),
+                growth_analysis=self._growth_detail(analysis),
+                stability_analysis=self._stability_detail(analysis),
+                per=metrics.get("PER"),
+                pbr=metrics.get("PBR"),
+                roe=metrics.get("ROE"),
+                debt_ratio=metrics.get("부채비율"),
+                opinion=self._analysis_opinion(analysis),
+                grade=self._calculate_grade(analysis.total_score),
+                analysis_packet=self._build_packet_from_analysis(stock_name, stock_code, analysis).to_dict(),
             )
             
         except Exception as e:
@@ -241,6 +244,7 @@ JSON만 출력하세요.
                 debt_ratio=data.get("debt_ratio"),
                 opinion=data.get("opinion", "웹 검색 기반 분석") + disclaimer,
                 grade=self._calculate_grade(total),
+                analysis_packet=self._build_packet_from_web(stock_name, stock_code, data, combined_text, total).to_dict(),
             )
             
             print(f"   ✅ 웹 검색 폴백 성공: {total}/100점 (등급 {score.grade})")
@@ -263,7 +267,8 @@ JSON만 출력하세요.
             growth_analysis="분석 불가",
             stability_analysis="분석 불가",
             opinion="데이터 부족으로 중립 의견",
-            grade="C"
+            grade="C",
+            analysis_packet=self._build_packet_from_error(stock_name, error).to_dict(),
         )
     
     def generate_report(self, score: QuantScore, stock_name: str) -> str:
@@ -323,6 +328,108 @@ JSON만 출력하세요.
 ## 💡 퀀트 총평
 > {score.opinion}
 """
+
+    def _build_packet_from_analysis(
+        self,
+        stock_name: str,
+        stock_code: str,
+        analysis: QuantitativeAnalysis,
+    ) -> AgentContextPacket:
+        metrics = self._metrics_from_analysis(analysis)
+        valuation_detail = self._valuation_detail(analysis)
+        profitability_detail = self._profitability_detail(analysis)
+        growth_detail = self._growth_detail(analysis)
+        stability_detail = self._stability_detail(analysis)
+        summary = self._analysis_opinion(analysis)
+        return AgentContextPacket(
+            agent_name="quant",
+            stock_name=stock_name,
+            stock_code=stock_code,
+            summary=summary,
+            key_points=[
+                valuation_detail[:120],
+                profitability_detail[:120],
+                growth_detail[:120],
+                stability_detail[:120],
+            ],
+            risks=[
+                f"PER={metrics.get('PER')}",
+                f"PBR={metrics.get('PBR')}",
+                f"ROE={metrics.get('ROE')}",
+                f"부채비율={metrics.get('부채비율')}",
+            ],
+            catalysts=[summary] if summary else [],
+            contrarian_view="재무 데이터는 후행 지표이므로 단기 변동성 반영이 제한됨",
+            evidence=[
+                EvidenceItem(
+                    source="finance",
+                    title="재무제표 분석",
+                    snippet=str(metrics),
+                )
+            ],
+            score=analysis.total_score,
+            confidence=min(100, max(0, analysis.total_score)),
+            grade=self._calculate_grade(analysis.total_score),
+            signal=summary,
+            next_action="risk_manager_review",
+            source_tags=["finance", "fundamental"],
+        )
+
+    def _build_packet_from_web(
+        self,
+        stock_name: str,
+        stock_code: str,
+        data: Dict,
+        combined_text: str,
+        total: int,
+    ) -> AgentContextPacket:
+        return AgentContextPacket(
+            agent_name="quant",
+            stock_name=stock_name,
+            stock_code=stock_code,
+            summary=data.get("opinion", ""),
+            key_points=[
+                data.get("valuation_analysis", ""),
+                data.get("profitability_analysis", ""),
+                data.get("growth_analysis", ""),
+                data.get("stability_analysis", ""),
+            ],
+            risks=[
+                f"PER={data.get('per')}",
+                f"PBR={data.get('pbr')}",
+                f"ROE={data.get('roe')}",
+                f"부채비율={data.get('debt_ratio')}",
+            ],
+            contrarian_view="웹 검색 기반 폴백이라 원본 재무제표 대비 정확도 제한",
+            evidence=[
+                EvidenceItem(
+                    source="web",
+                    title="검색 스니펫",
+                    snippet=combined_text[:240],
+                )
+            ],
+            score=total,
+            confidence=60,
+            grade=self._calculate_grade(total),
+            signal=data.get("opinion", ""),
+            next_action="risk_manager_review",
+            source_tags=["web_search", "llm_extract"],
+        )
+
+    def _build_packet_from_error(self, stock_name: str, error: str) -> AgentContextPacket:
+        return AgentContextPacket(
+            agent_name="quant",
+            stock_name=stock_name,
+            stock_code="",
+            summary=f"오류로 기본값 적용: {error}",
+            risks=[error],
+            contrarian_view="데이터 오류로 판단 신뢰도가 낮음",
+            score=48,
+            confidence=30,
+            grade="C",
+            next_action="manual_review",
+            source_tags=["error_recovery"],
+        )
     
     def quick_check(self, stock_code: str) -> Dict:
         """
@@ -340,14 +447,71 @@ JSON만 출력하세요.
                 "stock_code": stock_code,
                 "total_score": analysis.total_score,
                 "grade": self._calculate_grade(analysis.total_score),
-                "metrics": analysis.metrics,
-                "summary": analysis.summary
+                "metrics": self._metrics_from_analysis(analysis),
+                "summary": self._analysis_opinion(analysis),
             }
         except Exception as e:
             return {
                 "stock_code": stock_code,
                 "error": str(e)
             }
+
+    def _metrics_from_analysis(self, analysis: QuantitativeAnalysis) -> Dict[str, Optional[float]]:
+        return {
+            "PER": analysis.per,
+            "PBR": analysis.pbr,
+            "ROE": analysis.roe,
+            "ROA": analysis.roa,
+            "영업이익률": analysis.operating_margin,
+            "순이익률": analysis.net_margin,
+            "부채비율": analysis.debt_ratio,
+            "배당수익률": analysis.dividend_yield,
+            "EPS": analysis.eps,
+            "BPS": analysis.bps,
+        }
+
+    def _analysis_opinion(self, analysis: QuantitativeAnalysis) -> str:
+        return (
+            f"{analysis.stock_name}의 정량 점수는 {analysis.total_score}/100점으로 "
+            f"투자 의견은 '{analysis.get_opinion()}'입니다."
+        )
+
+    def _valuation_detail(self, analysis: QuantitativeAnalysis) -> str:
+        return (
+            f"PER {self._fmt_metric(analysis.per)}배 {analysis._per_comment()} / "
+            f"PBR {self._fmt_metric(analysis.pbr)}배 {analysis._pbr_comment()}를 기준으로 "
+            f"밸류에이션 점수는 {analysis.valuation_score}/25점입니다."
+        )
+
+    def _profitability_detail(self, analysis: QuantitativeAnalysis) -> str:
+        return (
+            f"ROE {self._fmt_metric(analysis.roe)}% {analysis._roe_comment()}, "
+            f"ROA {self._fmt_metric(analysis.roa)}%, "
+            f"영업이익률 {self._fmt_metric(analysis.operating_margin)}%, "
+            f"순이익률 {self._fmt_metric(analysis.net_margin)}%를 반영해 "
+            f"수익성 점수는 {analysis.profitability_score}/25점입니다."
+        )
+
+    def _growth_detail(self, analysis: QuantitativeAnalysis) -> str:
+        return (
+            f"성장성은 ROE 기반 재투자 수익률과 배당수익률 "
+            f"{self._fmt_metric(analysis.dividend_yield)}%를 기준으로 추정했으며 "
+            f"점수는 {analysis.growth_score}/25점입니다."
+        )
+
+    def _stability_detail(self, analysis: QuantitativeAnalysis) -> str:
+        return (
+            f"부채비율 {self._fmt_metric(analysis.debt_ratio)}% {analysis._debt_comment()}와 "
+            f"PBR/배당 정보를 반영한 재무 안정성 점수는 "
+            f"{analysis.stability_score}/25점입니다."
+        )
+
+    def _fmt_metric(self, value: Optional[float]) -> str:
+        if value is None:
+            return "N/A"
+        if abs(value) >= 1000:
+            return f"{value:,.0f}"
+        return f"{value:.2f}"
 
 
 # 사용 예시

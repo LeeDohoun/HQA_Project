@@ -1,0 +1,1112 @@
+from __future__ import annotations
+
+"""Point-in-time AI-theme leader backtest.
+
+This module is intentionally deterministic and fast.  It uses only data known
+as of each rebalance date for selection, then evaluates the subsequent holding
+period return.  The output payload is shaped for ``POST /backtest/results``.
+"""
+
+import argparse
+import bisect
+import json
+import math
+import sys
+from collections import defaultdict
+from dataclasses import asdict, dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional
+
+import numpy as np
+import pandas as pd
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from backtesting.temporal_rag import normalize_ymd
+from src.config.settings import get_data_dir
+from src.ingestion.theme_membership import (
+    ThemeMembership,
+    ThemeMembershipStore,
+    active_membership_codes,
+)
+
+
+DEFAULT_LOOKBACK_BY_SOURCE: Dict[str, Optional[int]] = {
+    "news": 365,
+    "general_news": 365,
+    "forum": 90,
+    "dart": None,
+}
+
+
+@dataclass(frozen=True)
+class StockTarget:
+    stock_name: str
+    stock_code: str
+
+
+@dataclass(frozen=True)
+class DocumentSignal:
+    stock_code: str
+    source_type: str
+    published_ymd: str
+
+
+@dataclass(frozen=True)
+class RiskConfig:
+    min_avg_trading_value: float = 0.0
+    max_volatility_20d: float = 0.0
+    max_return_5d: float = 0.0
+    max_return_20d: float = 0.0
+    min_trend_150d: float = -1.0
+    min_market_breadth_pct: float = 0.0
+
+    def to_dict(self) -> Dict[str, float]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class ExitConfig:
+    stop_loss_pct: float = 0.0
+    take_profit_pct: float = 0.0
+    trailing_stop_pct: float = 0.0
+
+    def to_dict(self) -> Dict[str, float]:
+        return asdict(self)
+
+
+def run_leader_backtest(
+    *,
+    data_dir: str | Path | None = None,
+    theme: str = "AI",
+    theme_key: str = "ai",
+    from_date: str = "20250101",
+    to_date: str = "20251231",
+    rebalance: str = "M",
+    top_n: int = 3,
+    hold_days: int = 20,
+    min_history_days: int = 150,
+    transaction_cost_bps: float = 15.0,
+    min_avg_trading_value: float = 0.0,
+    max_volatility_20d: float = 0.0,
+    max_return_5d: float = 0.0,
+    max_return_20d: float = 0.0,
+    min_trend_150d: float = -1.0,
+    min_market_breadth_pct: float = 0.0,
+    stop_loss_pct: float = 0.0,
+    take_profit_pct: float = 0.0,
+    trailing_stop_pct: float = 0.0,
+    output_dir: str | Path | None = None,
+    task_id: str = "",
+    submit_url: str = "",
+) -> Dict[str, Any]:
+    data_root = Path(data_dir) if data_dir else get_data_dir()
+    from_ymd = _require_ymd(from_date, "from_date")
+    to_ymd = _require_ymd(to_date, "to_date")
+    run_id = task_id or _default_task_id(theme_key, from_ymd, to_ymd, top_n, hold_days)
+
+    targets = load_targets(data_root, theme_key)
+    prices = load_price_history(data_root, theme_key)
+    docs = load_document_signals(data_root, theme_key)
+    memberships = load_theme_memberships(data_root, theme_key)
+    warnings: List[str] = []
+    risk_config = RiskConfig(
+        min_avg_trading_value=min_avg_trading_value,
+        max_volatility_20d=max_volatility_20d,
+        max_return_5d=max_return_5d,
+        max_return_20d=max_return_20d,
+        min_trend_150d=min_trend_150d,
+        min_market_breadth_pct=min_market_breadth_pct,
+    )
+    exit_config = ExitConfig(
+        stop_loss_pct=stop_loss_pct,
+        take_profit_pct=take_profit_pct,
+        trailing_stop_pct=trailing_stop_pct,
+    )
+
+    if not targets:
+        warnings.append(f"theme_targets not found or empty: {theme_key}")
+        targets = [
+            StockTarget(stock_name=name, stock_code=code)
+            for code, name in sorted(_stock_names_from_prices(prices).items())
+        ]
+
+    if not prices:
+        raise ValueError(f"price history not found: theme_key={theme_key}")
+
+    target_by_code = {target.stock_code: target for target in targets}
+    if memberships:
+        membership_codes = {row.stock_code for row in memberships}
+        target_by_code = {code: target for code, target in target_by_code.items() if code in membership_codes}
+        if not target_by_code:
+            raise ValueError(f"theme membership found but no targets matched: theme_key={theme_key}")
+    common_calendar = _build_common_calendar(prices, from_ymd, to_ymd, hold_days)
+    rebalance_dates = _select_rebalance_dates(common_calendar, rebalance)
+    if not rebalance_dates:
+        raise ValueError(f"no rebalance dates in period: {from_ymd}..{to_ymd}")
+
+    doc_index = _index_docs(docs)
+    positions: List[Dict[str, Any]] = []
+    equity_curve: List[Dict[str, Any]] = []
+    period_rows: List[Dict[str, Any]] = []
+    risk_reject_counts: Dict[str, int] = defaultdict(int)
+    equity = 1.0
+    benchmark_equity = 1.0
+    transaction_cost = transaction_cost_bps / 10000.0
+
+    for as_of_ymd in rebalance_dates:
+        active_target_by_code = _active_target_by_code(target_by_code, memberships, as_of_ymd)
+        if len(active_target_by_code) < top_n:
+            warnings.append(
+                f"{as_of_ymd}: active theme universe {len(active_target_by_code)} < top_n {top_n}"
+            )
+            continue
+        scored = _score_universe(
+            as_of_ymd=as_of_ymd,
+            target_by_code=active_target_by_code,
+            prices=prices,
+            doc_index=doc_index,
+            hold_days=hold_days,
+            min_history_days=min_history_days,
+            exit_config=exit_config,
+        )
+        eligible = [row for row in scored if row.get("eligible")]
+        if len(eligible) < top_n:
+            warnings.append(f"{as_of_ymd}: eligible stocks {len(eligible)} < top_n {top_n}")
+            continue
+
+        benchmark_return = float(np.mean([row["realized_return"] for row in eligible]))
+        benchmark_net_return = benchmark_return - (transaction_cost * 2)
+        market_breadth_pct = _market_breadth_pct(eligible)
+        filtered, rejected = _apply_risk_filters(eligible, risk_config)
+        _add_counts(risk_reject_counts, rejected)
+        risk_off_reason = _market_filter_reason(eligible, risk_config)
+        if not risk_off_reason and len(filtered) < top_n:
+            risk_off_reason = f"risk_filters eligible stocks {len(filtered)} < top_n {top_n}"
+
+        if risk_off_reason:
+            warnings.append(f"{as_of_ymd}: {risk_off_reason}")
+            benchmark_equity *= 1.0 + benchmark_net_return
+            period_rows.append(
+                {
+                    "as_of_date": _fmt_ymd(as_of_ymd),
+                    "entry_date": "",
+                    "exit_date": "",
+                    "selected_count": 0,
+                    "active_target_count": len(active_target_by_code),
+                    "eligible_count": len(eligible),
+                    "risk_eligible_count": len(filtered),
+                    "risk_reject_count": len(eligible) - len(filtered),
+                    "market_breadth_pct": market_breadth_pct,
+                    "portfolio_return_pct": 0.0,
+                    "benchmark_return_pct": _pct(benchmark_net_return),
+                    "excess_return_pct": _pct(-benchmark_net_return),
+                    "risk_off_reason": risk_off_reason,
+                    "top_symbols": [],
+                }
+            )
+            equity_curve.append(
+                {
+                    "date": _fmt_ymd(as_of_ymd),
+                    "equity": round(equity, 6),
+                    "benchmark_equity": round(benchmark_equity, 6),
+                    "period_return_pct": 0.0,
+                    "benchmark_return_pct": _pct(benchmark_net_return),
+                    "risk_off_reason": risk_off_reason,
+                }
+            )
+            continue
+
+        ranked = sorted(filtered, key=lambda row: row["leader_score"], reverse=True)
+        selected = ranked[:top_n]
+        selected_return = float(np.mean([row["realized_return"] for row in selected]))
+        selected_net_return = selected_return - (transaction_cost * 2)
+        portfolio_exit_date = _latest_exit_date(selected)
+
+        equity *= 1.0 + selected_net_return
+        benchmark_equity *= 1.0 + benchmark_net_return
+
+        period_rows.append(
+            {
+                "as_of_date": _fmt_ymd(as_of_ymd),
+                "entry_date": selected[0]["entry_date"],
+                "exit_date": portfolio_exit_date,
+                "selected_count": len(selected),
+                "active_target_count": len(active_target_by_code),
+                "eligible_count": len(eligible),
+                "risk_eligible_count": len(filtered),
+                "risk_reject_count": len(eligible) - len(filtered),
+                "market_breadth_pct": market_breadth_pct,
+                "portfolio_return_pct": _pct(selected_net_return),
+                "benchmark_return_pct": _pct(benchmark_net_return),
+                "excess_return_pct": _pct(selected_net_return - benchmark_net_return),
+                "top_symbols": [
+                    {
+                        "stock_name": row["stock_name"],
+                        "stock_code": row["stock_code"],
+                        "leader_score": row["leader_score"],
+                        "realized_return_pct": _pct(row["realized_return"]),
+                    }
+                    for row in selected
+                ],
+            }
+        )
+        equity_curve.append(
+            {
+                "date": portfolio_exit_date,
+                "equity": round(equity, 6),
+                "benchmark_equity": round(benchmark_equity, 6),
+                "period_return_pct": _pct(selected_net_return),
+                "benchmark_return_pct": _pct(benchmark_net_return),
+            }
+        )
+
+        for rank, row in enumerate(selected, start=1):
+            position = dict(row)
+            position["rank"] = rank
+            position["weight"] = round(1.0 / top_n, 6)
+            position["realized_return_pct"] = _pct(position.pop("realized_return"))
+            position["predicted_return_pct"] = _pct(position.pop("predicted_return"))
+            position["target_price"] = round(position["target_price"], 2)
+            position["entry_price"] = round(position["entry_price"], 2)
+            position["exit_price"] = round(position["exit_price"], 2)
+            position.pop("eligible", None)
+            positions.append(position)
+
+    metrics = _compute_metrics(
+        equity_curve=equity_curve,
+        positions=positions,
+        from_ymd=from_ymd,
+        to_ymd=to_ymd,
+        hold_days=hold_days,
+    )
+    leaders = _aggregate_leaders(positions)
+    predictions = [
+        {
+            key: row[key]
+            for key in [
+                "as_of_date",
+                "entry_date",
+                "exit_date",
+                "stock_name",
+                "stock_code",
+                "rank",
+                "leader_score",
+                "predicted_return_pct",
+                "target_price",
+                "realized_return_pct",
+            ]
+        }
+        for row in positions
+    ]
+
+    result = {
+        "task_id": run_id,
+        "mode": "backtest",
+        "result_type": "backtest",
+        "status": "completed",
+        "theme": theme,
+        "theme_key": theme_key,
+        "period": {
+            "from_date": _fmt_ymd(from_ymd),
+            "to_date": _fmt_ymd(to_ymd),
+            "rebalance": rebalance,
+            "rebalance_count": len(period_rows),
+            "hold_days": hold_days,
+        },
+        "strategy": {
+            "name": "ai_theme_leader_momentum_v1",
+            "top_n": top_n,
+            "min_history_days": min_history_days,
+            "transaction_cost_bps": transaction_cost_bps,
+            "risk_filters": risk_config.to_dict(),
+            "exit_rules": exit_config.to_dict(),
+            "selection_inputs": [
+                "20d momentum",
+                "60d momentum",
+                "150d trend",
+                "20d volume ratio",
+                "news/dart/forum document signal",
+                "20d volatility penalty",
+            ],
+            "prediction_model": "momentum_price_forecast_v1",
+        },
+        "metrics": metrics,
+        "leaders": leaders,
+        "predictions": predictions,
+        "positions": positions,
+        "trades": _positions_to_trades(positions),
+        "periods": period_rows,
+        "equity_curve": equity_curve,
+        "risk": {
+            "filters": risk_config.to_dict(),
+            "reject_counts": dict(risk_reject_counts),
+        },
+        "execution": {
+            "exit_rules": exit_config.to_dict(),
+            "exit_counts": _exit_counts(positions),
+            "same_day_ohlc_policy": "stop_or_trailing_stop_before_take_profit",
+        },
+        "artifacts": {},
+        "warnings": warnings + _default_warnings(bool(memberships)),
+        "metadata": {
+            "generated_at": datetime.now().isoformat(),
+            "data_dir": _display_path(data_root),
+            "target_count": len(targets),
+            "membership_count": len(memberships),
+            "point_in_time_universe": bool(memberships),
+            "membership_sources": sorted({row.source for row in memberships}),
+            "price_stock_count": len(prices),
+            "document_signal_count": len(docs),
+        },
+    }
+
+    out_path = _write_result(result, output_dir or data_root / "backtest_results", run_id)
+    result["artifacts"]["result_json"] = _display_path(out_path)
+    _write_result(result, output_dir or data_root / "backtest_results", run_id)
+
+    if submit_url:
+        submit_status = submit_result(result, submit_url)
+        result["artifacts"]["submit_status"] = submit_status
+        _write_result(result, output_dir or data_root / "backtest_results", run_id)
+
+    return result
+
+
+def load_targets(data_dir: Path, theme_key: str) -> List[StockTarget]:
+    path = data_dir / "raw" / "theme_targets" / f"{theme_key}.jsonl"
+    targets: Dict[str, StockTarget] = {}
+    for row in _iter_jsonl(path):
+        code = str(row.get("stock_code") or "").strip()
+        name = str(row.get("stock_name") or "").strip()
+        if code and name:
+            targets[code] = StockTarget(stock_name=name, stock_code=code)
+    return list(targets.values())
+
+
+def load_theme_memberships(data_dir: Path, theme_key: str) -> List[ThemeMembership]:
+    return ThemeMembershipStore(data_dir=data_dir).load_memberships(theme_key)
+
+
+def _active_target_by_code(
+    target_by_code: Dict[str, StockTarget],
+    memberships: List[ThemeMembership],
+    as_of_ymd: str,
+) -> Dict[str, StockTarget]:
+    if not memberships:
+        return target_by_code
+    active_codes = active_membership_codes(memberships, _fmt_ymd(as_of_ymd))
+    return {code: target for code, target in target_by_code.items() if code in active_codes}
+
+
+def load_price_history(data_dir: Path, theme_key: str) -> Dict[str, pd.DataFrame]:
+    path = data_dir / "market_data" / theme_key / "chart.jsonl"
+    rows: List[Dict[str, Any]] = []
+    for row in _iter_jsonl(path):
+        code = str(row.get("stock_code") or "").strip()
+        timestamp = str(row.get("timestamp") or "").strip()
+        if not code or not timestamp:
+            continue
+        open_ = _to_float(row.get("open"))
+        high = _to_float(row.get("high"))
+        low = _to_float(row.get("low"))
+        close = _to_float(row.get("close"))
+        volume = _to_float(row.get("volume"))
+        if None in {open_, high, low, close}:
+            continue
+        if open_ <= 0 or high <= 0 or low <= 0 or close <= 0:
+            continue
+        if high < max(open_, close, low) or low > min(open_, close, high):
+            continue
+        rows.append(
+            {
+                "Date": pd.to_datetime(timestamp),
+                "stock_code": code,
+                "stock_name": str(row.get("stock_name") or "").strip(),
+                "Open": open_,
+                "High": high,
+                "Low": low,
+                "Close": close,
+                "Volume": volume or 0.0,
+            }
+        )
+
+    if not rows:
+        return {}
+
+    df = pd.DataFrame.from_records(rows)
+    output: Dict[str, pd.DataFrame] = {}
+    for code, group in df.groupby("stock_code"):
+        stock_df = group.sort_values("Date").drop_duplicates(subset=["Date"], keep="last")
+        stock_df = stock_df.set_index("Date")
+        stock_df["YMD"] = stock_df.index.strftime("%Y%m%d")
+        output[str(code)] = stock_df
+    return output
+
+
+def load_document_signals(data_dir: Path, theme_key: str) -> List[DocumentSignal]:
+    path = data_dir / "canonical_index" / theme_key / "corpus.jsonl"
+    signals: List[DocumentSignal] = []
+    for row in _iter_jsonl(path):
+        meta = row.get("metadata") or {}
+        code = str(meta.get("stock_code") or "").strip()
+        source = str(meta.get("source_type") or "").strip().lower()
+        published = normalize_ymd(meta.get("published_at") or row.get("published_at"))
+        if code and source and published:
+            signals.append(DocumentSignal(stock_code=code, source_type=source, published_ymd=published))
+    return signals
+
+
+def submit_result(result: Dict[str, Any], submit_url: str) -> Dict[str, Any]:
+    import requests
+
+    try:
+        response = requests.post(submit_url, json=result, timeout=10)
+        return {
+            "ok": response.ok,
+            "status_code": response.status_code,
+            "body": response.text[:500],
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def _score_universe(
+    *,
+    as_of_ymd: str,
+    target_by_code: Dict[str, StockTarget],
+    prices: Dict[str, pd.DataFrame],
+    doc_index: Dict[str, Dict[str, List[str]]],
+    hold_days: int,
+    min_history_days: int,
+    exit_config: ExitConfig | None = None,
+) -> List[Dict[str, Any]]:
+    exit_config = exit_config or ExitConfig()
+    raw_rows: List[Dict[str, Any]] = []
+    for code, target in target_by_code.items():
+        df = prices.get(code)
+        if df is None or df.empty:
+            continue
+        row = _features_for_stock(
+            code=code,
+            name=target.stock_name,
+            df=df,
+            as_of_ymd=as_of_ymd,
+            doc_index=doc_index,
+            hold_days=hold_days,
+            min_history_days=min_history_days,
+            exit_config=exit_config,
+        )
+        if row:
+            raw_rows.append(row)
+
+    eligible = [row for row in raw_rows if row["eligible"]]
+    if not eligible:
+        return raw_rows
+
+    for key, rank_key, ascending in [
+        ("return_60d", "return_60d_rank", True),
+        ("return_20d", "return_20d_rank", True),
+        ("trend_150d", "trend_150d_rank", True),
+        ("volume_ratio_20d", "volume_rank", True),
+        ("doc_signal", "doc_rank", True),
+        ("volatility_20d", "low_vol_rank", False),
+    ]:
+        values = pd.Series([row[key] for row in eligible], dtype="float64")
+        ranks = values.rank(pct=True, ascending=ascending).fillna(0.5).tolist()
+        for row, rank in zip(eligible, ranks):
+            row[rank_key] = float(rank)
+
+    for row in eligible:
+        leader_score = 100.0 * (
+            0.25 * row["return_60d_rank"]
+            + 0.20 * row["return_20d_rank"]
+            + 0.20 * row["trend_150d_rank"]
+            + 0.15 * row["doc_rank"]
+            + 0.10 * row["volume_rank"]
+            + 0.10 * row["low_vol_rank"]
+        )
+        predicted_return = _clip(
+            0.50 * row["return_20d"] + 0.30 * row["return_60d"] + 0.20 * row["trend_150d"],
+            -0.35,
+            0.55,
+        )
+        row["leader_score"] = round(leader_score)
+        row["predicted_return"] = predicted_return
+        row["target_price"] = row["entry_price"] * (1.0 + predicted_return)
+
+    return raw_rows
+
+
+def _features_for_stock(
+    *,
+    code: str,
+    name: str,
+    df: pd.DataFrame,
+    as_of_ymd: str,
+    doc_index: Dict[str, Dict[str, List[str]]],
+    hold_days: int,
+    min_history_days: int,
+    exit_config: ExitConfig | None = None,
+) -> Optional[Dict[str, Any]]:
+    exit_config = exit_config or ExitConfig()
+    ymd_index = df["YMD"] if "YMD" in df else pd.Series(df.index.strftime("%Y%m%d"), index=df.index)
+    known = df.loc[ymd_index <= as_of_ymd]
+    if known.empty:
+        return None
+    entry_pos = len(known) - 1
+    if entry_pos < min_history_days - 1:
+        return _ineligible_row(code, name, as_of_ymd, "insufficient_history")
+
+    full_pos = df.index.get_loc(known.index[-1])
+    if isinstance(full_pos, slice):
+        full_pos = full_pos.stop - 1
+    exit_pos = int(full_pos) + hold_days
+    if exit_pos >= len(df):
+        return _ineligible_row(code, name, as_of_ymd, "insufficient_future")
+
+    entry = df.iloc[int(full_pos)]
+    closes = known["Close"]
+    returns = closes.pct_change().dropna()
+    close = float(entry["Close"])
+    ret5 = _period_return(closes, 5)
+    ret20 = _period_return(closes, 20)
+    ret60 = _period_return(closes, 60)
+    ma150 = float(closes.tail(150).mean())
+    trend150 = close / ma150 - 1.0 if ma150 > 0 else 0.0
+    vol20 = float(returns.tail(20).std() * math.sqrt(252)) if len(returns) >= 20 else 1.0
+    vol_ma20 = float(known["Volume"].tail(20).mean())
+    volume_ratio = float(entry["Volume"]) / vol_ma20 if vol_ma20 > 0 else 0.0
+    avg_trading_value_20d = float((known["Close"].tail(20) * known["Volume"].tail(20)).mean())
+    docs = _count_recent_docs(doc_index.get(code, {}), as_of_ymd)
+    doc_signal = (
+        math.log1p(docs.get("news", 0)) * 1.2
+        + math.log1p(docs.get("dart", 0)) * 1.5
+        + math.log1p(docs.get("forum", 0)) * 0.5
+        + math.log1p(docs.get("general_news", 0)) * 0.6
+    )
+    exit_result = _simulate_exit(
+        df=df,
+        entry_pos=int(full_pos),
+        planned_exit_pos=exit_pos,
+        entry_price=close,
+        exit_config=exit_config,
+    )
+    realized = exit_result["exit_price"] / close - 1.0
+
+    return {
+        "eligible": True,
+        "as_of_date": _fmt_ymd(as_of_ymd),
+        "entry_date": known.index[-1].strftime("%Y-%m-%d"),
+        "exit_date": df.index[exit_result["exit_pos"]].strftime("%Y-%m-%d"),
+        "planned_exit_date": df.index[exit_pos].strftime("%Y-%m-%d"),
+        "exit_reason": exit_result["exit_reason"],
+        "stock_name": name,
+        "stock_code": code,
+        "entry_price": close,
+        "exit_price": exit_result["exit_price"],
+        "return_5d": ret5,
+        "return_20d": ret20,
+        "return_60d": ret60,
+        "trend_150d": trend150,
+        "volatility_20d": vol20,
+        "volume_ratio_20d": volume_ratio,
+        "avg_trading_value_20d": avg_trading_value_20d,
+        "doc_signal": doc_signal,
+        "doc_counts": docs,
+        "realized_return": realized,
+    }
+
+
+def _simulate_exit(
+    *,
+    df: pd.DataFrame,
+    entry_pos: int,
+    planned_exit_pos: int,
+    entry_price: float,
+    exit_config: ExitConfig,
+) -> Dict[str, Any]:
+    stop_loss = max(0.0, float(exit_config.stop_loss_pct or 0.0)) / 100.0
+    take_profit = max(0.0, float(exit_config.take_profit_pct or 0.0)) / 100.0
+    trailing_stop = max(0.0, float(exit_config.trailing_stop_pct or 0.0)) / 100.0
+    stop_loss_price = entry_price * (1.0 - stop_loss) if stop_loss > 0 else None
+    take_profit_price = entry_price * (1.0 + take_profit) if take_profit > 0 else None
+    high_water = entry_price
+
+    for pos in range(entry_pos + 1, planned_exit_pos + 1):
+        row = df.iloc[pos]
+        high = float(row["High"])
+        low = float(row["Low"])
+        trailing_price = high_water * (1.0 - trailing_stop) if trailing_stop > 0 else None
+        active_stop_price = None
+        active_stop_reason = ""
+
+        for price, reason in [
+            (stop_loss_price, "stop_loss"),
+            (trailing_price, "trailing_stop"),
+        ]:
+            if price is None:
+                continue
+            if active_stop_price is None or price > active_stop_price:
+                active_stop_price = price
+                active_stop_reason = reason
+
+        if active_stop_price is not None and low <= active_stop_price:
+            return {
+                "exit_pos": pos,
+                "exit_price": float(active_stop_price),
+                "exit_reason": active_stop_reason,
+            }
+
+        if take_profit_price is not None and high >= take_profit_price:
+            return {
+                "exit_pos": pos,
+                "exit_price": float(take_profit_price),
+                "exit_reason": "take_profit",
+            }
+
+        high_water = max(high_water, high)
+
+    exit_ = df.iloc[planned_exit_pos]
+    return {
+        "exit_pos": planned_exit_pos,
+        "exit_price": float(exit_["Close"]),
+        "exit_reason": "holding_period_exit",
+    }
+
+
+def _ineligible_row(code: str, name: str, as_of_ymd: str, reason: str) -> Dict[str, Any]:
+    return {
+        "eligible": False,
+        "as_of_date": _fmt_ymd(as_of_ymd),
+        "stock_name": name,
+        "stock_code": code,
+        "reason": reason,
+    }
+
+
+def _count_recent_docs(source_index: Dict[str, List[str]], as_of_ymd: str) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+    as_of_dt = datetime.strptime(as_of_ymd, "%Y%m%d")
+    for source, dates in source_index.items():
+        lookback = DEFAULT_LOOKBACK_BY_SOURCE.get(source, 365)
+        lower = ""
+        if lookback is not None:
+            lower = (as_of_dt - pd.Timedelta(days=int(lookback))).strftime("%Y%m%d")
+        left = bisect.bisect_left(dates, lower) if lower else 0
+        right = bisect.bisect_right(dates, as_of_ymd)
+        counts[source] = max(0, right - left)
+    return counts
+
+
+def _apply_risk_filters(
+    rows: List[Dict[str, Any]],
+    risk_config: RiskConfig,
+) -> tuple[List[Dict[str, Any]], Dict[str, int]]:
+    passed: List[Dict[str, Any]] = []
+    rejected: Dict[str, int] = defaultdict(int)
+    for row in rows:
+        reason = _risk_reject_reason(row, risk_config)
+        if reason:
+            rejected[reason] += 1
+            continue
+        passed.append(row)
+    return passed, dict(rejected)
+
+
+def _risk_reject_reason(row: Dict[str, Any], risk_config: RiskConfig) -> str:
+    if risk_config.min_avg_trading_value > 0:
+        if float(row.get("avg_trading_value_20d") or 0.0) < risk_config.min_avg_trading_value:
+            return "low_liquidity"
+    if risk_config.max_volatility_20d > 0:
+        if float(row.get("volatility_20d") or 0.0) > risk_config.max_volatility_20d:
+            return "high_volatility"
+    if risk_config.max_return_5d > 0:
+        if float(row.get("return_5d") or 0.0) > risk_config.max_return_5d:
+            return "overheated_5d"
+    if risk_config.max_return_20d > 0:
+        if float(row.get("return_20d") or 0.0) > risk_config.max_return_20d:
+            return "overheated_20d"
+    if risk_config.min_trend_150d > -1.0:
+        if float(row.get("trend_150d") or 0.0) < risk_config.min_trend_150d:
+            return "weak_trend"
+    return ""
+
+
+def _market_breadth_pct(rows: List[Dict[str, Any]]) -> float:
+    if not rows:
+        return 0.0
+    above_ma = sum(1 for row in rows if float(row.get("trend_150d") or 0.0) >= 0.0)
+    return _pct(above_ma / len(rows))
+
+
+def _market_filter_reason(rows: List[Dict[str, Any]], risk_config: RiskConfig) -> str:
+    if risk_config.min_market_breadth_pct <= 0:
+        return ""
+    breadth_pct = _market_breadth_pct(rows)
+    if breadth_pct < risk_config.min_market_breadth_pct:
+        return f"market_breadth {breadth_pct}% < {risk_config.min_market_breadth_pct}%"
+    return ""
+
+
+def _add_counts(total: Dict[str, int], current: Dict[str, int]) -> None:
+    for key, value in current.items():
+        total[key] += value
+
+
+def _latest_exit_date(rows: List[Dict[str, Any]]) -> str:
+    dates = [str(row.get("exit_date") or "") for row in rows if row.get("exit_date")]
+    return max(dates) if dates else ""
+
+
+def _compute_metrics(
+    *,
+    equity_curve: List[Dict[str, Any]],
+    positions: List[Dict[str, Any]],
+    from_ymd: str,
+    to_ymd: str,
+    hold_days: int,
+) -> Dict[str, Any]:
+    if not equity_curve:
+        return {
+            "rebalance_count": 0,
+            "risk_off_count": 0,
+            "traded_rebalance_count": 0,
+            "total_return_pct": 0.0,
+            "benchmark_return_pct": 0.0,
+            "excess_return_pct": 0.0,
+            "mdd_pct": 0.0,
+            "sharpe": 0.0,
+            "win_rate_pct": 0.0,
+            "prediction_hit_rate_pct": 0.0,
+        }
+
+    period_returns = np.array([row["period_return_pct"] / 100.0 for row in equity_curve], dtype=float)
+    benchmark_returns = np.array([row["benchmark_return_pct"] / 100.0 for row in equity_curve], dtype=float)
+    equity_values = np.array([row["equity"] for row in equity_curve], dtype=float)
+    benchmark_values = np.array([row["benchmark_equity"] for row in equity_curve], dtype=float)
+    periods_per_year = 252.0 / max(1, hold_days)
+    std = float(period_returns.std(ddof=1)) if len(period_returns) > 1 else 0.0
+    sharpe = (float(period_returns.mean()) / std * math.sqrt(periods_per_year)) if std > 0 else 0.0
+    start_dt = datetime.strptime(from_ymd, "%Y%m%d")
+    end_dt = datetime.strptime(to_ymd, "%Y%m%d")
+    years = max((end_dt - start_dt).days / 365.25, 1 / 365.25)
+    total_return = float(equity_values[-1] - 1.0)
+    benchmark_return = float(benchmark_values[-1] - 1.0)
+    cagr = (float(equity_values[-1]) ** (1.0 / years)) - 1.0
+    benchmark_cagr = (float(benchmark_values[-1]) ** (1.0 / years)) - 1.0
+
+    realized = [row["realized_return_pct"] for row in positions]
+    predicted = [row["predicted_return_pct"] for row in positions]
+    hit_rate = 0.0
+    if realized:
+        hits = sum(1 for p, r in zip(predicted, realized) if (p >= 0 and r >= 0) or (p < 0 and r < 0))
+        hit_rate = hits / len(realized)
+
+    risk_off_count = sum(1 for row in equity_curve if row.get("risk_off_reason"))
+
+    return {
+        "rebalance_count": len(equity_curve),
+        "risk_off_count": risk_off_count,
+        "traded_rebalance_count": len(equity_curve) - risk_off_count,
+        "position_count": len(positions),
+        "total_return_pct": _pct(total_return),
+        "benchmark_return_pct": _pct(benchmark_return),
+        "excess_return_pct": _pct(total_return - benchmark_return),
+        "cagr_pct": _pct(cagr),
+        "benchmark_cagr_pct": _pct(benchmark_cagr),
+        "mdd_pct": _pct(_max_drawdown(equity_values)),
+        "benchmark_mdd_pct": _pct(_max_drawdown(benchmark_values)),
+        "sharpe": round(sharpe, 3),
+        "avg_period_return_pct": _pct(float(period_returns.mean())),
+        "avg_benchmark_period_return_pct": _pct(float(benchmark_returns.mean())),
+        "win_rate_pct": _pct(float((period_returns > 0).mean())),
+        "prediction_hit_rate_pct": _pct(hit_rate),
+        "avg_position_return_pct": round(float(np.mean(realized)), 2) if realized else 0.0,
+        "median_position_return_pct": round(float(np.median(realized)), 2) if realized else 0.0,
+    }
+
+
+def _aggregate_leaders(positions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    grouped: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    for row in positions:
+        grouped[row["stock_code"]].append(row)
+
+    leaders: List[Dict[str, Any]] = []
+    for code, rows in grouped.items():
+        returns = [row["realized_return_pct"] for row in rows]
+        scores = [row["leader_score"] for row in rows]
+        leaders.append(
+            {
+                "stock_name": rows[0]["stock_name"],
+                "stock_code": code,
+                "selection_count": len(rows),
+                "avg_leader_score": round(float(np.mean(scores)), 1),
+                "avg_realized_return_pct": round(float(np.mean(returns)), 2),
+                "win_rate_pct": _pct(float(np.mean([ret > 0 for ret in returns]))),
+            }
+        )
+    leaders.sort(key=lambda row: (row["selection_count"], row["avg_realized_return_pct"]), reverse=True)
+    return leaders
+
+
+def _exit_counts(positions: List[Dict[str, Any]]) -> Dict[str, int]:
+    counts: Dict[str, int] = defaultdict(int)
+    for row in positions:
+        counts[str(row.get("exit_reason") or "holding_period_exit")] += 1
+    return dict(counts)
+
+
+def _positions_to_trades(positions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    trades: List[Dict[str, Any]] = []
+    for row in positions:
+        trades.append(
+            {
+                "date": row["entry_date"],
+                "stock_name": row["stock_name"],
+                "stock_code": row["stock_code"],
+                "side": "BUY",
+                "price": row["entry_price"],
+                "weight": row["weight"],
+                "reason": f"rank {row['rank']} leader_score {row['leader_score']}",
+            }
+        )
+        trades.append(
+            {
+                "date": row["exit_date"],
+                "stock_name": row["stock_name"],
+                "stock_code": row["stock_code"],
+                "side": "SELL",
+                "price": row["exit_price"],
+                "weight": row["weight"],
+                "realized_return_pct": row["realized_return_pct"],
+                "reason": row.get("exit_reason") or "holding_period_exit",
+            }
+        )
+    return trades
+
+
+def _build_common_calendar(
+    prices: Dict[str, pd.DataFrame],
+    from_ymd: str,
+    to_ymd: str,
+    hold_days: int,
+) -> List[str]:
+    dates = set()
+    for df in prices.values():
+        for idx in df.index[:-hold_days] if len(df) > hold_days else []:
+            ymd = idx.strftime("%Y%m%d")
+            if from_ymd <= ymd <= to_ymd:
+                dates.add(ymd)
+    return sorted(dates)
+
+
+def _select_rebalance_dates(calendar: List[str], rebalance: str) -> List[str]:
+    if rebalance.upper() in {"D", "DAILY"}:
+        return list(calendar)
+    if rebalance.upper() in {"W", "WEEKLY"}:
+        grouped: Dict[str, str] = {}
+        for ymd in calendar:
+            dt = datetime.strptime(ymd, "%Y%m%d")
+            grouped[f"{dt.isocalendar().year}-{dt.isocalendar().week:02d}"] = ymd
+        return list(grouped.values())
+
+    grouped = {}
+    for ymd in calendar:
+        grouped[ymd[:6]] = ymd
+    return list(grouped.values())
+
+
+def _index_docs(docs: Iterable[DocumentSignal]) -> Dict[str, Dict[str, List[str]]]:
+    output: Dict[str, Dict[str, List[str]]] = defaultdict(lambda: defaultdict(list))
+    for doc in docs:
+        output[doc.stock_code][doc.source_type].append(doc.published_ymd)
+    for by_source in output.values():
+        for dates in by_source.values():
+            dates.sort()
+    return output
+
+
+def _write_result(result: Dict[str, Any], output_dir: str | Path, task_id: str) -> Path:
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"{task_id}.json"
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=False, indent=2)
+    return path
+
+
+def _display_path(path: str | Path) -> str:
+    resolved = Path(path).resolve()
+    try:
+        return str(resolved.relative_to(PROJECT_ROOT))
+    except ValueError:
+        return str(path)
+
+
+def _iter_jsonl(path: Path) -> Iterable[Dict[str, Any]]:
+    if not path.exists():
+        return
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            yield json.loads(line)
+
+
+def _stock_names_from_prices(prices: Dict[str, pd.DataFrame]) -> Dict[str, str]:
+    names = {}
+    for code, df in prices.items():
+        if "stock_name" in df and not df.empty:
+            names[code] = str(df.iloc[-1].get("stock_name") or code)
+    return names
+
+
+def _to_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip().replace(",", "")
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _period_return(closes: pd.Series, days: int) -> float:
+    if len(closes) <= days:
+        return 0.0
+    base = float(closes.iloc[-days - 1])
+    last = float(closes.iloc[-1])
+    return last / base - 1.0 if base > 0 else 0.0
+
+
+def _max_drawdown(equity_values: np.ndarray) -> float:
+    peaks = np.maximum.accumulate(equity_values)
+    drawdowns = equity_values / peaks - 1.0
+    return float(drawdowns.min()) if len(drawdowns) else 0.0
+
+
+def _pct(value: float) -> float:
+    return round(float(value) * 100.0, 2)
+
+
+def _clip(value: float, low: float, high: float) -> float:
+    return max(low, min(high, float(value)))
+
+
+def _fmt_ymd(ymd: str) -> str:
+    return f"{ymd[:4]}-{ymd[4:6]}-{ymd[6:8]}"
+
+
+def _require_ymd(value: str, label: str) -> str:
+    ymd = normalize_ymd(value)
+    if not ymd:
+        raise ValueError(f"invalid {label}: {value}")
+    return ymd
+
+
+def _default_task_id(theme_key: str, from_ymd: str, to_ymd: str, top_n: int, hold_days: int) -> str:
+    return f"bt-{theme_key}-{from_ymd}-{to_ymd}-top{top_n}-h{hold_days}"
+
+
+def _default_warnings(has_point_in_time_membership: bool = False) -> List[str]:
+    warnings = [
+        "selection uses deterministic price/document features, not the full LLM ThemeLeaderOrchestrator.",
+        "future returns are used only for evaluation after each as_of_date signal.",
+    ]
+    if has_point_in_time_membership:
+        warnings.append(
+            "theme_membership may be inferred from local corpus evidence unless an official historical source is supplied."
+        )
+    else:
+        warnings.append(
+            "theme_targets has no point-in-time membership date; historical theme membership may include survivorship/future-membership bias."
+        )
+    return warnings
+
+
+def _print_summary(result: Dict[str, Any]) -> None:
+    metrics = result["metrics"]
+    print(f"[BACKTEST] task_id={result['task_id']}")
+    print(f"[BACKTEST] theme={result['theme']} period={result['period']['from_date']}..{result['period']['to_date']}")
+    print(
+        "[BACKTEST] "
+        f"return={metrics['total_return_pct']}% "
+        f"benchmark={metrics['benchmark_return_pct']}% "
+        f"excess={metrics['excess_return_pct']}% "
+        f"mdd={metrics['mdd_pct']}% "
+        f"sharpe={metrics['sharpe']}"
+    )
+    print(f"[BACKTEST] result_json={result['artifacts'].get('result_json', '')}")
+    print("[BACKTEST] leaders:")
+    for row in result["leaders"][:10]:
+        print(
+            f"  - {row['stock_name']}({row['stock_code']}): "
+            f"selected={row['selection_count']} avg_return={row['avg_realized_return_pct']}%"
+        )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Run point-in-time AI theme leader backtest.")
+    parser.add_argument("--data-dir", default=str(get_data_dir()))
+    parser.add_argument("--theme", default="AI")
+    parser.add_argument("--theme-key", default="ai")
+    parser.add_argument("--from-date", default="20250101")
+    parser.add_argument("--to-date", default="20251231")
+    parser.add_argument("--rebalance", default="M", choices=["D", "W", "M", "daily", "weekly"])
+    parser.add_argument("--top-n", type=int, default=3)
+    parser.add_argument("--hold-days", type=int, default=20)
+    parser.add_argument("--min-history-days", type=int, default=150)
+    parser.add_argument("--transaction-cost-bps", type=float, default=15.0)
+    parser.add_argument("--min-avg-trading-value", type=float, default=0.0)
+    parser.add_argument("--max-volatility-20d", type=float, default=0.0)
+    parser.add_argument("--max-return-5d", type=float, default=0.0)
+    parser.add_argument("--max-return-20d", type=float, default=0.0)
+    parser.add_argument("--min-trend-150d", type=float, default=-1.0)
+    parser.add_argument("--min-market-breadth-pct", type=float, default=0.0)
+    parser.add_argument("--stop-loss-pct", type=float, default=0.0)
+    parser.add_argument("--take-profit-pct", type=float, default=0.0)
+    parser.add_argument("--trailing-stop-pct", type=float, default=0.0)
+    parser.add_argument("--output-dir", default="")
+    parser.add_argument("--task-id", default="")
+    parser.add_argument("--submit-url", default="")
+    args = parser.parse_args()
+
+    result = run_leader_backtest(
+        data_dir=args.data_dir,
+        theme=args.theme,
+        theme_key=args.theme_key,
+        from_date=args.from_date,
+        to_date=args.to_date,
+        rebalance=args.rebalance,
+        top_n=args.top_n,
+        hold_days=args.hold_days,
+        min_history_days=args.min_history_days,
+        transaction_cost_bps=args.transaction_cost_bps,
+        min_avg_trading_value=args.min_avg_trading_value,
+        max_volatility_20d=args.max_volatility_20d,
+        max_return_5d=args.max_return_5d,
+        max_return_20d=args.max_return_20d,
+        min_trend_150d=args.min_trend_150d,
+        min_market_breadth_pct=args.min_market_breadth_pct,
+        stop_loss_pct=args.stop_loss_pct,
+        take_profit_pct=args.take_profit_pct,
+        trailing_stop_pct=args.trailing_stop_pct,
+        output_dir=args.output_dir or None,
+        task_id=args.task_id,
+        submit_url=args.submit_url,
+    )
+    _print_summary(result)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

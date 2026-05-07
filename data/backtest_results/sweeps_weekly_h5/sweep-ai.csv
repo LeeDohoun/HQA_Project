@@ -1,0 +1,7 @@
+task_id,period,from_date,to_date,rebalance,top_n,hold_days,rebalance_count,position_count,total_return_pct,benchmark_return_pct,excess_return_pct,mdd_pct,sharpe,win_rate_pct,prediction_hit_rate_pct,result_json
+bt-ai-2026q1-w-top3-h5,2026q1,2026-01-01,2026-03-31,W,3,5,14,42,35.74,-1.58,37.31,-26.27,1.896,57.14,47.62,data/backtest_results/sweeps_weekly_h5/bt-ai-2026q1-w-top3-h5.json
+bt-ai-2026q1-w-top5-h5,2026q1,2026-01-01,2026-03-31,W,5,5,14,70,23.49,-1.58,25.07,-27.0,1.476,57.14,50.0,data/backtest_results/sweeps_weekly_h5/bt-ai-2026q1-w-top5-h5.json
+bt-ai-2026q1-w-top1-h5,2026q1,2026-01-01,2026-03-31,W,1,5,14,14,-18.38,-1.58,-16.8,-35.18,-0.934,21.43,28.57,data/backtest_results/sweeps_weekly_h5/bt-ai-2026q1-w-top1-h5.json
+bt-ai-2025-w-top5-h5,2025,2025-01-01,2025-12-31,W,5,5,53,265,98.82,87.7,11.12,-34.58,1.528,58.49,50.57,data/backtest_results/sweeps_weekly_h5/bt-ai-2025-w-top5-h5.json
+bt-ai-2025-w-top3-h5,2025,2025-01-01,2025-12-31,W,3,5,53,159,23.62,87.7,-64.08,-41.8,0.617,49.06,47.8,data/backtest_results/sweeps_weekly_h5/bt-ai-2025-w-top3-h5.json
+bt-ai-2025-w-top1-h5,2025,2025-01-01,2025-12-31,W,1,5,53,53,16.1,87.7,-71.6,-76.02,0.771,52.83,52.83,data/backtest_results/sweeps_weekly_h5/bt-ai-2025-w-top1-h5.json
