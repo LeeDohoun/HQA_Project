@@ -160,6 +160,28 @@ python backtesting/leader_backtest.py \
 
 DART 수집은 `corp_codes.csv`에 `stock_code,corp_code` 매핑이 없거나 `DART_API_KEY`가 없으면 건너뜁니다. 차트 수집은 기본적으로 Naver 데이터를 쓰고, `KIS_APP_KEY`, `KIS_APP_SECRET`이 있으면 KIS 일봉 데이터도 보강할 수 있습니다.
 
+### DART corp code CSV 생성
+
+OpenDART 공시 수집은 종목코드와 별개로 DART 고유번호인 `corp_code`가 필요합니다. `.env`에 `DART_API_KEY`를 넣은 뒤 아래 명령으로 `corp_codes.csv`를 생성합니다.
+
+```bash
+python scripts/download_dart_corp_codes.py --output ./corp_codes.csv
+```
+
+생성되는 CSV는 `stock_code,corp_code,corp_name,modify_date` 컬럼을 포함하며, 수집 파이프라인은 이 중 `stock_code,corp_code`를 사용합니다. CSV를 만든 뒤 이미 수집한 테마에 DART를 붙이려면 후보 종목을 다시 저장해야 합니다.
+
+```bash
+python scripts/theme_pipeline.py \
+  --theme 로봇 \
+  --theme-key robot \
+  --target-mode overwrite \
+  --from-date 20250101 \
+  --to-date 20261231 \
+  --theme-max-stocks 30 \
+  --enabled-sources dart \
+  --corp-codes-csv ./corp_codes.csv
+```
+
 ### 테마 수집 + RAG 빌드
 
 테마 후보를 찾고 raw 수집과 Layer2/RAG 빌드까지 실행합니다.
@@ -201,6 +223,34 @@ python scripts/run_pipeline.py --theme AI --full
 - `--analyze-only`: 기존 canonical index로 분석만 수행
 
 운영에서는 수집 주기는 cron/systemd 같은 외부 스케줄러가 관리하고, 빌드는 수집 직후 또는 별도 주기로 실행하는 방식이 권장됩니다. 에이전트 분석 주기는 `config/watchlist.yaml`의 `schedule` 설정을 참고합니다.
+
+### 여러 테마 일괄 수집
+
+여러 테마를 한 번에 수집하려면 `scripts/run_theme_batch.py`가 테마 목록을 순회하며 `scripts/theme_pipeline.py`를 테마별로 실행합니다.
+
+```bash
+python scripts/run_theme_batch.py \
+  --themes "AI:ai,반도체:semiconductor,2차전지:battery" \
+  --from-date 20250101 \
+  --to-date 20261231 \
+  --theme-max-stocks 30 \
+  --enabled-sources news,dart,forum,chart \
+  --continue-on-error
+```
+
+파일로 관리할 수도 있습니다.
+
+```text
+AI:ai
+반도체:semiconductor
+2차전지:battery
+```
+
+```bash
+python scripts/run_theme_batch.py --theme-file themes.txt --enabled-sources news,dart,forum,chart
+```
+
+`--dry-run`을 붙이면 실제 수집 없이 실행될 명령만 확인합니다. `--continue-on-error`를 붙이면 한 테마가 실패해도 다음 테마 수집을 계속 진행합니다.
 
 ### RAG 자산만 다시 빌드
 
