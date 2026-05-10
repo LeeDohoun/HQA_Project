@@ -39,15 +39,37 @@ class KISConfig:
     TOKEN_DIR = get_data_dir() / "token"
     
     # API 키 (환경변수에서 로드)
+    # 모의투자 전용 값이 있으면 paper=True 호출에서 우선 사용합니다.
     APP_KEY = os.getenv("KIS_APP_KEY") or os.getenv("KIS_API_KEY")
     APP_SECRET = os.getenv("KIS_APP_SECRET") or os.getenv("KIS_API_SECRET")
     ACCOUNT_NO = os.getenv("KIS_ACCOUNT_NO", "")
+    PAPER_APP_KEY = os.getenv("KIS_PAPER_APP_KEY") or os.getenv("KIS_VTS_APP_KEY")
+    PAPER_APP_SECRET = os.getenv("KIS_PAPER_APP_SECRET") or os.getenv("KIS_VTS_APP_SECRET")
+    PAPER_ACCOUNT_NO = os.getenv("KIS_PAPER_ACCOUNT_NO") or os.getenv("KIS_VTS_ACCOUNT_NO")
+
+    @classmethod
+    def get_app_key(cls, paper: bool = False) -> str:
+        if paper:
+            return cls.PAPER_APP_KEY or cls.APP_KEY or ""
+        return cls.APP_KEY or ""
+
+    @classmethod
+    def get_app_secret(cls, paper: bool = False) -> str:
+        if paper:
+            return cls.PAPER_APP_SECRET or cls.APP_SECRET or ""
+        return cls.APP_SECRET or ""
+
+    @classmethod
+    def get_account_no(cls, paper: bool = False) -> str:
+        if paper:
+            return cls.PAPER_ACCOUNT_NO or cls.ACCOUNT_NO or ""
+        return cls.ACCOUNT_NO or ""
     
     # 계좌번호 파싱 (12345678-01 → CANO: 12345678, ACNT_PRDT_CD: 01)
     @classmethod
-    def get_account(cls) -> tuple[str, str]:
+    def get_account(cls, paper: bool = False) -> tuple[str, str]:
         """계좌번호를 CANO, ACNT_PRDT_CD로 분리"""
-        acc = cls.ACCOUNT_NO.replace("-", "")
+        acc = cls.get_account_no(paper).replace("-", "")
         if len(acc) >= 10:
             return acc[:8], acc[8:10]
         elif len(acc) >= 8:
@@ -91,7 +113,10 @@ class KISToken:
         Args:
             paper: True면 모의투자, False면 실전투자
         """
-        self._is_paper = paper
+        if self._is_paper != paper:
+            self._access_token = None
+            self._token_expired = None
+            self._is_paper = paper
         
         # 캐시된 토큰이 유효하면 반환
         if self.is_valid:
@@ -111,9 +136,13 @@ class KISToken:
         headers = {"content-type": "application/json"}
         body = {
             "grant_type": "client_credentials",
-            "appkey": KISConfig.APP_KEY,
-            "appsecret": KISConfig.APP_SECRET
+            "appkey": KISConfig.get_app_key(self._is_paper),
+            "appsecret": KISConfig.get_app_secret(self._is_paper),
         }
+
+        if not body["appkey"] or not body["appsecret"]:
+            print("[ERROR] KIS API 키/시크릿이 설정되지 않았습니다.")
+            return ""
         
         try:
             resp = requests.post(url, headers=headers, json=body, timeout=10)
@@ -133,11 +162,11 @@ class KISToken:
             # 파일에 저장
             self._save_token_to_file()
             
-            print(f"✅ KIS 토큰 발급 완료 (만료: {self._token_expired})")
+            print(f"[OK] KIS 토큰 발급 완료 (만료: {self._token_expired})")
             return self._access_token
             
         except Exception as e:
-            print(f"❌ 토큰 발급 실패: {e}")
+            print(f"[ERROR] 토큰 발급 실패: {e}")
             return ""
     
     def _get_token_file(self) -> Path:
@@ -160,7 +189,7 @@ class KISToken:
                 json.dump(data, f)
                 
         except Exception as e:
-            print(f"⚠️ 토큰 저장 실패: {e}")
+            print(f"[WARN] 토큰 저장 실패: {e}")
     
     def _load_token_from_file(self) -> bool:
         """파일에서 토큰 로드"""
@@ -191,7 +220,32 @@ class KISToken:
 _token_manager = KISToken()
 
 
-def get_base_headers(tr_id: str, paper: bool = False) -> Dict[str, str]:
+def get_hashkey(body: Dict[str, Any], paper: bool = False) -> str:
+    """주문성 API용 hashkey 생성."""
+    domain = KISConfig.VTS_DOMAIN if paper else KISConfig.PROD_DOMAIN
+    url = f"{domain}/uapi/hashkey"
+    headers = {
+        "content-type": "application/json; charset=utf-8",
+        "appkey": KISConfig.get_app_key(paper),
+        "appsecret": KISConfig.get_app_secret(paper),
+    }
+
+    try:
+        resp = requests.post(url, headers=headers, json=body, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        return data.get("HASH") or data.get("hash") or ""
+    except requests.exceptions.RequestException as e:
+        print(f"[ERROR] hashkey 생성 실패: {e}")
+        return ""
+
+
+def get_base_headers(
+    tr_id: str,
+    paper: bool = False,
+    body: Optional[Dict[str, Any]] = None,
+    hashkey: bool = False,
+) -> Dict[str, str]:
     """
     API 호출용 기본 헤더 생성
     
@@ -201,13 +255,17 @@ def get_base_headers(tr_id: str, paper: bool = False) -> Dict[str, str]:
     """
     token = _token_manager.get_token(paper)
     
-    return {
+    headers = {
         "content-type": "application/json; charset=utf-8",
         "authorization": f"Bearer {token}",
-        "appkey": KISConfig.APP_KEY,
-        "appsecret": KISConfig.APP_SECRET,
+        "appkey": KISConfig.get_app_key(paper),
+        "appsecret": KISConfig.get_app_secret(paper),
         "tr_id": tr_id,
+        "custtype": "P",
     }
+    if hashkey and body is not None:
+        headers["hashkey"] = get_hashkey(body, paper=paper)
+    return headers
 
 
 def call_api(
@@ -217,6 +275,7 @@ def call_api(
     params: Optional[Dict] = None,
     body: Optional[Dict] = None,
     paper: bool = False,
+    hashkey: bool = False,
 ) -> Dict[str, Any]:
     """
     한국투자증권 API 호출 공통 함수
@@ -234,7 +293,7 @@ def call_api(
     """
     domain = KISConfig.VTS_DOMAIN if paper else KISConfig.PROD_DOMAIN
     url = f"{domain}{path}"
-    headers = get_base_headers(tr_id, paper)
+    headers = get_base_headers(tr_id, paper, body=body, hashkey=hashkey)
     
     try:
         if method.upper() == "GET":
@@ -246,13 +305,20 @@ def call_api(
         return resp.json()
         
     except requests.exceptions.RequestException as e:
-        print(f"❌ API 호출 실패: {e}")
+        print(f"[ERROR] API 호출 실패: {e}")
         return {"rt_cd": "-1", "msg1": str(e)}
 
 
-def is_api_available() -> bool:
+def is_api_available(paper: bool = False) -> bool:
     """API 사용 가능 여부 확인"""
-    return bool(KISConfig.APP_KEY and KISConfig.APP_SECRET)
+    return bool(KISConfig.get_app_key(paper) and KISConfig.get_app_secret(paper))
+
+
+def is_trading_api_available(paper: bool = False) -> bool:
+    """주문 API 사용 가능 여부 확인."""
+    app_ready = bool(KISConfig.get_app_key(paper) and KISConfig.get_app_secret(paper))
+    cano, acnt_prdt_cd = KISConfig.get_account(paper)
+    return app_ready and bool(cano and acnt_prdt_cd)
 
 
 # ==========================================
@@ -268,5 +334,5 @@ if __name__ == "__main__":
         token = _token_manager.get_token(paper=False)
         print(f"토큰 (앞 20자): {token[:20]}...")
     else:
-        print("⚠️ API 키가 설정되지 않았습니다.")
+        print("[WARN] API 키가 설정되지 않았습니다.")
         print("   .env 파일에 KIS_APP_KEY, KIS_APP_SECRET을 설정하세요.")

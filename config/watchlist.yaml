@@ -28,9 +28,11 @@ watchlist:
 
 # ── 매매 설정 ──
 trading:
-  enabled: false               # ⚠️ true로 변경 시 실제 주문 실행
+  enabled: false               # true로 변경 시 자동 주문 판단 실행
   dry_run: true                # true면 주문 시뮬레이션만 (로그만 남김)
-  account_type: "paper"        # "paper" (모의투자) | "real" (실전)
+  account_type: "paper"        # "paper" (KIS 모의투자) | "real" (실전)
+  order_type: "limit"          # "limit" (지정가) | "market" (시장가)
+  allow_real_trading: false    # 실전 주문은 이 값을 true로 명시해야 허용
 
   # 리스크 제한 (서킷 브레이커)
   max_daily_buy_amount: 1000000    # 일일 최대 매수 금액 (원)
