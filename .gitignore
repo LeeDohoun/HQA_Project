@@ -41,3 +41,6 @@ data/orders/
 package-lock.json
 
 backend/target/
+
+# 10. dev.sh per-service runtime logs (local only)
+logs/
