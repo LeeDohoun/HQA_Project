@@ -284,6 +284,44 @@ def test_clean_period_rag_keeps_dart_chunks_and_reduces_noisy_duplicates():
     assert report["drop_reasons"]["news_same_title_chunk_cap"] == 1
 
 
+def test_llm_horizon_auto_and_agent_weights():
+    from backtesting.leader_backtest import _resolve_llm_horizon
+    from backtesting.llm_signal import _agent_totals
+
+    assert _resolve_llm_horizon("auto", hold_days=5) == "short"
+    assert _resolve_llm_horizon("auto", hold_days=20) == "long"
+
+    analyst = {"theme_fit_score": 50, "moat_score": 50, "growth_score": 50, "catalyst_score": 50}
+    quant = {"valuation_score": 0, "profitability_score": 0, "growth_score": 0, "stability_score": 0}
+    chartist = {"total_score": 100}
+
+    short_totals = _agent_totals(analyst, quant, chartist, "short")
+    long_totals = _agent_totals(analyst, quant, chartist, "long")
+
+    assert short_totals["agent_weights"] == {"analyst": 0.30, "quant": 0.15, "chartist": 0.55}
+    assert long_totals["agent_weights"] == {"analyst": 0.45, "quant": 0.40, "chartist": 0.15}
+    assert short_totals["recommended_final_score"] > long_totals["recommended_final_score"]
+
+
+def test_short_horizon_llm_ranking_score_uses_chartist_floor():
+    from backtesting.leader_backtest import _effective_llm_ranking_score
+
+    llm_result = {
+        "llm_horizon": "short",
+        "llm_score": 61,
+        "llm_theme_fit_score": 30,
+        "llm_risk_score": 60,
+        "llm_agent_scores": {
+            "analyst": {"theme_fit_score": 30},
+            "quant": {"risk_score": 60},
+            "chartist": {"total_score": 80},
+        },
+    }
+
+    assert round(_effective_llm_ranking_score(llm_result, 61)) == 77
+    assert _effective_llm_ranking_score({**llm_result, "llm_horizon": "long"}, 61) == 61
+
+
 def test_leader_backtest_writes_backend_ready_payload(tmp_path):
     pd = pytest.importorskip("pandas")
     from backtesting.leader_backtest import run_leader_backtest
@@ -388,8 +426,34 @@ def test_leader_backtest_writes_backend_ready_payload(tmp_path):
     assert llm_result["leaders"][0]["stock_code"] == "000002"
     assert llm_result["positions"][0]["llm_score"] == 95
     assert llm_result["positions"][0]["deterministic_leader_score"] > 0
-    assert llm_result["prediction_model"] == "llm_temporal_theme_leader_v1"
-    assert llm_result["predictions"][0]["prediction_model"] == "llm_temporal_theme_leader_v1"
+    assert llm_result["strategy"]["llm_rerank"]["horizon"] == "short"
+    assert llm_result["prediction_model"] == "llm_short_temporal_theme_leader_v1"
+    assert llm_result["predictions"][0]["prediction_model"] == "llm_short_temporal_theme_leader_v1"
+
+    broad_llm_result = run_leader_backtest(
+        data_dir=tmp_path,
+        theme="AI",
+        theme_key="ai",
+        from_date="20250228",
+        to_date="20250331",
+        top_n=1,
+        hold_days=5,
+        min_history_days=20,
+        llm_rerank_top_k=0,
+        llm_weight=1.0,
+        llm_candidate_scope="broad",
+        llm_scorer=FakeLLMScorer(),
+        output_dir=tmp_path / "results",
+        task_id="bt-test-broad-llm",
+    )
+
+    assert broad_llm_result["strategy"]["llm_rerank"]["candidate_scope"] == "broad"
+    assert broad_llm_result["strategy"]["llm_rerank"]["top_k"] == 0
+    assert broad_llm_result["strategy"]["llm_rerank"]["top_k_meaning"] == "all_risk_filtered"
+    assert broad_llm_result["strategy"]["llm_rerank"]["horizon"] == "short"
+    assert broad_llm_result["leaders"][0]["stock_code"] == "000002"
+    assert broad_llm_result["positions"][0]["llm_candidate_scope"] == "broad"
+    assert broad_llm_result["prediction_model"] == "llm_broad_short_temporal_theme_leader_v1"
 
     class FakeMultiAgentScorer:
         def metadata(self):
@@ -437,8 +501,9 @@ def test_leader_backtest_writes_backend_ready_payload(tmp_path):
     )
 
     assert multi_agent_result["strategy"]["llm_rerank"]["mode"] == "multi_agent"
-    assert multi_agent_result["strategy"]["prediction_model"] == "multi_agent_temporal_theme_leader_v1"
-    assert multi_agent_result["prediction_model"] == "multi_agent_temporal_theme_leader_v1"
+    assert multi_agent_result["strategy"]["llm_rerank"]["horizon"] == "short"
+    assert multi_agent_result["strategy"]["prediction_model"] == "multi_agent_short_temporal_theme_leader_v1"
+    assert multi_agent_result["prediction_model"] == "multi_agent_short_temporal_theme_leader_v1"
     assert multi_agent_result["positions"][0]["llm_mode"] == "multi_agent"
     assert "risk_manager" in multi_agent_result["positions"][0]["llm_agent_scores"]
 
