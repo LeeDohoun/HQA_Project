@@ -1,0 +1,398 @@
+{
+  "task_id": "bt-ai-2026jan02-w-top3-h5-tr15-deterministic-baseline",
+  "mode": "backtest",
+  "result_type": "backtest",
+  "status": "completed",
+  "theme": "AI",
+  "theme_key": "ai",
+  "prediction_model": "momentum_price_forecast_v1",
+  "period": {
+    "from_date": "2026-01-01",
+    "to_date": "2026-01-02",
+    "rebalance": "W",
+    "rebalance_count": 1,
+    "hold_days": 5
+  },
+  "strategy": {
+    "name": "ai_theme_leader_momentum_v1",
+    "top_n": 3,
+    "min_history_days": 150,
+    "transaction_cost_bps": 15.0,
+    "risk_filters": {
+      "min_avg_trading_value": 0.0,
+      "max_volatility_20d": 1.2,
+      "max_return_5d": 0.35,
+      "max_return_20d": 0.9,
+      "min_trend_150d": -1.0,
+      "min_market_breadth_pct": 40.0
+    },
+    "exit_rules": {
+      "stop_loss_pct": 0.0,
+      "take_profit_pct": 0.0,
+      "trailing_stop_pct": 15.0
+    },
+    "llm_rerank": {
+      "enabled": false,
+      "top_k": 0,
+      "weight": 0.0,
+      "context_docs": 0,
+      "mode": ""
+    },
+    "selection_inputs": [
+      "20d momentum",
+      "60d momentum",
+      "150d trend",
+      "20d volume ratio",
+      "news/dart/forum document signal",
+      "20d volatility penalty"
+    ],
+    "prediction_model": "momentum_price_forecast_v1"
+  },
+  "metrics": {
+    "rebalance_count": 1,
+    "risk_off_count": 0,
+    "traded_rebalance_count": 1,
+    "position_count": 3,
+    "total_return_pct": 6.63,
+    "benchmark_return_pct": -4.34,
+    "excess_return_pct": 10.97,
+    "cagr_pct": 1520763330335.69,
+    "benchmark_cagr_pct": -100.0,
+    "mdd_pct": 0.0,
+    "benchmark_mdd_pct": 0.0,
+    "sharpe": 0.0,
+    "avg_period_return_pct": 6.63,
+    "avg_benchmark_period_return_pct": -4.34,
+    "win_rate_pct": 100.0,
+    "prediction_hit_rate_pct": 66.67,
+    "avg_position_return_pct": 6.93,
+    "median_position_return_pct": 3.55
+  },
+  "leaders": [
+    {
+      "stock_name": "더블유에스아이",
+      "stock_code": "299170",
+      "selection_count": 1,
+      "avg_leader_score": 70.0,
+      "avg_realized_return_pct": 27.44,
+      "win_rate_pct": 100.0
+    },
+    {
+      "stock_name": "에이팩트",
+      "stock_code": "200470",
+      "selection_count": 1,
+      "avg_leader_score": 71.0,
+      "avg_realized_return_pct": 3.55,
+      "win_rate_pct": 100.0
+    },
+    {
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "selection_count": 1,
+      "avg_leader_score": 73.0,
+      "avg_realized_return_pct": -10.2,
+      "win_rate_pct": 0.0
+    }
+  ],
+  "predictions": [
+    {
+      "as_of_date": "2026-01-02",
+      "entry_date": "2026-01-02",
+      "exit_date": "2026-01-09",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "rank": 1,
+      "leader_score": 73,
+      "predicted_return_pct": 41.57,
+      "target_price": 381537.91,
+      "realized_return_pct": -10.2,
+      "prediction_model": "momentum_price_forecast_v1"
+    },
+    {
+      "as_of_date": "2026-01-02",
+      "entry_date": "2026-01-02",
+      "exit_date": "2026-01-09",
+      "stock_name": "에이팩트",
+      "stock_code": "200470",
+      "rank": 2,
+      "leader_score": 71,
+      "predicted_return_pct": 47.9,
+      "target_price": 10412.37,
+      "realized_return_pct": 3.55,
+      "prediction_model": "momentum_price_forecast_v1"
+    },
+    {
+      "as_of_date": "2026-01-02",
+      "entry_date": "2026-01-02",
+      "exit_date": "2026-01-09",
+      "stock_name": "더블유에스아이",
+      "stock_code": "299170",
+      "rank": 3,
+      "leader_score": 70,
+      "predicted_return_pct": 39.59,
+      "target_price": 4145.9,
+      "realized_return_pct": 27.44,
+      "prediction_model": "momentum_price_forecast_v1"
+    }
+  ],
+  "positions": [
+    {
+      "as_of_date": "2026-01-02",
+      "entry_date": "2026-01-02",
+      "exit_date": "2026-01-09",
+      "planned_exit_date": "2026-01-09",
+      "exit_reason": "holding_period_exit",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "entry_price": 269500.0,
+      "exit_price": 242000.0,
+      "return_5d": -0.03405017921146958,
+      "return_20d": 0.07800000000000007,
+      "return_60d": 0.6770379589296827,
+      "trend_150d": 0.8680683918669132,
+      "volatility_20d": 0.6943539774155104,
+      "volume_ratio_20d": 0.3979602060285092,
+      "avg_trading_value_20d": 264234501750.0,
+      "doc_signal": 12.269195078067977,
+      "doc_counts": {
+        "dart": 103,
+        "forum": 0,
+        "news": 82
+      },
+      "return_60d_rank": 0.8478260869565217,
+      "return_20d_rank": 0.6086956521739131,
+      "trend_150d_rank": 0.9782608695652174,
+      "volume_rank": 0.1956521739130435,
+      "doc_rank": 0.9565217391304348,
+      "low_vol_rank": 0.391304347826087,
+      "leader_score": 73,
+      "target_price": 381537.91,
+      "rank": 1,
+      "weight": 0.333333,
+      "realized_return_pct": -10.2,
+      "predicted_return_pct": 41.57
+    },
+    {
+      "as_of_date": "2026-01-02",
+      "entry_date": "2026-01-02",
+      "exit_date": "2026-01-09",
+      "planned_exit_date": "2026-01-09",
+      "exit_reason": "holding_period_exit",
+      "stock_name": "에이팩트",
+      "stock_code": "200470",
+      "entry_price": 7040.0,
+      "exit_price": 7290.0,
+      "return_5d": 0.1282051282051282,
+      "return_20d": 0.3183520599250935,
+      "return_60d": 0.4883720930232558,
+      "trend_150d": 0.8667138059041894,
+      "volatility_20d": 0.736110923722663,
+      "volume_ratio_20d": 0.5984169287964278,
+      "avg_trading_value_20d": 11212561639.0,
+      "doc_signal": 8.387423134727175,
+      "doc_counts": {
+        "dart": 73,
+        "forum": 0,
+        "news": 4
+      },
+      "return_60d_rank": 0.782608695652174,
+      "return_20d_rank": 0.9347826086956522,
+      "trend_150d_rank": 0.9565217391304348,
+      "volume_rank": 0.30434782608695654,
+      "doc_rank": 0.45652173913043476,
+      "low_vol_rank": 0.32608695652173914,
+      "leader_score": 71,
+      "target_price": 10412.37,
+      "rank": 2,
+      "weight": 0.333333,
+      "realized_return_pct": 3.55,
+      "predicted_return_pct": 47.9
+    },
+    {
+      "as_of_date": "2026-01-02",
+      "entry_date": "2026-01-02",
+      "exit_date": "2026-01-09",
+      "planned_exit_date": "2026-01-09",
+      "exit_reason": "holding_period_exit",
+      "stock_name": "더블유에스아이",
+      "stock_code": "299170",
+      "entry_price": 2970.0,
+      "exit_price": 3785.0,
+      "return_5d": 0.25316455696202533,
+      "return_20d": 0.1578947368421053,
+      "return_60d": 0.6884593519044913,
+      "trend_150d": 0.5522053161725509,
+      "volatility_20d": 0.8440516015757489,
+      "volume_ratio_20d": 1.26351739277498,
+      "avg_trading_value_20d": 7836618230.75,
+      "doc_signal": 8.652695729923131,
+      "doc_counts": {
+        "dart": 46,
+        "forum": 0,
+        "news": 10
+      },
+      "return_60d_rank": 0.8695652173913043,
+      "return_20d_rank": 0.7608695652173914,
+      "trend_150d_rank": 0.8478260869565217,
+      "volume_rank": 0.5652173913043478,
+      "doc_rank": 0.5652173913043478,
+      "low_vol_rank": 0.17391304347826086,
+      "leader_score": 70,
+      "target_price": 4145.9,
+      "rank": 3,
+      "weight": 0.333333,
+      "realized_return_pct": 27.44,
+      "predicted_return_pct": 39.59
+    }
+  ],
+  "trades": [
+    {
+      "date": "2026-01-02",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "side": "BUY",
+      "price": 269500.0,
+      "weight": 0.333333,
+      "reason": "rank 1 leader_score 73"
+    },
+    {
+      "date": "2026-01-09",
+      "stock_name": "로보티즈",
+      "stock_code": "108490",
+      "side": "SELL",
+      "price": 242000.0,
+      "weight": 0.333333,
+      "realized_return_pct": -10.2,
+      "reason": "holding_period_exit"
+    },
+    {
+      "date": "2026-01-02",
+      "stock_name": "에이팩트",
+      "stock_code": "200470",
+      "side": "BUY",
+      "price": 7040.0,
+      "weight": 0.333333,
+      "reason": "rank 2 leader_score 71"
+    },
+    {
+      "date": "2026-01-09",
+      "stock_name": "에이팩트",
+      "stock_code": "200470",
+      "side": "SELL",
+      "price": 7290.0,
+      "weight": 0.333333,
+      "realized_return_pct": 3.55,
+      "reason": "holding_period_exit"
+    },
+    {
+      "date": "2026-01-02",
+      "stock_name": "더블유에스아이",
+      "stock_code": "299170",
+      "side": "BUY",
+      "price": 2970.0,
+      "weight": 0.333333,
+      "reason": "rank 3 leader_score 70"
+    },
+    {
+      "date": "2026-01-09",
+      "stock_name": "더블유에스아이",
+      "stock_code": "299170",
+      "side": "SELL",
+      "price": 3785.0,
+      "weight": 0.333333,
+      "realized_return_pct": 27.44,
+      "reason": "holding_period_exit"
+    }
+  ],
+  "periods": [
+    {
+      "as_of_date": "2026-01-02",
+      "entry_date": "2026-01-02",
+      "exit_date": "2026-01-09",
+      "selected_count": 3,
+      "active_target_count": 48,
+      "eligible_count": 46,
+      "risk_eligible_count": 44,
+      "risk_reject_count": 2,
+      "market_breadth_pct": 78.26,
+      "portfolio_return_pct": 6.63,
+      "benchmark_return_pct": -4.34,
+      "excess_return_pct": 10.97,
+      "top_symbols": [
+        {
+          "stock_name": "로보티즈",
+          "stock_code": "108490",
+          "leader_score": 73,
+          "realized_return_pct": -10.2
+        },
+        {
+          "stock_name": "에이팩트",
+          "stock_code": "200470",
+          "leader_score": 71,
+          "realized_return_pct": 3.55
+        },
+        {
+          "stock_name": "더블유에스아이",
+          "stock_code": "299170",
+          "leader_score": 70,
+          "realized_return_pct": 27.44
+        }
+      ]
+    }
+  ],
+  "equity_curve": [
+    {
+      "date": "2026-01-09",
+      "equity": 1.066294,
+      "benchmark_equity": 0.956554,
+      "period_return_pct": 6.63,
+      "benchmark_return_pct": -4.34
+    }
+  ],
+  "risk": {
+    "filters": {
+      "min_avg_trading_value": 0.0,
+      "max_volatility_20d": 1.2,
+      "max_return_5d": 0.35,
+      "max_return_20d": 0.9,
+      "min_trend_150d": -1.0,
+      "min_market_breadth_pct": 40.0
+    },
+    "reject_counts": {
+      "overheated_5d": 1,
+      "high_volatility": 1
+    }
+  },
+  "execution": {
+    "exit_rules": {
+      "stop_loss_pct": 0.0,
+      "take_profit_pct": 0.0,
+      "trailing_stop_pct": 15.0
+    },
+    "exit_counts": {
+      "holding_period_exit": 3
+    },
+    "same_day_ohlc_policy": "stop_or_trailing_stop_before_take_profit"
+  },
+  "artifacts": {
+    "result_json": "data/backtest_results/llm_final/qwen14b_2026jan02_multi_agent_v2_top5_h5_tr15/bt-ai-2026jan02-w-top3-h5-tr15-deterministic-baseline.json"
+  },
+  "warnings": [
+    "future returns are used only for evaluation after each as_of_date signal.",
+    "selection uses deterministic price/document features, not the full LLM ThemeLeaderOrchestrator.",
+    "theme_membership may be inferred from local corpus evidence unless an official historical source is supplied."
+  ],
+  "metadata": {
+    "generated_at": "2026-05-04T14:08:38.618755",
+    "data_dir": "data",
+    "target_count": 50,
+    "membership_count": 50,
+    "point_in_time_universe": true,
+    "membership_sources": [
+      "local_corpus_inferred"
+    ],
+    "price_stock_count": 50,
+    "document_signal_count": 30497,
+    "llm": {}
+  }
+}

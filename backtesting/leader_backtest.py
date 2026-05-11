@@ -99,9 +99,17 @@ def run_leader_backtest(
     stop_loss_pct: float = 0.0,
     take_profit_pct: float = 0.0,
     trailing_stop_pct: float = 0.0,
+    llm_rerank_top_k: int = 0,
+    llm_weight: float = 1.0,
+    llm_context_docs: int = 5,
+    llm_mode: str = "single",
+    llm_candidate_scope: str = "rerank",
+    llm_horizon: str = "auto",
+    llm_cache_path: str | Path | None = None,
     output_dir: str | Path | None = None,
     task_id: str = "",
     submit_url: str = "",
+    llm_scorer: Any | None = None,
 ) -> Dict[str, Any]:
     data_root = Path(data_dir) if data_dir else get_data_dir()
     from_ymd = _require_ymd(from_date, "from_date")
@@ -126,6 +134,26 @@ def run_leader_backtest(
         take_profit_pct=take_profit_pct,
         trailing_stop_pct=trailing_stop_pct,
     )
+    llm_weight = _clip(llm_weight, 0.0, 1.0)
+    llm_rerank_top_k = max(0, int(llm_rerank_top_k or 0))
+    llm_mode = str(llm_mode or "single").strip().lower()
+    llm_candidate_scope = _normalize_llm_candidate_scope(llm_candidate_scope)
+    llm_horizon = _resolve_llm_horizon(llm_horizon, hold_days=hold_days)
+    llm_scorer_obj = llm_scorer
+    should_auto_create_llm = llm_rerank_top_k > 0 or llm_candidate_scope == "broad"
+    if llm_scorer_obj is None and should_auto_create_llm:
+        from backtesting.llm_signal import TemporalLLMStockScorer, TemporalMultiAgentStockScorer
+
+        scorer_cls = TemporalMultiAgentStockScorer if llm_mode in {"multi", "multi_agent", "agents"} else TemporalLLMStockScorer
+        llm_scorer_obj = scorer_cls(
+            data_dir=data_root,
+            theme=theme,
+            theme_key=theme_key,
+            context_docs=llm_context_docs,
+            cache_path=llm_cache_path,
+            horizon=llm_horizon,
+        )
+    llm_enabled = llm_scorer_obj is not None
 
     if not targets:
         warnings.append(f"theme_targets not found or empty: {theme_key}")
@@ -221,6 +249,17 @@ def run_leader_backtest(
             continue
 
         ranked = sorted(filtered, key=lambda row: row["leader_score"], reverse=True)
+        if llm_enabled:
+            ranked = _rerank_with_llm(
+                ranked=ranked,
+                as_of_ymd=as_of_ymd,
+                llm_scorer=llm_scorer_obj,
+                top_n=top_n,
+                llm_rerank_top_k=llm_rerank_top_k,
+                llm_weight=llm_weight,
+                llm_candidate_scope=llm_candidate_scope,
+                warnings=warnings,
+            )
         selected = ranked[:top_n]
         selected_return = float(np.mean([row["realized_return"] for row in selected]))
         selected_net_return = selected_return - (transaction_cost * 2)
@@ -243,13 +282,12 @@ def run_leader_backtest(
                 "portfolio_return_pct": _pct(selected_net_return),
                 "benchmark_return_pct": _pct(benchmark_net_return),
                 "excess_return_pct": _pct(selected_net_return - benchmark_net_return),
+                "candidate_rankings": [
+                    _candidate_audit_payload(row)
+                    for row in ranked[: min(len(ranked), max(top_n, 10))]
+                ],
                 "top_symbols": [
-                    {
-                        "stock_name": row["stock_name"],
-                        "stock_code": row["stock_code"],
-                        "leader_score": row["leader_score"],
-                        "realized_return_pct": _pct(row["realized_return"]),
-                    }
+                    _top_symbol_payload(row)
                     for row in selected
                 ],
             }
@@ -276,6 +314,12 @@ def run_leader_backtest(
             position.pop("eligible", None)
             positions.append(position)
 
+    llm_metadata = {}
+    if llm_enabled and hasattr(llm_scorer_obj, "metadata"):
+        llm_metadata = llm_scorer_obj.metadata()
+    if llm_enabled:
+        llm_metadata = {**llm_metadata, "horizon": llm_metadata.get("horizon") or llm_horizon}
+
     metrics = _compute_metrics(
         equity_curve=equity_curve,
         positions=positions,
@@ -284,6 +328,9 @@ def run_leader_backtest(
         hold_days=hold_days,
     )
     leaders = _aggregate_leaders(positions)
+    prediction_model = (
+        _prediction_model_name(llm_enabled, llm_metadata, llm_candidate_scope, llm_horizon)
+    )
     predictions = [
         {
             key: row[key]
@@ -300,6 +347,8 @@ def run_leader_backtest(
                 "realized_return_pct",
             ]
         }
+        | {"prediction_model": prediction_model}
+        | _optional_prediction_payload(row)
         for row in positions
     ]
 
@@ -310,6 +359,7 @@ def run_leader_backtest(
         "status": "completed",
         "theme": theme,
         "theme_key": theme_key,
+        "prediction_model": prediction_model,
         "period": {
             "from_date": _fmt_ymd(from_ymd),
             "to_date": _fmt_ymd(to_ymd),
@@ -324,6 +374,27 @@ def run_leader_backtest(
             "transaction_cost_bps": transaction_cost_bps,
             "risk_filters": risk_config.to_dict(),
             "exit_rules": exit_config.to_dict(),
+            "llm_rerank": {
+                "enabled": llm_enabled,
+                "top_k": _llm_strategy_top_k(
+                    enabled=llm_enabled,
+                    top_n=top_n,
+                    llm_rerank_top_k=llm_rerank_top_k,
+                    llm_candidate_scope=llm_candidate_scope,
+                ),
+                "weight": llm_weight if llm_enabled else 0.0,
+                "context_docs": llm_context_docs if llm_enabled else 0,
+                "mode": llm_metadata.get("mode", llm_mode if llm_enabled else ""),
+                "candidate_scope": llm_candidate_scope if llm_enabled else "",
+                "horizon": llm_horizon if llm_enabled else "",
+                "top_k_meaning": (
+                    "all_risk_filtered"
+                    if llm_enabled and llm_candidate_scope == "broad" and llm_rerank_top_k <= 0
+                    else "deterministic_prefilter"
+                    if llm_enabled
+                    else ""
+                ),
+            },
             "selection_inputs": [
                 "20d momentum",
                 "60d momentum",
@@ -331,8 +402,15 @@ def run_leader_backtest(
                 "20d volume ratio",
                 "news/dart/forum document signal",
                 "20d volatility penalty",
+                (
+                    f"broad {llm_horizon}-horizon point-in-time LLM theme leader score"
+                    if llm_enabled and llm_candidate_scope == "broad"
+                    else f"{llm_horizon}-horizon point-in-time LLM theme leader score"
+                    if llm_enabled
+                    else ""
+                ),
             ],
-            "prediction_model": "momentum_price_forecast_v1",
+            "prediction_model": prediction_model,
         },
         "metrics": metrics,
         "leaders": leaders,
@@ -351,7 +429,13 @@ def run_leader_backtest(
             "same_day_ohlc_policy": "stop_or_trailing_stop_before_take_profit",
         },
         "artifacts": {},
-        "warnings": warnings + _default_warnings(bool(memberships)),
+        "warnings": warnings + _default_warnings(
+            bool(memberships),
+            llm_enabled,
+            llm_metadata.get("mode", ""),
+            llm_candidate_scope,
+            llm_horizon,
+        ),
         "metadata": {
             "generated_at": datetime.now().isoformat(),
             "data_dir": _display_path(data_root),
@@ -361,8 +445,13 @@ def run_leader_backtest(
             "membership_sources": sorted({row.source for row in memberships}),
             "price_stock_count": len(prices),
             "document_signal_count": len(docs),
+            "llm": llm_metadata,
         },
     }
+
+    result["strategy"]["selection_inputs"] = [
+        item for item in result["strategy"]["selection_inputs"] if item
+    ]
 
     out_path = _write_result(result, output_dir or data_root / "backtest_results", run_id)
     result["artifacts"]["result_json"] = _display_path(out_path)
@@ -717,6 +806,161 @@ def _apply_risk_filters(
     return passed, dict(rejected)
 
 
+def _rerank_with_llm(
+    *,
+    ranked: List[Dict[str, Any]],
+    as_of_ymd: str,
+    llm_scorer: Any,
+    top_n: int,
+    llm_rerank_top_k: int,
+    llm_weight: float,
+    llm_candidate_scope: str = "rerank",
+    warnings: List[str],
+) -> List[Dict[str, Any]]:
+    llm_candidate_scope = _normalize_llm_candidate_scope(llm_candidate_scope)
+    if llm_candidate_scope == "broad":
+        pool_size = len(ranked) if llm_rerank_top_k <= 0 else min(len(ranked), max(top_n, llm_rerank_top_k))
+    else:
+        pool_size = min(len(ranked), max(top_n, llm_rerank_top_k or top_n))
+    rerank_pool: List[Dict[str, Any]] = []
+    for row in ranked[:pool_size]:
+        current = dict(row)
+        deterministic_score = float(current.get("leader_score") or 0.0)
+        current["deterministic_leader_score"] = round(deterministic_score)
+        current["llm_candidate_scope"] = llm_candidate_scope
+        try:
+            llm_result = llm_scorer.score(as_of_ymd=as_of_ymd, row=current)
+            raw_llm_score = float(llm_result.get("llm_score") or deterministic_score)
+            llm_ranking_score = _effective_llm_ranking_score(llm_result, raw_llm_score)
+            current.update(llm_result)
+            current["llm_raw_score"] = round(raw_llm_score)
+            current["llm_ranking_score"] = round(llm_ranking_score)
+            current["leader_score"] = round(
+                (1.0 - llm_weight) * deterministic_score + llm_weight * llm_ranking_score
+            )
+        except Exception as exc:
+            current["llm_error"] = str(exc)[:240]
+            current["leader_score"] = round(deterministic_score)
+            warnings.append(
+                f"{as_of_ymd}: LLM scoring failed for {current.get('stock_code')}: {str(exc)[:160]}"
+            )
+        rerank_pool.append(current)
+    rerank_pool.sort(
+        key=lambda row: (
+            row.get("leader_score", 0),
+            row.get("llm_confidence", 0),
+            row.get("deterministic_leader_score", 0),
+        ),
+        reverse=True,
+    )
+    return rerank_pool
+
+
+def _top_symbol_payload(row: Dict[str, Any]) -> Dict[str, Any]:
+    payload = {
+        "stock_name": row["stock_name"],
+        "stock_code": row["stock_code"],
+        "leader_score": row["leader_score"],
+        "realized_return_pct": _pct(row["realized_return"]),
+    }
+    for key in ["deterministic_leader_score", "llm_score", "llm_ranking_score", "llm_confidence"]:
+        if key in row:
+            payload[key] = row[key]
+    return payload
+
+
+def _candidate_audit_payload(row: Dict[str, Any]) -> Dict[str, Any]:
+    keys = [
+        "stock_name",
+        "stock_code",
+        "leader_score",
+        "deterministic_leader_score",
+        "llm_score",
+        "llm_raw_score",
+        "llm_ranking_score",
+        "llm_confidence",
+        "llm_candidate_scope",
+        "llm_horizon",
+        "return_5d",
+        "return_20d",
+        "return_60d",
+        "trend_150d",
+        "volatility_20d",
+        "volume_ratio_20d",
+        "doc_signal",
+        "realized_return",
+        "exit_reason",
+    ]
+    payload = {key: row[key] for key in keys if key in row}
+    for key in ["return_5d", "return_20d", "return_60d", "trend_150d", "realized_return"]:
+        if key in payload:
+            payload[f"{key}_pct"] = _pct(float(payload.pop(key)))
+    for key in ["volatility_20d", "volume_ratio_20d", "doc_signal"]:
+        if key in payload:
+            payload[key] = round(float(payload[key]), 4)
+    return payload
+
+
+def _optional_prediction_payload(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        key: row[key]
+        for key in [
+            "deterministic_leader_score",
+            "llm_score",
+            "llm_raw_score",
+            "llm_ranking_score",
+            "llm_confidence",
+            "llm_theme_fit_score",
+            "llm_catalyst_score",
+            "llm_risk_score",
+            "llm_summary",
+            "llm_agent_scores",
+            "llm_mode",
+            "llm_candidate_scope",
+            "llm_horizon",
+        ]
+        if key in row
+    }
+
+
+def _effective_llm_ranking_score(llm_result: Dict[str, Any], raw_llm_score: float) -> float:
+    """Use a short-term chart/flow floor for multi-agent trading scores."""
+
+    horizon = str(llm_result.get("llm_horizon") or "").strip().lower()
+    agent_scores = llm_result.get("llm_agent_scores") or {}
+    if horizon != "short" or not isinstance(agent_scores, dict):
+        return _clip(raw_llm_score, 0.0, 100.0)
+
+    chartist = agent_scores.get("chartist") if isinstance(agent_scores.get("chartist"), dict) else {}
+    analyst = agent_scores.get("analyst") if isinstance(agent_scores.get("analyst"), dict) else {}
+    quant = agent_scores.get("quant") if isinstance(agent_scores.get("quant"), dict) else {}
+    if not chartist:
+        return _clip(raw_llm_score, 0.0, 100.0)
+
+    chartist_total = _score_float(chartist.get("total_score"), raw_llm_score)
+    theme_fit = _score_float(analyst.get("theme_fit_score"), llm_result.get("llm_theme_fit_score", 50.0))
+    risk_score = _score_float(llm_result.get("llm_risk_score"), 50.0)
+    quant_risk = _score_float(quant.get("risk_score"), risk_score)
+    if chartist_total < 75.0:
+        return _clip(raw_llm_score, 0.0, 100.0)
+
+    penalty = (
+        max(0.0, risk_score - 60.0) * 0.25
+        + max(0.0, quant_risk - 65.0) * 0.20
+        + max(0.0, 45.0 - theme_fit) * 0.20
+    )
+    short_term_floor = chartist_total - penalty
+    return _clip(max(raw_llm_score, short_term_floor), 0.0, 100.0)
+
+
+def _score_float(value: Any, default: Any = 50.0) -> float:
+    parsed = _to_float(value)
+    if parsed is not None:
+        return _clip(parsed, 0.0, 100.0)
+    fallback = _to_float(default)
+    return _clip(fallback if fallback is not None else 50.0, 0.0, 100.0)
+
+
 def _risk_reject_reason(row: Dict[str, Any], risk_config: RiskConfig) -> str:
     if risk_config.min_avg_trading_value > 0:
         if float(row.get("avg_trading_value_20d") or 0.0) < risk_config.min_avg_trading_value:
@@ -1017,11 +1261,112 @@ def _default_task_id(theme_key: str, from_ymd: str, to_ymd: str, top_n: int, hol
     return f"bt-{theme_key}-{from_ymd}-{to_ymd}-top{top_n}-h{hold_days}"
 
 
-def _default_warnings(has_point_in_time_membership: bool = False) -> List[str]:
-    warnings = [
-        "selection uses deterministic price/document features, not the full LLM ThemeLeaderOrchestrator.",
-        "future returns are used only for evaluation after each as_of_date signal.",
-    ]
+def _normalize_llm_candidate_scope(value: str) -> str:
+    scope = str(value or "rerank").strip().lower().replace("-", "_")
+    aliases = {
+        "topk": "rerank",
+        "top_k": "rerank",
+        "reranker": "rerank",
+        "wide": "broad",
+        "universe": "broad",
+        "all": "broad",
+    }
+    scope = aliases.get(scope, scope)
+    if scope not in {"rerank", "broad"}:
+        raise ValueError(f"invalid llm_candidate_scope: {value}")
+    return scope
+
+
+def _normalize_llm_horizon(value: str) -> str:
+    horizon = str(value or "short").strip().lower().replace("-", "_")
+    aliases = {
+        "swing": "short",
+        "trading": "short",
+        "short_term": "short",
+        "shortterm": "short",
+        "단타": "short",
+        "스윙": "short",
+        "investment": "long",
+        "long_term": "long",
+        "longterm": "long",
+        "장타": "long",
+        "중장기": "long",
+    }
+    horizon = aliases.get(horizon, horizon)
+    if horizon not in {"short", "long"}:
+        raise ValueError(f"invalid llm_horizon: {value}")
+    return horizon
+
+
+def _resolve_llm_horizon(value: str, *, hold_days: int) -> str:
+    horizon = str(value or "auto").strip().lower().replace("-", "_")
+    if horizon == "auto":
+        return "short" if int(hold_days or 0) <= 10 else "long"
+    return _normalize_llm_horizon(horizon)
+
+
+def _prediction_model_name(
+    llm_enabled: bool,
+    llm_metadata: Dict[str, Any],
+    llm_candidate_scope: str,
+    llm_horizon: str,
+) -> str:
+    if not llm_enabled:
+        return "momentum_price_forecast_v1"
+    is_multi_agent = llm_metadata.get("mode") == "multi_agent"
+    horizon = _normalize_llm_horizon(str(llm_metadata.get("horizon") or llm_horizon or "short"))
+    parts = ["multi_agent" if is_multi_agent else "llm"]
+    if _normalize_llm_candidate_scope(llm_candidate_scope) == "broad":
+        parts.append("broad")
+    parts.append(horizon)
+    parts.extend(["temporal", "theme", "leader", "v1"])
+    return "_".join(parts)
+
+
+def _llm_strategy_top_k(
+    *,
+    enabled: bool,
+    top_n: int,
+    llm_rerank_top_k: int,
+    llm_candidate_scope: str,
+) -> int:
+    if not enabled:
+        return 0
+    if _normalize_llm_candidate_scope(llm_candidate_scope) == "broad" and llm_rerank_top_k <= 0:
+        return 0
+    return max(top_n, llm_rerank_top_k)
+
+
+def _default_warnings(
+    has_point_in_time_membership: bool = False,
+    has_llm_rerank: bool = False,
+    llm_mode: str = "",
+    llm_candidate_scope: str = "rerank",
+    llm_horizon: str = "short",
+) -> List[str]:
+    warnings = ["future returns are used only for evaluation after each as_of_date signal."]
+    scope = _normalize_llm_candidate_scope(llm_candidate_scope)
+    horizon = _normalize_llm_horizon(llm_horizon)
+    if has_llm_rerank and scope == "broad" and llm_mode == "multi_agent":
+        warnings.append(
+            f"selection uses point-in-time broad {horizon}-horizon Analyst/Quant/Chartist/RiskManager scoring over the risk-filtered universe."
+        )
+    elif has_llm_rerank and scope == "broad":
+        warnings.append(
+            f"selection uses point-in-time broad {horizon}-horizon LLM scoring over the risk-filtered universe."
+        )
+    elif has_llm_rerank and llm_mode == "multi_agent":
+        warnings.append(
+            f"selection uses point-in-time {horizon}-horizon Analyst/Quant/Chartist/RiskManager reranking over a deterministic prefilter."
+        )
+    elif has_llm_rerank:
+        warnings.append(
+            f"selection uses point-in-time {horizon}-horizon LLM reranking over a deterministic prefilter, not the full production ThemeLeaderOrchestrator."
+        )
+    else:
+        warnings.append(
+            "selection uses deterministic price/document features, not the full LLM ThemeLeaderOrchestrator."
+        )
     if has_point_in_time_membership:
         warnings.append(
             "theme_membership may be inferred from local corpus evidence unless an official historical source is supplied."
@@ -1075,6 +1420,31 @@ def main() -> int:
     parser.add_argument("--stop-loss-pct", type=float, default=0.0)
     parser.add_argument("--take-profit-pct", type=float, default=0.0)
     parser.add_argument("--trailing-stop-pct", type=float, default=0.0)
+    parser.add_argument(
+        "--llm-rerank-top-k",
+        type=int,
+        default=0,
+        help="If >0, rerank the deterministic top-K candidates with a point-in-time LLM score.",
+    )
+    parser.add_argument("--llm-weight", type=float, default=1.0)
+    parser.add_argument("--llm-context-docs", type=int, default=5)
+    parser.add_argument("--llm-mode", choices=["single", "multi_agent"], default="single")
+    parser.add_argument(
+        "--llm-horizon",
+        choices=["auto", "short", "long"],
+        default="auto",
+        help="LLM scoring profile. auto uses short for hold_days<=10, long otherwise.",
+    )
+    parser.add_argument(
+        "--llm-candidate-scope",
+        choices=["rerank", "broad"],
+        default="rerank",
+        help=(
+            "rerank scores the deterministic top-K candidates; broad scores the risk-filtered "
+            "universe, or the first --llm-rerank-top-k names if that value is >0."
+        ),
+    )
+    parser.add_argument("--llm-cache-path", default="")
     parser.add_argument("--output-dir", default="")
     parser.add_argument("--task-id", default="")
     parser.add_argument("--submit-url", default="")
@@ -1100,6 +1470,13 @@ def main() -> int:
         stop_loss_pct=args.stop_loss_pct,
         take_profit_pct=args.take_profit_pct,
         trailing_stop_pct=args.trailing_stop_pct,
+        llm_rerank_top_k=args.llm_rerank_top_k,
+        llm_weight=args.llm_weight,
+        llm_context_docs=args.llm_context_docs,
+        llm_mode=args.llm_mode,
+        llm_candidate_scope=args.llm_candidate_scope,
+        llm_horizon=args.llm_horizon,
+        llm_cache_path=args.llm_cache_path or None,
         output_dir=args.output_dir or None,
         task_id=args.task_id,
         submit_url=args.submit_url,

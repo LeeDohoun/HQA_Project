@@ -42,6 +42,8 @@ class TradeExecutor:
         self._enabled = trading_config.get("enabled", False)
         self._dry_run = trading_config.get("dry_run", True)
         self._account_type = trading_config.get("account_type", "paper")
+        self._order_type = trading_config.get("order_type", "limit")
+        self._allow_real_trading = bool(trading_config.get("allow_real_trading", False))
 
         # 서킷 브레이커 설정
         self._max_daily_buy = trading_config.get("max_daily_buy_amount", 1_000_000)
@@ -83,6 +85,8 @@ class TradeExecutor:
             "enabled": self._enabled,
             "dry_run": self._dry_run,
             "account_type": self._account_type,
+            "order_type": self._order_type,
+            "allow_real_trading": self._allow_real_trading,
             "max_daily_buy_amount": self._max_daily_buy,
             "max_position_ratio": self._max_position_ratio,
             "stop_loss_pct": self._stop_loss_pct,
@@ -222,9 +226,10 @@ class TradeExecutor:
             )
         else:
             # 실제 KIS API 주문
-            order["status"] = self._send_kis_order(
+            kis_result = self._send_kis_order(
                 stock_code, "BUY", quantity, current_price
             )
+            self._attach_kis_result(order, kis_result)
 
         self._record_order(order, count_toward_limits=self._is_effective_order_status(order.get("status")))
         return order
@@ -264,9 +269,10 @@ class TradeExecutor:
                 f"🧪 [DRY RUN] 매도 시뮬레이션: {stock_name}({stock_code}) {quantity}주"
             )
         else:
-            order["status"] = self._send_kis_order(
+            kis_result = self._send_kis_order(
                 stock_code, "SELL", quantity, current_price
             )
+            self._attach_kis_result(order, kis_result)
 
         self._record_order(order, count_toward_limits=self._is_effective_order_status(order.get("status")))
 
@@ -393,7 +399,7 @@ class TradeExecutor:
         return max(0, int(amount))
 
     # ──────────────────────────────────────────────
-    # KIS API 주문 (실전)
+    # KIS API 주문
     # ──────────────────────────────────────────────
 
     def _send_kis_order(
@@ -402,31 +408,77 @@ class TradeExecutor:
         side: str,
         quantity: int,
         price: Optional[int],
-    ) -> str:
+    ) -> Any:
         """
-        KIS API 실제 주문 실행
+        KIS API 주문 실행. 기본 자동매매 경로는 모의투자 서버만 허용합니다.
 
         Returns:
-            "success" | "error: {message}"
+            KIS API 응답 dict 또는 "error: {message}"
         """
+        if quantity <= 0:
+            return "error: 주문 수량이 0입니다."
+
+        paper = self._account_type == "paper"
+        if not paper and not self._allow_real_trading:
+            return "error: 실전 주문은 allow_real_trading=true 설정 없이는 차단됩니다."
+
+        order_division = self._resolve_order_division(price)
+        order_price = None if order_division == "01" else price
+
         try:
             from src.tools.realtime_tool import KISRealtimeTool
 
-            tool = KISRealtimeTool()
+            tool = KISRealtimeTool(paper=paper)
             if not tool.is_available:
-                return "error: KIS API 미설정"
+                return (
+                    "error: KIS API 미설정 "
+                    "(KIS_APP_KEY/KIS_APP_SECRET 또는 KIS_PAPER_APP_KEY/KIS_PAPER_APP_SECRET 확인)"
+                )
 
-            # TODO: KIS 주문 API 연동
-            # tool.place_order(stock_code, side, quantity, price)
-            logger.warning(
-                f"[TradeExecutor] KIS 주문 API 미구현 — "
-                f"{side} {stock_code} {quantity}주 @ {price}"
+            response = tool.place_order(
+                stock_code=stock_code,
+                side=side,
+                quantity=quantity,
+                price=order_price,
+                order_division=order_division,
             )
-            return "error: KIS 주문 API 미구현"
+            if response.get("rt_cd") == "0":
+                return response
+
+            message = response.get("msg1") or response.get("msg_cd") or "KIS 주문 실패"
+            response["status"] = f"error: {message}"
+            return response
 
         except Exception as e:
             logger.exception(f"[TradeExecutor] 주문 오류: {e}")
             return f"error: {str(e)[:200]}"
+
+    def _resolve_order_division(self, price: Optional[int]) -> str:
+        normalized = str(self._order_type or "limit").lower()
+        if normalized in {"market", "market_price", "시장가"}:
+            return "01"
+        if normalized in {"limit", "limit_price", "지정가"}:
+            return "00"
+        # KIS 주문구분 코드를 직접 지정할 수 있게 허용합니다.
+        if normalized.isdigit():
+            return normalized.zfill(2)
+        return "01" if price is None else "00"
+
+    @staticmethod
+    def _attach_kis_result(order: Dict[str, Any], kis_result: Any) -> None:
+        if isinstance(kis_result, dict):
+            order["kis_response"] = kis_result
+            if kis_result.get("rt_cd") == "0":
+                order["status"] = "submitted"
+                output = kis_result.get("output") or {}
+                if isinstance(output, dict):
+                    order["kis_order_no"] = output.get("ODNO") or output.get("odno")
+                    order["kis_order_time"] = output.get("ORD_TMD") or output.get("ord_tmd")
+            else:
+                order["status"] = kis_result.get("status") or f"error: {kis_result.get('msg1', 'KIS 주문 실패')}"
+            return
+
+        order["status"] = str(kis_result)
 
     # ──────────────────────────────────────────────
     # 주문 기록 저장

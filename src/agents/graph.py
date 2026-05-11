@@ -513,7 +513,7 @@ def _risk_manager_node(state: AnalysisState) -> dict:
             with tracer.trace_agent("risk_manager", input_detail) as span:
                 final_decision = agent.make_decision(stock_name, stock_code, agent_scores)
                 span.set_output(
-                    f"{final_decision.action.value} ({final_decision.total_score}/270) "
+                    f"{final_decision.action.value} ({final_decision.total_score}/100) "
                     f"리스크:{final_decision.risk_level.value}"
                 )
                 span.set_reasoning(
@@ -524,7 +524,7 @@ def _risk_manager_node(state: AnalysisState) -> dict:
             final_decision = agent.make_decision(stock_name, stock_code, agent_scores)
         
         print(f"   ✅ 최종 판단: {final_decision.action.value} "
-              f"(종합 {final_decision.total_score}/270점)")
+              f"(종합 {final_decision.total_score}/100점)")
         
         return {
             "agent_scores": agent_scores,
@@ -738,7 +738,7 @@ def run_stock_analysis(
         final_summary = ""
         if final_decision:
             final_summary = (
-                f"{final_decision.action.value} ({final_decision.total_score}/270) "
+                f"{final_decision.action.value} ({final_decision.total_score}/100) "
                 f"리스크:{final_decision.risk_level.value}"
             )
         
@@ -912,7 +912,7 @@ def _fallback_parallel_analysis(
         with tracer.trace_agent("risk_manager", input_detail) as span:
             final_decision = risk_manager.make_decision(stock_name, stock_code, agent_scores)
             span.set_output(
-                f"{final_decision.action.value} ({final_decision.total_score}/270) "
+                f"{final_decision.action.value} ({final_decision.total_score}/100) "
                 f"리스크:{final_decision.risk_level.value}"
             )
             span.set_reasoning(
@@ -926,7 +926,7 @@ def _fallback_parallel_analysis(
     # 트레이스 종료
     if tracer:
         final_summary = (
-            f"{final_decision.action.value} ({final_decision.total_score}/270) "
+            f"{final_decision.action.value} ({final_decision.total_score}/100) "
             f"리스크:{final_decision.risk_level.value}"
         )
         saved_path = tracer.finish_trace(final_result_summary=final_summary)

@@ -29,8 +29,8 @@ def test_llm_config_uses_project_ollama_defaults(monkeypatch):
 
     assert info["provider"] == "ollama"
     assert info["base_url"] == "http://localhost:11434"
-    assert info["instruct_model"] == "qwen3.5:9b"
-    assert info["thinking_model"] == "gemma4:e4b"
+    assert info["instruct_model"] == "qwen2.5:14b"
+    assert info["thinking_model"] == "qwen2.5:14b"
     assert info["thinking_validator_model"] == ""
     assert info["vision_model"] == "llava:13b"
 
@@ -71,5 +71,5 @@ def test_llm_config_treats_blank_required_models_as_defaults(monkeypatch):
 
     info = get_llm_info()
 
-    assert info["instruct_model"] == "qwen3.5:9b"
-    assert info["thinking_model"] == "gemma4:e4b"
+    assert info["instruct_model"] == "qwen2.5:14b"
+    assert info["thinking_model"] == "qwen2.5:14b"

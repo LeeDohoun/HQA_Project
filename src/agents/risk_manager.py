@@ -532,6 +532,7 @@ class RiskManagerAgent:
 ---
 
 다음 JSON 형식으로만 응답하세요.
+`total_score`는 Analyst(70점)를 100점으로 환산한 값, Quant(100점), Chartist(100점)를 종합한 최종 100점 만점 점수입니다.
 {
   "total_score": 0,
   "action": "STRONG_BUY",
