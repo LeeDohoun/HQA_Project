@@ -18,8 +18,11 @@ from src.config.settings import get_data_dir
 logger = logging.getLogger(__name__)
 
 
-PROMPT_VERSION = "temporal_theme_leader_llm_v1"
-MULTI_AGENT_PROMPT_VERSION = "temporal_theme_leader_multi_agent_v2"
+PROMPT_VERSION = "temporal_theme_leader_llm_v2"
+MULTI_AGENT_PROMPT_VERSION = "temporal_theme_leader_multi_agent_v3"
+
+SHORT_AGENT_WEIGHTS = {"analyst": 0.30, "quant": 0.15, "chartist": 0.55}
+LONG_AGENT_WEIGHTS = {"analyst": 0.45, "quant": 0.40, "chartist": 0.15}
 
 
 class LLMThemeLeaderEvaluation(BaseModel):
@@ -85,6 +88,7 @@ class LLMScorerConfig:
     cache_path: str = ""
     prompt_version: str = PROMPT_VERSION
     mode: str = "single_llm"
+    horizon: str = "short"
 
 
 class TemporalLLMStockScorer:
@@ -98,11 +102,13 @@ class TemporalLLMStockScorer:
         theme_key: str = "ai",
         context_docs: int = 5,
         cache_path: str | Path | None = None,
+        horizon: str = "short",
     ) -> None:
         self.data_dir = Path(data_dir) if data_dir else get_data_dir()
         self.theme = theme
         self.theme_key = theme_key
         self.context_docs = max(1, int(context_docs))
+        self.horizon = _normalize_llm_horizon(horizon)
         self.rag = TemporalRAG(data_dir=str(self.data_dir), theme_key=theme_key)
         self.llm_info = get_llm_info()
         self.provider = str(self.llm_info.get("provider") or "")
@@ -129,6 +135,7 @@ class TemporalLLMStockScorer:
                 context_docs=self.context_docs,
                 cache_path=str(self.cache_path),
                 mode="single_llm",
+                horizon=self.horizon,
             )
         )
 
@@ -149,6 +156,7 @@ class TemporalLLMStockScorer:
                 "llm_provider": self.provider,
                 "llm_prompt_version": PROMPT_VERSION,
                 "llm_context_docs": self.context_docs,
+                "llm_horizon": self.horizon,
             }
         )
         self.cache[key] = result
@@ -177,6 +185,7 @@ class TemporalLLMStockScorer:
         return "|".join(
             [
                 PROMPT_VERSION,
+                self.horizon,
                 self.provider,
                 self.model_name,
                 self.theme_key,
@@ -213,6 +222,9 @@ class TemporalLLMStockScorer:
             "volume_ratio_20d": round(float(row.get("volume_ratio_20d") or 0.0), 4),
             "doc_counts": row.get("doc_counts") or {},
         }
+        objective = _horizon_objective(self.horizon)
+        horizon_rules = _single_horizon_rules(self.horizon)
+        identity_guard = _identity_guard(row)
         return f"""
 당신은 과거 시점 기준 AI 테마 주도주를 평가하는 LLM 심사역입니다.
 아래 정보는 모두 as_of={as_of_ymd} 이전에 관측된 데이터입니다.
@@ -220,8 +232,12 @@ class TemporalLLMStockScorer:
 [중요 제약]
 - 외부 지식과 미래 데이터 사용 금지
 - 아래 feature와 문서 컨텍스트만 근거로 판단
-- 목적은 향후 5거래일 내 AI 테마 주도주 가능성 점수화
+- 목적은 {objective} AI 테마 주도주 가능성 점수화
+- {identity_guard}
 - JSON만 출력
+
+[보유기간별 판단 규칙]
+{horizon_rules}
 
 [후보 feature snapshot]
 {json.dumps(feature_payload, ensure_ascii=False, indent=2)}
@@ -336,11 +352,13 @@ class TemporalMultiAgentStockScorer:
         theme_key: str = "ai",
         context_docs: int = 5,
         cache_path: str | Path | None = None,
+        horizon: str = "short",
     ) -> None:
         self.data_dir = Path(data_dir) if data_dir else get_data_dir()
         self.theme = theme
         self.theme_key = theme_key
         self.context_docs = max(1, int(context_docs))
+        self.horizon = _normalize_llm_horizon(horizon)
         self.rag = TemporalRAG(data_dir=str(self.data_dir), theme_key=theme_key)
         self.llm_info = get_llm_info()
         self.provider = str(self.llm_info.get("provider") or "")
@@ -369,10 +387,13 @@ class TemporalMultiAgentStockScorer:
                 cache_path=str(self.cache_path),
                 prompt_version=MULTI_AGENT_PROMPT_VERSION,
                 mode="multi_agent",
+                horizon=self.horizon,
             )
         )
         payload["thinking_model_name"] = self.thinking_model_name
         payload["agents"] = ["analyst", "quant", "chartist", "risk_manager"]
+        payload["agent_weight_profile"] = self.horizon
+        payload["agent_weights"] = _agent_weights(self.horizon)
         return payload
 
     def score(self, *, as_of_ymd: str, row: Dict[str, Any]) -> Dict[str, Any]:
@@ -401,6 +422,7 @@ class TemporalMultiAgentStockScorer:
                 "llm_prompt_version": MULTI_AGENT_PROMPT_VERSION,
                 "llm_context_docs": self.context_docs,
                 "llm_mode": "multi_agent",
+                "llm_horizon": self.horizon,
             }
         )
         self.cache[key] = result
@@ -435,6 +457,7 @@ class TemporalMultiAgentStockScorer:
         return "|".join(
             [
                 MULTI_AGENT_PROMPT_VERSION,
+                self.horizon,
                 self.provider,
                 self.model_name,
                 self.thinking_model_name,
@@ -466,17 +489,24 @@ class TemporalMultiAgentStockScorer:
         feature_payload: Dict[str, Any],
         context: str,
     ) -> Dict[str, Any]:
+        objective = _horizon_objective(self.horizon)
+        horizon_rules = _analyst_horizon_rules(self.horizon)
+        identity_guard = _identity_guard(row)
         prompt = f"""
 당신은 멀티 에이전트 백테스트의 AnalystAgent입니다.
 as_of={as_of_ymd} 이전 데이터만 근거로 '{self.theme}' 테마에서
-'{row.get("stock_name")}'({row.get("stock_code")})의 주도주 가능성을 평가하세요.
+'{row.get("stock_name")}'({row.get("stock_code")})의 {objective} 주도주 가능성을 평가하세요.
 
 [금지]
 - 외부 지식 사용 금지
 - 미래 데이터 사용 금지
+- {identity_guard}
 - 모든 점수는 0~100 정수. 50은 중립, 0은 매우 부정, 100은 매우 긍정
 - risk_score는 높을수록 위험
 - JSON 외 출력 금지
+
+[보유기간별 Analyst 규칙]
+{horizon_rules}
 
 [feature snapshot]
 {json.dumps(feature_payload, ensure_ascii=False, indent=2)}
@@ -510,6 +540,8 @@ JSON:
         feature_payload: Dict[str, Any],
         context: str,
     ) -> Dict[str, Any]:
+        horizon_rules = _quant_horizon_rules(self.horizon)
+        identity_guard = _identity_guard(row)
         prompt = f"""
 당신은 멀티 에이전트 백테스트의 QuantAgent입니다.
 as_of={as_of_ymd} 이전 DART/뉴스/feature만 보고
@@ -519,7 +551,11 @@ as_of={as_of_ymd} 이전 DART/뉴스/feature만 보고
 - valuation/profitability/growth/stability_score는 0~100 정수
 - 50은 중립입니다. 근거가 부족하면 40~50 사이를 사용하고, 직접적인 재무 악화 근거가 있을 때만 40 미만을 사용하세요
 - risk_score는 높을수록 위험합니다. 근거가 부족하면 55~65 사이를 사용하세요
+- {identity_guard}
 - JSON만 출력하세요
+
+[보유기간별 Quant 규칙]
+{horizon_rules}
 
 [feature snapshot]
 {json.dumps(feature_payload, ensure_ascii=False, indent=2)}
@@ -546,21 +582,34 @@ JSON:
             return self._fallback_quant(row)
 
     def _evaluate_chartist(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        ret5 = float(row.get("return_5d") or 0.0)
         ret20 = float(row.get("return_20d") or 0.0)
         ret60 = float(row.get("return_60d") or 0.0)
         trend = float(row.get("trend_150d") or 0.0)
         vol20 = float(row.get("volatility_20d") or 0.0)
         volume = float(row.get("volume_ratio_20d") or 0.0)
-        trend_score = _bounded_int(50 + trend * 80)
-        momentum_score = _bounded_int(50 + ret20 * 120 + ret60 * 45)
-        volatility_score = _bounded_int(100 - vol20 * 55)
-        volume_score = _bounded_int(35 + min(volume, 3.0) * 20)
-        total = _bounded_int(
-            0.30 * trend_score
-            + 0.35 * momentum_score
-            + 0.20 * volatility_score
-            + 0.15 * volume_score
-        )
+        if self.horizon == "short":
+            trend_score = _bounded_int(50 + trend * 60)
+            momentum_score = _bounded_int(50 + ret5 * 180 + ret20 * 80 + ret60 * 20)
+            volatility_score = _bounded_int(100 - vol20 * 65)
+            volume_score = _bounded_int(35 + min(volume, 3.0) * 22)
+            total = _bounded_int(
+                0.15 * trend_score
+                + 0.45 * momentum_score
+                + 0.15 * volatility_score
+                + 0.25 * volume_score
+            )
+        else:
+            trend_score = _bounded_int(50 + trend * 100)
+            momentum_score = _bounded_int(50 + ret20 * 60 + ret60 * 60)
+            volatility_score = _bounded_int(100 - vol20 * 50)
+            volume_score = _bounded_int(35 + min(volume, 3.0) * 15)
+            total = _bounded_int(
+                0.35 * trend_score
+                + 0.25 * momentum_score
+                + 0.25 * volatility_score
+                + 0.15 * volume_score
+            )
         return {
             "trend_score": trend_score,
             "momentum_score": momentum_score,
@@ -568,6 +617,7 @@ JSON:
             "volume_score": volume_score,
             "total_score": total,
             "confidence": 80,
+            "horizon": self.horizon,
             "summary": (
                 f"trend={trend_score}, momentum={momentum_score}, "
                 f"volatility={volatility_score}, volume={volume_score}"
@@ -583,16 +633,21 @@ JSON:
         quant: Dict[str, Any],
         chartist: Dict[str, Any],
     ) -> Dict[str, Any]:
-        agent_totals = _agent_totals(analyst, quant, chartist)
+        agent_totals = _agent_totals(analyst, quant, chartist, self.horizon)
+        objective = _horizon_objective(self.horizon)
+        horizon_rules = _risk_manager_horizon_rules(self.horizon)
+        agent_weight_text = _format_agent_weights(agent_totals["agent_weights"])
+        identity_guard = _identity_guard(row)
         prompt = f"""
 당신은 멀티 에이전트 백테스트의 RiskManagerAgent입니다.
 아래 Analyst/Quant/Chartist 결과를 종합해 as_of={as_of_ymd} 기준
-향후 5거래일 AI 테마 주도주 가능성을 최종 점수화하세요.
+{objective} AI 테마 주도주 가능성을 최종 점수화하세요.
 
 [중요]
-- 프로젝트 RiskManager의 quick_decision 가중치를 따르세요.
-- 권장 최종점수 = Analyst 40% + Quant 35% + Chartist 25%
-- 세 에이전트 신호가 충돌하면 Quant 리스크와 단기 과열 리스크를 우선 반영하세요.
+- {identity_guard}
+- 보유기간 프로필은 '{self.horizon}'입니다.
+- 권장 최종점수 = {agent_weight_text}
+- {horizon_rules}
 - final_score는 아래 calibrated_agent_totals.recommended_final_score에서 ±10점 이상 벗어나지 마세요.
 - 모든 점수는 0~100 정수이며 risk_score는 높을수록 위험합니다.
 
@@ -626,7 +681,7 @@ JSON:
             return _invoke_schema(self.thinking_llm, prompt, RiskManagerBacktestEvaluation)
         except Exception as exc:
             logger.warning("RiskManagerAgent backtest score failed: %s", exc)
-            return self._fallback_risk_manager(analyst, quant, chartist)
+            return self._fallback_risk_manager(analyst, quant, chartist, self.horizon)
 
     def _normalize_multi_agent_payload(
         self,
@@ -635,7 +690,7 @@ JSON:
         chartist: Dict[str, Any],
         risk: Dict[str, Any],
     ) -> Dict[str, Any]:
-        agent_totals = _agent_totals(analyst, quant, chartist)
+        agent_totals = _agent_totals(analyst, quant, chartist, self.horizon)
         analyst_total = agent_totals["analyst_total"]
         quant_total = agent_totals["quant_total"]
         chartist_total = agent_totals["chartist_total"]
@@ -652,6 +707,7 @@ JSON:
             "llm_summary": str(risk.get("summary") or "")[:500],
             "llm_catalysts": _clean_string_list(risk.get("catalysts") or analyst.get("catalysts")),
             "llm_risks": _clean_string_list(risk.get("risks") or analyst.get("risks") or quant.get("risks")),
+            "llm_horizon": self.horizon,
             "llm_agent_scores": {
                 "analyst": {
                     "total_score": analyst_total,
@@ -678,6 +734,8 @@ JSON:
                     "final_score": final_score,
                     "raw_final_score": raw_risk_final_score,
                     "calibrated_final_score": final_score,
+                    "agent_weight_profile": agent_totals["agent_weight_profile"],
+                    "agent_weights": agent_totals["agent_weights"],
                     "confidence": confidence,
                     "risk_score": risk_score,
                     "action": str(risk.get("action") or "HOLD"),
@@ -722,24 +780,10 @@ JSON:
         analyst: Dict[str, Any],
         quant: Dict[str, Any],
         chartist: Dict[str, Any],
+        horizon: str = "short",
     ) -> Dict[str, Any]:
-        analyst_norm = _bounded_int(
-            0.30 * _get_score(analyst, "theme_fit_score")
-            + 0.25 * _get_score(analyst, "moat_score")
-            + 0.25 * _get_score(analyst, "growth_score")
-            + 0.20 * _get_score(analyst, "catalyst_score")
-        )
-        quant_total = _bounded_int(
-            0.25 * _get_score(quant, "valuation_score")
-            + 0.25 * _get_score(quant, "profitability_score")
-            + 0.25 * _get_score(quant, "growth_score")
-            + 0.25 * _get_score(quant, "stability_score")
-        )
-        final_score = _bounded_int(
-            analyst_norm * 0.40
-            + quant_total * 0.35
-            + _get_score(chartist, "total_score") * 0.25
-        )
+        agent_totals = _agent_totals(analyst, quant, chartist, horizon)
+        final_score = agent_totals["recommended_final_score"]
         return {
             "final_score": final_score,
             "confidence": 40,
@@ -754,7 +798,7 @@ JSON:
         analyst = self._fallback_analyst(row)
         quant = self._fallback_quant(row)
         chartist = self._evaluate_chartist(row)
-        risk = self._fallback_risk_manager(analyst, quant, chartist)
+        risk = self._fallback_risk_manager(analyst, quant, chartist, self.horizon)
         result = self._normalize_multi_agent_payload(analyst, quant, chartist, risk)
         result["llm_summary"] = "mock multi-agent score from Analyst/Quant/Chartist/RiskManager fallbacks"
         return result
@@ -786,13 +830,23 @@ def _agent_totals(
     analyst: Dict[str, Any],
     quant: Dict[str, Any],
     chartist: Dict[str, Any],
-) -> Dict[str, int]:
-    analyst_total = _bounded_int(
-        0.30 * _get_score(analyst, "theme_fit_score")
-        + 0.25 * _get_score(analyst, "moat_score")
-        + 0.25 * _get_score(analyst, "growth_score")
-        + 0.20 * _get_score(analyst, "catalyst_score")
-    )
+    horizon: str = "short",
+) -> Dict[str, Any]:
+    horizon = _normalize_llm_horizon(horizon)
+    if horizon == "short":
+        analyst_total = _bounded_int(
+            0.25 * _get_score(analyst, "theme_fit_score")
+            + 0.15 * _get_score(analyst, "moat_score")
+            + 0.20 * _get_score(analyst, "growth_score")
+            + 0.40 * _get_score(analyst, "catalyst_score")
+        )
+    else:
+        analyst_total = _bounded_int(
+            0.35 * _get_score(analyst, "theme_fit_score")
+            + 0.25 * _get_score(analyst, "moat_score")
+            + 0.25 * _get_score(analyst, "growth_score")
+            + 0.15 * _get_score(analyst, "catalyst_score")
+        )
     quant_total = _bounded_int(
         0.25 * _get_score(quant, "valuation_score")
         + 0.25 * _get_score(quant, "profitability_score")
@@ -800,17 +854,129 @@ def _agent_totals(
         + 0.25 * _get_score(quant, "stability_score")
     )
     chartist_total = _get_score(chartist, "total_score")
+    agent_weights = _agent_weights(horizon)
     recommended_final_score = _bounded_int(
-        analyst_total * 0.40
-        + quant_total * 0.35
-        + chartist_total * 0.25
+        analyst_total * agent_weights["analyst"]
+        + quant_total * agent_weights["quant"]
+        + chartist_total * agent_weights["chartist"]
     )
     return {
+        "agent_weight_profile": horizon,
+        "agent_weights": agent_weights,
         "analyst_total": analyst_total,
         "quant_total": quant_total,
         "chartist_total": chartist_total,
         "recommended_final_score": recommended_final_score,
     }
+
+
+def _normalize_llm_horizon(value: str) -> str:
+    horizon = str(value or "short").strip().lower().replace("-", "_")
+    aliases = {
+        "swing": "short",
+        "trading": "short",
+        "short_term": "short",
+        "shortterm": "short",
+        "단타": "short",
+        "스윙": "short",
+        "l": "long",
+        "investment": "long",
+        "long_term": "long",
+        "longterm": "long",
+        "장타": "long",
+        "중장기": "long",
+    }
+    horizon = aliases.get(horizon, horizon)
+    if horizon not in {"short", "long"}:
+        raise ValueError(f"invalid llm_horizon: {value}")
+    return horizon
+
+
+def _agent_weights(horizon: str) -> Dict[str, float]:
+    return dict(SHORT_AGENT_WEIGHTS if _normalize_llm_horizon(horizon) == "short" else LONG_AGENT_WEIGHTS)
+
+
+def _format_agent_weights(weights: Dict[str, float]) -> str:
+    return (
+        f"Analyst {int(round(weights['analyst'] * 100))}% + "
+        f"Quant {int(round(weights['quant'] * 100))}% + "
+        f"Chartist {int(round(weights['chartist'] * 100))}%"
+    )
+
+
+def _horizon_objective(horizon: str) -> str:
+    if _normalize_llm_horizon(horizon) == "short":
+        return "향후 3~10거래일"
+    return "향후 20~60거래일"
+
+
+def _single_horizon_rules(horizon: str) -> str:
+    if _normalize_llm_horizon(horizon) == "short":
+        return "\n".join(
+            [
+                "- 단타에서는 5/20일 가격 모멘텀, 거래량 확대, 단기 촉매를 우선합니다.",
+                "- 장기 moat/밸류에이션 근거가 약해도 가격 리더십과 촉매가 강하면 과도하게 감점하지 않습니다.",
+                "- 단기 과열과 변동성은 리스크로 반영하되, 강한 수급 리더십과 분리해 평가합니다.",
+            ]
+        )
+    return "\n".join(
+        [
+            "- 장타에서는 AI 테마 직접성, 지속 가능한 성장 근거, 실적/재무 안정성을 우선합니다.",
+            "- 단기 급등만 있고 문서/실적 근거가 약하면 점수를 제한합니다.",
+            "- 가격 추세는 매수 타이밍 보조 신호로 쓰고, 테마와 펀더멘털 검증을 더 중시합니다.",
+        ]
+    )
+
+
+def _analyst_horizon_rules(horizon: str) -> str:
+    if _normalize_llm_horizon(horizon) == "short":
+        return "\n".join(
+            [
+                "- catalyst_score는 최근 뉴스/공시/포럼 신호와 가격 리더십이 함께 나타날수록 높입니다.",
+                "- moat_score는 보조 지표입니다. 장기 해자가 약하다는 이유만으로 단기 주도주 후보를 탈락시키지 마세요.",
+                "- 문서가 후보 종목과 이름/코드상 맞지 않으면 그 문서는 근거에서 제외하고 confidence를 낮추세요.",
+            ]
+        )
+    return "\n".join(
+        [
+            "- theme_fit_score, moat_score, growth_score를 핵심으로 봅니다.",
+            "- 단기 촉매보다 AI 테마 직접성, 사업 지속성, 실적 연결 가능성을 중시합니다.",
+            "- 문서가 후보 종목과 이름/코드상 맞지 않으면 그 문서는 근거에서 제외하고 confidence를 낮추세요.",
+        ]
+    )
+
+
+def _quant_horizon_rules(horizon: str) -> str:
+    if _normalize_llm_horizon(horizon) == "short":
+        return "\n".join(
+            [
+                "- 단타에서 Quant는 수익률을 직접 예측하기보다 재무/상장폐지/과도한 악재 리스크 가드 역할입니다.",
+                "- 재무 근거가 부족하면 중립에 가깝게 두고, 직접적인 악재가 있을 때만 강하게 감점하세요.",
+                "- 가격/거래량 리더십 자체를 재무 근거 부족만으로 무효화하지 마세요.",
+            ]
+        )
+    return "\n".join(
+        [
+            "- 장타에서는 valuation/profitability/growth/stability를 최종 판단에 강하게 반영합니다.",
+            "- 실적 악화, 과도한 밸류에이션, 재무 불안정 근거가 있으면 적극적으로 감점하세요.",
+            "- 근거가 부족한 성장 서사는 50 안팎으로 보수적으로 평가하세요.",
+        ]
+    )
+
+
+def _risk_manager_horizon_rules(horizon: str) -> str:
+    if _normalize_llm_horizon(horizon) == "short":
+        return "세 에이전트 신호가 충돌하면 Chartist의 가격/거래량 리더십을 우선하되, Analyst 촉매와 Quant 치명 리스크를 함께 반영하세요."
+    return "세 에이전트 신호가 충돌하면 Analyst의 테마 지속성 및 Quant의 재무/밸류에이션 리스크를 우선하고 Chartist는 타이밍 보조로 반영하세요."
+
+
+def _identity_guard(row: Dict[str, Any]) -> str:
+    stock_name = str(row.get("stock_name") or "").strip()
+    stock_code = str(row.get("stock_code") or "").strip()
+    return (
+        f"후보명 '{stock_name}'와 코드 '{stock_code}'가 기준입니다. "
+        "후보를 다른 회사명으로 바꾸거나 혼동하지 말고, 문서가 다른 회사를 가리키면 그 문서는 무시하세요."
+    )
 
 
 def _invoke_schema(llm: Any, prompt: str, schema: type[BaseModel]) -> Dict[str, Any]:
