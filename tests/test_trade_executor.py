@@ -57,7 +57,7 @@ def _base_trading_config() -> dict:
     }
 
 
-def test_trade_executor_restores_state_and_blocks_cooldown(tmp_path, monkeypatch):
+def test_trade_executor_restores_state_and_allows_without_cooldown_block(tmp_path, monkeypatch):
     orders_dir = tmp_path / "orders"
     monkeypatch.setenv("HQA_ORDERS_DIR", str(orders_dir))
     reset_settings_cache()
@@ -95,8 +95,7 @@ def test_trade_executor_restores_state_and_blocks_cooldown(tmp_path, monkeypatch
         decision=_DummyDecision(),
         current_price=100000,
     )
-    assert preview["status"] == "blocked"
-    assert "쿨다운" in preview["reason"]
+    assert preview["status"] == "ready"
 
     reset_settings_cache()
 
@@ -197,5 +196,45 @@ def test_execute_buy_blocks_real_account_without_explicit_flag(tmp_path, monkeyp
     assert result["status"].startswith("error:")
     assert "실전 주문" in result["status"]
     assert executor.get_daily_summary()["total_spent"] == 0
+
+    reset_settings_cache()
+
+
+def test_evaluate_sell_triggers_signal_price_and_risk(tmp_path, monkeypatch):
+    orders_dir = tmp_path / "orders"
+    monkeypatch.setenv("HQA_ORDERS_DIR", str(orders_dir))
+    reset_settings_cache()
+
+    config = _base_trading_config()
+    config["auto_sell_conditions"].update(
+        {
+            "take_profit_pct": 5.0,
+            "trailing_stop_pct": 3.0,
+            "time_stop_minutes": 60,
+            "max_risk_level": "MEDIUM",
+            "confidence_drop_pct": 20,
+        }
+    )
+    executor = TradeExecutor(config)
+
+    holding = type("H", (), {"profit_loss_rate": -12.0})()
+    decision = _DummyDecision(total_score=20, action_name="SELL", risk_name="HIGH", confidence=40)
+    context = type(
+        "C",
+        (),
+        {
+            "peak_profit_rate": 2.0,
+            "holding_minutes": 90,
+            "confidence_baseline": 75,
+            "volatility_now": None,
+            "volatility_baseline": None,
+        },
+    )()
+
+    evaluated = executor.evaluate_sell_triggers(decision=decision, holding=holding, context=context)
+    assert evaluated["should_sell"] is True
+    assert evaluated["layers"]["signal"] is True
+    assert evaluated["layers"]["price"] is True
+    assert evaluated["layers"]["risk"] is True
 
     reset_settings_cache()

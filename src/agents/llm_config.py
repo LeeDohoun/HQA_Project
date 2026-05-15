@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 from src.config.settings import load_project_env
+from src.tracing.agent_tracer import add_token_usage_from_response
 
 load_project_env()
 
@@ -202,6 +203,36 @@ class MockChatModel:
         return SimpleNamespace(content=f"[mock:{self.role}] 요청을 수신했습니다.")
 
 
+class TracingLLMProxy:
+    """LLM invoke 결과를 가로채 현재 활성 AgentSpan에 토큰 사용량을 적재."""
+
+    def __init__(self, llm: Any):
+        self._llm = llm
+
+    def invoke(self, prompt) -> Any:
+        response = self._llm.invoke(prompt)
+        add_token_usage_from_response(response)
+        return response
+
+    async def ainvoke(self, prompt) -> Any:
+        response = await self._llm.ainvoke(prompt)
+        add_token_usage_from_response(response)
+        return response
+
+    def with_structured_output(self, *args, **kwargs):
+        structured = self._llm.with_structured_output(*args, **kwargs)
+        return TracingLLMProxy(structured)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._llm, name)
+
+
+def _with_tracing(llm: Any) -> Any:
+    if isinstance(llm, TracingLLMProxy):
+        return llm
+    return TracingLLMProxy(llm)
+
+
 def _create_ollama_llm(
     model: str,
     temperature: float = 0.3,
@@ -292,7 +323,7 @@ def get_instruct_llm() -> Any:
         )
         logger.debug("🤖 Instruct LLM: Ollama (%s)", config.ollama_instruct_model)
 
-    return llm
+    return _with_tracing(llm)
 
 
 def get_thinking_llm() -> Any:
@@ -327,7 +358,7 @@ def get_thinking_llm() -> Any:
         )
         logger.debug("🧠 Thinking LLM: Ollama (%s)", config.ollama_thinking_model)
 
-    return llm
+    return _with_tracing(llm)
 
 
 def get_thinking_validator_llm() -> Optional[Any]:
@@ -341,7 +372,7 @@ def get_thinking_validator_llm() -> Optional[Any]:
     provider = config.provider
 
     if provider == "mock":
-        return MockChatModel("thinking_validator")
+        return _with_tracing(MockChatModel("thinking_validator"))
 
     if provider == "gemini":
         if not config.gemini_thinking_validator_model:
@@ -355,7 +386,7 @@ def get_thinking_validator_llm() -> Optional[Any]:
             "🧪 Thinking Validator LLM: Gemini (%s)",
             config.gemini_thinking_validator_model,
         )
-        return llm
+        return _with_tracing(llm)
 
     if not config.ollama_thinking_validator_model:
         return None
@@ -370,7 +401,7 @@ def get_thinking_validator_llm() -> Optional[Any]:
         "🧪 Thinking Validator LLM: Ollama (%s)",
         config.ollama_thinking_validator_model,
     )
-    return llm
+    return _with_tracing(llm)
 
 
 def get_vision_llm() -> Any:
@@ -405,7 +436,7 @@ def get_vision_llm() -> Any:
         )
         logger.debug("👁️ Vision LLM: Ollama (%s)", config.ollama_vision_model)
 
-    return llm
+    return _with_tracing(llm)
 
 
 # ==========================================

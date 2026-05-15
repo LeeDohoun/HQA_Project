@@ -18,6 +18,7 @@ from src.agents.quant import QuantScore
 from src.agents.risk_manager import AgentScores, FinalDecision, RiskManagerAgent
 from src.config.settings import get_data_dir
 from src.ingestion.theme_targets import make_theme_key
+from src.runner.decision_adapter import final_decision_to_payload
 from src.utils.parallel import is_error, run_agents_parallel
 
 logger = logging.getLogger(__name__)
@@ -91,8 +92,10 @@ class ThemeLeaderOrchestrator:
         theme_key: str = "",
         candidate_limit: int = 5,
         top_n: int = 3,
+        strategy_profile: str = "default",
     ) -> Dict[str, Any]:
         resolved_key = theme_key or make_theme_key(theme, theme)
+        resolved_profile = self._normalize_strategy_profile(strategy_profile)
         candidates = self.extract_candidates(
             theme=theme,
             theme_key=resolved_key,
@@ -108,7 +111,14 @@ class ThemeLeaderOrchestrator:
 
         evaluations = []
         for candidate in candidates:
-            evaluations.append(self.evaluate_candidate(theme, resolved_key, candidate))
+            evaluations.append(
+                self.evaluate_candidate(
+                    theme,
+                    resolved_key,
+                    candidate,
+                    strategy_profile=resolved_profile,
+                )
+            )
 
         evaluations.sort(
             key=lambda row: (
@@ -132,6 +142,7 @@ class ThemeLeaderOrchestrator:
             "status": "success",
             "theme": theme,
             "theme_key": resolved_key,
+            "strategy_profile": resolved_profile,
             "candidate_count": len(candidates),
             "evaluated_count": len(evaluations),
             "leaders": leaders,
@@ -167,14 +178,19 @@ class ThemeLeaderOrchestrator:
             if corpus_docs <= 0 and market_rows <= 0:
                 # 로컬 텍스트/차트 근거가 전혀 없는 후보는 주도주 평가 대상에서 제외한다.
                 continue
-            seed_score = min(
-                100,
-                target_counter.get(code, 0) * 2
-                + min(corpus_docs * 2, 40)
-                + source_coverage * 8
-                + min(dart_docs * 4, 20)
-                + min(news_docs * 2, 15)
-                + (10 if market_rows >= 20 else 5 if market_rows > 0 else 0),
+            has_corpus = corpus_docs > 0
+            has_market = market_rows > 0
+            has_news = news_docs > 0
+            has_forum = forum_docs > 0
+            has_dart = dart_docs > 0
+            # 빈도(횟수) 대신 존재 여부/소스 다양성만 반영한다.
+            seed_score = (
+                (40 if has_corpus else 0)
+                + (30 if has_market else 0)
+                + (20 if source_coverage >= 2 else 10 if source_coverage == 1 else 0)
+                + (10 if has_dart else 0)
+                + (5 if has_news else 0)
+                + (5 if has_forum else 0)
             )
             candidates.append(
                 ThemeCandidate(
@@ -194,9 +210,9 @@ class ThemeLeaderOrchestrator:
         candidates.sort(
             key=lambda row: (
                 row.seed_score,
-                row.corpus_docs,
-                row.dart_docs,
-                row.news_docs,
+                row.source_coverage,
+                row.market_rows > 0,
+                row.stock_code,
             ),
             reverse=True,
         )
@@ -213,6 +229,7 @@ class ThemeLeaderOrchestrator:
         theme: str,
         theme_key: str,
         candidate: ThemeCandidate,
+        strategy_profile: str = "default",
     ) -> Dict[str, Any]:
         records = self._load_stock_records(theme_key, candidate.stock_code)
         source_counts = Counter((row.get("metadata") or {}).get("source_type", "") for row in records)
@@ -275,7 +292,14 @@ class ThemeLeaderOrchestrator:
             scores,
         )
         data_presence_score = min(100, candidate.seed_score)
-        leader_score = round(final_decision.total_score * 0.7 + data_presence_score * 0.3)
+        leader_score = self._compute_leader_score(
+            analyst_total=analyst_result["total_score"],
+            quant_total=quant_result.total_score,
+            chartist_total=chartist_result.total_score,
+            final_total=final_decision.total_score,
+            data_presence_score=data_presence_score,
+            strategy_profile=strategy_profile,
+        )
 
         return {
             "candidate": {
@@ -291,6 +315,7 @@ class ThemeLeaderOrchestrator:
             },
             "leader_score": leader_score,
             "data_presence_score": data_presence_score,
+            "strategy_profile": strategy_profile,
             "analyst": {
                 "total_score": analyst_result["total_score"],
                 "grade": analyst_result["grade"],
@@ -311,6 +336,48 @@ class ThemeLeaderOrchestrator:
             },
             "final_decision": self._decision_to_dict(final_decision),
         }
+
+    @staticmethod
+    def _normalize_strategy_profile(strategy_profile: str) -> str:
+        profile = str(strategy_profile or "default").strip().lower()
+        if profile in {"short", "long"}:
+            return profile
+        return "default"
+
+    def _compute_leader_score(
+        self,
+        *,
+        analyst_total: int,
+        quant_total: int,
+        chartist_total: int,
+        final_total: int,
+        data_presence_score: int,
+        strategy_profile: str,
+    ) -> int:
+        profile = self._normalize_strategy_profile(strategy_profile)
+        if profile == "default":
+            # Backward-compatible legacy formula.
+            return round(final_total * 0.7 + data_presence_score * 0.3)
+
+        analyst_norm = max(0.0, min(1.0, analyst_total / 70.0))
+        quant_norm = max(0.0, min(1.0, quant_total / 100.0))
+        chartist_norm = max(0.0, min(1.0, chartist_total / 100.0))
+        final_norm = max(0.0, min(1.0, final_total / 100.0))
+        data_norm = max(0.0, min(1.0, data_presence_score / 100.0))
+
+        weights = {
+            "short": {"analyst": 0.15, "quant": 0.15, "chartist": 0.45, "final": 0.20, "data": 0.05},
+            "long": {"analyst": 0.30, "quant": 0.30, "chartist": 0.10, "final": 0.25, "data": 0.05},
+        }
+        w = weights[profile]
+        score = (
+            analyst_norm * w["analyst"]
+            + quant_norm * w["quant"]
+            + chartist_norm * w["chartist"]
+            + final_norm * w["final"]
+            + data_norm * w["data"]
+        )
+        return round(score * 100)
 
     def _evaluate_analyst_candidate(
         self,
@@ -501,8 +568,27 @@ class ThemeLeaderOrchestrator:
         context: str,
         source_counts: Dict[str, int],
     ) -> Dict[str, Any]:
-        moat = min(40, candidate.dart_docs * 6 + candidate.news_docs * 2 + candidate.source_coverage * 4)
-        growth = min(30, candidate.news_docs * 2 + candidate.forum_docs + max(0, candidate.target_hits // 2))
+        has_news = candidate.news_docs > 0
+        has_forum = candidate.forum_docs > 0
+        has_dart = candidate.dart_docs > 0
+        has_market = candidate.market_rows > 0
+        moat = min(
+            40,
+            16
+            + (8 if has_dart else 0)
+            + (6 if has_news else 0)
+            + (4 if has_forum else 0)
+            + (6 if has_market else 0)
+            + candidate.source_coverage * 2,
+        )
+        growth = min(
+            30,
+            12
+            + (8 if has_news else 0)
+            + (6 if has_forum else 0)
+            + (4 if has_dart else 0)
+            + (4 if has_market else 0),
+        )
         total = moat + growth
         summary = (
             f"{candidate.stock_name}은(는) '{theme}' 데이터에서 "
@@ -515,7 +601,7 @@ class ThemeLeaderOrchestrator:
             summary=summary,
             key_points=[
                 f"DART {candidate.dart_docs}건 / 뉴스 {candidate.news_docs}건 / 게시판 {candidate.forum_docs}건",
-                f"theme_targets 등장 횟수 {candidate.target_hits}회",
+                f"로컬 차트 데이터 {'존재' if candidate.market_rows > 0 else '부재'}",
             ],
             catalysts=self._keyword_catalysts(context),
             risks=self._keyword_risks(context),
@@ -547,9 +633,18 @@ class ThemeLeaderOrchestrator:
         bad_keywords = len(re.findall(r"적자|감소|하락|부진|리스크|악화", context))
         good_keywords = len(re.findall(r"증가|개선|성장|수혜|확대|매수", context))
         valuation = max(5, min(25, 12 + good_keywords - bad_keywords))
-        profitability = max(5, min(25, 10 + candidate.dart_docs * 3 - bad_keywords))
+        profitability = max(5, min(25, 12 + (6 if candidate.dart_docs > 0 else 0) - bad_keywords))
         growth = max(5, min(25, 10 + good_keywords * 2))
-        stability = max(5, min(25, 12 + candidate.dart_docs * 2 - bad_keywords))
+        stability = max(
+            5,
+            min(
+                25,
+                12
+                + (6 if candidate.dart_docs > 0 else 0)
+                + (4 if candidate.market_rows > 0 else 0)
+                - bad_keywords,
+            ),
+        )
         total = valuation + profitability + growth + stability
         summary = (
             f"{candidate.stock_name}의 로컬 DART/뉴스 기반 정량 추정 점수는 {total}/100점입니다."
@@ -568,7 +663,7 @@ class ThemeLeaderOrchestrator:
             contrarian_view="수치 추출 대신 텍스트 신호 기반 휴리스틱",
             evidence=self._make_evidence(context, limit=3),
             score=total,
-            confidence=min(75, 25 + candidate.dart_docs * 10),
+            confidence=55 if candidate.dart_docs > 0 else 45,
             grade=self._score_to_grade(total, 100),
             signal=summary,
             next_action="risk_manager_review",
@@ -590,16 +685,7 @@ class ThemeLeaderOrchestrator:
         )
 
     def _decision_to_dict(self, decision: FinalDecision) -> Dict[str, Any]:
-        return {
-            "total_score": decision.total_score,
-            "action": decision.action.value,
-            "confidence": decision.confidence,
-            "risk_level": decision.risk_level.value,
-            "summary": decision.summary,
-            "key_catalysts": decision.key_catalysts,
-            "risk_factors": decision.risk_factors,
-            "detailed_reasoning": decision.detailed_reasoning,
-        }
+        return final_decision_to_payload(decision)
 
     def _load_theme_targets(self, theme_key: str) -> Tuple[Counter, Dict[str, str]]:
         path = self.data_dir / "raw" / "theme_targets" / f"{theme_key}.jsonl"

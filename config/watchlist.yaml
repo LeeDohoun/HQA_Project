@@ -9,16 +9,34 @@ schedule:
   market_hours_only: true       # 장중(09:00~15:30)에만 실행
   timezone: "Asia/Seoul"
 
+# ── 전략별 스케줄 (옵션) ──
+# 이 블록이 존재하면 run_loop()는 아래 전략 스케줄을 우선 사용합니다.
+strategy_schedule:
+  short:
+    enabled: true
+    interval_minutes: 60         # 단기: 장중 60분 주기
+    market_hours_only: true
+  long:
+    enabled: true
+    analysis_time: "08:00"       # 장기: 08:00에 1회 분석/플랜 생성
+    market_hours_only: true       # 트리거 집행은 장중만
+    check_interval_minutes: 5     # 장중 목표가 충족 체크 주기
+    buy_trigger_pct: -1.0         # 분석 시점가 대비 -1.0% 도달 시 매수 트리거
+    sell_trigger_pct: 1.0         # 분석 시점가 대비 +1.0% 도달 시 매도 트리거
+    plan_ttl_hours: 24            # 플랜 만료 시간
+
 # ── 감시 종목 ──
 watchlist:
   - name: "삼성전자"
     code: "005930"
     mode: "full"               # "full" | "quick"
+    strategy: "short"          # "short" | "long" | "both"
     priority: 1
 
   - name: "SK하이닉스"
     code: "000660"
     mode: "full"
+    strategy: "long"
     priority: 2
 
   # - name: "NAVER"
@@ -55,6 +73,14 @@ trading:
     allowed_actions:
       - "SELL"
       - "STRONG_SELL"
+    # 주도주 추세 보존형 기본값
+    take_profit_pct: 0            # 0이면 비활성(강제 익절 안 함)
+    trailing_stop_pct: 12         # 고점 대비 12% 하락 시 청산
+    time_stop_minutes: 0          # 0이면 비활성(시간 강제청산 안 함)
+    # 리스크 기반 트리거(과민반응 방지형)
+    max_risk_level: "VERY_HIGH"   # 이보다 높아질 수 없으므로 기본은 비활성에 가까움
+    confidence_drop_pct: 30       # 직전 기준 대비 30p 급락 시 리스크 트리거
+    volatility_spike_pct: 0       # 0이면 비활성(옵션)
 
 # ── 트레이싱 ──
 tracing:

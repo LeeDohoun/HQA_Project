@@ -19,6 +19,8 @@ from src.tracing.agent_tracer import (
     AnalysisTrace,
     AgentSpan,
     AgentTracer,
+    extract_token_usage,
+    add_token_usage_from_response,
 )
 
 
@@ -373,3 +375,59 @@ class TestRetryFlowTracking:
         retry_agent = data["agent_traces"][1]
         assert retry_agent["retry_from"] == first_id
         assert retry_agent["agent_name"] == "analyst_retry"
+
+
+class TestTokenUsageTracking:
+    def test_span_add_token_usage_accumulates_agent_and_session(self, tmp_path):
+        tracer = AgentTracer(traces_dir=str(tmp_path))
+        tracer.start_trace("테스트", "000000", "langgraph")
+
+        with tracer.trace_agent("analyst", "테스트") as span:
+            span.add_token_usage(120, 30)
+            span.add_token_usage(80, 20)
+
+        tracer.finish_trace("완료")
+        data = tracer.to_dict()
+        agent = data["agent_traces"][0]
+
+        assert agent["prompt_tokens"] == 200
+        assert agent["completion_tokens"] == 50
+        assert agent["total_tokens"] == 250
+        assert data["prompt_tokens"] == 200
+        assert data["completion_tokens"] == 50
+        assert data["total_tokens"] == 250
+
+    def test_extract_token_usage_supports_usage_metadata(self):
+        class Resp:
+            usage_metadata = {"input_tokens": 11, "output_tokens": 7}
+            response_metadata = {}
+
+        prompt, completion = extract_token_usage(Resp())
+        assert prompt == 11
+        assert completion == 7
+
+    def test_extract_token_usage_supports_ollama_metadata(self):
+        class Resp:
+            usage_metadata = None
+            response_metadata = {"prompt_eval_count": 15, "eval_count": 9}
+
+        prompt, completion = extract_token_usage(Resp())
+        assert prompt == 15
+        assert completion == 9
+
+    def test_add_token_usage_from_response_uses_active_span(self, tmp_path):
+        tracer = AgentTracer(traces_dir=str(tmp_path))
+        tracer.start_trace("테스트", "000000", "langgraph")
+
+        class Resp:
+            usage_metadata = {"input_tokens": 9, "output_tokens": 4}
+            response_metadata = {}
+
+        with tracer.trace_agent("analyst", "테스트"):
+            add_token_usage_from_response(Resp())
+
+        tracer.finish_trace("완료")
+        data = tracer.to_dict()
+        agent = data["agent_traces"][0]
+        assert agent["total_tokens"] == 13
+        assert data["total_tokens"] == 13

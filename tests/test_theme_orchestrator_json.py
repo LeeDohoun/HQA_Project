@@ -90,3 +90,40 @@ def test_invoke_json_recovers_first_json_object_from_raw_response():
     assert payload["moat_score"] == 28
     assert payload["growth_score"] == 19
     assert payload["summary"] == "raw"
+
+
+def test_strategy_profile_leader_score_weights():
+    orchestrator = _orchestrator()
+
+    default_score = orchestrator._compute_leader_score(
+        analyst_total=60,
+        quant_total=85,
+        chartist_total=95,
+        final_total=72,
+        data_presence_score=80,
+        strategy_profile="default",
+    )
+    short_score = orchestrator._compute_leader_score(
+        analyst_total=60,
+        quant_total=85,
+        chartist_total=95,
+        final_total=72,
+        data_presence_score=80,
+        strategy_profile="short",
+    )
+    long_score = orchestrator._compute_leader_score(
+        analyst_total=60,
+        quant_total=85,
+        chartist_total=95,
+        final_total=72,
+        data_presence_score=80,
+        strategy_profile="long",
+    )
+
+    assert default_score == round(72 * 0.7 + 80 * 0.3)
+    assert short_score > long_score
+
+
+def test_unknown_strategy_profile_falls_back_to_default():
+    orchestrator = _orchestrator()
+    assert orchestrator._normalize_strategy_profile("unknown") == "default"

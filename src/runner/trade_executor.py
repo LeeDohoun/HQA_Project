@@ -13,6 +13,7 @@ dry_run=True (기본값)이면 실제 주문 없이 로그만 기록합니다.
 
 import json
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -22,6 +23,16 @@ from src.config.settings import get_orders_dir
 logger = logging.getLogger(__name__)
 
 KST = timezone(timedelta(hours=9))
+RISK_ORDER = ["VERY_LOW", "LOW", "MEDIUM", "HIGH", "VERY_HIGH"]
+
+
+@dataclass
+class SellTriggerContext:
+    peak_profit_rate: Optional[float] = None
+    holding_minutes: Optional[int] = None
+    confidence_baseline: Optional[int] = None
+    volatility_now: Optional[float] = None
+    volatility_baseline: Optional[float] = None
 
 
 class TradeExecutor:
@@ -153,22 +164,104 @@ class TradeExecutor:
 
     def should_sell(self, decision) -> bool:
         """매도 조건 충족 여부 확인"""
+        evaluation = self.evaluate_sell_triggers(decision=decision)
+        return bool(evaluation.get("should_sell"))
+
+    def evaluate_sell_triggers(
+        self,
+        *,
+        decision=None,
+        holding=None,
+        current_price: Optional[int] = None,
+        context: Optional[SellTriggerContext] = None,
+    ) -> Dict[str, Any]:
+        """다층 매도 트리거 평가 (신호/가격/리스크)."""
         if not self._enabled:
-            return False
+            return {"should_sell": False, "reasons": ["trading_disabled"], "layers": {}}
 
-        conds = self._sell_conditions
+        conds = self._sell_conditions or {}
         if not conds:
-            return False
+            return {"should_sell": False, "reasons": ["sell_conditions_disabled"], "layers": {}}
 
-        max_score = conds.get("max_total_score", 30)
-        if decision.total_score > max_score:
-            return False
+        reasons: List[str] = []
+        layer = {"signal": False, "price": False, "risk": False}
+        context = context or SellTriggerContext()
 
-        allowed = conds.get("allowed_actions", ["SELL", "STRONG_SELL"])
-        if decision.action.name not in allowed:
-            return False
+        if decision is not None:
+            max_score = int(conds.get("max_total_score", 30))
+            allowed = {str(x).strip().upper() for x in conds.get("allowed_actions", ["SELL", "STRONG_SELL"])}
+            if int(getattr(decision, "total_score", 0)) <= max_score and str(getattr(decision.action, "name", "")).upper() in allowed:
+                layer["signal"] = True
+                reasons.append("signal_sell")
 
-        return True
+        pnl_rate = None
+        if holding is not None and hasattr(holding, "profit_loss_rate"):
+            try:
+                pnl_rate = float(holding.profit_loss_rate)
+            except Exception:
+                pnl_rate = None
+
+        stop_loss_pct = float(self._stop_loss_pct or 0.0)
+        if pnl_rate is not None and stop_loss_pct > 0 and pnl_rate <= (-1.0 * stop_loss_pct):
+            layer["price"] = True
+            reasons.append(f"stop_loss:{pnl_rate:.2f}%<={-stop_loss_pct:.2f}%")
+
+        # 주도주 추세를 살리기 위해 익절은 기본 비활성(설정 시에만 동작)
+        take_profit_pct = float(conds.get("take_profit_pct", 0.0) or 0.0)
+        if pnl_rate is not None and take_profit_pct > 0 and pnl_rate >= take_profit_pct:
+            layer["price"] = True
+            reasons.append(f"take_profit:{pnl_rate:.2f}%>={take_profit_pct:.2f}%")
+
+        trailing_stop_pct = float(conds.get("trailing_stop_pct", 0.0) or 0.0)
+        if (
+            pnl_rate is not None
+            and trailing_stop_pct > 0
+            and context.peak_profit_rate is not None
+            and float(context.peak_profit_rate) - pnl_rate >= trailing_stop_pct
+        ):
+            layer["price"] = True
+            reasons.append(
+                f"trailing_stop:peak{float(context.peak_profit_rate):.2f}%->now{pnl_rate:.2f}%"
+            )
+
+        # 시간 청산도 기본 비활성(설정 시에만 동작)
+        time_stop_minutes = int(conds.get("time_stop_minutes", 0) or 0)
+        if time_stop_minutes > 0 and context.holding_minutes is not None and int(context.holding_minutes) >= time_stop_minutes:
+            layer["price"] = True
+            reasons.append(f"time_stop:{int(context.holding_minutes)}m>={time_stop_minutes}m")
+
+        if decision is not None:
+            # 리스크 기반은 과민반응 방지를 위해 보수적으로 작동
+            risk_cap = str(conds.get("max_risk_level", "VERY_HIGH") or "").strip().upper()
+            if risk_cap and risk_cap in RISK_ORDER:
+                risk_now = str(getattr(decision.risk_level, "name", "")).upper()
+                if risk_now in RISK_ORDER and RISK_ORDER.index(risk_now) > RISK_ORDER.index(risk_cap):
+                    layer["risk"] = True
+                    reasons.append(f"risk_up:{risk_now}>{risk_cap}")
+
+            confidence_drop = int(conds.get("confidence_drop_pct", 30) or 0)
+            if confidence_drop > 0 and context.confidence_baseline is not None:
+                conf_now = int(getattr(decision, "confidence", 0))
+                if conf_now <= int(context.confidence_baseline) - confidence_drop:
+                    layer["risk"] = True
+                    reasons.append(f"confidence_drop:{conf_now}<={int(context.confidence_baseline)-confidence_drop}")
+
+            vol_spike = float(conds.get("volatility_spike_pct", 0.0) or 0.0)
+            if (
+                vol_spike > 0
+                and context.volatility_now is not None
+                and context.volatility_baseline is not None
+                and float(context.volatility_now) >= float(context.volatility_baseline) * (1.0 + vol_spike / 100.0)
+            ):
+                layer["risk"] = True
+                reasons.append("volatility_spike")
+
+        return {
+            "should_sell": any(layer.values()),
+            "reasons": reasons,
+            "layers": layer,
+            "current_price": current_price,
+        }
 
     def execute_buy(
         self,
@@ -380,14 +473,6 @@ class TradeExecutor:
             return (
                 f"일일 매수 한도 초과: {self._daily_spent:,.0f} / {self._max_daily_buy:,}원"
             )
-
-        # 2. 쿨다운
-        last_time = self._last_order_time.get(stock_code)
-        if last_time:
-            elapsed = (now - last_time).total_seconds() / 60
-            if elapsed < self._cooldown_minutes:
-                remaining = self._cooldown_minutes - elapsed
-                return f"쿨다운 중: {remaining:.0f}분 남음 ({stock_code})"
 
         return None
 

@@ -39,3 +39,26 @@ data/orders/
 
 # 9. 루트 package-lock.json (프론트엔드용은 frontend/에 있음)
 package-lock.json
+
+# 10. 로컬 수집 데이터 및 생성 인덱스
+corp_codes.csv
+data/bm25/
+data/canonical_index/
+data/corpora/
+data/market_data/
+data/raw/chart/
+data/raw/dart/
+data/raw/forum/
+data/raw/news/
+data/raw/theme_targets/
+data/reports/*_ingestion_report.json
+data/vector_stores/
+
+# 11. 로컬 Codex 워크플로 및 스킬 번들
+/AGENTS.md
+/plan/
+/skills/
+/vendor/
+
+# 12. Windows Zone Identifier 메타데이터
+*:Zone.Identifier

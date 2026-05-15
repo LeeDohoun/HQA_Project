@@ -25,11 +25,12 @@ import json
 import logging
 import threading
 import uuid
+from contextvars import ContextVar
 from contextlib import contextmanager
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 from src.config.settings import get_traces_dir
 
@@ -89,6 +90,9 @@ class AgentTrace:
     error_type: Optional[str] = None         # "llm_timeout", "parse_error" 등
     skip_reason: Optional[str] = None        # "quality_gate_failed" 등
     retry_from: Optional[str] = None         # 이전 agent_id (retry 흐름 추적)
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
 
 
 @dataclass
@@ -127,6 +131,9 @@ class AnalysisTrace:
     final_result_summary: str = ""
     research_quality: str = ""
     retry_count: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
 
     # 메타데이터
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -148,10 +155,12 @@ class AgentSpan:
     __exit__에서 자동으로 타이밍 + 예외 처리.
     """
 
-    def __init__(self, trace: AgentTrace, debug: bool = False):
+    def __init__(self, trace: AgentTrace, tracer: Optional["AgentTracer"] = None, debug: bool = False):
         self._trace = trace
+        self._tracer = tracer
         self._debug = debug
         self._start_time: Optional[datetime] = None
+        self._ctx_token = None
 
     @property
     def agent_id(self) -> str:
@@ -196,12 +205,28 @@ class AgentSpan:
         """retry 흐름 연결"""
         self._trace.retry_from = previous_agent_id
 
+    def add_token_usage(self, prompt_tokens: int, completion_tokens: int) -> None:
+        """토큰 사용량 누적 (에이전트 + 세션 합계)."""
+        p = _to_non_negative_int(prompt_tokens)
+        c = _to_non_negative_int(completion_tokens)
+        if p == 0 and c == 0:
+            return
+        self._trace.prompt_tokens += p
+        self._trace.completion_tokens += c
+        self._trace.total_tokens += (p + c)
+        if self._tracer is not None:
+            self._tracer._add_session_token_usage(p, c)
+
     def __enter__(self) -> "AgentSpan":
         self._start_time = datetime.now(KST)
         self._trace.started_at = self._start_time.isoformat()
+        self._ctx_token = _CURRENT_AGENT_SPAN.set(self)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        if self._ctx_token is not None:
+            _CURRENT_AGENT_SPAN.reset(self._ctx_token)
+            self._ctx_token = None
         end_time = datetime.now(KST)
         self._trace.finished_at = end_time.isoformat()
 
@@ -345,7 +370,7 @@ class AgentTracer:
             input_summary=_truncate(input_summary),
         )
 
-        span = AgentSpan(trace, debug=self._debug)
+        span = AgentSpan(trace, tracer=self, debug=self._debug)
 
         # 이벤트: 에이전트 시작
         self.add_event("agent_started", f"{agent_name} 시작", agent_name)
@@ -458,6 +483,18 @@ class AgentTracer:
 
         return saved_path
 
+    def _add_session_token_usage(self, prompt_tokens: int, completion_tokens: int) -> None:
+        p = _to_non_negative_int(prompt_tokens)
+        c = _to_non_negative_int(completion_tokens)
+        if p == 0 and c == 0:
+            return
+        with self._lock:
+            if not self._trace:
+                return
+            self._trace.prompt_tokens += p
+            self._trace.completion_tokens += c
+            self._trace.total_tokens += (p + c)
+
     def to_dict(self) -> Dict[str, Any]:
         """
         API 응답용 직렬화
@@ -481,6 +518,9 @@ class AgentTracer:
             "status": self._trace.status,
             "research_quality": self._trace.research_quality,
             "retry_count": self._trace.retry_count,
+            "prompt_tokens": self._trace.prompt_tokens,
+            "completion_tokens": self._trace.completion_tokens,
+            "total_tokens": self._trace.total_tokens,
             "final_result_summary": self._trace.final_result_summary,
             "metadata": self._trace.metadata,
             "agent_traces": [asdict(at) for at in self._trace.agent_traces],
@@ -516,3 +556,95 @@ class AgentTracer:
         except Exception as e:
             logger.exception(f"[Tracer] JSON 저장 실패: {e}")
             return None
+
+
+_CURRENT_AGENT_SPAN: ContextVar[Optional[AgentSpan]] = ContextVar(
+    "current_agent_span",
+    default=None,
+)
+
+
+def _to_non_negative_int(value: Any) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return parsed if parsed > 0 else 0
+
+
+def extract_token_usage(response: Any) -> tuple[int, int]:
+    """다양한 LLM 응답 메타데이터에서 (prompt, completion) 토큰을 추출."""
+    if response is None:
+        return 0, 0
+
+    usage_sources: List[Dict[str, Any]] = []
+    root = _as_usage_dict(response)
+    if root:
+        usage_sources.append(root)
+    usage = _as_usage_dict(getattr(response, "usage_metadata", None))
+    if usage:
+        usage_sources.append(usage)
+    response_metadata = _as_usage_dict(getattr(response, "response_metadata", None))
+    if response_metadata:
+        usage_sources.append(response_metadata)
+
+    # 중첩 metadata에서 usage 후보 확장
+    if response_metadata:
+        usage_sources.extend(
+            _as_usage_dict(response_metadata.get(key))
+            for key in ("usage", "token_usage")
+        )
+        usage_sources.append(_as_usage_dict(response_metadata.get("message")))
+        usage_sources.append(_as_usage_dict(response_metadata.get("additional_kwargs")))
+
+    prompt_tokens = 0
+    completion_tokens = 0
+    for source in usage_sources:
+        if not source:
+            continue
+        if prompt_tokens == 0:
+            prompt_tokens = _to_non_negative_int(
+                source.get("prompt_tokens")
+                or source.get("input_tokens")
+                or source.get("prompt_token_count")
+                or source.get("prompt_eval_count")
+            )
+        if completion_tokens == 0:
+            completion_tokens = _to_non_negative_int(
+                source.get("completion_tokens")
+                or source.get("output_tokens")
+                or source.get("candidates_token_count")
+                or source.get("eval_count")
+            )
+        if prompt_tokens and completion_tokens:
+            break
+
+    return prompt_tokens, completion_tokens
+
+
+def _as_usage_dict(value: Any) -> Optional[Dict[str, Any]]:
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, Mapping):
+        return dict(value)
+    if hasattr(value, "model_dump"):
+        dumped = value.model_dump()
+        return dumped if isinstance(dumped, dict) else None
+    if hasattr(value, "__dict__"):
+        return {
+            key: val
+            for key, val in vars(value).items()
+            if not key.startswith("_")
+        }
+    return None
+
+
+def add_token_usage_from_response(response: Any) -> None:
+    """현재 활성 AgentSpan에 응답 토큰 사용량을 누적."""
+    span = _CURRENT_AGENT_SPAN.get()
+    if span is None:
+        return
+    prompt_tokens, completion_tokens = extract_token_usage(response)
+    span.add_token_usage(prompt_tokens, completion_tokens)
