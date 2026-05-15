@@ -6,7 +6,7 @@ import { authApi } from "@/lib/api";
 
 export default function HomePage() {
   const router = useRouter();
-  const [message, setMessage] = useState("세션을 확인하는 중입니다...");
+  const [message, setMessage] = useState("잠시만요...");
 
   useEffect(() => {
     let active = true;
@@ -14,14 +14,12 @@ export default function HomePage() {
     authApi
       .me()
       .then((user) => {
-        if (!active) {
-          return;
-        }
+        if (!active) return;
         router.replace(user.surveyCompleted ? "/dashboard" : "/onboarding/preference");
       })
       .catch(() => {
         if (active) {
-          setMessage("활성 세션이 없습니다. 로그인 화면으로 이동합니다...");
+          setMessage("로그인 화면으로 이동할게요...");
           router.replace("/login");
         }
       });
@@ -33,8 +31,11 @@ export default function HomePage() {
 
   return (
     <div className="auth-wrap">
-      <div className="card" style={{ maxWidth: 520 }}>
-        <h1>HQA 투자 분석</h1>
+      <div className="auth-card" style={{ textAlign: "center", alignItems: "center" }}>
+        <div className="auth-brand">
+          <span className="auth-brand-mark">H</span>
+          <span>HQA</span>
+        </div>
         <p className="meta">{message}</p>
       </div>
     </div>

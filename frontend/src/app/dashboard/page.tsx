@@ -311,7 +311,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="dashboard-shell">
+    <div className="dashboard-shell theme-dark">
       {/* ── Topbar ── */}
       <header className="topbar">
         <div className="topbar-left">
