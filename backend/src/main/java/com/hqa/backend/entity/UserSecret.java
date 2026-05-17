@@ -21,6 +21,7 @@ public class UserSecret {
     private String kisAppKey;
     private String kisAppSecret;
     private String kisAccountNo;
+    private String kisAccountProductCode;
     private OffsetDateTime createdAt = OffsetDateTime.now();
     private OffsetDateTime updatedAt = OffsetDateTime.now();
 
@@ -69,6 +70,14 @@ public class UserSecret {
 
     public void setKisAccountNo(String kisAccountNo) {
         this.kisAccountNo = kisAccountNo;
+    }
+
+    public String getKisAccountProductCode() {
+        return kisAccountProductCode;
+    }
+
+    public void setKisAccountProductCode(String kisAccountProductCode) {
+        this.kisAccountProductCode = kisAccountProductCode;
     }
 
     public OffsetDateTime getCreatedAt() {

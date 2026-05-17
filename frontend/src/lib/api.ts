@@ -7,6 +7,8 @@ import type {
   AuthResponse,
   AuthUser,
   CandleHistory,
+  KisCredentials,
+  KisCredentialsStatus,
   LoginRequest,
   RealtimePrice,
   ScoreDetail,
@@ -17,6 +19,12 @@ import type {
 } from "@/types/api";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+
+if (process.env.NODE_ENV === "production" && API_BASE.startsWith("http://")) {
+  throw new Error(
+    "NEXT_PUBLIC_API_BASE must use https:// in production — refusing to send credentials over plain HTTP"
+  );
+}
 
 function extractErrorMessage(body: unknown): string {
   if (typeof body === "string" && body.trim()) {
@@ -77,6 +85,22 @@ type AuthResponseWire = {
   message: string;
   user: AuthUserWire | null;
 };
+
+type KisCredentialsStatusWire = {
+  configured: boolean;
+  kis_app_key_masked: string | null;
+  kis_account_no_masked: string | null;
+  kis_account_product_code: string | null;
+};
+
+function mapKisStatus(wire: KisCredentialsStatusWire): KisCredentialsStatus {
+  return {
+    configured: wire.configured,
+    kisAppKeyMasked: wire.kis_app_key_masked,
+    kisAccountNoMasked: wire.kis_account_no_masked,
+    kisAccountProductCode: wire.kis_account_product_code
+  };
+}
 
 type UserPreferenceWire = {
   total_assets: number;
@@ -336,6 +360,17 @@ export const authApi = {
     mapPreference(await api<UserPreferenceWire>("/api/v1/auth/me/preference", {
       method: "PUT",
       body: JSON.stringify(toPreferenceWire(payload))
+    })),
+  getKis: async () => mapKisStatus(await api<KisCredentialsStatusWire>("/api/v1/auth/me/kis")),
+  saveKis: async (payload: KisCredentials) =>
+    mapKisStatus(await api<KisCredentialsStatusWire>("/api/v1/auth/me/kis", {
+      method: "PUT",
+      body: JSON.stringify({
+        kis_app_key: payload.kisAppKey,
+        kis_app_secret: payload.kisAppSecret,
+        kis_account_no: payload.kisAccountNo,
+        kis_account_product_code: payload.kisAccountProductCode
+      })
     }))
 };
 

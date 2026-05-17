@@ -11,18 +11,19 @@ type AppShellProps = {
 export function AppShell({ title, subtitle, actions, children }: AppShellProps) {
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", flexDirection: "column" }}>
-      {/* Topbar */}
       <header className="topbar">
         <div className="topbar-left">
-          <Link className="brand-chip" href="/dashboard">HQA</Link>
+          <Link className="brand-chip" href="/dashboard">
+            <span aria-hidden style={{ fontSize: "0.95rem" }}>H</span>
+            HQA
+          </Link>
           <span style={{ color: "var(--line-2)", fontSize: "0.9rem" }}>/</span>
-          <span style={{ fontSize: "0.85rem", color: "var(--muted-2)", fontWeight: 500 }}>{title}</span>
+          <span style={{ fontSize: "0.9rem", color: "var(--muted-2)", fontWeight: 600 }}>{title}</span>
         </div>
         {actions ? <div className="topbar-actions">{actions}</div> : null}
       </header>
 
-      {/* Page content */}
-      <div className="page-shell" style={{ flex: 1 }}>
+      <div className="page-shell anim-fade-up" style={{ flex: 1 }}>
         <div className="hero">
           <div>
             <h1>{title}</h1>

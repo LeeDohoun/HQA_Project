@@ -28,6 +28,7 @@ chroma_db/
 frontend/node_modules/
 frontend/.next/
 frontend/next-env.d.ts
+frontend/tsconfig.tsbuildinfo
 
 # 7. 맥(Mac) 운영체제 임시 파일
 .DS_Store

@@ -1,5 +1,6 @@
 server:
   port: ${PORT:8000}
+  forward-headers-strategy: framework
 
 spring:
   application:
@@ -42,3 +43,4 @@ hqa:
   kis-app-key: ${KIS_APP_KEY:}
   kis-app-secret: ${KIS_APP_SECRET:}
   kis-account-no: ${KIS_ACCOUNT_NO:}
+  kis-enc-key: ${HQA_KIS_ENC_KEY:}

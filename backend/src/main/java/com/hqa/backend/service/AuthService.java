@@ -31,15 +31,18 @@ public class AuthService {
     private final UserSecretRepository userSecretRepository;
     private final UserPreferenceRepository userPreferenceRepository;
     private final PasswordEncoder passwordEncoder;
+    private final SecretCipher secretCipher;
 
     public AuthService(UserRepository userRepository,
                        UserSecretRepository userSecretRepository,
                        UserPreferenceRepository userPreferenceRepository,
-                       PasswordEncoder passwordEncoder) {
+                       PasswordEncoder passwordEncoder,
+                       SecretCipher secretCipher) {
         this.userRepository = userRepository;
         this.userSecretRepository = userSecretRepository;
         this.userPreferenceRepository = userPreferenceRepository;
         this.passwordEncoder = passwordEncoder;
+        this.secretCipher = secretCipher;
     }
 
     public AuthResponse signup(AuthSignupRequest request, HttpSession session) {
@@ -93,9 +96,11 @@ public class AuthService {
             user.setSecret(secret);
         }
 
-        secret.setKisAppKey(request.kisAppKey().trim());
-        secret.setKisAppSecret(request.kisAppSecret().trim());
-        secret.setKisAccountNo(request.kisAccountNo().trim());
+        secret.setKisAppKey(secretCipher.encrypt(request.kisAppKey().trim()));
+        secret.setKisAppSecret(secretCipher.encrypt(request.kisAppSecret().trim()));
+        secret.setKisAccountNo(secretCipher.encrypt(request.kisAccountNo().trim()));
+        // Account product code is not sensitive (e.g. "01"); store as-is for direct use.
+        secret.setKisAccountProductCode(request.kisAccountProductCode().trim());
 
         userSecretRepository.save(secret);
         return toSecretResponse(secret);
@@ -160,7 +165,8 @@ public class AuthService {
         if (secret == null
                 || isBlank(secret.getKisAppKey())
                 || isBlank(secret.getKisAppSecret())
-                || isBlank(secret.getKisAccountNo())) {
+                || isBlank(secret.getKisAccountNo())
+                || isBlank(secret.getKisAccountProductCode())) {
             throw new ApiException(ErrorCode.KIS_SECRET_NOT_CONFIGURED, 400, "KIS credentials are not configured", null);
         }
         return secret;
@@ -183,12 +189,20 @@ public class AuthService {
 
     private UserSecretResponse toSecretResponse(UserSecret secret) {
         if (secret == null) {
-            return new UserSecretResponse(false, null, null);
+            return new UserSecretResponse(false, null, null, null);
         }
+        boolean configured = !isBlank(secret.getKisAppKey())
+                && !isBlank(secret.getKisAppSecret())
+                && !isBlank(secret.getKisAccountNo())
+                && !isBlank(secret.getKisAccountProductCode());
+        // Decrypt for masking only — never expose the full plaintext outside KisClient.
+        String appKey = secretCipher.decrypt(secret.getKisAppKey());
+        String accountNo = secretCipher.decrypt(secret.getKisAccountNo());
         return new UserSecretResponse(
-                !isBlank(secret.getKisAppKey()) && !isBlank(secret.getKisAppSecret()) && !isBlank(secret.getKisAccountNo()),
-                mask(secret.getKisAppKey(), 4),
-                mask(secret.getKisAccountNo(), 4)
+                configured,
+                mask(appKey, 4),
+                mask(accountNo, 4),
+                secret.getKisAccountProductCode()
         );
     }
 

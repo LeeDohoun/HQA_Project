@@ -18,11 +18,8 @@ import type {
 type WorkspaceTab = "analysis" | "buy";
 type ChartTimeframe = "1m" | "10m";
 
-const marketSnapshot = [
-  { label: "KOSPI", value: "2,742.31", delta: "+0.82%", positive: true },
-  { label: "KOSDAQ", value: "871.44", delta: "-0.14%", positive: false },
-  { label: "USD/KRW", value: "1,351.20", delta: "+0.31%", positive: true }
-];
+const RECENT_STORAGE_KEY = "hqa.dashboard.recent";
+const RECENT_LIMIT = 8;
 
 function formatNumber(value: number | null | undefined) {
   if (value == null) return "-";
@@ -57,12 +54,34 @@ function formatChartTime(time: number) {
   }).format(new Date(time));
 }
 
+function loadRecent(): StockSearchResult[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(RECENT_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.slice(0, RECENT_LIMIT) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRecent(items: StockSearchResult[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(items.slice(0, RECENT_LIMIT)));
+  } catch {
+    /* ignore quota errors */
+  }
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [preference, setPreference] = useState<UserPreference | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<StockSearchResult[]>([]);
+  const [recent, setRecent] = useState<StockSearchResult[]>([]);
   const [selected, setSelected] = useState<StockSearchResult | null>(null);
   const [mode, setMode] = useState<AnalysisMode>("full");
   const [tab, setTab] = useState<WorkspaceTab>("analysis");
@@ -80,6 +99,10 @@ export default function DashboardPage() {
   const [candles, setCandles] = useState<Candle[]>([]);
   const [loadingChart, setLoadingChart] = useState(false);
   const [chartError, setChartError] = useState("");
+
+  useEffect(() => {
+    setRecent(loadRecent());
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -153,6 +176,16 @@ export default function DashboardPage() {
     return () => { active = false; };
   }, [selected, timeframe]);
 
+  function pickStock(stock: StockSearchResult) {
+    setSelected(stock);
+    setRecent((prev) => {
+      const deduped = prev.filter((s) => s.code !== stock.code);
+      const next = [stock, ...deduped].slice(0, RECENT_LIMIT);
+      saveRecent(next);
+      return next;
+    });
+  }
+
   async function onSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!searchQuery.trim()) return;
@@ -163,7 +196,9 @@ export default function DashboardPage() {
     try {
       const response = await stockApi.search(searchQuery.trim());
       setSearchResults(response.results);
-      setSelected(response.results[0] ?? null);
+      if (response.results[0]) {
+        pickStock(response.results[0]);
+      }
       if (response.results.length === 0) setMessage("검색 결과가 없습니다.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "종목 검색에 실패했습니다.");
@@ -203,8 +238,8 @@ export default function DashboardPage() {
       return;
     }
     const qty = Math.max(1, parseInt(buyQuantity || "1", 10) || 1);
-    const price = Math.max(0, parseInt(buyPrice || "0", 10) || 0);
-    const priceLabel = price > 0 ? `${price.toLocaleString("ko-KR")}원` : "시장가";
+    const orderPrice = Math.max(0, parseInt(buyPrice || "0", 10) || 0);
+    const priceLabel = orderPrice > 0 ? `${orderPrice.toLocaleString("ko-KR")}원` : "시장가";
     const confirmed = window.confirm(`${selected.name} ${qty}주를 ${priceLabel}로 매수할까요?`);
     if (!confirmed) return;
     try {
@@ -212,7 +247,7 @@ export default function DashboardPage() {
         stockName: selected.name,
         stockCode: selected.code,
         quantity: qty,
-        limitPrice: price
+        limitPrice: orderPrice
       });
       if (result.success) {
         setMessage(`${selected.name} ${qty}주 매수 주문이 접수되었습니다.`);
@@ -283,7 +318,7 @@ export default function DashboardPage() {
   const candleBars = useMemo(() => {
     if (candles.length === 0) return [];
 
-    const visible = candles.slice(-24);
+    const visible = candles.slice(-48);
     const high = Math.max(...visible.map((c) => c.high));
     const low = Math.min(...visible.map((c) => c.low));
     const range = Math.max(1, high - low);
@@ -311,20 +346,14 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="dashboard-shell">
+    <div className="dashboard-shell theme-dark">
       {/* ── Topbar ── */}
       <header className="topbar">
         <div className="topbar-left">
           <div className="brand-chip">HQA</div>
-          <div className="market-strip">
-            {marketSnapshot.map((item) => (
-              <div className="market-card" key={item.label}>
-                <span className="market-label">{item.label}</span>
-                <span className="market-value">{item.value}</span>
-                <span className={`market-delta ${item.positive ? "positive" : "negative"}`}>{item.delta}</span>
-              </div>
-            ))}
-          </div>
+          <span className="topbar-greet">
+            {user ? `${user.firstName}님, 환영해요` : ""}
+          </span>
         </div>
 
         <div className="topbar-actions">
@@ -333,36 +362,33 @@ export default function DashboardPage() {
             onClick={handleBulkAnalyze}
             type="button"
             disabled={bulkAnalyzing}
-            style={{ fontSize: "0.8rem" }}
           >
-            {bulkAnalyzing ? "분석 요청 중..." : "전체 종목 분석"}
+            {bulkAnalyzing ? "요청 중..." : "전체 분석"}
           </button>
           <button
             className={autoTradeEnabled ? "button-secondary" : "button-ghost"}
             onClick={handleAutoTrade}
             type="button"
-            style={{ fontSize: "0.8rem" }}
           >
             자동매매 {autoTradeEnabled ? "ON" : "OFF"}
           </button>
-          <Link className="button-ghost" href="/onboarding/preference" style={{ fontSize: "0.8rem" }}>
-            마이페이지
+          <Link className="button-ghost" href="/settings/kis">
+            KIS 설정
           </Link>
-          <button className="button-ghost" onClick={logout} type="button" style={{ fontSize: "0.8rem" }}>
+          <Link className="button-ghost" href="/onboarding/preference">
+            투자 성향
+          </Link>
+          <button className="button-ghost" onClick={logout} type="button">
             로그아웃
           </button>
         </div>
       </header>
 
-      {/* ── Account Strip ── */}
+      {/* ── Account Strip (2 cards now) ── */}
       <div className="account-strip">
         <div className="account-card">
-          <span className="account-label">현재 재산</span>
+          <span className="account-label">보유 자산</span>
           <span className="account-value">{totalAssetsText}</span>
-        </div>
-        <div className="account-card">
-          <span className="account-label">현재 수익률</span>
-          <span className="account-value">-</span>
         </div>
         <div className="account-card">
           <span className="account-label">월 투자 금액</span>
@@ -370,16 +396,15 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── Main: Sidebar + Content ── */}
+      {/* ── Main: 3-column workspace ── */}
       <div className="dashboard-main">
-        {/* Sidebar */}
+        {/* ── LEFT: Search + Watchlist + Results ── */}
         <aside className="sidebar">
-          {/* Search */}
           <div className="sidebar-section">
             <form className="search-form" onSubmit={onSearch}>
               <input
                 className="search-input"
-                placeholder="종목 검색..."
+                placeholder="종목명·코드 검색"
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
               />
@@ -389,184 +414,201 @@ export default function DashboardPage() {
             </form>
           </div>
 
-          {/* Chart */}
-          <div className="sidebar-section">
-            <div className="chart-header">
-              <div>
-                <p className="chart-stock-name">{selected?.name ?? "종목 없음"}</p>
-                <p className="chart-stock-code">{selected?.code ?? "-"}</p>
-              </div>
-              <div className="timeframe-switch">
-                <button
-                  className={timeframe === "1m" ? "tab-chip active" : "tab-chip"}
-                  onClick={() => setTimeframe("1m")}
-                  type="button"
-                >
-                  1분
-                </button>
-                <button
-                  className={timeframe === "10m" ? "tab-chip active" : "tab-chip"}
-                  onClick={() => setTimeframe("10m")}
-                  type="button"
-                >
-                  10분
-                </button>
-              </div>
-            </div>
-
-            <div className="price-strip">
-              <span className="price-main">{formatPrice(price?.currentPrice)}</span>
-              <span className={`price-delta ${pricePositive ? "positive" : "negative"}`}>
-                {formatSignedNumber(price?.change)}원
-              </span>
-              <span className="price-rate">{formatSignedRate(price?.changeRate)}</span>
-            </div>
-
-            <div className="chart-canvas chart-candles">
-              {loadingChart ? <div className="chart-empty">로딩 중...</div> : null}
-              {!loadingChart && chartError ? <div className="chart-empty">{chartError}</div> : null}
-              {!loadingChart && !chartError && candleBars.length === 0 ? (
-                <div className="chart-empty">차트 데이터 없음</div>
-              ) : null}
-              {!loadingChart && !chartError && candleBars.length > 0 ? (
-                <div className="candle-bars">
-                  {candleBars.map((bar) => (
-                    <div className="candle-bar" key={bar.key} title={bar.label}>
-                      <span
-                        className={bar.rising ? "candle-wick rising" : "candle-wick falling"}
-                        style={{ bottom: `${bar.wickBottom}%`, height: `${bar.wickHeight}%` }}
-                      />
-                      <span
-                        className={bar.rising ? "candle-body rising" : "candle-body falling"}
-                        style={{ bottom: `${bar.bodyBottom}%`, height: `${bar.bodyHeight}%` }}
-                      />
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="quote-grid">
-              <div className="quote-card">
-                <span className="quote-label">시가</span>
-                <span className="quote-value">{formatPrice(candleStats?.open ?? price?.openPrice)}</span>
-              </div>
-              <div className="quote-card">
-                <span className="quote-label">고가</span>
-                <span className="quote-value">{formatPrice(candleStats?.high ?? price?.highPrice)}</span>
-              </div>
-              <div className="quote-card">
-                <span className="quote-label">저가</span>
-                <span className="quote-value">{formatPrice(candleStats?.low ?? price?.lowPrice)}</span>
-              </div>
-              <div className="quote-card">
-                <span className="quote-label">종가</span>
-                <span className="quote-value">{formatPrice(candleStats?.close ?? price?.currentPrice)}</span>
-              </div>
-              <div className="quote-card">
-                <span className="quote-label">거래량</span>
-                <span className="quote-value mono">{formatNumber(candleStats?.volume ?? price?.volume)}</span>
-              </div>
-              <div className="quote-card">
-                <span className="quote-label">갱신</span>
-                <span className="quote-value mono">{candleStats ? formatChartTime(candleStats.time) : "-"}</span>
-              </div>
-            </div>
-
-            <div className="candle-table" style={{ marginTop: 12 }}>
-              <div className="candle-table-head">
-                <span>시간</span>
-                <span>시가</span>
-                <span>고가</span>
-                <span>저가</span>
-                <span>종가</span>
-                <span>거래량</span>
-              </div>
-              <div className="candle-table-body">
-                {candles.slice(-8).reverse().map((candle) => (
-                  <div className="candle-table-row" key={candle.time}>
-                    <span className="mono">{formatChartTime(candle.time)}</span>
-                    <span>{formatNumber(candle.open)}</span>
-                    <span>{formatNumber(candle.high)}</span>
-                    <span>{formatNumber(candle.low)}</span>
-                    <span>{formatNumber(candle.close)}</span>
-                    <span>{formatNumber(candle.volume)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Search Results */}
-          <div className="sidebar-section" style={{ flex: 1, overflowY: "auto", borderBottom: "none" }}>
+          <div className="sidebar-section sidebar-scroll">
             {searchResults.length > 0 ? (
               <>
-                <p style={{ fontSize: "0.72rem", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600, margin: "0 0 8px" }}>
-                  검색 결과 {searchResults.length}건
-                </p>
+                <p className="sidebar-heading">검색 결과 ({searchResults.length})</p>
                 <div className="result-list">
                   {searchResults.map((item) => (
                     <button
-                      key={`${item.code}-${item.market}`}
+                      key={`s-${item.code}-${item.market}`}
                       className={selected?.code === item.code ? "result-item active" : "result-item"}
-                      onClick={() => setSelected(item)}
+                      onClick={() => pickStock(item)}
                       type="button"
                     >
                       <div>
                         <div className="result-name">{item.name}</div>
-                        <div className="result-code">{item.code}</div>
+                        <div className="result-code">{item.code} · {item.market}</div>
                       </div>
-                      <StatusPill
-                        label={selected?.code === item.code ? "선택" : item.market}
-                        tone={selected?.code === item.code ? "good" : "neutral"}
-                      />
                     </button>
                   ))}
                 </div>
               </>
-            ) : (
-              <p style={{ fontSize: "0.8rem", color: "var(--muted)", margin: 0 }}>종목을 검색해주세요.</p>
-            )}
+            ) : null}
+
+            {recent.length > 0 ? (
+              <>
+                <p className="sidebar-heading" style={{ marginTop: searchResults.length > 0 ? 16 : 0 }}>
+                  최근 본 종목
+                </p>
+                <div className="result-list">
+                  {recent.map((item) => (
+                    <button
+                      key={`r-${item.code}-${item.market}`}
+                      className={selected?.code === item.code ? "result-item active" : "result-item"}
+                      onClick={() => pickStock(item)}
+                      type="button"
+                    >
+                      <div>
+                        <div className="result-name">{item.name}</div>
+                        <div className="result-code">{item.code} · {item.market}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : null}
+
+            {searchResults.length === 0 && recent.length === 0 ? (
+              <div className="sidebar-empty">
+                <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--text-bright)", fontWeight: 600 }}>
+                  종목을 검색해보세요
+                </p>
+                <p style={{ margin: "6px 0 0", fontSize: "0.78rem", color: "var(--muted)", lineHeight: 1.5 }}>
+                  종목명 또는 6자리 코드로 검색할 수 있어요.<br />
+                  최근 본 종목은 여기에 모입니다.
+                </p>
+              </div>
+            ) : null}
           </div>
         </aside>
 
-        {/* Main Content */}
-        <main className="main-content">
-          <div className="content-area">
-            {/* Content Head */}
-            <div className="content-head">
-              <div>
-                <h1 className="content-stock-name">
-                  {selected?.name ?? "종목을 선택해주세요"}
-                </h1>
-                <p className="content-stock-sub mono">
-                  {selected?.code ?? "-"} / {selected?.market ?? "-"}
-                </p>
-              </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                {task ? <StatusPill label={task.status} tone="warn" /> : null}
-                <div className="tab-switch">
+        {/* ── CENTER: Chart hero ── */}
+        <main className="chart-pane">
+          {selected ? (
+            <>
+              <div className="chart-pane-head">
+                <div>
+                  <h1 className="chart-pane-name">{selected.name}</h1>
+                  <p className="chart-pane-code mono">{selected.code} · {selected.market}</p>
+                </div>
+                <div className="timeframe-switch">
                   <button
-                    className={tab === "analysis" ? "tab-chip active" : "tab-chip"}
-                    onClick={() => setTab("analysis")}
+                    className={timeframe === "1m" ? "tab-chip active" : "tab-chip"}
+                    onClick={() => setTimeframe("1m")}
                     type="button"
                   >
-                    분석
+                    1분
                   </button>
                   <button
-                    className={tab === "buy" ? "tab-chip active" : "tab-chip"}
-                    onClick={() => setTab("buy")}
+                    className={timeframe === "10m" ? "tab-chip active" : "tab-chip"}
+                    onClick={() => setTimeframe("10m")}
                     type="button"
                   >
-                    매수
+                    10분
                   </button>
                 </div>
               </div>
-            </div>
 
-            {/* Tab Content */}
-            {tab === "analysis" ? (
-              <div style={{ display: "grid", gap: 16 }}>
+              <div className="price-strip">
+                <span className="price-main">{formatPrice(price?.currentPrice)}</span>
+                <span className={`price-delta ${pricePositive ? "positive" : "negative"}`}>
+                  {formatSignedNumber(price?.change)}원
+                </span>
+                <span className={`price-rate ${pricePositive ? "positive" : "negative"}`}>
+                  {formatSignedRate(price?.changeRate)}
+                </span>
+              </div>
+
+              <div className="chart-canvas chart-canvas-large">
+                {loadingChart ? <div className="chart-empty">로딩 중...</div> : null}
+                {!loadingChart && chartError ? <div className="chart-empty">{chartError}</div> : null}
+                {!loadingChart && !chartError && candleBars.length === 0 ? (
+                  <div className="chart-empty">차트 데이터 없음</div>
+                ) : null}
+                {!loadingChart && !chartError && candleBars.length > 0 ? (
+                  <div className="candle-bars">
+                    {candleBars.map((bar) => (
+                      <div className="candle-bar" key={bar.key} title={bar.label}>
+                        <span
+                          className={bar.rising ? "candle-wick rising" : "candle-wick falling"}
+                          style={{ bottom: `${bar.wickBottom}%`, height: `${bar.wickHeight}%` }}
+                        />
+                        <span
+                          className={bar.rising ? "candle-body rising" : "candle-body falling"}
+                          style={{ bottom: `${bar.bodyBottom}%`, height: `${bar.bodyHeight}%` }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="quote-grid">
+                <div className="quote-card">
+                  <span className="quote-label">시가</span>
+                  <span className="quote-value">{formatPrice(candleStats?.open ?? price?.openPrice)}</span>
+                </div>
+                <div className="quote-card">
+                  <span className="quote-label">고가</span>
+                  <span className="quote-value">{formatPrice(candleStats?.high ?? price?.highPrice)}</span>
+                </div>
+                <div className="quote-card">
+                  <span className="quote-label">저가</span>
+                  <span className="quote-value">{formatPrice(candleStats?.low ?? price?.lowPrice)}</span>
+                </div>
+                <div className="quote-card">
+                  <span className="quote-label">거래량</span>
+                  <span className="quote-value mono">{formatNumber(candleStats?.volume ?? price?.volume)}</span>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="empty-hero">
+              <span className="empty-hero-emoji" aria-hidden>📊</span>
+              <h1 className="empty-hero-title">분석할 종목을 선택해주세요</h1>
+              <p className="empty-hero-text">
+                왼쪽에서 종목을 검색하면<br />
+                실시간 가격과 차트를 볼 수 있고<br />
+                바로 AI 분석을 시작할 수 있어요.
+              </p>
+              <div className="empty-hero-tips">
+                <div className="empty-hero-tip">
+                  <span className="empty-hero-tip-num">1</span>
+                  <span>왼쪽에서 종목 검색</span>
+                </div>
+                <div className="empty-hero-tip">
+                  <span className="empty-hero-tip-num">2</span>
+                  <span>차트와 가격 확인</span>
+                </div>
+                <div className="empty-hero-tip">
+                  <span className="empty-hero-tip-num">3</span>
+                  <span>AI 분석 또는 매수</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </main>
+
+        {/* ── RIGHT: Actions (Analysis / Buy) ── */}
+        <aside className="action-pane">
+          <div className="tab-switch action-tabs">
+            <button
+              className={tab === "analysis" ? "tab-chip active" : "tab-chip"}
+              onClick={() => setTab("analysis")}
+              type="button"
+            >
+              AI 분석
+            </button>
+            <button
+              className={tab === "buy" ? "tab-chip active" : "tab-chip"}
+              onClick={() => setTab("buy")}
+              type="button"
+            >
+              매수
+            </button>
+          </div>
+
+          {tab === "analysis" ? (
+            <div className="action-content">
+              <p className="action-hint">
+                {selected
+                  ? `${selected.name}을(를) AI가 분석해드려요.`
+                  : "종목을 선택하면 분석을 시작할 수 있어요."}
+              </p>
+
+              <div className="field">
+                <label>분석 모드</label>
                 <div className="mode-row">
                   <label className={mode === "full" ? "mode-chip active" : "mode-chip"}>
                     <input checked={mode === "full"} name="mode" type="radio" onChange={() => setMode("full")} />
@@ -577,90 +619,74 @@ export default function DashboardPage() {
                     빠른 분석
                   </label>
                 </div>
+              </div>
 
-                <div className="hero-board">
-                  <div className="hero-copy">
-                    <span className="hero-copy-label">분석 요청</span>
-                    <span className="hero-copy-text">
-                      {selected ? `${selected.name} 분석을 시작합니다.` : "종목을 선택해주세요."}
-                    </span>
-                  </div>
-                  <button
-                    className="button"
-                    disabled={!selected || submitting}
-                    onClick={submitAnalysis}
-                    type="button"
-                  >
-                    {submitting ? "요청 중..." : "분석 시작"}
-                  </button>
-                </div>
+              <button
+                className="button action-cta"
+                disabled={!selected || submitting}
+                onClick={submitAnalysis}
+                type="button"
+              >
+                {submitting ? "요청 중..." : "분석 시작"}
+              </button>
 
+              {task ? (
                 <div className="summary-card">
                   <div className="summary-row">
-                    <span className="summary-label">최근 작업 ID</span>
-                    <span className="summary-value mono">{task?.taskId ?? "-"}</span>
+                    <span className="summary-label">최근 작업</span>
+                    <StatusPill label={task.status} tone="warn" />
                   </div>
                   <div className="summary-row">
-                    <span className="summary-label">자동매매</span>
-                    <StatusPill
-                      label={autoTradeEnabled ? "활성" : "비활성"}
-                      tone={autoTradeEnabled ? "good" : "neutral"}
-                    />
-                  </div>
-                  {user ? (
-                    <div className="summary-row">
-                      <span className="summary-label">사용자</span>
-                      <span className="summary-value">{user.userId}</span>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            ) : (
-              <div style={{ display: "grid", gap: 16 }}>
-                <div className="buy-grid">
-                  <div className="field">
-                    <label htmlFor="buyQuantity">수량</label>
-                    <input
-                      id="buyQuantity"
-                      min="1"
-                      type="number"
-                      value={buyQuantity}
-                      onChange={(event) => setBuyQuantity(event.target.value)}
-                    />
-                  </div>
-                  <div className="field">
-                    <label htmlFor="buyPrice">가격 (원)</label>
-                    <input
-                      id="buyPrice"
-                      placeholder="시장가"
-                      value={buyPrice}
-                      onChange={(event) => setBuyPrice(event.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="hero-board">
-                  <div className="hero-copy">
-                    <span className="hero-copy-label">매수 주문</span>
-                    <span className="hero-copy-text">
-                      {selected ? `${selected.name} 주문 준비` : "종목을 선택해주세요."}
+                    <span className="summary-label">작업 ID</span>
+                    <span className="summary-value mono" style={{ fontSize: "0.75rem" }}>
+                      {task.taskId.slice(0, 12)}...
                     </span>
                   </div>
-                  <button
-                    className="button"
-                    disabled={!selected}
-                    onClick={handleBuy}
-                    type="button"
-                  >
-                    매수하기
-                  </button>
                 </div>
-              </div>
-            )}
+              ) : null}
+            </div>
+          ) : (
+            <div className="action-content">
+              <p className="action-hint">
+                {selected
+                  ? `${selected.name} 매수 주문을 넣어요.`
+                  : "종목을 선택하면 매수할 수 있어요."}
+              </p>
 
-            {message ? <p className="message-line">{message}</p> : null}
-          </div>
-        </main>
+              <div className="field">
+                <label htmlFor="buyQuantity">수량 (주)</label>
+                <input
+                  id="buyQuantity"
+                  min="1"
+                  type="number"
+                  value={buyQuantity}
+                  onChange={(event) => setBuyQuantity(event.target.value)}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="buyPrice">지정가 (원)</label>
+                <input
+                  id="buyPrice"
+                  inputMode="numeric"
+                  placeholder="비워두면 시장가"
+                  value={buyPrice}
+                  onChange={(event) => setBuyPrice(event.target.value)}
+                />
+              </div>
+
+              <button
+                className="button action-cta"
+                disabled={!selected}
+                onClick={handleBuy}
+                type="button"
+              >
+                매수 주문
+              </button>
+            </div>
+          )}
+
+          {message ? <p className="message-line">{message}</p> : null}
+        </aside>
       </div>
     </div>
   );
