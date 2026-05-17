@@ -1,0 +1,160 @@
+{
+  "task_id": "bt-ai-validation_2026q1-rsi_oversold-m-top3-h60",
+  "mode": "backtest",
+  "result_type": "backtest",
+  "status": "completed",
+  "theme": "AI",
+  "theme_key": "ai",
+  "prediction_model": "rsi_oversold_technical_baseline_v1",
+  "period": {
+    "from_date": "2026-01-01",
+    "to_date": "2026-03-31",
+    "rebalance": "M",
+    "rebalance_count": 1,
+    "hold_days": 60
+  },
+  "strategy": {
+    "name": "rsi_oversold",
+    "label": "RSI(14) <= 30",
+    "description": "Long the most oversold RSI(14) names.",
+    "top_n": 3,
+    "min_history_days": 150,
+    "transaction_cost_bps": 15.0,
+    "slippage_bps": 5.0,
+    "market_impact_bps": 5.0,
+    "round_trip_cost_bps": 50.0,
+    "risk_filters": {
+      "min_avg_trading_value": 0.0,
+      "position_value_krw": 10000000.0,
+      "max_position_pct_avg_trading_value": 5.0,
+      "max_volatility_20d": 1.2,
+      "max_return_5d": 0.35,
+      "max_return_20d": 0.9,
+      "min_trend_150d": -1.0,
+      "min_market_breadth_pct": 40.0
+    },
+    "exit_rules": {
+      "stop_loss_pct": 0.0,
+      "take_profit_pct": 0.0,
+      "trailing_stop_pct": 15.0
+    },
+    "selection_inputs": [
+      "RSI(14)",
+      "same point-in-time AI universe",
+      "same risk filters"
+    ],
+    "prediction_model": "rsi_oversold_technical_baseline_v1"
+  },
+  "metrics": {
+    "rebalance_count": 1,
+    "risk_off_count": 1,
+    "traded_rebalance_count": 0,
+    "position_count": 0,
+    "total_return_pct": 0.0,
+    "benchmark_return_pct": -2.14,
+    "excess_return_pct": 2.14,
+    "cagr_pct": 0.0,
+    "benchmark_cagr_pct": -8.5,
+    "mdd_pct": 0.0,
+    "benchmark_mdd_pct": 0.0,
+    "sharpe": 0.0,
+    "avg_period_return_pct": 0.0,
+    "avg_benchmark_period_return_pct": -2.14,
+    "win_rate_pct": 0.0,
+    "prediction_hit_rate_pct": 0.0,
+    "avg_position_return_pct": 0.0,
+    "median_position_return_pct": 0.0,
+    "loss_period_count": 0,
+    "max_consecutive_loss_periods": 0,
+    "worst_period_return_pct": 0.0,
+    "best_period_return_pct": 0.0
+  },
+  "leaders": [],
+  "predictions": [],
+  "positions": [],
+  "trades": [],
+  "periods": [
+    {
+      "as_of_date": "2026-01-27",
+      "entry_date": "",
+      "exit_date": "",
+      "selected_count": 0,
+      "active_target_count": 48,
+      "eligible_count": 46,
+      "risk_eligible_count": 37,
+      "risk_reject_count": 9,
+      "market_breadth_pct": 73.91,
+      "portfolio_return_pct": 0.0,
+      "benchmark_return_pct": -2.14,
+      "excess_return_pct": 2.14,
+      "risk_off_reason": "rsi_oversold signal stocks 0 < top_n 3",
+      "top_symbols": []
+    }
+  ],
+  "equity_curve": [
+    {
+      "date": "2026-01-27",
+      "equity": 1.0,
+      "benchmark_equity": 0.978597,
+      "period_return_pct": 0.0,
+      "benchmark_return_pct": -2.14,
+      "risk_off_reason": "rsi_oversold signal stocks 0 < top_n 3"
+    }
+  ],
+  "risk": {
+    "filters": {
+      "min_avg_trading_value": 0.0,
+      "position_value_krw": 10000000.0,
+      "max_position_pct_avg_trading_value": 5.0,
+      "max_volatility_20d": 1.2,
+      "max_return_5d": 0.35,
+      "max_return_20d": 0.9,
+      "min_trend_150d": -1.0,
+      "min_market_breadth_pct": 40.0
+    },
+    "reject_counts": {
+      "high_volatility": 4,
+      "insufficient_liquidity_capacity": 4,
+      "overheated_5d": 1
+    }
+  },
+  "execution": {
+    "exit_rules": {
+      "stop_loss_pct": 0.0,
+      "take_profit_pct": 0.0,
+      "trailing_stop_pct": 15.0
+    },
+    "costs": {
+      "transaction_cost_bps": 15.0,
+      "slippage_bps": 5.0,
+      "market_impact_bps": 5.0,
+      "round_trip_cost_bps": 50.0
+    },
+    "exit_counts": {},
+    "same_day_ohlc_policy": "stop_or_trailing_stop_before_take_profit"
+  },
+  "artifacts": {
+    "result_json": "data/backtest_results/multi_agent_validation/phase1/technical_long_realistic_costs/bt-ai-validation_2026q1-rsi_oversold-m-top3-h60.json"
+  },
+  "warnings": [
+    "20260127: rsi_oversold signal stocks 0 < top_n 3",
+    "future returns are used only for evaluation after each as_of_date signal.",
+    "selection uses deterministic price/document features, not the full LLM ThemeLeaderOrchestrator.",
+    "theme_membership may be inferred from local corpus evidence unless an official historical source is supplied."
+  ],
+  "metadata": {
+    "generated_at": "2026-05-17T20:04:27.519418",
+    "data_dir": "data",
+    "target_count": 50,
+    "membership_count": 50,
+    "point_in_time_universe": true,
+    "membership_sources": [
+      "local_corpus_inferred"
+    ],
+    "price_stock_count": 50,
+    "document_signal_count": 30497,
+    "signal_skip_counts": {
+      "insufficient_signal": 1
+    }
+  }
+}

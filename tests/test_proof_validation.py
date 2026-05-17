@@ -83,12 +83,56 @@ def test_proof_validation_writes_summary_csv_and_report(tmp_path):
 
     artifacts = summary["artifacts"]
     assert summary["row_count"] == 2
+    assert summary["protocol"]["round_trip_cost_bps"] == 30.0
     assert summary["scorecard"]["overall"]["win_vs_baseline_count"] == 1
     assert summary["rows"][1]["excess_delta_vs_baseline_pct"] == 2.0
     assert Path(artifacts["summary_json"]).exists()
     assert Path(artifacts["summary_csv"]).exists()
     assert Path(artifacts["report_md"]).exists()
     assert "short_hybrid_05" in Path(artifacts["report_md"]).read_text(encoding="utf-8")
+
+
+def test_proof_validation_extended_champion_helpers():
+    from backtesting.proof_validation import champion_strategies, default_periods
+
+    periods = default_periods("extended")
+    strategies = champion_strategies()
+
+    assert [period.name for period in periods][:2] == ["validation_2023", "validation_2024"]
+    assert [strategy.strategy_id for strategy in strategies] == [
+        "deterministic_short",
+        "short_hybrid_05",
+        "deterministic_long",
+        "long_hybrid_05",
+    ]
+
+
+def test_backtest_cost_and_liquidity_helpers():
+    from backtesting.leader_backtest import (
+        RiskConfig,
+        _effective_position_value,
+        _risk_reject_reason,
+        _round_trip_cost_bps,
+        _round_trip_cost_return,
+    )
+
+    assert _round_trip_cost_bps(
+        transaction_cost_bps=15.0,
+        slippage_bps=5.0,
+        market_impact_bps=2.5,
+    ) == 45.0
+    assert _round_trip_cost_return(
+        transaction_cost_bps=15.0,
+        slippage_bps=5.0,
+        market_impact_bps=2.5,
+    ) == 0.0045
+    assert _effective_position_value(portfolio_value_krw=30_000_000, position_value_krw=0, top_n=3) == 10_000_000
+
+    reason = _risk_reject_reason(
+        {"avg_trading_value_20d": 100_000_000},
+        RiskConfig(position_value_krw=10_000_000, max_position_pct_avg_trading_value=5.0),
+    )
+    assert reason == "insufficient_liquidity_capacity"
 
 
 def test_proof_validation_resumes_completed_runs(tmp_path):

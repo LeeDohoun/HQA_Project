@@ -1,0 +1,441 @@
+{
+  "task_id": "bt-ai-validation_2026q1-vol_adjusted_momentum-m-top3-h60",
+  "mode": "backtest",
+  "result_type": "backtest",
+  "status": "completed",
+  "theme": "AI",
+  "theme_key": "ai",
+  "prediction_model": "vol_adjusted_momentum_technical_baseline_v1",
+  "period": {
+    "from_date": "2026-01-01",
+    "to_date": "2026-03-31",
+    "rebalance": "M",
+    "rebalance_count": 1,
+    "hold_days": 60
+  },
+  "strategy": {
+    "name": "vol_adjusted_momentum",
+    "label": "Volatility-adjusted momentum",
+    "description": "Long the strongest 20-day momentum per unit of 20-day volatility.",
+    "top_n": 3,
+    "min_history_days": 150,
+    "transaction_cost_bps": 15.0,
+    "slippage_bps": 5.0,
+    "market_impact_bps": 5.0,
+    "round_trip_cost_bps": 50.0,
+    "risk_filters": {
+      "min_avg_trading_value": 0.0,
+      "position_value_krw": 10000000.0,
+      "max_position_pct_avg_trading_value": 5.0,
+      "max_volatility_20d": 1.2,
+      "max_return_5d": 0.35,
+      "max_return_20d": 0.9,
+      "min_trend_150d": -1.0,
+      "min_market_breadth_pct": 40.0
+    },
+    "exit_rules": {
+      "stop_loss_pct": 0.0,
+      "take_profit_pct": 0.0,
+      "trailing_stop_pct": 15.0
+    },
+    "selection_inputs": [
+      "20-day return / 20-day annualized volatility",
+      "same point-in-time AI universe",
+      "same risk filters"
+    ],
+    "prediction_model": "vol_adjusted_momentum_technical_baseline_v1"
+  },
+  "metrics": {
+    "rebalance_count": 1,
+    "risk_off_count": 0,
+    "traded_rebalance_count": 1,
+    "position_count": 3,
+    "total_return_pct": -0.85,
+    "benchmark_return_pct": -2.14,
+    "excess_return_pct": 1.29,
+    "cagr_pct": -3.44,
+    "benchmark_cagr_pct": -8.5,
+    "mdd_pct": 0.0,
+    "benchmark_mdd_pct": 0.0,
+    "sharpe": 0.0,
+    "avg_period_return_pct": -0.85,
+    "avg_benchmark_period_return_pct": -2.14,
+    "win_rate_pct": 0.0,
+    "prediction_hit_rate_pct": 33.33,
+    "avg_position_return_pct": -0.35,
+    "median_position_return_pct": -6.85,
+    "loss_period_count": 1,
+    "max_consecutive_loss_periods": 1,
+    "worst_period_return_pct": -0.85,
+    "best_period_return_pct": -0.85
+  },
+  "leaders": [
+    {
+      "stock_name": "리노공업",
+      "stock_code": "058470",
+      "selection_count": 1,
+      "avg_leader_score": 61.0,
+      "avg_realized_return_pct": 16.63,
+      "win_rate_pct": 100.0
+    },
+    {
+      "stock_name": "한화에어로스페이스",
+      "stock_code": "012450",
+      "selection_count": 1,
+      "avg_leader_score": 63.0,
+      "avg_realized_return_pct": -6.85,
+      "win_rate_pct": 0.0
+    },
+    {
+      "stock_name": "더블유에스아이",
+      "stock_code": "299170",
+      "selection_count": 1,
+      "avg_leader_score": 56.0,
+      "avg_realized_return_pct": -10.84,
+      "win_rate_pct": 0.0
+    }
+  ],
+  "predictions": [
+    {
+      "as_of_date": "2026-01-27",
+      "entry_date": "2026-01-27",
+      "exit_date": "2026-02-06",
+      "stock_name": "한화에어로스페이스",
+      "stock_code": "012450",
+      "rank": 1,
+      "leader_score": 63,
+      "predicted_return_pct": 20.0,
+      "target_price": 1476000.0,
+      "realized_return_pct": -6.85,
+      "rsi_14": 73.10924369747899,
+      "bb_middle_20": 1176500.0,
+      "bb_upper_20": 1454686.628003576,
+      "bb_lower_20": 898313.3719964239,
+      "bb_percent_b": 0.5961584681189498
+    },
+    {
+      "as_of_date": "2026-01-27",
+      "entry_date": "2026-01-27",
+      "exit_date": "2026-02-02",
+      "stock_name": "리노공업",
+      "stock_code": "058470",
+      "rank": 2,
+      "leader_score": 61,
+      "predicted_return_pct": 20.0,
+      "target_price": 99960.0,
+      "realized_return_pct": 16.63,
+      "rsi_14": 87.74703557312253,
+      "bb_middle_20": 65865.0,
+      "bb_upper_20": 75815.13065240854,
+      "bb_lower_20": 55914.86934759146,
+      "bb_percent_b": 1.3761191490374887
+    },
+    {
+      "as_of_date": "2026-01-27",
+      "entry_date": "2026-01-27",
+      "exit_date": "2026-02-02",
+      "stock_name": "더블유에스아이",
+      "stock_code": "299170",
+      "rank": 3,
+      "leader_score": 56,
+      "predicted_return_pct": 20.0,
+      "target_price": 4656.0,
+      "realized_return_pct": -10.84,
+      "rsi_14": 62.65060240963856,
+      "bb_middle_20": 3529.75,
+      "bb_upper_20": 4351.294125412628,
+      "bb_lower_20": 2708.205874587372,
+      "bb_percent_b": 0.7131656652185807
+    }
+  ],
+  "positions": [
+    {
+      "as_of_date": "2026-01-27",
+      "entry_date": "2026-01-27",
+      "exit_date": "2026-02-06",
+      "planned_exit_date": "2026-04-27",
+      "exit_reason": "trailing_stop",
+      "stock_name": "한화에어로스페이스",
+      "stock_code": "012450",
+      "entry_price": 1230000.0,
+      "exit_price": 1145800.0,
+      "return_5d": -0.06035141329258975,
+      "return_20d": 0.4137931034482758,
+      "return_60d": 0.23742454728370221,
+      "trend_150d": 0.28020982951352025,
+      "volatility_20d": 0.6560736444861426,
+      "volume_ratio_20d": 0.5765598302038819,
+      "avg_trading_value_20d": 313412755000.0,
+      "doc_signal": 5.868034508142219,
+      "doc_counts": {
+        "dart": 49,
+        "forum": 0,
+        "news": 0
+      },
+      "return_60d_rank": 0.5869565217391305,
+      "return_20d_rank": 0.8260869565217391,
+      "trend_150d_rank": 0.5,
+      "volume_rank": 0.32608695652173914,
+      "doc_rank": 0.043478260869565216,
+      "low_vol_rank": 0.5652173913043478,
+      "leader_score": 63,
+      "target_price": 1476000.0,
+      "rsi_14": 73.10924369747899,
+      "bb_middle_20": 1176500.0,
+      "bb_upper_20": 1454686.628003576,
+      "bb_lower_20": 898313.3719964239,
+      "bb_percent_b": 0.5961584681189498,
+      "rank": 1,
+      "weight": 0.333333,
+      "realized_return_pct": -6.85,
+      "predicted_return_pct": 20.0
+    },
+    {
+      "as_of_date": "2026-01-27",
+      "entry_date": "2026-01-27",
+      "exit_date": "2026-02-02",
+      "planned_exit_date": "2026-04-27",
+      "exit_reason": "trailing_stop",
+      "stock_name": "리노공업",
+      "stock_code": "058470",
+      "entry_price": 83300.0,
+      "exit_price": 97155.0,
+      "return_5d": 0.2914728682170542,
+      "return_20d": 0.3633387888707038,
+      "return_60d": 0.43127147766323026,
+      "trend_150d": 0.511961375104367,
+      "volatility_20d": 0.595172137080679,
+      "volume_ratio_20d": 2.8592886429113737,
+      "avg_trading_value_20d": 48671296000.0,
+      "doc_signal": 8.899885151758204,
+      "doc_counts": {
+        "dart": 20,
+        "forum": 0,
+        "news": 36
+      },
+      "return_60d_rank": 0.717391304347826,
+      "return_20d_rank": 0.782608695652174,
+      "trend_150d_rank": 0.6739130434782609,
+      "volume_rank": 0.9782608695652174,
+      "doc_rank": 0.4782608695652174,
+      "low_vol_rank": 0.6086956521739131,
+      "leader_score": 61,
+      "target_price": 99960.0,
+      "rsi_14": 87.74703557312253,
+      "bb_middle_20": 65865.0,
+      "bb_upper_20": 75815.13065240854,
+      "bb_lower_20": 55914.86934759146,
+      "bb_percent_b": 1.3761191490374887,
+      "rank": 2,
+      "weight": 0.333333,
+      "realized_return_pct": 16.63,
+      "predicted_return_pct": 20.0
+    },
+    {
+      "as_of_date": "2026-01-27",
+      "entry_date": "2026-01-27",
+      "exit_date": "2026-02-02",
+      "planned_exit_date": "2026-04-27",
+      "exit_reason": "trailing_stop",
+      "stock_name": "더블유에스아이",
+      "stock_code": "299170",
+      "entry_price": 3880.0,
+      "exit_price": 3459.5,
+      "return_5d": 0.017038007863696025,
+      "return_20d": 0.6581196581196582,
+      "return_60d": 0.9303482587064678,
+      "trend_150d": 0.8345616280315973,
+      "volatility_20d": 1.1812998230424985,
+      "volume_ratio_20d": 0.6939180198726653,
+      "avg_trading_value_20d": 21378866370.5,
+      "doc_signal": 9.102327869252825,
+      "doc_counts": {
+        "dart": 46,
+        "forum": 0,
+        "news": 15
+      },
+      "return_60d_rank": 0.8913043478260869,
+      "return_20d_rank": 0.9130434782608695,
+      "trend_150d_rank": 0.9347826086956522,
+      "volume_rank": 0.45652173913043476,
+      "doc_rank": 0.5869565217391305,
+      "low_vol_rank": 0.13043478260869565,
+      "leader_score": 56,
+      "target_price": 4656.0,
+      "rsi_14": 62.65060240963856,
+      "bb_middle_20": 3529.75,
+      "bb_upper_20": 4351.294125412628,
+      "bb_lower_20": 2708.205874587372,
+      "bb_percent_b": 0.7131656652185807,
+      "rank": 3,
+      "weight": 0.333333,
+      "realized_return_pct": -10.84,
+      "predicted_return_pct": 20.0
+    }
+  ],
+  "trades": [
+    {
+      "date": "2026-01-27",
+      "stock_name": "한화에어로스페이스",
+      "stock_code": "012450",
+      "side": "BUY",
+      "price": 1230000.0,
+      "weight": 0.333333,
+      "reason": "rank 1 leader_score 63"
+    },
+    {
+      "date": "2026-02-06",
+      "stock_name": "한화에어로스페이스",
+      "stock_code": "012450",
+      "side": "SELL",
+      "price": 1145800.0,
+      "weight": 0.333333,
+      "realized_return_pct": -6.85,
+      "reason": "trailing_stop"
+    },
+    {
+      "date": "2026-01-27",
+      "stock_name": "리노공업",
+      "stock_code": "058470",
+      "side": "BUY",
+      "price": 83300.0,
+      "weight": 0.333333,
+      "reason": "rank 2 leader_score 61"
+    },
+    {
+      "date": "2026-02-02",
+      "stock_name": "리노공업",
+      "stock_code": "058470",
+      "side": "SELL",
+      "price": 97155.0,
+      "weight": 0.333333,
+      "realized_return_pct": 16.63,
+      "reason": "trailing_stop"
+    },
+    {
+      "date": "2026-01-27",
+      "stock_name": "더블유에스아이",
+      "stock_code": "299170",
+      "side": "BUY",
+      "price": 3880.0,
+      "weight": 0.333333,
+      "reason": "rank 3 leader_score 56"
+    },
+    {
+      "date": "2026-02-02",
+      "stock_name": "더블유에스아이",
+      "stock_code": "299170",
+      "side": "SELL",
+      "price": 3459.5,
+      "weight": 0.333333,
+      "realized_return_pct": -10.84,
+      "reason": "trailing_stop"
+    }
+  ],
+  "periods": [
+    {
+      "as_of_date": "2026-01-27",
+      "entry_date": "2026-01-27",
+      "exit_date": "2026-02-06",
+      "selected_count": 3,
+      "active_target_count": 48,
+      "eligible_count": 46,
+      "risk_eligible_count": 37,
+      "risk_reject_count": 9,
+      "market_breadth_pct": 73.91,
+      "portfolio_return_pct": -0.85,
+      "benchmark_return_pct": -2.14,
+      "excess_return_pct": 1.29,
+      "top_symbols": [
+        {
+          "stock_name": "한화에어로스페이스",
+          "stock_code": "012450",
+          "technical_score": 63.07,
+          "rsi_14": 73.11,
+          "bb_percent_b": 0.5962,
+          "realized_return_pct": -6.85
+        },
+        {
+          "stock_name": "리노공업",
+          "stock_code": "058470",
+          "technical_score": 61.05,
+          "rsi_14": 87.75,
+          "bb_percent_b": 1.3761,
+          "realized_return_pct": 16.63
+        },
+        {
+          "stock_name": "더블유에스아이",
+          "stock_code": "299170",
+          "technical_score": 55.71,
+          "rsi_14": 62.65,
+          "bb_percent_b": 0.7132,
+          "realized_return_pct": -10.84
+        }
+      ]
+    }
+  ],
+  "equity_curve": [
+    {
+      "date": "2026-02-06",
+      "equity": 0.991498,
+      "benchmark_equity": 0.978597,
+      "period_return_pct": -0.85,
+      "benchmark_return_pct": -2.14
+    }
+  ],
+  "risk": {
+    "filters": {
+      "min_avg_trading_value": 0.0,
+      "position_value_krw": 10000000.0,
+      "max_position_pct_avg_trading_value": 5.0,
+      "max_volatility_20d": 1.2,
+      "max_return_5d": 0.35,
+      "max_return_20d": 0.9,
+      "min_trend_150d": -1.0,
+      "min_market_breadth_pct": 40.0
+    },
+    "reject_counts": {
+      "high_volatility": 4,
+      "insufficient_liquidity_capacity": 4,
+      "overheated_5d": 1
+    }
+  },
+  "execution": {
+    "exit_rules": {
+      "stop_loss_pct": 0.0,
+      "take_profit_pct": 0.0,
+      "trailing_stop_pct": 15.0
+    },
+    "costs": {
+      "transaction_cost_bps": 15.0,
+      "slippage_bps": 5.0,
+      "market_impact_bps": 5.0,
+      "round_trip_cost_bps": 50.0
+    },
+    "exit_counts": {
+      "trailing_stop": 3
+    },
+    "same_day_ohlc_policy": "stop_or_trailing_stop_before_take_profit"
+  },
+  "artifacts": {
+    "result_json": "data/backtest_results/multi_agent_validation/phase1/technical_long_realistic_costs/bt-ai-validation_2026q1-vol_adjusted_momentum-m-top3-h60.json"
+  },
+  "warnings": [
+    "future returns are used only for evaluation after each as_of_date signal.",
+    "selection uses deterministic price/document features, not the full LLM ThemeLeaderOrchestrator.",
+    "theme_membership may be inferred from local corpus evidence unless an official historical source is supplied."
+  ],
+  "metadata": {
+    "generated_at": "2026-05-17T20:07:26.169133",
+    "data_dir": "data",
+    "target_count": 50,
+    "membership_count": 50,
+    "point_in_time_universe": true,
+    "membership_sources": [
+      "local_corpus_inferred"
+    ],
+    "price_stock_count": 50,
+    "document_signal_count": 30497,
+    "signal_skip_counts": {}
+  }
+}

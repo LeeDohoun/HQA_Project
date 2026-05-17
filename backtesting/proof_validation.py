@@ -59,6 +59,11 @@ def run_proof_validation(
     strategies: List[StrategySpec],
     min_history_days: int = 150,
     transaction_cost_bps: float = 15.0,
+    slippage_bps: float = 0.0,
+    market_impact_bps: float = 0.0,
+    portfolio_value_krw: float = 0.0,
+    position_value_krw: float = 0.0,
+    max_position_pct_avg_trading_value: float = 0.0,
     min_avg_trading_value: float = 0.0,
     max_volatility_20d: float = 1.2,
     max_return_5d: float = 0.35,
@@ -106,6 +111,11 @@ def run_proof_validation(
                 task_id=task_id,
                 min_history_days=min_history_days,
                 transaction_cost_bps=transaction_cost_bps,
+                slippage_bps=slippage_bps,
+                market_impact_bps=market_impact_bps,
+                portfolio_value_krw=portfolio_value_krw,
+                position_value_krw=position_value_krw,
+                max_position_pct_avg_trading_value=max_position_pct_avg_trading_value,
                 min_avg_trading_value=min_avg_trading_value,
                 max_volatility_20d=max_volatility_20d,
                 max_return_5d=max_return_5d,
@@ -133,6 +143,11 @@ def run_proof_validation(
                     error=str(exc),
                     min_history_days=min_history_days,
                     transaction_cost_bps=transaction_cost_bps,
+                    slippage_bps=slippage_bps,
+                    market_impact_bps=market_impact_bps,
+                    portfolio_value_krw=portfolio_value_krw,
+                    position_value_krw=position_value_krw,
+                    max_position_pct_avg_trading_value=max_position_pct_avg_trading_value,
                     min_avg_trading_value=min_avg_trading_value,
                     max_volatility_20d=max_volatility_20d,
                     max_return_5d=max_return_5d,
@@ -155,6 +170,25 @@ def run_proof_validation(
         periods=periods,
         strategies=strategies,
         rows=rows,
+        protocol={
+            "min_history_days": min_history_days,
+            "transaction_cost_bps": transaction_cost_bps,
+            "slippage_bps": slippage_bps,
+            "market_impact_bps": market_impact_bps,
+            "round_trip_cost_bps": (transaction_cost_bps + slippage_bps + market_impact_bps) * 2.0,
+            "portfolio_value_krw": portfolio_value_krw,
+            "position_value_krw": position_value_krw,
+            "max_position_pct_avg_trading_value": max_position_pct_avg_trading_value,
+            "min_avg_trading_value": min_avg_trading_value,
+            "max_volatility_20d": max_volatility_20d,
+            "max_return_5d": max_return_5d,
+            "max_return_20d": max_return_20d,
+            "min_trend_150d": min_trend_150d,
+            "min_market_breadth_pct": min_market_breadth_pct,
+            "stop_loss_pct": stop_loss_pct,
+            "take_profit_pct": take_profit_pct,
+            "trailing_stop_pct": trailing_stop_pct,
+        },
     )
     _write_artifacts(summary, rows, results, out_dir)
     return summary
@@ -189,6 +223,11 @@ def _skipped_no_rebalance_result(
     error: str,
     min_history_days: int,
     transaction_cost_bps: float,
+    slippage_bps: float,
+    market_impact_bps: float,
+    portfolio_value_krw: float,
+    position_value_krw: float,
+    max_position_pct_avg_trading_value: float,
     min_avg_trading_value: float,
     max_volatility_20d: float,
     max_return_5d: float,
@@ -220,8 +259,14 @@ def _skipped_no_rebalance_result(
             "top_n": strategy.top_n,
             "min_history_days": min_history_days,
             "transaction_cost_bps": transaction_cost_bps,
+            "slippage_bps": slippage_bps,
+            "market_impact_bps": market_impact_bps,
+            "round_trip_cost_bps": (transaction_cost_bps + slippage_bps + market_impact_bps) * 2.0,
             "risk_filters": {
                 "min_avg_trading_value": min_avg_trading_value,
+                "portfolio_value_krw": portfolio_value_krw,
+                "position_value_krw": position_value_krw,
+                "max_position_pct_avg_trading_value": max_position_pct_avg_trading_value,
                 "max_volatility_20d": max_volatility_20d,
                 "max_return_5d": max_return_5d,
                 "max_return_20d": max_return_20d,
@@ -260,6 +305,12 @@ def _skipped_no_rebalance_result(
                 "take_profit_pct": take_profit_pct,
                 "trailing_stop_pct": trailing_stop_pct,
             },
+            "costs": {
+                "transaction_cost_bps": transaction_cost_bps,
+                "slippage_bps": slippage_bps,
+                "market_impact_bps": market_impact_bps,
+                "round_trip_cost_bps": (transaction_cost_bps + slippage_bps + market_impact_bps) * 2.0,
+            },
             "exit_counts": {},
         },
         "artifacts": {"result_json": str(result_path)},
@@ -296,6 +347,10 @@ def _empty_metrics() -> Dict[str, Any]:
         "prediction_hit_rate_pct": 0.0,
         "avg_position_return_pct": 0.0,
         "median_position_return_pct": 0.0,
+        "loss_period_count": 0,
+        "max_consecutive_loss_periods": 0,
+        "worst_period_return_pct": 0.0,
+        "best_period_return_pct": 0.0,
     }
 
 
@@ -317,6 +372,11 @@ def _backtest_kwargs(
     task_id: str,
     min_history_days: int,
     transaction_cost_bps: float,
+    slippage_bps: float,
+    market_impact_bps: float,
+    portfolio_value_krw: float,
+    position_value_krw: float,
+    max_position_pct_avg_trading_value: float,
     min_avg_trading_value: float,
     max_volatility_20d: float,
     max_return_5d: float,
@@ -339,6 +399,11 @@ def _backtest_kwargs(
         "hold_days": strategy.hold_days,
         "min_history_days": min_history_days,
         "transaction_cost_bps": transaction_cost_bps,
+        "slippage_bps": slippage_bps,
+        "market_impact_bps": market_impact_bps,
+        "portfolio_value_krw": portfolio_value_krw,
+        "position_value_krw": position_value_krw,
+        "max_position_pct_avg_trading_value": max_position_pct_avg_trading_value,
         "min_avg_trading_value": min_avg_trading_value,
         "max_volatility_20d": max_volatility_20d,
         "max_return_5d": max_return_5d,
@@ -404,6 +469,10 @@ def _result_row(result: Dict[str, Any], *, period: PeriodSpec, strategy: Strateg
         "prediction_hit_rate_pct": metrics.get("prediction_hit_rate_pct", 0.0),
         "avg_position_return_pct": metrics.get("avg_position_return_pct", 0.0),
         "median_position_return_pct": metrics.get("median_position_return_pct", 0.0),
+        "loss_period_count": metrics.get("loss_period_count", 0),
+        "max_consecutive_loss_periods": metrics.get("max_consecutive_loss_periods", 0),
+        "worst_period_return_pct": metrics.get("worst_period_return_pct", 0.0),
+        "best_period_return_pct": metrics.get("best_period_return_pct", 0.0),
         "selected_names": "/".join(selected_names[:10]),
         "selected_codes": "/".join(selected_codes[:10]),
         "period_count": len(periods),
@@ -453,6 +522,7 @@ def _build_summary(
     periods: List[PeriodSpec],
     strategies: List[StrategySpec],
     rows: List[Dict[str, Any]],
+    protocol: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     scorecard = _scorecard(rows)
     return {
@@ -463,6 +533,7 @@ def _build_summary(
         "output_dir": str(output_dir),
         "periods": [asdict(period) for period in periods],
         "strategies": [asdict(strategy) for strategy in strategies],
+        "protocol": protocol or {},
         "row_count": len(rows),
         "scorecard": scorecard,
         "best_by_period_horizon": _best_by_period_horizon(rows),
@@ -596,9 +667,18 @@ def _render_report(summary: Dict[str, Any]) -> str:
         "",
         "This report fixes short/long strategy definitions before comparing them against matching deterministic baselines.",
         "",
+        "| Cost/Risk Input | Value |",
+        "|---|---:|",
+    ]
+    for key, value in (summary.get("protocol") or {}).items():
+        lines.append(f"| {key} | {value} |")
+    lines.extend(
+        [
+            "",
         "| Strategy | Horizon | Rebalance | Hold Days | LLM | Weight | Scope | Top K |",
         "|---|---|---:|---:|---|---:|---|---:|",
-    ]
+        ]
+    )
     for strategy in summary["strategies"]:
         lines.append(
             "| {strategy_id} | {horizon} | {rebalance} | {hold_days} | {llm} | {weight} | {scope} | {top_k} |".format(
@@ -633,13 +713,13 @@ def _render_report(summary: Dict[str, Any]) -> str:
             "",
             "## Period Results",
             "",
-        "| Period | Horizon | Strategy | Status | Return | Benchmark | Excess | Delta vs Baseline | MDD | Hit Rate | Picks |",
-        "|---|---|---|---|---:|---:|---:|---:|---:|---:|---|",
+        "| Period | Horizon | Strategy | Status | Return | Benchmark | Excess | Delta vs Baseline | MDD | Worst Period | Loss Streak | Hit Rate | Picks |",
+        "|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
         ]
     )
     for row in rows:
         lines.append(
-            "| {period} | {horizon} | {strategy} | {status} | {ret:.2f}% | {bench:.2f}% | {excess:.2f}% | {delta:.2f}% | {mdd:.2f}% | {hit:.2f}% | {picks} |".format(
+            "| {period} | {horizon} | {strategy} | {status} | {ret:.2f}% | {bench:.2f}% | {excess:.2f}% | {delta:.2f}% | {mdd:.2f}% | {worst:.2f}% | {streak} | {hit:.2f}% | {picks} |".format(
                 period=row["period"],
                 horizon=row["horizon"],
                 strategy=row["strategy_id"],
@@ -649,6 +729,8 @@ def _render_report(summary: Dict[str, Any]) -> str:
                 excess=float(row["excess_return_pct"]),
                 delta=float(row["excess_delta_vs_baseline_pct"]),
                 mdd=float(row["mdd_pct"]),
+                worst=float(row.get("worst_period_return_pct") or 0.0),
+                streak=int(row.get("max_consecutive_loss_periods") or 0),
                 hit=float(row["prediction_hit_rate_pct"]),
                 picks=str(row.get("selected_names") or "")[:120],
             )
@@ -775,6 +857,13 @@ def default_strategies(*, short_top_k: int = 10, long_top_k: int = 10) -> List[S
     ]
 
 
+def champion_strategies(*, short_top_k: int = 10, long_top_k: int = 10) -> List[StrategySpec]:
+    return select_strategies(
+        default_strategies(short_top_k=short_top_k, long_top_k=long_top_k),
+        "deterministic_short,short_hybrid_05,deterministic_long,long_hybrid_05",
+    )
+
+
 def _apply_long_hold_days(strategies: List[StrategySpec], hold_days: int) -> List[StrategySpec]:
     output: List[StrategySpec] = []
     for strategy in strategies:
@@ -790,6 +879,14 @@ def default_periods(preset: str) -> List[PeriodSpec]:
         return [PeriodSpec(name="smoke_2026jan", from_date="20260101", to_date="20260116", role="smoke")]
     if preset == "proof":
         return [
+            PeriodSpec(name="tune_2025", from_date="20250101", to_date="20251231", role="tuning_reference"),
+            PeriodSpec(name="validation_2026q1", from_date="20260101", to_date="20260331", role="validation"),
+            PeriodSpec(name="recent_2026apr_may", from_date="20260401", to_date="20260507", role="recent_check"),
+        ]
+    if preset == "extended":
+        return [
+            PeriodSpec(name="validation_2023", from_date="20230101", to_date="20231231", role="validation"),
+            PeriodSpec(name="validation_2024", from_date="20240101", to_date="20241231", role="validation"),
             PeriodSpec(name="tune_2025", from_date="20250101", to_date="20251231", role="tuning_reference"),
             PeriodSpec(name="validation_2026q1", from_date="20260101", to_date="20260331", role="validation"),
             PeriodSpec(name="recent_2026apr_may", from_date="20260401", to_date="20260507", role="recent_check"),
@@ -824,7 +921,7 @@ def main() -> int:
     parser.add_argument("--theme", default="AI")
     parser.add_argument("--theme-key", default="ai")
     parser.add_argument("--output-dir", default="")
-    parser.add_argument("--preset", choices=["smoke", "proof"], default="smoke")
+    parser.add_argument("--preset", choices=["smoke", "proof", "extended"], default="smoke")
     parser.add_argument(
         "--periods",
         default="",
@@ -838,8 +935,18 @@ def main() -> int:
     parser.add_argument("--short-top-k", type=int, default=10)
     parser.add_argument("--long-top-k", type=int, default=10)
     parser.add_argument("--long-hold-days", type=int, default=60)
+    parser.add_argument(
+        "--champion-only",
+        action="store_true",
+        help="Run the fixed project representative set: short_hybrid_05 and long_hybrid_05 plus matching deterministic baselines.",
+    )
     parser.add_argument("--min-history-days", type=int, default=150)
     parser.add_argument("--transaction-cost-bps", type=float, default=15.0)
+    parser.add_argument("--slippage-bps", type=float, default=0.0)
+    parser.add_argument("--market-impact-bps", type=float, default=0.0)
+    parser.add_argument("--portfolio-value-krw", type=float, default=0.0)
+    parser.add_argument("--position-value-krw", type=float, default=0.0)
+    parser.add_argument("--max-position-pct-avg-trading-value", type=float, default=0.0)
     parser.add_argument("--min-avg-trading-value", type=float, default=0.0)
     parser.add_argument("--max-volatility-20d", type=float, default=1.2)
     parser.add_argument("--max-return-5d", type=float, default=0.35)
@@ -866,7 +973,11 @@ def main() -> int:
         os.environ["LLM_PROVIDER"] = "mock"
 
     output_dir = args.output_dir or str(Path(args.data_dir) / "backtest_results" / "proof" / args.preset)
-    strategies = default_strategies(short_top_k=args.short_top_k, long_top_k=args.long_top_k)
+    strategies = (
+        champion_strategies(short_top_k=args.short_top_k, long_top_k=args.long_top_k)
+        if args.champion_only
+        else default_strategies(short_top_k=args.short_top_k, long_top_k=args.long_top_k)
+    )
     strategies = _apply_long_hold_days(strategies, args.long_hold_days)
     strategies = select_strategies(strategies, args.strategies)
     periods = parse_periods(args.periods) if args.periods else default_periods(args.preset)
@@ -880,6 +991,11 @@ def main() -> int:
         strategies=strategies,
         min_history_days=args.min_history_days,
         transaction_cost_bps=args.transaction_cost_bps,
+        slippage_bps=args.slippage_bps,
+        market_impact_bps=args.market_impact_bps,
+        portfolio_value_krw=args.portfolio_value_krw,
+        position_value_krw=args.position_value_krw,
+        max_position_pct_avg_trading_value=args.max_position_pct_avg_trading_value,
         min_avg_trading_value=args.min_avg_trading_value,
         max_volatility_20d=args.max_volatility_20d,
         max_return_5d=args.max_return_5d,

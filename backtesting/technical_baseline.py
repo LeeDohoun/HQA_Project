@@ -30,8 +30,10 @@ from backtesting.leader_backtest import (
     _active_target_by_code,
     _build_common_calendar,
     _compute_metrics,
+    _clip,
     _default_warnings,
     _display_path,
+    _effective_position_value,
     _exit_counts,
     _fmt_ymd,
     _index_docs,
@@ -41,6 +43,8 @@ from backtesting.leader_backtest import (
     _pct,
     _positions_to_trades,
     _require_ymd,
+    _round_trip_cost_bps,
+    _round_trip_cost_return,
     _score_universe,
     _select_rebalance_dates,
     _stock_names_from_prices,
@@ -78,6 +82,18 @@ BASELINE_SPECS: Dict[str, Dict[str, Any]] = {
         "score_key": "bollinger_score",
         "sort_reverse": True,
     },
+    "momentum_20d": {
+        "label": "Highest 20-day momentum",
+        "description": "Long the strongest 20-day price momentum names after the same risk filters.",
+        "score_key": "momentum_score",
+        "sort_reverse": True,
+    },
+    "vol_adjusted_momentum": {
+        "label": "Volatility-adjusted momentum",
+        "description": "Long the strongest 20-day momentum per unit of 20-day volatility.",
+        "score_key": "vol_adjusted_momentum_score",
+        "sort_reverse": True,
+    },
 }
 
 
@@ -94,6 +110,11 @@ def run_technical_baseline(
     baseline: str = "rsi_oversold",
     min_history_days: int = 150,
     transaction_cost_bps: float = 15.0,
+    slippage_bps: float = 0.0,
+    market_impact_bps: float = 0.0,
+    portfolio_value_krw: float = 0.0,
+    position_value_krw: float = 0.0,
+    max_position_pct_avg_trading_value: float = 0.0,
     min_avg_trading_value: float = 0.0,
     max_volatility_20d: float = 0.0,
     max_return_5d: float = 0.0,
@@ -115,6 +136,12 @@ def run_technical_baseline(
     run_id = task_id or f"bt-{theme_key}-{from_ymd}-{to_ymd}-{baseline}-top{top_n}-h{hold_days}"
     risk_config = RiskConfig(
         min_avg_trading_value=min_avg_trading_value,
+        position_value_krw=_effective_position_value(
+            portfolio_value_krw=portfolio_value_krw,
+            position_value_krw=position_value_krw,
+            top_n=top_n,
+        ),
+        max_position_pct_avg_trading_value=max_position_pct_avg_trading_value,
         max_volatility_20d=max_volatility_20d,
         max_return_5d=max_return_5d,
         max_return_20d=max_return_20d,
@@ -157,7 +184,11 @@ def run_technical_baseline(
     signal_skip_counts: Dict[str, int] = defaultdict(int)
     equity = 1.0
     benchmark_equity = 1.0
-    transaction_cost = transaction_cost_bps / 10000.0
+    round_trip_cost = _round_trip_cost_return(
+        transaction_cost_bps=transaction_cost_bps,
+        slippage_bps=slippage_bps,
+        market_impact_bps=market_impact_bps,
+    )
 
     for as_of_ymd in rebalance_dates:
         active_targets = _active_target_by_code(target_by_code, memberships, as_of_ymd)
@@ -180,7 +211,7 @@ def run_technical_baseline(
             continue
 
         benchmark_return = float(np.mean([row["realized_return"] for row in eligible]))
-        benchmark_net_return = benchmark_return - (transaction_cost * 2)
+        benchmark_net_return = benchmark_return - round_trip_cost
         market_breadth_pct = _market_breadth_pct(eligible)
         filtered, rejected = _apply_risk_filters(eligible, risk_config)
         _add_counts(risk_reject_counts, rejected)
@@ -230,7 +261,7 @@ def run_technical_baseline(
 
         selected = candidates[:top_n]
         selected_return = float(np.mean([row["realized_return"] for row in selected]))
-        selected_net_return = selected_return - (transaction_cost * 2)
+        selected_net_return = selected_return - round_trip_cost
         portfolio_exit_date = _latest_exit_date(selected)
         equity *= 1.0 + selected_net_return
         benchmark_equity *= 1.0 + benchmark_net_return
@@ -304,6 +335,13 @@ def run_technical_baseline(
             "top_n": top_n,
             "min_history_days": min_history_days,
             "transaction_cost_bps": transaction_cost_bps,
+            "slippage_bps": slippage_bps,
+            "market_impact_bps": market_impact_bps,
+            "round_trip_cost_bps": _round_trip_cost_bps(
+                transaction_cost_bps=transaction_cost_bps,
+                slippage_bps=slippage_bps,
+                market_impact_bps=market_impact_bps,
+            ),
             "risk_filters": risk_config.to_dict(),
             "exit_rules": exit_config.to_dict(),
             "selection_inputs": _selection_inputs(baseline),
@@ -340,6 +378,16 @@ def run_technical_baseline(
         },
         "execution": {
             "exit_rules": exit_config.to_dict(),
+            "costs": {
+                "transaction_cost_bps": transaction_cost_bps,
+                "slippage_bps": slippage_bps,
+                "market_impact_bps": market_impact_bps,
+                "round_trip_cost_bps": _round_trip_cost_bps(
+                    transaction_cost_bps=transaction_cost_bps,
+                    slippage_bps=slippage_bps,
+                    market_impact_bps=market_impact_bps,
+                ),
+            },
             "exit_counts": _exit_counts(positions),
             "same_day_ohlc_policy": "stop_or_trailing_stop_before_take_profit",
         },
@@ -376,6 +424,11 @@ def run_baseline_sweep(
     hold_days: int = 5,
     min_history_days: int = 150,
     transaction_cost_bps: float = 15.0,
+    slippage_bps: float = 0.0,
+    market_impact_bps: float = 0.0,
+    portfolio_value_krw: float = 0.0,
+    position_value_krw: float = 0.0,
+    max_position_pct_avg_trading_value: float = 0.0,
     min_avg_trading_value: float = 0.0,
     max_volatility_20d: float = 0.0,
     max_return_5d: float = 0.0,
@@ -409,6 +462,11 @@ def run_baseline_sweep(
                 baseline=baseline,
                 min_history_days=min_history_days,
                 transaction_cost_bps=transaction_cost_bps,
+                slippage_bps=slippage_bps,
+                market_impact_bps=market_impact_bps,
+                portfolio_value_krw=portfolio_value_krw,
+                position_value_krw=position_value_krw,
+                max_position_pct_avg_trading_value=max_position_pct_avg_trading_value,
                 min_avg_trading_value=min_avg_trading_value,
                 max_volatility_20d=max_volatility_20d,
                 max_return_5d=max_return_5d,
@@ -447,6 +505,13 @@ def run_baseline_sweep(
                     "stop_loss_pct": stop_loss_pct,
                     "take_profit_pct": take_profit_pct,
                     "trailing_stop_pct": trailing_stop_pct,
+                    "slippage_bps": slippage_bps,
+                    "market_impact_bps": market_impact_bps,
+                    "round_trip_cost_bps": _round_trip_cost_bps(
+                        transaction_cost_bps=transaction_cost_bps,
+                        slippage_bps=slippage_bps,
+                        market_impact_bps=market_impact_bps,
+                    ),
                     "result_json": result["artifacts"].get("result_json", ""),
                 }
             )
@@ -463,6 +528,12 @@ def run_baseline_sweep(
         "hold_days": hold_days,
         "risk_filters": RiskConfig(
             min_avg_trading_value=min_avg_trading_value,
+            position_value_krw=_effective_position_value(
+                portfolio_value_krw=portfolio_value_krw,
+                position_value_krw=position_value_krw,
+                top_n=top_n,
+            ),
+            max_position_pct_avg_trading_value=max_position_pct_avg_trading_value,
             max_volatility_20d=max_volatility_20d,
             max_return_5d=max_return_5d,
             max_return_20d=max_return_20d,
@@ -474,6 +545,16 @@ def run_baseline_sweep(
             take_profit_pct=take_profit_pct,
             trailing_stop_pct=trailing_stop_pct,
         ).to_dict(),
+        "execution_costs": {
+            "transaction_cost_bps": transaction_cost_bps,
+            "slippage_bps": slippage_bps,
+            "market_impact_bps": market_impact_bps,
+            "round_trip_cost_bps": _round_trip_cost_bps(
+                transaction_cost_bps=transaction_cost_bps,
+                slippage_bps=slippage_bps,
+                market_impact_bps=market_impact_bps,
+            ),
+        },
         "rows": rows,
     }
     json_path = out_dir / f"technical-baselines-{theme_key}.json"
@@ -562,7 +643,7 @@ def _passes_signal(baseline: str, row: Dict[str, Any]) -> bool:
         return float(row.get("rsi_14") or 100.0) <= 30.0
     if baseline == "bollinger_lower":
         return float(row.get("bb_percent_b") or 1.0) <= 0.0
-    if baseline in {"rsi_ranked", "bollinger_ranked"}:
+    if baseline in {"rsi_ranked", "bollinger_ranked", "momentum_20d", "vol_adjusted_momentum"}:
         return True
     raise ValueError(f"unknown baseline: {baseline}")
 
@@ -574,6 +655,11 @@ def _technical_score(baseline: str, row: Dict[str, Any]) -> float:
     if baseline.startswith("bollinger"):
         percent_b = float(row.get("bb_percent_b") or 1.0)
         return max(0.0, (1.0 - percent_b) * 100.0)
+    if baseline == "momentum_20d":
+        return float(row.get("return_20d") or 0.0) * 100.0
+    if baseline == "vol_adjusted_momentum":
+        volatility = max(0.05, float(row.get("volatility_20d") or 0.0))
+        return float(row.get("return_20d") or 0.0) / volatility * 100.0
     raise ValueError(f"unknown baseline: {baseline}")
 
 
@@ -581,8 +667,13 @@ def _technical_predicted_return(row: Dict[str, Any], baseline: str) -> float:
     if baseline.startswith("rsi"):
         rsi = float(row.get("rsi_14") or 50.0)
         return min(0.15, max(0.0, (30.0 - rsi) / 100.0))
-    percent_b = float(row.get("bb_percent_b") or 0.5)
-    return min(0.15, max(0.0, -percent_b * 0.2))
+    if baseline.startswith("bollinger"):
+        percent_b = float(row.get("bb_percent_b") or 0.5)
+        return min(0.15, max(0.0, -percent_b * 0.2))
+    if baseline == "vol_adjusted_momentum":
+        volatility = max(0.05, float(row.get("volatility_20d") or 0.0))
+        return _clip(float(row.get("return_20d") or 0.0) / volatility, -0.2, 0.2)
+    return _clip(float(row.get("return_20d") or 0.0), -0.2, 0.2)
 
 
 def _period_payload(
@@ -660,7 +751,11 @@ def _optional_technical_payload(row: Dict[str, Any]) -> Dict[str, Any]:
 def _selection_inputs(baseline: str) -> List[str]:
     if baseline.startswith("rsi"):
         return ["RSI(14)", "same point-in-time AI universe", "same risk filters"]
-    return ["20-day Bollinger Bands (2 std)", "same point-in-time AI universe", "same risk filters"]
+    if baseline.startswith("bollinger"):
+        return ["20-day Bollinger Bands (2 std)", "same point-in-time AI universe", "same risk filters"]
+    if baseline == "vol_adjusted_momentum":
+        return ["20-day return / 20-day annualized volatility", "same point-in-time AI universe", "same risk filters"]
+    return ["20-day return momentum", "same point-in-time AI universe", "same risk filters"]
 
 
 def _write_csv(path: Path, rows: List[Dict[str, Any]]) -> None:
@@ -713,6 +808,11 @@ def main() -> int:
     parser.add_argument("--hold-days", type=int, default=5)
     parser.add_argument("--min-history-days", type=int, default=150)
     parser.add_argument("--transaction-cost-bps", type=float, default=15.0)
+    parser.add_argument("--slippage-bps", type=float, default=0.0)
+    parser.add_argument("--market-impact-bps", type=float, default=0.0)
+    parser.add_argument("--portfolio-value-krw", type=float, default=0.0)
+    parser.add_argument("--position-value-krw", type=float, default=0.0)
+    parser.add_argument("--max-position-pct-avg-trading-value", type=float, default=0.0)
     parser.add_argument("--min-avg-trading-value", type=float, default=0.0)
     parser.add_argument("--max-volatility-20d", type=float, default=0.0)
     parser.add_argument("--max-return-5d", type=float, default=0.0)
@@ -735,6 +835,11 @@ def main() -> int:
         "hold_days": args.hold_days,
         "min_history_days": args.min_history_days,
         "transaction_cost_bps": args.transaction_cost_bps,
+        "slippage_bps": args.slippage_bps,
+        "market_impact_bps": args.market_impact_bps,
+        "portfolio_value_krw": args.portfolio_value_krw,
+        "position_value_krw": args.position_value_krw,
+        "max_position_pct_avg_trading_value": args.max_position_pct_avg_trading_value,
         "min_avg_trading_value": args.min_avg_trading_value,
         "max_volatility_20d": args.max_volatility_20d,
         "max_return_5d": args.max_return_5d,

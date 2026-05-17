@@ -1,0 +1,266 @@
+{
+  "task_id": "bt-ai-validation_2023-bollinger_lower-m-top3-h60",
+  "mode": "backtest",
+  "result_type": "backtest",
+  "status": "completed",
+  "theme": "AI",
+  "theme_key": "ai",
+  "prediction_model": "bollinger_lower_technical_baseline_v1",
+  "period": {
+    "from_date": "2023-01-01",
+    "to_date": "2023-12-31",
+    "rebalance": "M",
+    "rebalance_count": 5,
+    "hold_days": 60
+  },
+  "strategy": {
+    "name": "bollinger_lower",
+    "label": "Close <= Bollinger lower band",
+    "description": "Long names touching or breaking the 20-day lower Bollinger band.",
+    "top_n": 3,
+    "min_history_days": 150,
+    "transaction_cost_bps": 15.0,
+    "slippage_bps": 5.0,
+    "market_impact_bps": 5.0,
+    "round_trip_cost_bps": 50.0,
+    "risk_filters": {
+      "min_avg_trading_value": 0.0,
+      "position_value_krw": 10000000.0,
+      "max_position_pct_avg_trading_value": 5.0,
+      "max_volatility_20d": 1.2,
+      "max_return_5d": 0.35,
+      "max_return_20d": 0.9,
+      "min_trend_150d": -1.0,
+      "min_market_breadth_pct": 40.0
+    },
+    "exit_rules": {
+      "stop_loss_pct": 0.0,
+      "take_profit_pct": 0.0,
+      "trailing_stop_pct": 15.0
+    },
+    "selection_inputs": [
+      "20-day Bollinger Bands (2 std)",
+      "same point-in-time AI universe",
+      "same risk filters"
+    ],
+    "prediction_model": "bollinger_lower_technical_baseline_v1"
+  },
+  "metrics": {
+    "rebalance_count": 5,
+    "risk_off_count": 5,
+    "traded_rebalance_count": 0,
+    "position_count": 0,
+    "total_return_pct": 0.0,
+    "benchmark_return_pct": 31.08,
+    "excess_return_pct": -31.08,
+    "cagr_pct": 0.0,
+    "benchmark_cagr_pct": 31.2,
+    "mdd_pct": 0.0,
+    "benchmark_mdd_pct": -4.09,
+    "sharpe": 0.0,
+    "avg_period_return_pct": 0.0,
+    "avg_benchmark_period_return_pct": 6.07,
+    "win_rate_pct": 0.0,
+    "prediction_hit_rate_pct": 0.0,
+    "avg_position_return_pct": 0.0,
+    "median_position_return_pct": 0.0,
+    "loss_period_count": 0,
+    "max_consecutive_loss_periods": 0,
+    "worst_period_return_pct": 0.0,
+    "best_period_return_pct": 0.0
+  },
+  "leaders": [],
+  "predictions": [],
+  "positions": [],
+  "trades": [],
+  "periods": [
+    {
+      "as_of_date": "2023-08-31",
+      "entry_date": "",
+      "exit_date": "",
+      "selected_count": 0,
+      "active_target_count": 31,
+      "eligible_count": 30,
+      "risk_eligible_count": 27,
+      "risk_reject_count": 3,
+      "market_breadth_pct": 56.67,
+      "portfolio_return_pct": 0.0,
+      "benchmark_return_pct": -2.05,
+      "excess_return_pct": 2.05,
+      "risk_off_reason": "bollinger_lower signal stocks 0 < top_n 3",
+      "top_symbols": []
+    },
+    {
+      "as_of_date": "2023-09-27",
+      "entry_date": "",
+      "exit_date": "",
+      "selected_count": 0,
+      "active_target_count": 31,
+      "eligible_count": 31,
+      "risk_eligible_count": 29,
+      "risk_reject_count": 2,
+      "market_breadth_pct": 35.48,
+      "portfolio_return_pct": 0.0,
+      "benchmark_return_pct": -4.09,
+      "excess_return_pct": 4.09,
+      "risk_off_reason": "market_breadth 35.48% < 40.0%",
+      "top_symbols": []
+    },
+    {
+      "as_of_date": "2023-10-31",
+      "entry_date": "",
+      "exit_date": "",
+      "selected_count": 0,
+      "active_target_count": 32,
+      "eligible_count": 31,
+      "risk_eligible_count": 28,
+      "risk_reject_count": 3,
+      "market_breadth_pct": 12.9,
+      "portfolio_return_pct": 0.0,
+      "benchmark_return_pct": 25.85,
+      "excess_return_pct": -25.85,
+      "risk_off_reason": "market_breadth 12.9% < 40.0%",
+      "top_symbols": []
+    },
+    {
+      "as_of_date": "2023-11-30",
+      "entry_date": "",
+      "exit_date": "",
+      "selected_count": 0,
+      "active_target_count": 32,
+      "eligible_count": 31,
+      "risk_eligible_count": 30,
+      "risk_reject_count": 1,
+      "market_breadth_pct": 45.16,
+      "portfolio_return_pct": 0.0,
+      "benchmark_return_pct": 3.12,
+      "excess_return_pct": -3.12,
+      "risk_off_reason": "bollinger_lower signal stocks 0 < top_n 3",
+      "top_symbols": []
+    },
+    {
+      "as_of_date": "2023-12-28",
+      "entry_date": "",
+      "exit_date": "",
+      "selected_count": 0,
+      "active_target_count": 32,
+      "eligible_count": 31,
+      "risk_eligible_count": 27,
+      "risk_reject_count": 4,
+      "market_breadth_pct": 51.61,
+      "portfolio_return_pct": 0.0,
+      "benchmark_return_pct": 7.5,
+      "excess_return_pct": -7.5,
+      "risk_off_reason": "bollinger_lower signal stocks 0 < top_n 3",
+      "top_symbols": []
+    }
+  ],
+  "equity_curve": [
+    {
+      "date": "2023-08-31",
+      "equity": 1.0,
+      "benchmark_equity": 0.979526,
+      "period_return_pct": 0.0,
+      "benchmark_return_pct": -2.05,
+      "risk_off_reason": "bollinger_lower signal stocks 0 < top_n 3"
+    },
+    {
+      "date": "2023-09-27",
+      "equity": 1.0,
+      "benchmark_equity": 0.939506,
+      "period_return_pct": 0.0,
+      "benchmark_return_pct": -4.09,
+      "risk_off_reason": "market_breadth 35.48% < 40.0%"
+    },
+    {
+      "date": "2023-10-31",
+      "equity": 1.0,
+      "benchmark_equity": 1.182372,
+      "period_return_pct": 0.0,
+      "benchmark_return_pct": 25.85,
+      "risk_off_reason": "market_breadth 12.9% < 40.0%"
+    },
+    {
+      "date": "2023-11-30",
+      "equity": 1.0,
+      "benchmark_equity": 1.219289,
+      "period_return_pct": 0.0,
+      "benchmark_return_pct": 3.12,
+      "risk_off_reason": "bollinger_lower signal stocks 0 < top_n 3"
+    },
+    {
+      "date": "2023-12-28",
+      "equity": 1.0,
+      "benchmark_equity": 1.31077,
+      "period_return_pct": 0.0,
+      "benchmark_return_pct": 7.5,
+      "risk_off_reason": "bollinger_lower signal stocks 0 < top_n 3"
+    }
+  ],
+  "risk": {
+    "filters": {
+      "min_avg_trading_value": 0.0,
+      "position_value_krw": 10000000.0,
+      "max_position_pct_avg_trading_value": 5.0,
+      "max_volatility_20d": 1.2,
+      "max_return_5d": 0.35,
+      "max_return_20d": 0.9,
+      "min_trend_150d": -1.0,
+      "min_market_breadth_pct": 40.0
+    },
+    "reject_counts": {
+      "high_volatility": 8,
+      "insufficient_liquidity_capacity": 5
+    }
+  },
+  "execution": {
+    "exit_rules": {
+      "stop_loss_pct": 0.0,
+      "take_profit_pct": 0.0,
+      "trailing_stop_pct": 15.0
+    },
+    "costs": {
+      "transaction_cost_bps": 15.0,
+      "slippage_bps": 5.0,
+      "market_impact_bps": 5.0,
+      "round_trip_cost_bps": 50.0
+    },
+    "exit_counts": {},
+    "same_day_ohlc_policy": "stop_or_trailing_stop_before_take_profit"
+  },
+  "artifacts": {
+    "result_json": "data/backtest_results/multi_agent_validation/phase1/technical_long_realistic_costs/bt-ai-validation_2023-bollinger_lower-m-top3-h60.json"
+  },
+  "warnings": [
+    "20230131: eligible stocks 0 < top_n 3",
+    "20230228: eligible stocks 0 < top_n 3",
+    "20230331: eligible stocks 0 < top_n 3",
+    "20230428: eligible stocks 0 < top_n 3",
+    "20230531: eligible stocks 0 < top_n 3",
+    "20230630: eligible stocks 0 < top_n 3",
+    "20230731: eligible stocks 0 < top_n 3",
+    "20230831: bollinger_lower signal stocks 0 < top_n 3",
+    "20230927: market_breadth 35.48% < 40.0%",
+    "20231031: market_breadth 12.9% < 40.0%",
+    "20231130: bollinger_lower signal stocks 0 < top_n 3",
+    "20231228: bollinger_lower signal stocks 0 < top_n 3",
+    "future returns are used only for evaluation after each as_of_date signal.",
+    "selection uses deterministic price/document features, not the full LLM ThemeLeaderOrchestrator.",
+    "theme_membership may be inferred from local corpus evidence unless an official historical source is supplied."
+  ],
+  "metadata": {
+    "generated_at": "2026-05-17T19:53:41.310419",
+    "data_dir": "data",
+    "target_count": 50,
+    "membership_count": 50,
+    "point_in_time_universe": true,
+    "membership_sources": [
+      "local_corpus_inferred"
+    ],
+    "price_stock_count": 50,
+    "document_signal_count": 30497,
+    "signal_skip_counts": {
+      "insufficient_signal": 3
+    }
+  }
+}

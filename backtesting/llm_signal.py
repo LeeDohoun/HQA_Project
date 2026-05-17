@@ -159,6 +159,9 @@ class TemporalLLMStockScorer:
                 "llm_horizon": self.horizon,
             }
         )
+        if result.get("llm_fallback_used"):
+            logger.warning("Multi-agent fallback score not cached: %s %s", as_of_ymd, row.get("stock_code"))
+            return result
         self.cache[key] = result
         self._append_cache(key, result)
         return result
@@ -698,6 +701,11 @@ JSON:
         final_score = agent_totals["recommended_final_score"]
         confidence = _get_score(risk, "confidence")
         risk_score = _get_score(risk, "risk_score")
+        fallback_used = (
+            _payload_uses_fallback(analyst)
+            or _payload_uses_fallback(quant)
+            or _payload_uses_fallback(risk)
+        )
         return {
             "llm_score": final_score,
             "llm_confidence": confidence,
@@ -708,6 +716,7 @@ JSON:
             "llm_catalysts": _clean_string_list(risk.get("catalysts") or analyst.get("catalysts")),
             "llm_risks": _clean_string_list(risk.get("risks") or analyst.get("risks") or quant.get("risks")),
             "llm_horizon": self.horizon,
+            "llm_fallback_used": fallback_used,
             "llm_agent_scores": {
                 "analyst": {
                     "total_score": analyst_total,
@@ -808,6 +817,14 @@ def _clean_string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item).strip()[:160] for item in value if str(item).strip()][:5]
+
+
+def _payload_uses_fallback(payload: Dict[str, Any]) -> bool:
+    text = " ".join(
+        str(payload.get(key) or "")
+        for key in ["summary", "action"]
+    ).lower()
+    return "fallback" in text
 
 
 def _feature_payload(row: Dict[str, Any]) -> Dict[str, Any]:

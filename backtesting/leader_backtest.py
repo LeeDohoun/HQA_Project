@@ -58,6 +58,8 @@ class DocumentSignal:
 @dataclass(frozen=True)
 class RiskConfig:
     min_avg_trading_value: float = 0.0
+    position_value_krw: float = 0.0
+    max_position_pct_avg_trading_value: float = 0.0
     max_volatility_20d: float = 0.0
     max_return_5d: float = 0.0
     max_return_20d: float = 0.0
@@ -90,6 +92,11 @@ def run_leader_backtest(
     hold_days: int = 20,
     min_history_days: int = 150,
     transaction_cost_bps: float = 15.0,
+    slippage_bps: float = 0.0,
+    market_impact_bps: float = 0.0,
+    portfolio_value_krw: float = 0.0,
+    position_value_krw: float = 0.0,
+    max_position_pct_avg_trading_value: float = 0.0,
     min_avg_trading_value: float = 0.0,
     max_volatility_20d: float = 0.0,
     max_return_5d: float = 0.0,
@@ -123,6 +130,12 @@ def run_leader_backtest(
     warnings: List[str] = []
     risk_config = RiskConfig(
         min_avg_trading_value=min_avg_trading_value,
+        position_value_krw=_effective_position_value(
+            portfolio_value_krw=portfolio_value_krw,
+            position_value_krw=position_value_krw,
+            top_n=top_n,
+        ),
+        max_position_pct_avg_trading_value=max_position_pct_avg_trading_value,
         max_volatility_20d=max_volatility_20d,
         max_return_5d=max_return_5d,
         max_return_20d=max_return_20d,
@@ -183,7 +196,11 @@ def run_leader_backtest(
     risk_reject_counts: Dict[str, int] = defaultdict(int)
     equity = 1.0
     benchmark_equity = 1.0
-    transaction_cost = transaction_cost_bps / 10000.0
+    round_trip_cost = _round_trip_cost_return(
+        transaction_cost_bps=transaction_cost_bps,
+        slippage_bps=slippage_bps,
+        market_impact_bps=market_impact_bps,
+    )
 
     for as_of_ymd in rebalance_dates:
         active_target_by_code = _active_target_by_code(target_by_code, memberships, as_of_ymd)
@@ -207,7 +224,7 @@ def run_leader_backtest(
             continue
 
         benchmark_return = float(np.mean([row["realized_return"] for row in eligible]))
-        benchmark_net_return = benchmark_return - (transaction_cost * 2)
+        benchmark_net_return = benchmark_return - round_trip_cost
         market_breadth_pct = _market_breadth_pct(eligible)
         filtered, rejected = _apply_risk_filters(eligible, risk_config)
         _add_counts(risk_reject_counts, rejected)
@@ -262,7 +279,7 @@ def run_leader_backtest(
             )
         selected = ranked[:top_n]
         selected_return = float(np.mean([row["realized_return"] for row in selected]))
-        selected_net_return = selected_return - (transaction_cost * 2)
+        selected_net_return = selected_return - round_trip_cost
         portfolio_exit_date = _latest_exit_date(selected)
 
         equity *= 1.0 + selected_net_return
@@ -372,6 +389,13 @@ def run_leader_backtest(
             "top_n": top_n,
             "min_history_days": min_history_days,
             "transaction_cost_bps": transaction_cost_bps,
+            "slippage_bps": slippage_bps,
+            "market_impact_bps": market_impact_bps,
+            "round_trip_cost_bps": _round_trip_cost_bps(
+                transaction_cost_bps=transaction_cost_bps,
+                slippage_bps=slippage_bps,
+                market_impact_bps=market_impact_bps,
+            ),
             "risk_filters": risk_config.to_dict(),
             "exit_rules": exit_config.to_dict(),
             "llm_rerank": {
@@ -425,6 +449,16 @@ def run_leader_backtest(
         },
         "execution": {
             "exit_rules": exit_config.to_dict(),
+            "costs": {
+                "transaction_cost_bps": transaction_cost_bps,
+                "slippage_bps": slippage_bps,
+                "market_impact_bps": market_impact_bps,
+                "round_trip_cost_bps": _round_trip_cost_bps(
+                    transaction_cost_bps=transaction_cost_bps,
+                    slippage_bps=slippage_bps,
+                    market_impact_bps=market_impact_bps,
+                ),
+            },
             "exit_counts": _exit_counts(positions),
             "same_day_ohlc_policy": "stop_or_trailing_stop_before_take_profit",
         },
@@ -965,6 +999,11 @@ def _risk_reject_reason(row: Dict[str, Any], risk_config: RiskConfig) -> str:
     if risk_config.min_avg_trading_value > 0:
         if float(row.get("avg_trading_value_20d") or 0.0) < risk_config.min_avg_trading_value:
             return "low_liquidity"
+    if risk_config.position_value_krw > 0 and risk_config.max_position_pct_avg_trading_value > 0:
+        avg_trading_value = float(row.get("avg_trading_value_20d") or 0.0)
+        max_position_value = avg_trading_value * (risk_config.max_position_pct_avg_trading_value / 100.0)
+        if max_position_value < risk_config.position_value_krw:
+            return "insufficient_liquidity_capacity"
     if risk_config.max_volatility_20d > 0:
         if float(row.get("volatility_20d") or 0.0) > risk_config.max_volatility_20d:
             return "high_volatility"
@@ -978,6 +1017,48 @@ def _risk_reject_reason(row: Dict[str, Any], risk_config: RiskConfig) -> str:
         if float(row.get("trend_150d") or 0.0) < risk_config.min_trend_150d:
             return "weak_trend"
     return ""
+
+
+def _effective_position_value(
+    *,
+    portfolio_value_krw: float,
+    position_value_krw: float,
+    top_n: int,
+) -> float:
+    explicit_position_value = max(0.0, float(position_value_krw or 0.0))
+    if explicit_position_value > 0:
+        return explicit_position_value
+    portfolio_value = max(0.0, float(portfolio_value_krw or 0.0))
+    if portfolio_value <= 0:
+        return 0.0
+    return portfolio_value / max(1, int(top_n or 1))
+
+
+def _round_trip_cost_bps(
+    *,
+    transaction_cost_bps: float,
+    slippage_bps: float,
+    market_impact_bps: float,
+) -> float:
+    one_side_bps = (
+        max(0.0, float(transaction_cost_bps or 0.0))
+        + max(0.0, float(slippage_bps or 0.0))
+        + max(0.0, float(market_impact_bps or 0.0))
+    )
+    return round(one_side_bps * 2.0, 4)
+
+
+def _round_trip_cost_return(
+    *,
+    transaction_cost_bps: float,
+    slippage_bps: float,
+    market_impact_bps: float,
+) -> float:
+    return _round_trip_cost_bps(
+        transaction_cost_bps=transaction_cost_bps,
+        slippage_bps=slippage_bps,
+        market_impact_bps=market_impact_bps,
+    ) / 10000.0
 
 
 def _market_breadth_pct(rows: List[Dict[str, Any]]) -> float:
@@ -1026,6 +1107,10 @@ def _compute_metrics(
             "sharpe": 0.0,
             "win_rate_pct": 0.0,
             "prediction_hit_rate_pct": 0.0,
+            "loss_period_count": 0,
+            "max_consecutive_loss_periods": 0,
+            "worst_period_return_pct": 0.0,
+            "best_period_return_pct": 0.0,
         }
 
     period_returns = np.array([row["period_return_pct"] / 100.0 for row in equity_curve], dtype=float)
@@ -1051,6 +1136,7 @@ def _compute_metrics(
         hit_rate = hits / len(realized)
 
     risk_off_count = sum(1 for row in equity_curve if row.get("risk_off_reason"))
+    loss_period_count = int((period_returns < 0).sum())
 
     return {
         "rebalance_count": len(equity_curve),
@@ -1071,6 +1157,10 @@ def _compute_metrics(
         "prediction_hit_rate_pct": _pct(hit_rate),
         "avg_position_return_pct": round(float(np.mean(realized)), 2) if realized else 0.0,
         "median_position_return_pct": round(float(np.median(realized)), 2) if realized else 0.0,
+        "loss_period_count": loss_period_count,
+        "max_consecutive_loss_periods": _max_consecutive_losses(period_returns),
+        "worst_period_return_pct": _pct(float(period_returns.min())) if len(period_returns) else 0.0,
+        "best_period_return_pct": _pct(float(period_returns.max())) if len(period_returns) else 0.0,
     }
 
 
@@ -1236,6 +1326,18 @@ def _max_drawdown(equity_values: np.ndarray) -> float:
     peaks = np.maximum.accumulate(equity_values)
     drawdowns = equity_values / peaks - 1.0
     return float(drawdowns.min()) if len(drawdowns) else 0.0
+
+
+def _max_consecutive_losses(period_returns: np.ndarray) -> int:
+    longest = 0
+    current = 0
+    for value in period_returns:
+        if float(value) < 0:
+            current += 1
+            longest = max(longest, current)
+        else:
+            current = 0
+    return longest
 
 
 def _pct(value: float) -> float:
@@ -1411,6 +1513,26 @@ def main() -> int:
     parser.add_argument("--hold-days", type=int, default=20)
     parser.add_argument("--min-history-days", type=int, default=150)
     parser.add_argument("--transaction-cost-bps", type=float, default=15.0)
+    parser.add_argument("--slippage-bps", type=float, default=0.0)
+    parser.add_argument("--market-impact-bps", type=float, default=0.0)
+    parser.add_argument(
+        "--portfolio-value-krw",
+        type=float,
+        default=0.0,
+        help="Optional portfolio size used to derive per-position liquidity capacity.",
+    )
+    parser.add_argument(
+        "--position-value-krw",
+        type=float,
+        default=0.0,
+        help="Optional per-position order value for liquidity capacity checks.",
+    )
+    parser.add_argument(
+        "--max-position-pct-avg-trading-value",
+        type=float,
+        default=0.0,
+        help="Reject stocks when one position would exceed this pct of 20-day average trading value.",
+    )
     parser.add_argument("--min-avg-trading-value", type=float, default=0.0)
     parser.add_argument("--max-volatility-20d", type=float, default=0.0)
     parser.add_argument("--max-return-5d", type=float, default=0.0)
@@ -1461,6 +1583,11 @@ def main() -> int:
         hold_days=args.hold_days,
         min_history_days=args.min_history_days,
         transaction_cost_bps=args.transaction_cost_bps,
+        slippage_bps=args.slippage_bps,
+        market_impact_bps=args.market_impact_bps,
+        portfolio_value_krw=args.portfolio_value_krw,
+        position_value_krw=args.position_value_krw,
+        max_position_pct_avg_trading_value=args.max_position_pct_avg_trading_value,
         min_avg_trading_value=args.min_avg_trading_value,
         max_volatility_20d=args.max_volatility_20d,
         max_return_5d=args.max_return_5d,
