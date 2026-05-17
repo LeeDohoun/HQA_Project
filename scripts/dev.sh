@@ -100,8 +100,21 @@ PYTHONPATH="$ROOT" launch ai 36 "$LOG_DIR/ai.log" \
   "$VENV/bin/uvicorn" ai_server.app:app --host 127.0.0.1 --port "$AI_PORT"
 
 # Backend (Spring Boot)
+# spring-boot:run forks a JVM that does NOT inherit our shell's env vars,
+# so pass everything Spring needs as -D system properties instead.
+BE_JVM_ARGS="-DHQA_KIS_ENC_KEY=${HQA_KIS_ENC_KEY:-} \
+-DDATABASE_URL=${DATABASE_URL} \
+-DDATABASE_USERNAME=${DATABASE_USERNAME} \
+-DDATABASE_PASSWORD=${DATABASE_PASSWORD} \
+-DREDIS_HOST=${REDIS_HOST} \
+-DREDIS_PORT=${REDIS_PORT} \
+-DAI_SERVER_URL=${AI_SERVER_URL} \
+-DENV=${ENV} \
+-DKIS_APP_KEY=${KIS_APP_KEY:-} \
+-DKIS_APP_SECRET=${KIS_APP_SECRET:-} \
+-DKIS_ACCOUNT_NO=${KIS_ACCOUNT_NO:-}"
 launch be 33 "$LOG_DIR/be.log" \
-  bash -c "cd '$ROOT/backend' && PORT=$BE_PORT mvn -B -q spring-boot:run"
+  bash -c "cd '$ROOT/backend' && PORT=$BE_PORT mvn -B -q spring-boot:run -Dspring-boot.run.jvmArguments='$BE_JVM_ARGS'"
 
 # Frontend (Next.js dev)
 launch fe 35 "$LOG_DIR/fe.log" \

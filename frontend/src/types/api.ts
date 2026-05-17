@@ -33,6 +33,20 @@ export type LoginRequest = {
   password: string;
 };
 
+export type KisCredentials = {
+  kisAppKey: string;
+  kisAppSecret: string;
+  kisAccountNo: string;
+  kisAccountProductCode: string;
+};
+
+export type KisCredentialsStatus = {
+  configured: boolean;
+  kisAppKeyMasked: string | null;
+  kisAccountNoMasked: string | null;
+  kisAccountProductCode: string | null;
+};
+
 export type UserPreference = {
   totalAssets: number;
   monthlyInvestment: number;

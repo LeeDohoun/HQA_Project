@@ -17,6 +17,7 @@ public class HqaProperties {
     private String kisAppKey = "";
     private String kisAppSecret = "";
     private String kisAccountNo = "";
+    private String kisEncKey = "";
 
     public String getEnv() {
         return env;
@@ -96,6 +97,14 @@ public class HqaProperties {
 
     public void setKisAccountNo(String kisAccountNo) {
         this.kisAccountNo = kisAccountNo;
+    }
+
+    public String getKisEncKey() {
+        return kisEncKey;
+    }
+
+    public void setKisEncKey(String kisEncKey) {
+        this.kisEncKey = kisEncKey;
     }
 
 }

@@ -12,7 +12,7 @@ import {
   occupationTypeOptions,
   volatilityToleranceOptions
 } from "@/lib/options";
-import type { UserPreference } from "@/types/api";
+import type { KisCredentials, UserPreference } from "@/types/api";
 
 const defaultPreference: UserPreference = {
   totalAssets: 0,
@@ -72,13 +72,21 @@ const lossToleranceChoices = lossToleranceOptions.map(([value, label], i) => ({
   sub: ""
 }));
 
-type StepKey = "welcome" | "name" | "goal" | "experience" | "style" | "loss" | "money" | "review";
+type StepKey = "welcome" | "name" | "goal" | "experience" | "style" | "loss" | "money" | "kis" | "review";
 
-const STEPS: StepKey[] = ["welcome", "goal", "experience", "style", "loss", "money", "review"];
+const STEPS: StepKey[] = ["welcome", "goal", "experience", "style", "loss", "money", "kis", "review"];
+
+const emptyKis: KisCredentials = {
+  kisAppKey: "",
+  kisAppSecret: "",
+  kisAccountNo: "",
+  kisAccountProductCode: "01"
+};
 
 export default function PreferencePage() {
   const router = useRouter();
   const [form, setForm] = useState<UserPreference>(defaultPreference);
+  const [kis, setKis] = useState<KisCredentials>(emptyKis);
   const [stepIdx, setStepIdx] = useState(0);
   const [direction, setDirection] = useState<"forward" | "back">("forward");
   const [loading, setLoading] = useState(true);
@@ -125,6 +133,14 @@ export default function PreferencePage() {
     setError("");
     try {
       await authApi.savePreference(form);
+      const hasKis =
+        kis.kisAppKey.trim() &&
+        kis.kisAppSecret.trim() &&
+        kis.kisAccountNo.trim() &&
+        kis.kisAccountProductCode.trim();
+      if (hasKis) {
+        await authApi.saveKis(kis);
+      }
       router.push("/dashboard");
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "저장에 실패했습니다.");
@@ -220,6 +236,18 @@ export default function PreferencePage() {
             form={form}
             onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
             onNext={() => go(1)}
+          />
+        )}
+
+        {step === "kis" && (
+          <KisStep
+            value={kis}
+            onChange={(patch) => setKis((prev) => ({ ...prev, ...patch }))}
+            onNext={() => go(1)}
+            onSkip={() => {
+              setKis(emptyKis);
+              go(1);
+            }}
           />
         )}
 
@@ -361,6 +389,146 @@ function MoneyStep({
 
       <button type="button" className="wiz-cta" disabled={!valid} onClick={onNext}>
         다음
+      </button>
+    </>
+  );
+}
+
+function KisStep({
+  value,
+  onChange,
+  onNext,
+  onSkip
+}: {
+  value: KisCredentials;
+  onChange: (patch: Partial<KisCredentials>) => void;
+  onNext: () => void;
+  onSkip: () => void;
+}) {
+  const [showDetail, setShowDetail] = useState(false);
+  const valid =
+    value.kisAppKey.trim().length > 0 &&
+    value.kisAppSecret.trim().length > 0 &&
+    value.kisAccountNo.trim().length > 0 &&
+    value.kisAccountProductCode.trim().length > 0;
+
+  return (
+    <>
+      <span className="wiz-emoji" aria-hidden>🔑</span>
+      <h1 className="wiz-question">증권사 키를 연결해주세요</h1>
+      <p className="wiz-hint">
+        AI 분석 결과로 <b>실제 매수·자동매매</b>를 하려면 한국투자증권(KIS) API 키가 필요해요.
+        지금 안 넣어도 둘러보기는 가능해요.
+      </p>
+
+      <button
+        type="button"
+        className="wiz-disclosure"
+        aria-expanded={showDetail}
+        onClick={() => setShowDetail((v) => !v)}
+      >
+        {showDetail ? "▾ 자세히 닫기" : "▸ 왜 필요한지 / 안전한지 자세히 보기"}
+      </button>
+
+      {showDetail ? (
+        <div className="wiz-explainer">
+          <div className="wiz-explainer-row">
+            <span className="wiz-explainer-icon" aria-hidden>📈</span>
+            <div>
+              <p className="wiz-explainer-title">왜 필요한가요?</p>
+              <p className="wiz-explainer-text">
+                HQA는 직접 주식을 보관하지 않아요. 키를 통해 <b>당신의 증권 계좌</b>에 매수 주문을 대신 넣어주는 구조예요.
+                키가 없으면 AI 분석·차트 조회까지만 사용 가능하고, 실거래/자동매매는 비활성화돼요.
+              </p>
+            </div>
+          </div>
+          <div className="wiz-explainer-row">
+            <span className="wiz-explainer-icon" aria-hidden>🔒</span>
+            <div>
+              <p className="wiz-explainer-title">안전한가요?</p>
+              <p className="wiz-explainer-text">
+                키는 AES-256 암호화로 저장되고, 매번 주문 직전에만 복호화돼요.
+                서버 직원·DB 백업·로그 어디에서도 평문은 보이지 않아요.
+              </p>
+            </div>
+          </div>
+          <div className="wiz-explainer-row">
+            <span className="wiz-explainer-icon" aria-hidden>🛂</span>
+            <div>
+              <p className="wiz-explainer-title">언제든 끊을 수 있나요?</p>
+              <p className="wiz-explainer-text">
+                네. 설정에서 키를 지우면 즉시 모든 거래 연결이 차단돼요.
+                키는 <b>매수 권한만</b>이고, 출금이나 송금은 불가능해요.
+              </p>
+            </div>
+          </div>
+          <p className="wiz-explainer-link">
+            발급 방법은{" "}
+            <a href="https://apiportal.koreainvestment.com/" target="_blank" rel="noopener noreferrer">
+              한국투자증권 OpenAPI 포털 ↗
+            </a>
+            에서 확인할 수 있어요.
+          </p>
+        </div>
+      ) : null}
+
+      <div className="field">
+        <label>App Key</label>
+        <input
+          className="wiz-input"
+          type="password"
+          autoComplete="off"
+          spellCheck={false}
+          value={value.kisAppKey}
+          placeholder="PSxxxxxxxxxxxxxxxxxx"
+          onChange={(e) => onChange({ kisAppKey: e.target.value })}
+        />
+      </div>
+
+      <div className="field">
+        <label>App Secret</label>
+        <input
+          className="wiz-input"
+          type="password"
+          autoComplete="off"
+          spellCheck={false}
+          value={value.kisAppSecret}
+          placeholder="발급받은 시크릿 키"
+          onChange={(e) => onChange({ kisAppSecret: e.target.value })}
+        />
+      </div>
+
+      <div className="field">
+        <label>계좌번호 (CANO)</label>
+        <input
+          className="wiz-input"
+          type="password"
+          inputMode="numeric"
+          autoComplete="off"
+          value={value.kisAccountNo}
+          placeholder="12345678"
+          onChange={(e) => onChange({ kisAccountNo: e.target.value })}
+        />
+      </div>
+
+      <div className="field">
+        <label>계좌상품코드 (ACNT_PRDT_CD)</label>
+        <input
+          className="wiz-input"
+          type="text"
+          inputMode="numeric"
+          autoComplete="off"
+          value={value.kisAccountProductCode}
+          placeholder="01"
+          onChange={(e) => onChange({ kisAccountProductCode: e.target.value })}
+        />
+      </div>
+
+      <button type="button" className="wiz-cta" disabled={!valid} onClick={onNext}>
+        다음
+      </button>
+      <button type="button" className="wiz-skip" onClick={onSkip}>
+        나중에 설정에서 입력할게요
       </button>
     </>
   );

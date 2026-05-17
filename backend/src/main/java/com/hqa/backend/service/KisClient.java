@@ -18,11 +18,14 @@ public class KisClient {
     private final WebClient webClient;
     private final ObjectMapper objectMapper;
     private final ErrorLogger errorLogger;
+    private final SecretCipher secretCipher;
 
-    public KisClient(WebClient webClient, ObjectMapper objectMapper, ErrorLogger errorLogger) {
+    public KisClient(WebClient webClient, ObjectMapper objectMapper, ErrorLogger errorLogger,
+                     SecretCipher secretCipher) {
         this.webClient = webClient;
         this.objectMapper = objectMapper;
         this.errorLogger = errorLogger;
+        this.secretCipher = secretCipher;
     }
 
     public String fetchAccessToken(String userId, UserSecret secret) {
@@ -37,16 +40,19 @@ public class KisClient {
                                    String stockCode, int quantity, long limitPrice) {
         try {
             String ordDvsn = limitPrice <= 0 ? "01" : "00"; // 01=시장가, 00=지정가
+            String appKey = secretCipher.decrypt(secret.getKisAppKey());
+            String appSecret = secretCipher.decrypt(secret.getKisAppSecret());
+            String accountNo = secretCipher.decrypt(secret.getKisAccountNo());
             String response = webClient.post()
                     .uri(KIS_BASE_URL + ORDER_PATH)
                     .contentType(MediaType.APPLICATION_JSON)
                     .header("authorization", "Bearer " + token)
-                    .header("appkey", secret.getKisAppKey())
-                    .header("appsecret", secret.getKisAppSecret())
+                    .header("appkey", appKey)
+                    .header("appsecret", appSecret)
                     .header("tr_id", "TTTC0802U")
                     .bodyValue(Map.of(
-                            "CANO", secret.getKisAccountNo(),
-                            "ACNT_PRDT_CD", "01",
+                            "CANO", accountNo,
+                            "ACNT_PRDT_CD", secret.getKisAccountProductCode(),
                             "PDNO", stockCode,
                             "ORD_DVSN", ordDvsn,
                             "ORD_QTY", String.valueOf(quantity),
@@ -71,13 +77,15 @@ public class KisClient {
 
     private String fetchToken(String userId, UserSecret secret) {
         try {
+            String appKey = secretCipher.decrypt(secret.getKisAppKey());
+            String appSecret = secretCipher.decrypt(secret.getKisAppSecret());
             String response = webClient.post()
                     .uri(KIS_BASE_URL + TOKEN_PATH)
                     .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(Map.of(
                             "grant_type", "client_credentials",
-                            "appkey", secret.getKisAppKey(),
-                            "appsecret", secret.getKisAppSecret()
+                            "appkey", appKey,
+                            "appsecret", appSecret
                     ))
                     .retrieve()
                     .bodyToMono(String.class)

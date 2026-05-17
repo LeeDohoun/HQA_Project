@@ -6,7 +6,6 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
-import jakarta.persistence.Lob;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
@@ -35,22 +34,22 @@ public class AnalysisRecord {
     private int maxRetries = 1;
     private String status = "pending";
 
-    @Lob
+    @Column(columnDefinition = "TEXT")
     private String analystResult;
-    @Lob
+    @Column(columnDefinition = "TEXT")
     private String quantResult;
-    @Lob
+    @Column(columnDefinition = "TEXT")
     private String chartistResult;
-    @Lob
+    @Column(columnDefinition = "TEXT")
     private String finalDecision;
 
     private String researchQuality;
-    @Lob
+    @Column(columnDefinition = "TEXT")
     private String qualityWarnings;
     private Double totalScore;
     private String action;
     private Double confidence;
-    @Lob
+    @Column(columnDefinition = "TEXT")
     private String errors;
     private OffsetDateTime createdAt = OffsetDateTime.now();
     private OffsetDateTime completedAt;
