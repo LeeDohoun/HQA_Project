@@ -39,7 +39,7 @@ class KISConfig:
     TOKEN_DIR = get_data_dir() / "token"
     
     # API 키 (환경변수에서 로드)
-    # 모의투자 전용 값이 있으면 paper=True 호출에서 우선 사용합니다.
+    # 중요: paper=True에서는 paper 전용 키/계좌만 사용하고 실전 값으로 fallback하지 않습니다.
     APP_KEY = os.getenv("KIS_APP_KEY") or os.getenv("KIS_API_KEY")
     APP_SECRET = os.getenv("KIS_APP_SECRET") or os.getenv("KIS_API_SECRET")
     ACCOUNT_NO = os.getenv("KIS_ACCOUNT_NO", "")
@@ -50,19 +50,19 @@ class KISConfig:
     @classmethod
     def get_app_key(cls, paper: bool = False) -> str:
         if paper:
-            return cls.PAPER_APP_KEY or cls.APP_KEY or ""
+            return cls.PAPER_APP_KEY or ""
         return cls.APP_KEY or ""
 
     @classmethod
     def get_app_secret(cls, paper: bool = False) -> str:
         if paper:
-            return cls.PAPER_APP_SECRET or cls.APP_SECRET or ""
+            return cls.PAPER_APP_SECRET or ""
         return cls.APP_SECRET or ""
 
     @classmethod
     def get_account_no(cls, paper: bool = False) -> str:
         if paper:
-            return cls.PAPER_ACCOUNT_NO or cls.ACCOUNT_NO or ""
+            return cls.PAPER_ACCOUNT_NO or ""
         return cls.ACCOUNT_NO or ""
     
     # 계좌번호 파싱 (12345678-01 → CANO: 12345678, ACNT_PRDT_CD: 01)

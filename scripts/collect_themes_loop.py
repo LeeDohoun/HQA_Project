@@ -43,8 +43,16 @@ def _sleep_until_next_day(resume_hour: int, resume_minute: int) -> None:
     time.sleep(wait_seconds)
 
 
-def _run_once(theme: str) -> tuple[int, str]:
-    cmd = [sys.executable, "scripts/run_pipeline.py", "--theme", theme, "--collect-and-build"]
+def _run_once(theme: str, enabled_sources: str) -> tuple[int, str]:
+    cmd = [
+        sys.executable,
+        "scripts/run_pipeline.py",
+        "--theme",
+        theme,
+        "--collect-and-build",
+        "--enabled-sources",
+        enabled_sources,
+    ]
     proc = subprocess.run(cmd, capture_output=True, text=True)
     output = f"{proc.stdout}\n{proc.stderr}".strip()
     return proc.returncode, output
@@ -56,6 +64,12 @@ def main() -> int:
     parser.add_argument("--interval-minutes", type=int, default=30, help="Normal loop interval")
     parser.add_argument("--resume-hour", type=int, default=0, help="Next-day resume hour (KST)")
     parser.add_argument("--resume-minute", type=int, default=5, help="Next-day resume minute (KST)")
+    parser.add_argument(
+        "--enabled-sources",
+        type=str,
+        default="news,dart,forum,chart",
+        help="Comma-separated sources passed to run_pipeline.py",
+    )
     args = parser.parse_args()
 
     themes = [t.strip() for t in args.themes.split(",") if t.strip()]
@@ -63,11 +77,14 @@ def main() -> int:
         print("No themes configured.")
         return 1
 
-    print(f"📡 수집 루프 시작: themes={themes}, interval={args.interval_minutes}분")
+    print(
+        f"📡 수집 루프 시작: themes={themes}, interval={args.interval_minutes}분, "
+        f"enabled_sources={args.enabled_sources}"
+    )
     while True:
         for theme in themes:
             print(f"\n[COLLECT] {theme} 시작")
-            code, output = _run_once(theme)
+            code, output = _run_once(theme, args.enabled_sources)
             if code == 0:
                 print(f"[COLLECT] {theme} 완료")
                 continue
@@ -90,4 +107,3 @@ if __name__ == "__main__":
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
     raise SystemExit(main())
-
