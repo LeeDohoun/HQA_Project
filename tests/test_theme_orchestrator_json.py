@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from src.agents.theme_orchestrator import (
     ThemeAnalystEvaluation,
+    ThemeQuantEvaluation,
     ThemeLeaderOrchestrator,
 )
 
@@ -90,6 +91,66 @@ def test_invoke_json_recovers_first_json_object_from_raw_response():
     assert payload["moat_score"] == 28
     assert payload["growth_score"] == 19
     assert payload["summary"] == "raw"
+    assert payload["structured_parse_failed"] is True
+    assert payload["parse_fallback_used"] is True
+
+
+def test_invoke_json_coerces_numeric_strings_and_sets_flags():
+    orchestrator = _orchestrator()
+
+    class RawOnlyLLM:
+        def with_structured_output(self, _schema, method="json_schema"):
+            raise RuntimeError("structured output unavailable")
+
+        def invoke(self, _prompt):
+            return SimpleNamespace(
+                content=(
+                    '{"valuation_score": "21", "profitability_score": "19", '
+                    '"growth_score": "17", "stability_score": "15", '
+                    '"per": "10.4", "pbr": "1.2", "roe": "9.8", "debt_ratio": "48.5"}'
+                )
+            )
+
+    payload = orchestrator._invoke_json(
+        RawOnlyLLM(),
+        "prompt",
+        ThemeQuantEvaluation,
+        label="test-coerce",
+    )
+
+    assert payload["valuation_score"] == 21
+    assert payload["roe"] == 9.8
+    assert payload["structured_parse_failed"] is True
+    assert payload["parse_fallback_used"] is True
+    assert "valuation_score" in payload["coerced_fields"]
+    assert "roe" in payload["coerced_fields"]
+
+
+def test_fallback_outputs_set_quality_flags():
+    orchestrator = _orchestrator()
+    candidate = type(
+        "Candidate",
+        (),
+        {
+            "stock_name": "테스트",
+            "stock_code": "000000",
+            "news_docs": 0,
+            "forum_docs": 0,
+            "dart_docs": 0,
+            "market_rows": 0,
+            "source_coverage": 0,
+            "corpus_docs": 0,
+            "seed_score": 0,
+        },
+    )()
+
+    analyst = orchestrator._fallback_analyst("테마", candidate, "", {})
+    quant = orchestrator._fallback_quant("테마", candidate, "", {})
+
+    assert analyst["quality_flags"]["fallback_used"] is True
+    assert analyst["quality_flags"]["parse_fallback_used"] is True
+    assert quant.quality_flags["fallback_used"] is True
+    assert quant.quality_flags["parse_fallback_used"] is True
 
 
 def test_strategy_profile_leader_score_weights():

@@ -7,6 +7,7 @@ from src.runner.multi_theme_leader_trading_runner import MultiThemeLeaderTrading
 
 class _FakeThemeRunner:
     def __init__(self):
+        self._config = {"trading": {}}
         self._executor = type("Executor", (), {"get_runtime_config": lambda self: {"enabled": True, "dry_run": True, "account_type": "paper"}})()
 
     def run_once(self, **kwargs):
@@ -143,3 +144,93 @@ def test_multi_theme_runner_without_thresholds_can_select_buy_candidates(tmp_pat
     assert short_result["thresholds"]["min_confidence"] is None
     assert short_result["thresholds"]["max_risk_level"] is None
     assert short_result["selected_count"] >= 2
+
+
+def test_multi_theme_runner_quality_shadow_payload_and_penalty_reason(tmp_path, monkeypatch):
+    _touch_theme_files(tmp_path)
+    theme_runner = _FakeThemeRunner()
+    theme_runner._config = {
+        "trading": {
+            "signal_quality": {
+                "enabled": True,
+                "mode": "shadow_penalty",
+                "apply_scopes": ["short", "long"],
+                "report_only": False,
+                "penalty_weights": {"low_trading_value": 20.0},
+                "thresholds": {"min_avg_trading_value_20d": 1000000000.0},
+            }
+        }
+    }
+    runner = MultiThemeLeaderTradingRunner(
+        data_dir=str(tmp_path),
+        theme_runner=theme_runner,
+    )
+
+    monkeypatch.setattr(
+        "src.runner.signal_quality_filter.SignalQualityFilter.evaluate",
+        lambda self, **kwargs: {
+            "violations": ["avg_trading_value_20d_below_min"],
+            "penalty": 20.0 if kwargs.get("stock_code") == "111111" else 0.0,
+            "metrics_snapshot": {
+                "avg_trading_value_20d": 100.0,
+                "volatility_20d": 0.01,
+                "return_5d": 0.01,
+                "return_20d": 0.02,
+                "trend_150d": 1.02,
+            },
+            "breadth_state": {"state": "broad", "ratio": 0.6, "threshold": 0.45},
+        },
+    )
+    monkeypatch.setattr(
+        "src.runner.multi_theme_leader_trading_runner.MultiThemeLeaderTradingRunner._compute_breadth_ratio",
+        lambda _self, _rows: 0.6,
+    )
+
+    result = runner.run_all(
+        candidate_limit=3,
+        per_theme_top_n=2,
+        top_n=3,
+        execute=False,
+        min_leader_score=75,
+        min_confidence=60,
+        max_risk_level="MEDIUM",
+        save_report=False,
+    )
+
+    assert result["signal_quality"]["enabled"] is True
+    assert result["selection_reason_aggregation"]["zero_selection_reasons"]["quality_penalty"] >= 1
+    assert result["selected_count"] >= 1
+    assert "risk_filter_shadow" in result["global_ranked_leaders"][0]
+    assert "violations" in result["global_ranked_leaders"][0]["risk_filter_shadow"]
+
+
+def test_multi_theme_runner_execute_state_and_preview_state(tmp_path):
+    _touch_theme_files(tmp_path)
+    runner = MultiThemeLeaderTradingRunner(
+        data_dir=str(tmp_path),
+        theme_runner=_FakeThemeRunner(),
+    )
+
+    preview_result = runner.run_all(
+        candidate_limit=3,
+        per_theme_top_n=2,
+        top_n=1,
+        execute=False,
+        min_leader_score=75,
+        min_confidence=65,
+        max_risk_level="MEDIUM",
+        save_report=False,
+    )
+    assert preview_result["trade_results"][0]["execution_state"] == "preview_ready"
+
+    execute_result = runner.run_all(
+        candidate_limit=3,
+        per_theme_top_n=2,
+        top_n=1,
+        execute=True,
+        min_leader_score=75,
+        min_confidence=65,
+        max_risk_level="MEDIUM",
+        save_report=False,
+    )
+    assert execute_result["trade_results"][0]["execution_state"] == "execute_sent"

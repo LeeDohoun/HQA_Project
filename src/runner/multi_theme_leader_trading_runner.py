@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from src.agents.risk_manager import InvestmentAction
 from src.config.settings import get_data_dir
+from src.runner.signal_quality_filter import SignalQualityFilter, resolve_signal_quality_config
 from src.runner.theme_leader_trading_runner import ThemeLeaderTradingRunner
 
 KST = timezone(timedelta(hours=9))
@@ -40,6 +41,8 @@ class MultiThemeLeaderTradingRunner:
             trading_enabled_override=trading_enabled_override,
             account_type_override=account_type_override,
         )
+        trading_cfg = dict(getattr(self._theme_runner, "_config", {}).get("trading") or {})
+        self._signal_quality_cfg = resolve_signal_quality_config(dict(trading_cfg.get("signal_quality") or {}))
 
     def run_all(
         self,
@@ -102,6 +105,7 @@ class MultiThemeLeaderTradingRunner:
             min_confidence=min_confidence,
             max_risk_level=max_risk_level,
             buy_only=buy_only,
+            strategy_profile=resolved_profile,
         )
 
         selected = scored[: max(0, top_n)]
@@ -148,6 +152,20 @@ class MultiThemeLeaderTradingRunner:
             "global_ranked_leaders": scored,
             "trade_results": trade_results,
             "summary": self._summarize_rows(trade_results),
+            "selection_reason_aggregation": self._aggregate_selection_reasons(
+                rows=all_rows,
+                ranked=scored,
+                min_leader_score=min_leader_score,
+                min_confidence=min_confidence,
+                max_risk_level=max_risk_level,
+                buy_only=buy_only,
+            ),
+            "signal_quality": {
+                "enabled": self._signal_quality_cfg.enabled,
+                "mode": self._signal_quality_cfg.mode,
+                "apply_scopes": self._signal_quality_cfg.apply_scopes,
+                "report_only": self._signal_quality_cfg.report_only,
+            },
         }
 
         if save_report:
@@ -221,9 +239,13 @@ class MultiThemeLeaderTradingRunner:
         min_confidence: Optional[int],
         max_risk_level: Optional[str],
         buy_only: bool,
+        strategy_profile: str,
     ) -> List[Dict[str, Any]]:
         parsed: List[Dict[str, Any]] = []
         max_risk_rank = self._risk_rank(max_risk_level) if max_risk_level is not None else None
+        breadth_ratio = self._compute_breadth_ratio(rows)
+        quality_enabled = self._is_quality_enabled(strategy_profile=strategy_profile)
+        quality_filter = SignalQualityFilter(data_dir=str(self._data_dir))
 
         for row in rows:
             leader = row.get("leader") or {}
@@ -238,10 +260,37 @@ class MultiThemeLeaderTradingRunner:
 
             stock_name = str(candidate.get("stock_name") or "").strip()
             stock_code = str(candidate.get("stock_code") or "").strip()
+            risk_filter_shadow = {
+                "violations": [],
+                "penalty": 0.0,
+                "metrics_snapshot": {},
+                "breadth_state": {"state": "disabled", "ratio": breadth_ratio, "threshold": None},
+            }
+            quality_penalty = 0.0
+            adjusted_leader_score = leader_score
 
             blocked_reasons: List[str] = []
+            if quality_enabled:
+                risk_filter_shadow = quality_filter.evaluate(
+                    stock_code=stock_code,
+                    breadth_ratio=breadth_ratio,
+                    config=self._signal_quality_cfg,
+                )
+                quality_penalty = float(risk_filter_shadow.get("penalty") or 0.0)
+                if not self._signal_quality_cfg.report_only:
+                    adjusted_leader_score = max(0, int(round(leader_score - quality_penalty)))
+
             if min_leader_score is not None and leader_score < min_leader_score:
                 blocked_reasons.append(f"leader_score_below_minimum:{leader_score}<{min_leader_score}")
+            if (
+                quality_enabled
+                and not self._signal_quality_cfg.report_only
+                and min_leader_score is not None
+                and adjusted_leader_score < min_leader_score
+            ):
+                blocked_reasons.append(
+                    f"quality_penalized_leader_score_below_minimum:{adjusted_leader_score}<{min_leader_score}"
+                )
             if min_confidence is not None and confidence < min_confidence:
                 blocked_reasons.append(f"confidence_below_minimum:{confidence}<{min_confidence}")
             if max_risk_rank is not None and risk_rank > max_risk_rank:
@@ -259,6 +308,8 @@ class MultiThemeLeaderTradingRunner:
                     "stock_name": stock_name,
                     "stock_code": stock_code,
                     "leader_score": leader_score,
+                    "adjusted_leader_score": adjusted_leader_score,
+                    "quality_penalty": round(quality_penalty, 4),
                     "confidence": confidence,
                     "action": action_label,
                     "action_code": action_code,
@@ -266,18 +317,20 @@ class MultiThemeLeaderTradingRunner:
                     "risk_level_code": risk_code,
                     "risk_rank": risk_rank,
                     "leader": leader,
+                    "risk_filter_shadow": risk_filter_shadow,
                     "eligible": len(blocked_reasons) == 0,
                     "blocked_reasons": blocked_reasons,
                 }
             )
 
+        self._latest_rank_rows = list(parsed)
         eligible = [row for row in parsed if row["eligible"]]
-        score_norm = self._minmax_map([row["leader_score"] for row in eligible])
+        score_norm = self._minmax_map([row["adjusted_leader_score"] for row in eligible])
         conf_norm = self._minmax_map([row["confidence"] for row in eligible])
         risk_inv_norm = self._minmax_inverse_map([row["risk_rank"] for row in eligible])
 
         for row in eligible:
-            score_value = score_norm.get(row["leader_score"], 0.0)
+            score_value = score_norm.get(row["adjusted_leader_score"], 0.0)
             conf_value = conf_norm.get(row["confidence"], 0.0)
             risk_value = risk_inv_norm.get(row["risk_rank"], 0.0)
             rank_score = round(score_value * 0.5 + conf_value * 0.3 + risk_value * 0.2, 6)
@@ -313,6 +366,8 @@ class MultiThemeLeaderTradingRunner:
                 "stock_name": row["stock_name"],
                 "stock_code": row["stock_code"],
                 "leader_score": int(row["leader_score"]),
+                "adjusted_leader_score": int(row["adjusted_leader_score"]),
+                "quality_penalty": float(row.get("quality_penalty") or 0.0),
                 "confidence": int(row["confidence"]),
                 "action": row["action"],
                 "action_code": row["action_code"],
@@ -326,6 +381,7 @@ class MultiThemeLeaderTradingRunner:
                 "normalized_rank_score": float(row.get("normalized_rank_score") or 0.0),
                 "blocked_reasons": list(row["blocked_reasons"]),
                 "eligible": bool(row["eligible"]),
+                "risk_filter_shadow": row.get("risk_filter_shadow") or {},
                 "leader": row["leader"],
             }
             for row in ranked
@@ -345,6 +401,11 @@ class MultiThemeLeaderTradingRunner:
                     "global_rank": int(row.get("global_rank") or 0),
                     "theme": row.get("theme"),
                     "theme_key": row.get("theme_key"),
+                    "execution_state": self._execution_state(
+                        execute=execute,
+                        action_code=str(row.get("action_code") or ""),
+                        status=str(preview_or_trade.get("status") or ""),
+                    ),
                     **preview_or_trade,
                 }
             )
@@ -420,6 +481,106 @@ class MultiThemeLeaderTradingRunner:
             status = str(row.get("status") or "unknown")
             summary[status] = summary.get(status, 0) + 1
         return dict(sorted(summary.items(), key=lambda item: item[0]))
+
+    def _is_quality_enabled(self, *, strategy_profile: str) -> bool:
+        if not self._signal_quality_cfg.enabled:
+            return False
+        scope = str(strategy_profile or "default").strip().lower()
+        if scope == "default":
+            return True
+        return scope in set(self._signal_quality_cfg.apply_scopes)
+
+    def _compute_breadth_ratio(self, rows: List[Dict[str, Any]]) -> Optional[float]:
+        if not rows:
+            return None
+        risk_filter = SignalQualityFilter(data_dir=str(self._data_dir))
+        valid = 0
+        broad = 0
+        threshold = float(self._signal_quality_cfg.thresholds.get("min_trend_150d", 1.0))
+        for row in rows:
+            stock_code = str(((row.get("leader") or {}).get("candidate") or {}).get("stock_code") or "").strip()
+            if not stock_code:
+                continue
+            metrics = risk_filter._compute_metrics(stock_code)
+            trend = metrics.get("trend_150d")
+            if trend is None:
+                continue
+            valid += 1
+            if float(trend) >= threshold:
+                broad += 1
+        if valid == 0:
+            return None
+        return broad / valid
+
+    @staticmethod
+    def _execution_state(*, execute: bool, action_code: str, status: str) -> str:
+        action = str(action_code or "").upper()
+        normalized = str(status or "").lower()
+        is_buy = action in {InvestmentAction.BUY.name, InvestmentAction.STRONG_BUY.name}
+        if not execute:
+            return "preview_ready" if is_buy and normalized == "ready" else "preview_only"
+        if normalized in {"simulated", "submitted", "filled"}:
+            return "execute_sent"
+        if is_buy and normalized in {"blocked", "no_action"}:
+            return "execute_blocked"
+        if normalized.startswith("error"):
+            return "execute_blocked"
+        return "execute_unknown"
+
+    def _aggregate_selection_reasons(
+        self,
+        *,
+        rows: List[Dict[str, Any]],
+        ranked: List[Dict[str, Any]],
+        min_leader_score: Optional[int],
+        min_confidence: Optional[int],
+        max_risk_level: Optional[str],
+        buy_only: bool,
+    ) -> Dict[str, Any]:
+        _ = rows
+        ranked_codes = {str(row.get("stock_code") or "") for row in ranked}
+        quality_penalty = 0
+        action = 0
+        confidence = 0
+        risk = 0
+        leader_score = 0
+
+        max_risk_rank = self._risk_rank(max_risk_level) if max_risk_level is not None else None
+        for row in list(getattr(self, "_latest_rank_rows", []) or []):
+            stock_code = str(row.get("stock_code") or "").strip()
+            if not stock_code or stock_code in ranked_codes:
+                continue
+
+            score = self._to_int(row.get("leader_score"), default=0)
+            conf = self._to_int(row.get("confidence"), default=0)
+            action_code = str(row.get("action_code") or "").upper()
+            risk_rank = int(row.get("risk_rank") or self._risk_rank("MEDIUM"))
+            if min_leader_score is not None and score < min_leader_score:
+                leader_score += 1
+            if min_confidence is not None and conf < min_confidence:
+                confidence += 1
+            if max_risk_rank is not None and risk_rank > max_risk_rank:
+                risk += 1
+            if buy_only and action_code not in {InvestmentAction.BUY.name, InvestmentAction.STRONG_BUY.name}:
+                action += 1
+            if self._signal_quality_cfg.enabled and not self._signal_quality_cfg.report_only:
+                quality_penalty += int(
+                    any(
+                        "quality_penalized_leader_score_below_minimum" in reason
+                        for reason in list(row.get("blocked_reasons") or [])
+                    )
+                )
+
+        return {
+            "selected_count": len(ranked),
+            "zero_selection_reasons": {
+                "action": action,
+                "confidence": confidence,
+                "risk": risk,
+                "leader_score": leader_score,
+                "quality_penalty": quality_penalty,
+            },
+        }
 
     def _save_report(self, result: Dict[str, Any]) -> Path:
         reports_dir = self._data_dir / "reports"

@@ -49,6 +49,10 @@ class ThemeAnalystEvaluation(BaseModel):
     catalysts: List[str] = Field(default_factory=list)
     risks: List[str] = Field(default_factory=list)
     contrarian_view: str = ""
+    structured_parse_failed: bool = False
+    coerced_fields: List[str] = Field(default_factory=list)
+    fallback_used: bool = False
+    parse_fallback_used: bool = False
 
 
 class ThemeQuantEvaluation(BaseModel):
@@ -67,6 +71,10 @@ class ThemeQuantEvaluation(BaseModel):
     pbr: Optional[float] = None
     roe: Optional[float] = None
     debt_ratio: Optional[float] = None
+    structured_parse_failed: bool = False
+    coerced_fields: List[str] = Field(default_factory=list)
+    fallback_used: bool = False
+    parse_fallback_used: bool = False
 
 
 class ThemeLeaderOrchestrator:
@@ -322,11 +330,13 @@ class ThemeLeaderOrchestrator:
                 "summary": analyst_result["summary"],
                 "catalysts": analyst_result["packet"].catalysts,
                 "risks": analyst_result["packet"].risks,
+                "quality_flags": analyst_result.get("quality_flags", {}),
             },
             "quant": {
                 "total_score": quant_result.total_score,
                 "grade": quant_result.grade,
                 "opinion": quant_result.opinion,
+                "quality_flags": quant_result.quality_flags,
             },
             "chartist": {
                 "total_score": chartist_result.total_score,
@@ -427,6 +437,7 @@ class ThemeLeaderOrchestrator:
         )
         if not data:
             return self._fallback_analyst(theme, candidate, context, source_counts)
+        quality_flags = self._extract_quality_flags(data, fallback_used=False)
 
         moat = max(0, min(40, int(data.get("moat_score", 20))))
         growth = max(0, min(30, int(data.get("growth_score", 15))))
@@ -455,6 +466,7 @@ class ThemeLeaderOrchestrator:
             "grade": packet.grade,
             "summary": packet.summary,
             "packet": packet,
+            "quality_flags": quality_flags,
         }
 
     def _evaluate_quant_candidate(
@@ -506,6 +518,7 @@ class ThemeLeaderOrchestrator:
         )
         if not data:
             return self._fallback_quant(theme, candidate, context, source_counts)
+        quality_flags = self._extract_quality_flags(data, fallback_used=False)
 
         valuation = max(0, min(25, int(data.get("valuation_score", 12))))
         profitability = max(0, min(25, int(data.get("profitability_score", 12))))
@@ -551,6 +564,7 @@ class ThemeLeaderOrchestrator:
             opinion=data.get("opinion", ""),
             grade=self._score_to_grade(total, 100),
             analysis_packet=packet.to_dict(),
+            quality_flags=quality_flags,
         )
 
     def _evaluate_chartist_candidate(
@@ -621,6 +635,12 @@ class ThemeLeaderOrchestrator:
             "grade": packet.grade,
             "summary": packet.summary,
             "packet": packet,
+            "quality_flags": {
+                "structured_parse_failed": True,
+                "coerced_fields": [],
+                "fallback_used": True,
+                "parse_fallback_used": True,
+            },
         }
 
     def _fallback_quant(
@@ -682,6 +702,12 @@ class ThemeLeaderOrchestrator:
             opinion=summary,
             grade=self._score_to_grade(total, 100),
             analysis_packet=packet.to_dict(),
+            quality_flags={
+                "structured_parse_failed": True,
+                "coerced_fields": [],
+                "fallback_used": True,
+                "parse_fallback_used": True,
+            },
         )
 
     def _decision_to_dict(self, decision: FinalDecision) -> Dict[str, Any]:
@@ -857,12 +883,19 @@ class ThemeLeaderOrchestrator:
         *,
         label: str = "theme_orchestrator",
     ) -> Dict[str, Any]:
+        structured_parse_failed = False
         try:
             structured_llm = self._build_structured_llm(llm, schema)
             if structured_llm is not None:
                 structured = structured_llm.invoke(prompt)
-                return self._validate_structured_payload(structured, schema)
+                validated, coerced_fields = self._validate_with_tolerant_path(structured, schema)
+                validated["structured_parse_failed"] = False
+                validated["coerced_fields"] = coerced_fields
+                validated["fallback_used"] = False
+                validated["parse_fallback_used"] = False
+                return validated
         except Exception as exc:
+            structured_parse_failed = True
             logger.warning(
                 "Theme orchestration structured output failed (%s): %s",
                 label,
@@ -886,7 +919,12 @@ class ThemeLeaderOrchestrator:
                     content,
                 )
                 return {}
-            return self._validate_structured_payload(payload, schema)
+            validated, coerced_fields = self._validate_with_tolerant_path(payload, schema)
+            validated["structured_parse_failed"] = structured_parse_failed
+            validated["coerced_fields"] = coerced_fields
+            validated["fallback_used"] = False
+            validated["parse_fallback_used"] = True
+            return validated
         except Exception as exc:
             logger.warning("Theme orchestration JSON parse failed (%s): %s", label, exc)
             return {}
@@ -908,6 +946,78 @@ class ThemeLeaderOrchestrator:
         if not isinstance(payload, dict):
             raise TypeError(f"Expected dict payload for {schema.__name__}, got {type(payload).__name__}")
         return schema.model_validate(payload).model_dump()
+
+    @classmethod
+    def _validate_with_tolerant_path(
+        cls,
+        payload: Any,
+        schema: type[BaseModel],
+    ) -> Tuple[Dict[str, Any], List[str]]:
+        if isinstance(payload, BaseModel):
+            payload_dict = payload.model_dump()
+        elif isinstance(payload, dict):
+            payload_dict = dict(payload)
+        else:
+            raise TypeError(f"Expected dict payload for {schema.__name__}, got {type(payload).__name__}")
+
+        try:
+            return schema.model_validate(payload_dict, strict=True).model_dump(), []
+        except Exception:
+            pass
+
+        normalized, coerced_fields = cls._normalize_payload_for_schema(payload_dict)
+        return schema.model_validate(normalized).model_dump(), coerced_fields
+
+    @staticmethod
+    def _normalize_payload_for_schema(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str]]:
+        normalized = dict(payload)
+        coerced_fields: List[str] = []
+
+        int_fields = {
+            "moat_score",
+            "growth_score",
+            "valuation_score",
+            "profitability_score",
+            "stability_score",
+        }
+        float_fields = {"per", "pbr", "roe", "debt_ratio"}
+
+        for field_name in int_fields:
+            value = normalized.get(field_name)
+            if isinstance(value, str):
+                text = value.strip()
+                if not text:
+                    continue
+                try:
+                    normalized[field_name] = int(float(text))
+                    coerced_fields.append(field_name)
+                except (TypeError, ValueError):
+                    continue
+
+        for field_name in float_fields:
+            value = normalized.get(field_name)
+            if isinstance(value, str):
+                text = value.strip()
+                if not text:
+                    normalized[field_name] = None
+                    coerced_fields.append(field_name)
+                    continue
+                try:
+                    normalized[field_name] = float(text)
+                    coerced_fields.append(field_name)
+                except (TypeError, ValueError):
+                    continue
+
+        return normalized, sorted(set(coerced_fields))
+
+    @staticmethod
+    def _extract_quality_flags(data: Dict[str, Any], *, fallback_used: bool) -> Dict[str, Any]:
+        return {
+            "structured_parse_failed": bool(data.get("structured_parse_failed", False)),
+            "coerced_fields": list(data.get("coerced_fields", [])),
+            "fallback_used": bool(fallback_used),
+            "parse_fallback_used": bool(data.get("parse_fallback_used", False)),
+        }
 
     @staticmethod
     def _response_to_text(content: Any) -> str:

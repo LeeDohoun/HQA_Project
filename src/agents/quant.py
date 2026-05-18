@@ -12,7 +12,7 @@ Quant Agent (퀀트 에이전트)
 점수 체계: 100점 만점 (밸류 25 + 수익성 25 + 성장성 25 + 안정성 25)
 """
 
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 from dataclasses import dataclass, field
 
 from src.agents.llm_config import get_instruct_llm
@@ -56,6 +56,7 @@ class QuantScore:
     opinion: str = ""
     grade: str = "C"  # A/B/C/D/F
     analysis_packet: Dict = field(default_factory=dict)
+    quality_flags: Dict[str, Any] = field(default_factory=dict)
 
 
 class QuantAgent:

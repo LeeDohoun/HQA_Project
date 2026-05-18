@@ -82,6 +82,28 @@ trading:
     confidence_drop_pct: 30       # 직전 기준 대비 30p 급락 시 리스크 트리거
     volatility_spike_pct: 0       # 0이면 비활성(옵션)
 
+  # 신호 품질 Shadow Penalty 필터 (초기: 차단 없이 점수 페널티/리포트)
+  signal_quality:
+    enabled: false
+    mode: "shadow_penalty"
+    apply_scopes: ["short", "long"]
+    report_only: false
+    penalty_weights:
+      low_trading_value: 8.0
+      high_volatility: 6.0
+      weak_return_5d: 4.0
+      weak_return_20d: 4.0
+      below_trend_150d: 7.0
+      weak_breadth: 5.0
+      missing_data: 6.0
+    thresholds:
+      min_avg_trading_value_20d: 1000000000
+      max_volatility_20d: 0.045
+      min_return_5d: -0.02
+      min_return_20d: -0.05
+      min_trend_150d: 1.0
+      min_breadth_ratio: 0.45
+
 # ── 트레이싱 ──
 tracing:
   debug: false
