@@ -4,6 +4,7 @@ import com.hqa.backend.dto.AuthLoginRequest;
 import com.hqa.backend.dto.AuthResponse;
 import com.hqa.backend.dto.AuthSignupRequest;
 import com.hqa.backend.dto.AuthUserResponse;
+import com.hqa.backend.dto.KisVerificationResult;
 import com.hqa.backend.dto.UserSecretRequest;
 import com.hqa.backend.dto.UserSecretResponse;
 import com.hqa.backend.dto.UserPreferenceRequest;
@@ -56,6 +57,15 @@ public class AuthController {
     @PutMapping("/me/kis")
     public UserSecretResponse saveKis(@Valid @RequestBody UserSecretRequest request, HttpSession session) {
         return authService.upsertUserSecret(request, session);
+    }
+
+    /**
+     * 저장 없이 KIS 자격증명만 검증.
+     * 온보딩 위저드에서 "다음" 누르기 전에 호출.
+     */
+    @PostMapping("/me/kis/verify")
+    public KisVerificationResult verifyKis(@Valid @RequestBody UserSecretRequest request, HttpSession session) {
+        return authService.verifyKisCredentials(request, session);
     }
 
     @GetMapping("/me/preference")

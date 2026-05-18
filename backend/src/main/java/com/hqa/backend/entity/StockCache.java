@@ -1,9 +1,9 @@
 package com.hqa.backend.entity;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
-import jakarta.persistence.Lob;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import java.time.OffsetDateTime;
@@ -20,7 +20,7 @@ public class StockCache {
     private String stockCode;
     private String stockName;
     private String dataType;
-    @Lob
+    @Column(columnDefinition = "TEXT")
     private String data;
     private OffsetDateTime expiresAt;
     private OffsetDateTime createdAt = OffsetDateTime.now();

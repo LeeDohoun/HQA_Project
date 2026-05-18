@@ -9,6 +9,7 @@ import type {
   CandleHistory,
   KisCredentials,
   KisCredentialsStatus,
+  KisVerificationResult,
   LoginRequest,
   RealtimePrice,
   ScoreDetail,
@@ -91,6 +92,7 @@ type KisCredentialsStatusWire = {
   kis_app_key_masked: string | null;
   kis_account_no_masked: string | null;
   kis_account_product_code: string | null;
+  kis_is_real: boolean;
 };
 
 function mapKisStatus(wire: KisCredentialsStatusWire): KisCredentialsStatus {
@@ -98,7 +100,26 @@ function mapKisStatus(wire: KisCredentialsStatusWire): KisCredentialsStatus {
     configured: wire.configured,
     kisAppKeyMasked: wire.kis_app_key_masked,
     kisAccountNoMasked: wire.kis_account_no_masked,
-    kisAccountProductCode: wire.kis_account_product_code
+    kisAccountProductCode: wire.kis_account_product_code,
+    kisIsReal: !!wire.kis_is_real
+  };
+}
+
+type KisVerificationResultWire = {
+  ok: boolean;
+  token_ok: boolean;
+  account_ok: boolean;
+  stage: string;
+  message: string;
+};
+
+function mapKisVerification(wire: KisVerificationResultWire): KisVerificationResult {
+  return {
+    ok: wire.ok,
+    tokenOk: wire.token_ok,
+    accountOk: wire.account_ok,
+    stage: wire.stage,
+    message: wire.message
   };
 }
 
@@ -369,7 +390,19 @@ export const authApi = {
         kis_app_key: payload.kisAppKey,
         kis_app_secret: payload.kisAppSecret,
         kis_account_no: payload.kisAccountNo,
-        kis_account_product_code: payload.kisAccountProductCode
+        kis_account_product_code: payload.kisAccountProductCode,
+        kis_is_real: payload.kisIsReal
+      })
+    })),
+  verifyKis: async (payload: KisCredentials) =>
+    mapKisVerification(await api<KisVerificationResultWire>("/api/v1/auth/me/kis/verify", {
+      method: "POST",
+      body: JSON.stringify({
+        kis_app_key: payload.kisAppKey,
+        kis_app_secret: payload.kisAppSecret,
+        kis_account_no: payload.kisAccountNo,
+        kis_account_product_code: payload.kisAccountProductCode,
+        kis_is_real: payload.kisIsReal
       })
     }))
 };
@@ -486,6 +519,16 @@ export const tradingApi = {
     ),
   buy: (payload: { stockName: string; stockCode: string; quantity: number; limitPrice: number }) =>
     api<DirectBuyResult>("/api/v1/trading/buy", {
+      method: "POST",
+      body: JSON.stringify({
+        stockName: payload.stockName,
+        stockCode: payload.stockCode,
+        quantity: payload.quantity,
+        limitPrice: payload.limitPrice
+      })
+    }),
+  sell: (payload: { stockName: string; stockCode: string; quantity: number; limitPrice: number }) =>
+    api<DirectBuyResult>("/api/v1/trading/sell", {
       method: "POST",
       body: JSON.stringify({
         stockName: payload.stockName,

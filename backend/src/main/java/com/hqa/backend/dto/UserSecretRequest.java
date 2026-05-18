@@ -6,6 +6,7 @@ public record UserSecretRequest(
         @NotBlank String kisAppKey,
         @NotBlank String kisAppSecret,
         @NotBlank String kisAccountNo,
-        @NotBlank String kisAccountProductCode
+        @NotBlank String kisAccountProductCode,
+        boolean kisIsReal
 ) {
 }
