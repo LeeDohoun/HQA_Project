@@ -1,0 +1,48 @@
+{
+  "generated_at": "2026-05-18T14:22:43+0900",
+  "focus": "verify architecture and run fairer top10 candidate pilots",
+  "architecture_verdict": {
+    "matches_project_pattern": true,
+    "lower_agents": ["Analyst", "Quant", "Chartist"],
+    "supervising_agent": "RiskManager",
+    "backtest_class": "TemporalMultiAgentStockScorer",
+    "nuance": "Backtest is point-in-time safe and uses calibrated specialist weights for ranking while storing RiskManager raw final score."
+  },
+  "top10_pilots": [
+    {
+      "theme": "AI",
+      "period": "2024 W01",
+      "strategy": "short_hybrid_05",
+      "candidate_flow": "top10 -> top3",
+      "fallback": false,
+      "deterministic_picks": ["에이디테크놀로지", "가온칩스", "텔레칩스"],
+      "multi_agent_picks": ["마음AI", "가온칩스", "텔레칩스"],
+      "return_pct": -3.37,
+      "benchmark_pct": 1.07,
+      "excess_pct": -4.45,
+      "delta_vs_deterministic_pct": 0.81,
+      "result": "improved"
+    },
+    {
+      "theme": "2차전지",
+      "period": "2025 W44",
+      "strategy": "short_hybrid_05",
+      "candidate_flow": "top10 -> top3",
+      "fallback": false,
+      "deterministic_picks": ["천보", "레몬", "엠플러스"],
+      "multi_agent_picks": ["천보", "테이팩스", "코세스"],
+      "return_pct": -0.42,
+      "benchmark_pct": 1.01,
+      "excess_pct": -1.43,
+      "delta_vs_deterministic_pct": -4.54,
+      "result": "underperformed"
+    }
+  ],
+  "next_work": [
+    "Run longer top10 short_hybrid_05 windows.",
+    "Run long_hybrid_05 representative validation.",
+    "Add market index benchmark.",
+    "Compare calibrated score against raw RiskManager final score.",
+    "Expand top10 tests across the full theme set."
+  ]
+}

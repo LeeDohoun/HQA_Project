@@ -1,0 +1,1360 @@
+[
+  {
+    "task_id": "proof-2차전지-validation_2025_w36-deterministic_short",
+    "mode": "backtest",
+    "result_type": "backtest",
+    "status": "completed",
+    "theme": "2차전지",
+    "theme_key": "2차전지",
+    "prediction_model": "momentum_price_forecast_v1",
+    "period": {
+      "from_date": "2025-09-01",
+      "to_date": "2025-09-05",
+      "rebalance": "W",
+      "rebalance_count": 0,
+      "hold_days": 5
+    },
+    "strategy": {
+      "name": "ai_theme_leader_momentum_v1",
+      "top_n": 3,
+      "min_history_days": 150,
+      "transaction_cost_bps": 15.0,
+      "slippage_bps": 5.0,
+      "market_impact_bps": 5.0,
+      "round_trip_cost_bps": 50.0,
+      "risk_filters": {
+        "min_avg_trading_value": 0.0,
+        "position_value_krw": 10000000.0,
+        "max_position_pct_avg_trading_value": 5.0,
+        "max_volatility_20d": 1.2,
+        "max_return_5d": 0.35,
+        "max_return_20d": 0.9,
+        "min_trend_150d": -1.0,
+        "min_market_breadth_pct": 40.0
+      },
+      "exit_rules": {
+        "stop_loss_pct": 0.0,
+        "take_profit_pct": 0.0,
+        "trailing_stop_pct": 15.0
+      },
+      "llm_rerank": {
+        "enabled": false,
+        "top_k": 0,
+        "weight": 0.0,
+        "context_docs": 0,
+        "mode": "",
+        "candidate_scope": "",
+        "horizon": "",
+        "top_k_meaning": ""
+      },
+      "selection_inputs": [
+        "20d momentum",
+        "60d momentum",
+        "150d trend",
+        "20d volume ratio",
+        "news/dart/forum document signal",
+        "20d volatility penalty"
+      ],
+      "prediction_model": "momentum_price_forecast_v1"
+    },
+    "metrics": {
+      "rebalance_count": 0,
+      "risk_off_count": 0,
+      "traded_rebalance_count": 0,
+      "total_return_pct": 0.0,
+      "benchmark_return_pct": 0.0,
+      "excess_return_pct": 0.0,
+      "mdd_pct": 0.0,
+      "sharpe": 0.0,
+      "win_rate_pct": 0.0,
+      "prediction_hit_rate_pct": 0.0,
+      "loss_period_count": 0,
+      "max_consecutive_loss_periods": 0,
+      "worst_period_return_pct": 0.0,
+      "best_period_return_pct": 0.0
+    },
+    "leaders": [],
+    "predictions": [],
+    "positions": [],
+    "trades": [],
+    "periods": [],
+    "equity_curve": [],
+    "risk": {
+      "filters": {
+        "min_avg_trading_value": 0.0,
+        "position_value_krw": 10000000.0,
+        "max_position_pct_avg_trading_value": 5.0,
+        "max_volatility_20d": 1.2,
+        "max_return_5d": 0.35,
+        "max_return_20d": 0.9,
+        "min_trend_150d": -1.0,
+        "min_market_breadth_pct": 40.0
+      },
+      "reject_counts": {}
+    },
+    "execution": {
+      "exit_rules": {
+        "stop_loss_pct": 0.0,
+        "take_profit_pct": 0.0,
+        "trailing_stop_pct": 15.0
+      },
+      "costs": {
+        "transaction_cost_bps": 15.0,
+        "slippage_bps": 5.0,
+        "market_impact_bps": 5.0,
+        "round_trip_cost_bps": 50.0
+      },
+      "exit_counts": {},
+      "same_day_ohlc_policy": "stop_or_trailing_stop_before_take_profit"
+    },
+    "artifacts": {
+      "result_json": "data/backtest_results/multi_agent_validation/phase3/battery_tradable_window_scan/runs/proof-2차전지-validation_2025_w36-deterministic_short.json"
+    },
+    "warnings": [
+      "20250905: eligible stocks 0 < top_n 3",
+      "future returns are used only for evaluation after each as_of_date signal.",
+      "selection uses deterministic price/document features, not the full LLM ThemeLeaderOrchestrator.",
+      "theme_targets has no point-in-time membership date; historical theme membership may include survivorship/future-membership bias."
+    ],
+    "metadata": {
+      "generated_at": "2026-05-18T13:53:56.208083",
+      "data_dir": "data",
+      "target_count": 50,
+      "membership_count": 0,
+      "point_in_time_universe": false,
+      "membership_sources": [],
+      "price_stock_count": 50,
+      "document_signal_count": 21725,
+      "llm": {}
+    }
+  },
+  {
+    "task_id": "proof-2차전지-validation_2025_w44-deterministic_short",
+    "mode": "backtest",
+    "result_type": "backtest",
+    "status": "completed",
+    "theme": "2차전지",
+    "theme_key": "2차전지",
+    "prediction_model": "momentum_price_forecast_v1",
+    "period": {
+      "from_date": "2025-11-03",
+      "to_date": "2025-11-07",
+      "rebalance": "W",
+      "rebalance_count": 1,
+      "hold_days": 5
+    },
+    "strategy": {
+      "name": "ai_theme_leader_momentum_v1",
+      "top_n": 3,
+      "min_history_days": 150,
+      "transaction_cost_bps": 15.0,
+      "slippage_bps": 5.0,
+      "market_impact_bps": 5.0,
+      "round_trip_cost_bps": 50.0,
+      "risk_filters": {
+        "min_avg_trading_value": 0.0,
+        "position_value_krw": 10000000.0,
+        "max_position_pct_avg_trading_value": 5.0,
+        "max_volatility_20d": 1.2,
+        "max_return_5d": 0.35,
+        "max_return_20d": 0.9,
+        "min_trend_150d": -1.0,
+        "min_market_breadth_pct": 40.0
+      },
+      "exit_rules": {
+        "stop_loss_pct": 0.0,
+        "take_profit_pct": 0.0,
+        "trailing_stop_pct": 15.0
+      },
+      "llm_rerank": {
+        "enabled": false,
+        "top_k": 0,
+        "weight": 0.0,
+        "context_docs": 0,
+        "mode": "",
+        "candidate_scope": "",
+        "horizon": "",
+        "top_k_meaning": ""
+      },
+      "selection_inputs": [
+        "20d momentum",
+        "60d momentum",
+        "150d trend",
+        "20d volume ratio",
+        "news/dart/forum document signal",
+        "20d volatility penalty"
+      ],
+      "prediction_model": "momentum_price_forecast_v1"
+    },
+    "metrics": {
+      "rebalance_count": 1,
+      "risk_off_count": 0,
+      "traded_rebalance_count": 1,
+      "position_count": 3,
+      "total_return_pct": 4.12,
+      "benchmark_return_pct": 1.01,
+      "excess_return_pct": 3.11,
+      "cagr_pct": 3902.27,
+      "benchmark_cagr_pct": 151.36,
+      "mdd_pct": 0.0,
+      "benchmark_mdd_pct": 0.0,
+      "sharpe": 0.0,
+      "avg_period_return_pct": 4.12,
+      "avg_benchmark_period_return_pct": 1.01,
+      "win_rate_pct": 100.0,
+      "prediction_hit_rate_pct": 66.67,
+      "avg_position_return_pct": 4.62,
+      "median_position_return_pct": 5.25,
+      "loss_period_count": 0,
+      "max_consecutive_loss_periods": 0,
+      "worst_period_return_pct": 4.12,
+      "best_period_return_pct": 4.12
+    },
+    "leaders": [
+      {
+        "stock_name": "레몬",
+        "stock_code": "294140",
+        "selection_count": 1,
+        "avg_leader_score": 75.0,
+        "avg_realized_return_pct": 9.52,
+        "win_rate_pct": 100.0
+      },
+      {
+        "stock_name": "엠플러스",
+        "stock_code": "259630",
+        "selection_count": 1,
+        "avg_leader_score": 71.0,
+        "avg_realized_return_pct": 5.25,
+        "win_rate_pct": 100.0
+      },
+      {
+        "stock_name": "천보",
+        "stock_code": "278280",
+        "selection_count": 1,
+        "avg_leader_score": 81.0,
+        "avg_realized_return_pct": -0.91,
+        "win_rate_pct": 0.0
+      }
+    ],
+    "predictions": [
+      {
+        "as_of_date": "2025-11-07",
+        "entry_date": "2025-11-07",
+        "exit_date": "2025-11-14",
+        "stock_name": "천보",
+        "stock_code": "278280",
+        "rank": 1,
+        "leader_score": 81,
+        "predicted_return_pct": 51.94,
+        "target_price": 100585.33,
+        "realized_return_pct": -0.91,
+        "prediction_model": "momentum_price_forecast_v1"
+      },
+      {
+        "as_of_date": "2025-11-07",
+        "entry_date": "2025-11-07",
+        "exit_date": "2025-11-14",
+        "stock_name": "레몬",
+        "stock_code": "294140",
+        "rank": 2,
+        "leader_score": 75,
+        "predicted_return_pct": 37.99,
+        "target_price": 10142.16,
+        "realized_return_pct": 9.52,
+        "prediction_model": "momentum_price_forecast_v1"
+      },
+      {
+        "as_of_date": "2025-11-07",
+        "entry_date": "2025-11-07",
+        "exit_date": "2025-11-14",
+        "stock_name": "엠플러스",
+        "stock_code": "259630",
+        "rank": 3,
+        "leader_score": 71,
+        "predicted_return_pct": 27.45,
+        "target_price": 18200.02,
+        "realized_return_pct": 5.25,
+        "prediction_model": "momentum_price_forecast_v1"
+      }
+    ],
+    "positions": [
+      {
+        "as_of_date": "2025-11-07",
+        "entry_date": "2025-11-07",
+        "exit_date": "2025-11-14",
+        "planned_exit_date": "2025-11-14",
+        "exit_reason": "holding_period_exit",
+        "stock_name": "천보",
+        "stock_code": "278280",
+        "entry_price": 66200.0,
+        "exit_price": 65600.0,
+        "return_5d": -0.08183079056865461,
+        "return_20d": 0.5558166862514688,
+        "return_60d": 0.445414847161572,
+        "trend_150d": 0.5394155491822339,
+        "volatility_20d": 1.183170645831874,
+        "volume_ratio_20d": 0.5475018838253121,
+        "avg_trading_value_20d": 10093248812.5,
+        "doc_signal": 10.964702594202947,
+        "doc_counts": {
+          "dart": 52,
+          "forum": 0,
+          "news": 64
+        },
+        "return_60d_rank": 0.9183673469387755,
+        "return_20d_rank": 0.9795918367346939,
+        "trend_150d_rank": 0.9591836734693877,
+        "volume_rank": 0.4489795918367347,
+        "doc_rank": 1.0,
+        "low_vol_rank": 0.02040816326530612,
+        "leader_score": 81,
+        "target_price": 100585.33,
+        "rank": 1,
+        "weight": 0.333333,
+        "realized_return_pct": -0.91,
+        "predicted_return_pct": 51.94
+      },
+      {
+        "as_of_date": "2025-11-07",
+        "entry_date": "2025-11-07",
+        "exit_date": "2025-11-14",
+        "planned_exit_date": "2025-11-14",
+        "exit_reason": "holding_period_exit",
+        "stock_name": "레몬",
+        "stock_code": "294140",
+        "entry_price": 7350.0,
+        "exit_price": 8050.0,
+        "return_5d": 0.02083333333333326,
+        "return_20d": 0.07771260997067442,
+        "return_60d": 0.7668269230769231,
+        "trend_150d": 0.5549083626568132,
+        "volatility_20d": 0.5217468296116284,
+        "volume_ratio_20d": 0.8806661913008047,
+        "avg_trading_value_20d": 1138521068.5,
+        "doc_signal": 5.775221402565087,
+        "doc_counts": {
+          "dart": 46,
+          "forum": 0,
+          "news": 0
+        },
+        "return_60d_rank": 0.9591836734693877,
+        "return_20d_rank": 0.5714285714285714,
+        "trend_150d_rank": 0.9795918367346939,
+        "volume_rank": 0.7346938775510204,
+        "doc_rank": 0.3877551020408163,
+        "low_vol_rank": 0.673469387755102,
+        "leader_score": 75,
+        "target_price": 10142.16,
+        "rank": 2,
+        "weight": 0.333333,
+        "realized_return_pct": 9.52,
+        "predicted_return_pct": 37.99
+      },
+      {
+        "as_of_date": "2025-11-07",
+        "entry_date": "2025-11-07",
+        "exit_date": "2025-11-14",
+        "planned_exit_date": "2025-11-14",
+        "exit_reason": "holding_period_exit",
+        "stock_name": "엠플러스",
+        "stock_code": "259630",
+        "entry_price": 14280.0,
+        "exit_price": 15030.0,
+        "return_5d": -0.17789291882556135,
+        "return_20d": 0.06567164179104479,
+        "return_60d": 0.5454545454545454,
+        "trend_150d": 0.3901959384471603,
+        "volatility_20d": 0.8321443382575456,
+        "volume_ratio_20d": 0.6366531184346894,
+        "avg_trading_value_20d": 6220737865.5,
+        "doc_signal": 9.259202122022351,
+        "doc_counts": {
+          "dart": 75,
+          "forum": 0,
+          "news": 9
+        },
+        "return_60d_rank": 0.9387755102040817,
+        "return_20d_rank": 0.5306122448979592,
+        "trend_150d_rank": 0.8775510204081632,
+        "volume_rank": 0.5306122448979592,
+        "doc_rank": 0.8775510204081632,
+        "low_vol_rank": 0.061224489795918366,
+        "leader_score": 71,
+        "target_price": 18200.02,
+        "rank": 3,
+        "weight": 0.333333,
+        "realized_return_pct": 5.25,
+        "predicted_return_pct": 27.45
+      }
+    ],
+    "trades": [
+      {
+        "date": "2025-11-07",
+        "stock_name": "천보",
+        "stock_code": "278280",
+        "side": "BUY",
+        "price": 66200.0,
+        "weight": 0.333333,
+        "reason": "rank 1 leader_score 81"
+      },
+      {
+        "date": "2025-11-14",
+        "stock_name": "천보",
+        "stock_code": "278280",
+        "side": "SELL",
+        "price": 65600.0,
+        "weight": 0.333333,
+        "realized_return_pct": -0.91,
+        "reason": "holding_period_exit"
+      },
+      {
+        "date": "2025-11-07",
+        "stock_name": "레몬",
+        "stock_code": "294140",
+        "side": "BUY",
+        "price": 7350.0,
+        "weight": 0.333333,
+        "reason": "rank 2 leader_score 75"
+      },
+      {
+        "date": "2025-11-14",
+        "stock_name": "레몬",
+        "stock_code": "294140",
+        "side": "SELL",
+        "price": 8050.0,
+        "weight": 0.333333,
+        "realized_return_pct": 9.52,
+        "reason": "holding_period_exit"
+      },
+      {
+        "date": "2025-11-07",
+        "stock_name": "엠플러스",
+        "stock_code": "259630",
+        "side": "BUY",
+        "price": 14280.0,
+        "weight": 0.333333,
+        "reason": "rank 3 leader_score 71"
+      },
+      {
+        "date": "2025-11-14",
+        "stock_name": "엠플러스",
+        "stock_code": "259630",
+        "side": "SELL",
+        "price": 15030.0,
+        "weight": 0.333333,
+        "realized_return_pct": 5.25,
+        "reason": "holding_period_exit"
+      }
+    ],
+    "periods": [
+      {
+        "as_of_date": "2025-11-07",
+        "entry_date": "2025-11-07",
+        "exit_date": "2025-11-14",
+        "selected_count": 3,
+        "active_target_count": 50,
+        "eligible_count": 49,
+        "risk_eligible_count": 48,
+        "risk_reject_count": 1,
+        "market_breadth_pct": 67.35,
+        "portfolio_return_pct": 4.12,
+        "benchmark_return_pct": 1.01,
+        "excess_return_pct": 3.11,
+        "candidate_rankings": [
+          {
+            "stock_name": "천보",
+            "stock_code": "278280",
+            "leader_score": 81,
+            "volatility_20d": 1.1832,
+            "volume_ratio_20d": 0.5475,
+            "doc_signal": 10.9647,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -8.18,
+            "return_20d_pct": 55.58,
+            "return_60d_pct": 44.54,
+            "trend_150d_pct": 53.94,
+            "realized_return_pct": -0.91
+          },
+          {
+            "stock_name": "레몬",
+            "stock_code": "294140",
+            "leader_score": 75,
+            "volatility_20d": 0.5217,
+            "volume_ratio_20d": 0.8807,
+            "doc_signal": 5.7752,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": 2.08,
+            "return_20d_pct": 7.77,
+            "return_60d_pct": 76.68,
+            "trend_150d_pct": 55.49,
+            "realized_return_pct": 9.52
+          },
+          {
+            "stock_name": "엠플러스",
+            "stock_code": "259630",
+            "leader_score": 71,
+            "volatility_20d": 0.8321,
+            "volume_ratio_20d": 0.6367,
+            "doc_signal": 9.2592,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -17.79,
+            "return_20d_pct": 6.57,
+            "return_60d_pct": 54.55,
+            "trend_150d_pct": 39.02,
+            "realized_return_pct": 5.25
+          },
+          {
+            "stock_name": "SK이노베이션",
+            "stock_code": "096770",
+            "leader_score": 71,
+            "volatility_20d": 0.5629,
+            "volume_ratio_20d": 0.6273,
+            "doc_signal": 9.5512,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -10.09,
+            "return_20d_pct": 12.52,
+            "return_60d_pct": 6.82,
+            "trend_150d_pct": 10.56,
+            "realized_return_pct": 5.87
+          },
+          {
+            "stock_name": "피엔티",
+            "stock_code": "137400",
+            "leader_score": 71,
+            "volatility_20d": 0.5871,
+            "volume_ratio_20d": 0.4337,
+            "doc_signal": 8.0478,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -3.93,
+            "return_20d_pct": 20.61,
+            "return_60d_pct": 16.71,
+            "trend_150d_pct": 13.12,
+            "realized_return_pct": 2.77
+          },
+          {
+            "stock_name": "코세스",
+            "stock_code": "089890",
+            "leader_score": 69,
+            "volatility_20d": 1.0364,
+            "volume_ratio_20d": 0.4874,
+            "doc_signal": 3.5968,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": 2.08,
+            "return_20d_pct": 56.75,
+            "return_60d_pct": 142.0,
+            "trend_150d_pct": 151.44,
+            "realized_return_pct": 6.44
+          },
+          {
+            "stock_name": "테이팩스",
+            "stock_code": "055490",
+            "leader_score": 68,
+            "volatility_20d": 0.7801,
+            "volume_ratio_20d": 1.4625,
+            "doc_signal": 6.5619,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": 18.8,
+            "return_20d_pct": 25.28,
+            "return_60d_pct": 7.46,
+            "trend_150d_pct": 17.48,
+            "realized_return_pct": -5.29
+          },
+          {
+            "stock_name": "LG에너지솔루션",
+            "stock_code": "373220",
+            "leader_score": 68,
+            "volatility_20d": 0.6014,
+            "volume_ratio_20d": 0.5089,
+            "doc_signal": 4.8283,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -2.01,
+            "return_20d_pct": 28.93,
+            "return_60d_pct": 19.92,
+            "trend_150d_pct": 32.69,
+            "realized_return_pct": -0.11
+          },
+          {
+            "stock_name": "삼성SDI",
+            "stock_code": "006400",
+            "leader_score": 68,
+            "volatility_20d": 0.7567,
+            "volume_ratio_20d": 0.7117,
+            "doc_signal": 3.8474,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -4.97,
+            "return_20d_pct": 47.83,
+            "return_60d_pct": 41.01,
+            "trend_150d_pct": 52.22,
+            "realized_return_pct": 2.94
+          },
+          {
+            "stock_name": "삼성전기",
+            "stock_code": "009150",
+            "leader_score": 65,
+            "volatility_20d": 0.5101,
+            "volume_ratio_20d": 0.9947,
+            "doc_signal": 2.9189,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -9.18,
+            "return_20d_pct": 5.7,
+            "return_60d_pct": 43.27,
+            "trend_150d_pct": 43.86,
+            "realized_return_pct": -4.27
+          }
+        ],
+        "top_symbols": [
+          {
+            "stock_name": "천보",
+            "stock_code": "278280",
+            "leader_score": 81,
+            "realized_return_pct": -0.91
+          },
+          {
+            "stock_name": "레몬",
+            "stock_code": "294140",
+            "leader_score": 75,
+            "realized_return_pct": 9.52
+          },
+          {
+            "stock_name": "엠플러스",
+            "stock_code": "259630",
+            "leader_score": 71,
+            "realized_return_pct": 5.25
+          }
+        ]
+      }
+    ],
+    "equity_curve": [
+      {
+        "date": "2025-11-14",
+        "equity": 1.041232,
+        "benchmark_equity": 1.010145,
+        "period_return_pct": 4.12,
+        "benchmark_return_pct": 1.01
+      }
+    ],
+    "risk": {
+      "filters": {
+        "min_avg_trading_value": 0.0,
+        "position_value_krw": 10000000.0,
+        "max_position_pct_avg_trading_value": 5.0,
+        "max_volatility_20d": 1.2,
+        "max_return_5d": 0.35,
+        "max_return_20d": 0.9,
+        "min_trend_150d": -1.0,
+        "min_market_breadth_pct": 40.0
+      },
+      "reject_counts": {
+        "insufficient_liquidity_capacity": 1
+      }
+    },
+    "execution": {
+      "exit_rules": {
+        "stop_loss_pct": 0.0,
+        "take_profit_pct": 0.0,
+        "trailing_stop_pct": 15.0
+      },
+      "costs": {
+        "transaction_cost_bps": 15.0,
+        "slippage_bps": 5.0,
+        "market_impact_bps": 5.0,
+        "round_trip_cost_bps": 50.0
+      },
+      "exit_counts": {
+        "holding_period_exit": 3
+      },
+      "same_day_ohlc_policy": "stop_or_trailing_stop_before_take_profit"
+    },
+    "artifacts": {
+      "result_json": "data/backtest_results/multi_agent_validation/phase3/battery_tradable_window_scan/runs/proof-2차전지-validation_2025_w44-deterministic_short.json"
+    },
+    "warnings": [
+      "future returns are used only for evaluation after each as_of_date signal.",
+      "selection uses deterministic price/document features, not the full LLM ThemeLeaderOrchestrator.",
+      "theme_targets has no point-in-time membership date; historical theme membership may include survivorship/future-membership bias."
+    ],
+    "metadata": {
+      "generated_at": "2026-05-18T13:53:57.917428",
+      "data_dir": "data",
+      "target_count": 50,
+      "membership_count": 0,
+      "point_in_time_universe": false,
+      "membership_sources": [],
+      "price_stock_count": 50,
+      "document_signal_count": 21725,
+      "llm": {}
+    }
+  },
+  {
+    "task_id": "proof-2차전지-validation_2026_w10-deterministic_short",
+    "mode": "backtest",
+    "result_type": "backtest",
+    "status": "completed",
+    "theme": "2차전지",
+    "theme_key": "2차전지",
+    "prediction_model": "momentum_price_forecast_v1",
+    "period": {
+      "from_date": "2026-03-02",
+      "to_date": "2026-03-06",
+      "rebalance": "W",
+      "rebalance_count": 1,
+      "hold_days": 5
+    },
+    "strategy": {
+      "name": "ai_theme_leader_momentum_v1",
+      "top_n": 3,
+      "min_history_days": 150,
+      "transaction_cost_bps": 15.0,
+      "slippage_bps": 5.0,
+      "market_impact_bps": 5.0,
+      "round_trip_cost_bps": 50.0,
+      "risk_filters": {
+        "min_avg_trading_value": 0.0,
+        "position_value_krw": 10000000.0,
+        "max_position_pct_avg_trading_value": 5.0,
+        "max_volatility_20d": 1.2,
+        "max_return_5d": 0.35,
+        "max_return_20d": 0.9,
+        "min_trend_150d": -1.0,
+        "min_market_breadth_pct": 40.0
+      },
+      "exit_rules": {
+        "stop_loss_pct": 0.0,
+        "take_profit_pct": 0.0,
+        "trailing_stop_pct": 15.0
+      },
+      "llm_rerank": {
+        "enabled": false,
+        "top_k": 0,
+        "weight": 0.0,
+        "context_docs": 0,
+        "mode": "",
+        "candidate_scope": "",
+        "horizon": "",
+        "top_k_meaning": ""
+      },
+      "selection_inputs": [
+        "20d momentum",
+        "60d momentum",
+        "150d trend",
+        "20d volume ratio",
+        "news/dart/forum document signal",
+        "20d volatility penalty"
+      ],
+      "prediction_model": "momentum_price_forecast_v1"
+    },
+    "metrics": {
+      "rebalance_count": 1,
+      "risk_off_count": 0,
+      "traded_rebalance_count": 1,
+      "position_count": 3,
+      "total_return_pct": -10.61,
+      "benchmark_return_pct": -4.75,
+      "excess_return_pct": -5.86,
+      "cagr_pct": -100.0,
+      "benchmark_cagr_pct": -98.82,
+      "mdd_pct": 0.0,
+      "benchmark_mdd_pct": 0.0,
+      "sharpe": 0.0,
+      "avg_period_return_pct": -10.61,
+      "avg_benchmark_period_return_pct": -4.75,
+      "win_rate_pct": 0.0,
+      "prediction_hit_rate_pct": 0.0,
+      "avg_position_return_pct": -10.11,
+      "median_position_return_pct": -9.85,
+      "loss_period_count": 1,
+      "max_consecutive_loss_periods": 1,
+      "worst_period_return_pct": -10.61,
+      "best_period_return_pct": -10.61
+    },
+    "leaders": [
+      {
+        "stock_name": "삼성SDI",
+        "stock_code": "006400",
+        "selection_count": 1,
+        "avg_leader_score": 76.0,
+        "avg_realized_return_pct": -5.48,
+        "win_rate_pct": 0.0
+      },
+      {
+        "stock_name": "SK이노베이션",
+        "stock_code": "096770",
+        "selection_count": 1,
+        "avg_leader_score": 78.0,
+        "avg_realized_return_pct": -9.85,
+        "win_rate_pct": 0.0
+      },
+      {
+        "stock_name": "디아이티",
+        "stock_code": "110990",
+        "selection_count": 1,
+        "avg_leader_score": 83.0,
+        "avg_realized_return_pct": -15.0,
+        "win_rate_pct": 0.0
+      }
+    ],
+    "predictions": [
+      {
+        "as_of_date": "2026-03-06",
+        "entry_date": "2026-03-06",
+        "exit_date": "2026-03-09",
+        "stock_name": "디아이티",
+        "stock_code": "110990",
+        "rank": 1,
+        "leader_score": 83,
+        "predicted_return_pct": 40.55,
+        "target_price": 34503.8,
+        "realized_return_pct": -15.0,
+        "prediction_model": "momentum_price_forecast_v1"
+      },
+      {
+        "as_of_date": "2026-03-06",
+        "entry_date": "2026-03-06",
+        "exit_date": "2026-03-13",
+        "stock_name": "SK이노베이션",
+        "stock_code": "096770",
+        "rank": 2,
+        "leader_score": 78,
+        "predicted_return_pct": 13.05,
+        "target_price": 141199.11,
+        "realized_return_pct": -9.85,
+        "prediction_model": "momentum_price_forecast_v1"
+      },
+      {
+        "as_of_date": "2026-03-06",
+        "entry_date": "2026-03-06",
+        "exit_date": "2026-03-13",
+        "stock_name": "삼성SDI",
+        "stock_code": "006400",
+        "rank": 3,
+        "leader_score": 76,
+        "predicted_return_pct": 27.17,
+        "target_price": 522042.57,
+        "realized_return_pct": -5.48,
+        "prediction_model": "momentum_price_forecast_v1"
+      }
+    ],
+    "positions": [
+      {
+        "as_of_date": "2026-03-06",
+        "entry_date": "2026-03-06",
+        "exit_date": "2026-03-09",
+        "planned_exit_date": "2026-03-13",
+        "exit_reason": "trailing_stop",
+        "stock_name": "디아이티",
+        "stock_code": "110990",
+        "entry_price": 24550.0,
+        "exit_price": 20867.5,
+        "return_5d": 0.03586497890295348,
+        "return_20d": 0.18599033816425115,
+        "return_60d": 0.6666666666666667,
+        "trend_150d": 0.5622746209389344,
+        "volatility_20d": 1.1434565206884826,
+        "volume_ratio_20d": 2.5565039939067953,
+        "avg_trading_value_20d": 4816997982.5,
+        "doc_signal": 9.82411694814179,
+        "doc_counts": {
+          "dart": 46,
+          "forum": 117,
+          "news": 3
+        },
+        "return_60d_rank": 0.94,
+        "return_20d_rank": 0.9,
+        "trend_150d_rank": 0.9,
+        "volume_rank": 0.96,
+        "doc_rank": 0.76,
+        "low_vol_rank": 0.24,
+        "leader_score": 83,
+        "target_price": 34503.8,
+        "rank": 1,
+        "weight": 0.333333,
+        "realized_return_pct": -15.0,
+        "predicted_return_pct": 40.55
+      },
+      {
+        "as_of_date": "2026-03-06",
+        "entry_date": "2026-03-06",
+        "exit_date": "2026-03-13",
+        "planned_exit_date": "2026-03-13",
+        "exit_reason": "holding_period_exit",
+        "stock_name": "SK이노베이션",
+        "stock_code": "096770",
+        "entry_price": 124900.0,
+        "exit_price": 112600.0,
+        "return_5d": -0.03923076923076918,
+        "return_20d": 0.16838166510757713,
+        "return_60d": 0.07765314926660905,
+        "trend_150d": 0.11505246430463223,
+        "volatility_20d": 0.9910974036033205,
+        "volume_ratio_20d": 1.109743955658043,
+        "avg_trading_value_20d": 120392379400.0,
+        "doc_signal": 11.71956959326489,
+        "doc_counts": {
+          "dart": 74,
+          "forum": 0,
+          "news": 78
+        },
+        "return_60d_rank": 0.72,
+        "return_20d_rank": 0.88,
+        "trend_150d_rank": 0.72,
+        "volume_rank": 0.9,
+        "doc_rank": 0.98,
+        "low_vol_rank": 0.48,
+        "leader_score": 78,
+        "target_price": 141199.11,
+        "rank": 2,
+        "weight": 0.333333,
+        "realized_return_pct": -9.85,
+        "predicted_return_pct": 13.05
+      },
+      {
+        "as_of_date": "2026-03-06",
+        "entry_date": "2026-03-06",
+        "exit_date": "2026-03-13",
+        "planned_exit_date": "2026-03-13",
+        "exit_reason": "holding_period_exit",
+        "stock_name": "삼성SDI",
+        "stock_code": "006400",
+        "entry_price": 410500.0,
+        "exit_price": 388000.0,
+        "return_5d": -0.08574610244988867,
+        "return_20d": 0.1530898876404494,
+        "return_60d": 0.3459016393442622,
+        "trend_150d": 0.4570412420167391,
+        "volatility_20d": 1.0074752761760735,
+        "volume_ratio_20d": 0.7714400224727087,
+        "avg_trading_value_20d": 414669985875.0,
+        "doc_signal": 9.574526215847698,
+        "doc_counts": {
+          "dart": 19,
+          "forum": 0,
+          "news": 68
+        },
+        "return_60d_rank": 0.84,
+        "return_20d_rank": 0.86,
+        "trend_150d_rank": 0.88,
+        "volume_rank": 0.6,
+        "doc_rank": 0.68,
+        "low_vol_rank": 0.42,
+        "leader_score": 76,
+        "target_price": 522042.57,
+        "rank": 3,
+        "weight": 0.333333,
+        "realized_return_pct": -5.48,
+        "predicted_return_pct": 27.17
+      }
+    ],
+    "trades": [
+      {
+        "date": "2026-03-06",
+        "stock_name": "디아이티",
+        "stock_code": "110990",
+        "side": "BUY",
+        "price": 24550.0,
+        "weight": 0.333333,
+        "reason": "rank 1 leader_score 83"
+      },
+      {
+        "date": "2026-03-09",
+        "stock_name": "디아이티",
+        "stock_code": "110990",
+        "side": "SELL",
+        "price": 20867.5,
+        "weight": 0.333333,
+        "realized_return_pct": -15.0,
+        "reason": "trailing_stop"
+      },
+      {
+        "date": "2026-03-06",
+        "stock_name": "SK이노베이션",
+        "stock_code": "096770",
+        "side": "BUY",
+        "price": 124900.0,
+        "weight": 0.333333,
+        "reason": "rank 2 leader_score 78"
+      },
+      {
+        "date": "2026-03-13",
+        "stock_name": "SK이노베이션",
+        "stock_code": "096770",
+        "side": "SELL",
+        "price": 112600.0,
+        "weight": 0.333333,
+        "realized_return_pct": -9.85,
+        "reason": "holding_period_exit"
+      },
+      {
+        "date": "2026-03-06",
+        "stock_name": "삼성SDI",
+        "stock_code": "006400",
+        "side": "BUY",
+        "price": 410500.0,
+        "weight": 0.333333,
+        "reason": "rank 3 leader_score 76"
+      },
+      {
+        "date": "2026-03-13",
+        "stock_name": "삼성SDI",
+        "stock_code": "006400",
+        "side": "SELL",
+        "price": 388000.0,
+        "weight": 0.333333,
+        "realized_return_pct": -5.48,
+        "reason": "holding_period_exit"
+      }
+    ],
+    "periods": [
+      {
+        "as_of_date": "2026-03-06",
+        "entry_date": "2026-03-06",
+        "exit_date": "2026-03-13",
+        "selected_count": 3,
+        "active_target_count": 50,
+        "eligible_count": 50,
+        "risk_eligible_count": 37,
+        "risk_reject_count": 13,
+        "market_breadth_pct": 50.0,
+        "portfolio_return_pct": -10.61,
+        "benchmark_return_pct": -4.75,
+        "excess_return_pct": -5.86,
+        "candidate_rankings": [
+          {
+            "stock_name": "디아이티",
+            "stock_code": "110990",
+            "leader_score": 83,
+            "volatility_20d": 1.1435,
+            "volume_ratio_20d": 2.5565,
+            "doc_signal": 9.8241,
+            "exit_reason": "trailing_stop",
+            "return_5d_pct": 3.59,
+            "return_20d_pct": 18.6,
+            "return_60d_pct": 66.67,
+            "trend_150d_pct": 56.23,
+            "realized_return_pct": -15.0
+          },
+          {
+            "stock_name": "SK이노베이션",
+            "stock_code": "096770",
+            "leader_score": 78,
+            "volatility_20d": 0.9911,
+            "volume_ratio_20d": 1.1097,
+            "doc_signal": 11.7196,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -3.92,
+            "return_20d_pct": 16.84,
+            "return_60d_pct": 7.77,
+            "trend_150d_pct": 11.51,
+            "realized_return_pct": -9.85
+          },
+          {
+            "stock_name": "삼성SDI",
+            "stock_code": "006400",
+            "leader_score": 76,
+            "volatility_20d": 1.0075,
+            "volume_ratio_20d": 0.7714,
+            "doc_signal": 9.5745,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -8.57,
+            "return_20d_pct": 15.31,
+            "return_60d_pct": 34.59,
+            "trend_150d_pct": 45.7,
+            "realized_return_pct": -5.48
+          },
+          {
+            "stock_name": "삼성전기",
+            "stock_code": "009150",
+            "leader_score": 75,
+            "volatility_20d": 1.1084,
+            "volume_ratio_20d": 0.6439,
+            "doc_signal": 8.2484,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -13.29,
+            "return_20d_pct": 42.93,
+            "return_60d_pct": 54.98,
+            "trend_150d_pct": 70.48,
+            "realized_return_pct": -0.99
+          },
+          {
+            "stock_name": "에스에프에이",
+            "stock_code": "056190",
+            "leader_score": 75,
+            "volatility_20d": 0.8166,
+            "volume_ratio_20d": 0.8823,
+            "doc_signal": 9.9514,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -12.48,
+            "return_20d_pct": -3.11,
+            "return_60d_pct": 27.61,
+            "trend_150d_pct": 23.49,
+            "realized_return_pct": -7.37
+          },
+          {
+            "stock_name": "동화기업",
+            "stock_code": "025900",
+            "leader_score": 69,
+            "volatility_20d": 1.0741,
+            "volume_ratio_20d": 1.0216,
+            "doc_signal": 9.8638,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -3.23,
+            "return_20d_pct": 0.0,
+            "return_60d_pct": 5.81,
+            "trend_150d_pct": 7.9,
+            "realized_return_pct": -5.88
+          },
+          {
+            "stock_name": "피엔티",
+            "stock_code": "137400",
+            "leader_score": 67,
+            "volatility_20d": 1.1273,
+            "volume_ratio_20d": 0.8542,
+            "doc_signal": 9.1769,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -6.45,
+            "return_20d_pct": -0.2,
+            "return_60d_pct": 20.38,
+            "trend_150d_pct": 23.14,
+            "realized_return_pct": -5.71
+          },
+          {
+            "stock_name": "아바코",
+            "stock_code": "083930",
+            "leader_score": 65,
+            "volatility_20d": 0.7125,
+            "volume_ratio_20d": 0.7579,
+            "doc_signal": 10.9159,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -4.24,
+            "return_20d_pct": -2.52,
+            "return_60d_pct": 0.14,
+            "trend_150d_pct": 1.07,
+            "realized_return_pct": 0.68
+          },
+          {
+            "stock_name": "원준",
+            "stock_code": "382840",
+            "leader_score": 61,
+            "volatility_20d": 0.9693,
+            "volume_ratio_20d": 0.2401,
+            "doc_signal": 10.979,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -10.27,
+            "return_20d_pct": -3.31,
+            "return_60d_pct": 14.44,
+            "trend_150d_pct": 4.86,
+            "realized_return_pct": -5.88
+          },
+          {
+            "stock_name": "한농화성",
+            "stock_code": "011500",
+            "leader_score": 61,
+            "volatility_20d": 1.1431,
+            "volume_ratio_20d": 0.6127,
+            "doc_signal": 6.8697,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -9.11,
+            "return_20d_pct": -1.03,
+            "return_60d_pct": 56.03,
+            "trend_150d_pct": 40.99,
+            "realized_return_pct": -7.1
+          }
+        ],
+        "top_symbols": [
+          {
+            "stock_name": "디아이티",
+            "stock_code": "110990",
+            "leader_score": 83,
+            "realized_return_pct": -15.0
+          },
+          {
+            "stock_name": "SK이노베이션",
+            "stock_code": "096770",
+            "leader_score": 78,
+            "realized_return_pct": -9.85
+          },
+          {
+            "stock_name": "삼성SDI",
+            "stock_code": "006400",
+            "leader_score": 76,
+            "realized_return_pct": -5.48
+          }
+        ]
+      }
+    ],
+    "equity_curve": [
+      {
+        "date": "2026-03-13",
+        "equity": 0.893903,
+        "benchmark_equity": 0.952533,
+        "period_return_pct": -10.61,
+        "benchmark_return_pct": -4.75
+      }
+    ],
+    "risk": {
+      "filters": {
+        "min_avg_trading_value": 0.0,
+        "position_value_krw": 10000000.0,
+        "max_position_pct_avg_trading_value": 5.0,
+        "max_volatility_20d": 1.2,
+        "max_return_5d": 0.35,
+        "max_return_20d": 0.9,
+        "min_trend_150d": -1.0,
+        "min_market_breadth_pct": 40.0
+      },
+      "reject_counts": {
+        "high_volatility": 11,
+        "insufficient_liquidity_capacity": 2
+      }
+    },
+    "execution": {
+      "exit_rules": {
+        "stop_loss_pct": 0.0,
+        "take_profit_pct": 0.0,
+        "trailing_stop_pct": 15.0
+      },
+      "costs": {
+        "transaction_cost_bps": 15.0,
+        "slippage_bps": 5.0,
+        "market_impact_bps": 5.0,
+        "round_trip_cost_bps": 50.0
+      },
+      "exit_counts": {
+        "trailing_stop": 1,
+        "holding_period_exit": 2
+      },
+      "same_day_ohlc_policy": "stop_or_trailing_stop_before_take_profit"
+    },
+    "artifacts": {
+      "result_json": "data/backtest_results/multi_agent_validation/phase3/battery_tradable_window_scan/runs/proof-2차전지-validation_2026_w10-deterministic_short.json"
+    },
+    "warnings": [
+      "future returns are used only for evaluation after each as_of_date signal.",
+      "selection uses deterministic price/document features, not the full LLM ThemeLeaderOrchestrator.",
+      "theme_targets has no point-in-time membership date; historical theme membership may include survivorship/future-membership bias."
+    ],
+    "metadata": {
+      "generated_at": "2026-05-18T13:53:59.622583",
+      "data_dir": "data",
+      "target_count": 50,
+      "membership_count": 0,
+      "point_in_time_universe": false,
+      "membership_sources": [],
+      "price_stock_count": 50,
+      "document_signal_count": 21725,
+      "llm": {}
+    }
+  },
+  {
+    "task_id": "proof-2차전지-validation_2026_w17-deterministic_short",
+    "mode": "backtest",
+    "result_type": "backtest",
+    "status": "skipped",
+    "skip_reason": "no_evaluable_rebalance_dates",
+    "theme": "2차전지",
+    "theme_key": "2차전지",
+    "prediction_model": "skipped_no_evaluable_rebalance",
+    "period": {
+      "from_date": "2026-04-20",
+      "to_date": "2026-04-24",
+      "rebalance": "W",
+      "rebalance_count": 0,
+      "hold_days": 5
+    },
+    "strategy": {
+      "name": "ai_theme_leader_momentum_v1",
+      "top_n": 3,
+      "min_history_days": 150,
+      "transaction_cost_bps": 15.0,
+      "slippage_bps": 5.0,
+      "market_impact_bps": 5.0,
+      "round_trip_cost_bps": 50.0,
+      "risk_filters": {
+        "min_avg_trading_value": 0.0,
+        "portfolio_value_krw": 30000000.0,
+        "position_value_krw": 0.0,
+        "max_position_pct_avg_trading_value": 5.0,
+        "max_volatility_20d": 1.2,
+        "max_return_5d": 0.35,
+        "max_return_20d": 0.9,
+        "min_trend_150d": -1.0,
+        "min_market_breadth_pct": 40.0
+      },
+      "exit_rules": {
+        "stop_loss_pct": 0.0,
+        "take_profit_pct": 0.0,
+        "trailing_stop_pct": 15.0
+      },
+      "llm_rerank": {
+        "enabled": false,
+        "top_k": 0,
+        "weight": 0.0,
+        "context_docs": 0,
+        "mode": "",
+        "candidate_scope": "",
+        "horizon": "",
+        "top_k_meaning": ""
+      },
+      "selection_inputs": [],
+      "prediction_model": "skipped_no_evaluable_rebalance"
+    },
+    "metrics": {
+      "rebalance_count": 0,
+      "risk_off_count": 0,
+      "traded_rebalance_count": 0,
+      "position_count": 0,
+      "total_return_pct": 0.0,
+      "benchmark_return_pct": 0.0,
+      "excess_return_pct": 0.0,
+      "cagr_pct": 0.0,
+      "benchmark_cagr_pct": 0.0,
+      "mdd_pct": 0.0,
+      "benchmark_mdd_pct": 0.0,
+      "sharpe": 0.0,
+      "avg_period_return_pct": 0.0,
+      "avg_benchmark_period_return_pct": 0.0,
+      "win_rate_pct": 0.0,
+      "prediction_hit_rate_pct": 0.0,
+      "avg_position_return_pct": 0.0,
+      "median_position_return_pct": 0.0,
+      "loss_period_count": 0,
+      "max_consecutive_loss_periods": 0,
+      "worst_period_return_pct": 0.0,
+      "best_period_return_pct": 0.0
+    },
+    "leaders": [],
+    "predictions": [],
+    "positions": [],
+    "trades": [],
+    "periods": [],
+    "equity_curve": [],
+    "risk": {
+      "filters": {},
+      "reject_counts": {}
+    },
+    "execution": {
+      "exit_rules": {
+        "stop_loss_pct": 0.0,
+        "take_profit_pct": 0.0,
+        "trailing_stop_pct": 15.0
+      },
+      "costs": {
+        "transaction_cost_bps": 15.0,
+        "slippage_bps": 5.0,
+        "market_impact_bps": 5.0,
+        "round_trip_cost_bps": 50.0
+      },
+      "exit_counts": {}
+    },
+    "artifacts": {
+      "result_json": "data/backtest_results/multi_agent_validation/phase3/battery_tradable_window_scan/runs/proof-2차전지-validation_2026_w17-deterministic_short.json"
+    },
+    "warnings": [
+      "no rebalance dates in period: 20260420..20260424"
+    ],
+    "metadata": {
+      "generated_at": "2026-05-18T13:54:01.313983",
+      "data_dir": "/Users/leedohoun/Desktop/HQA_Project/data",
+      "llm": {}
+    }
+  }
+]
