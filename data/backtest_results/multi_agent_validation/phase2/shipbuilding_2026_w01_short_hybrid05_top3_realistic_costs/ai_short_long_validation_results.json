@@ -1,0 +1,2618 @@
+[
+  {
+    "task_id": "proof-조선-validation_2026_w01-deterministic_short",
+    "mode": "backtest",
+    "result_type": "backtest",
+    "status": "completed",
+    "theme": "조선",
+    "theme_key": "조선",
+    "prediction_model": "momentum_price_forecast_v1",
+    "period": {
+      "from_date": "2026-01-02",
+      "to_date": "2026-01-09",
+      "rebalance": "W",
+      "rebalance_count": 2,
+      "hold_days": 5
+    },
+    "strategy": {
+      "name": "ai_theme_leader_momentum_v1",
+      "top_n": 3,
+      "min_history_days": 150,
+      "transaction_cost_bps": 15.0,
+      "slippage_bps": 5.0,
+      "market_impact_bps": 5.0,
+      "round_trip_cost_bps": 50.0,
+      "risk_filters": {
+        "min_avg_trading_value": 0.0,
+        "position_value_krw": 10000000.0,
+        "max_position_pct_avg_trading_value": 5.0,
+        "max_volatility_20d": 1.2,
+        "max_return_5d": 0.35,
+        "max_return_20d": 0.9,
+        "min_trend_150d": -1.0,
+        "min_market_breadth_pct": 40.0
+      },
+      "exit_rules": {
+        "stop_loss_pct": 0.0,
+        "take_profit_pct": 0.0,
+        "trailing_stop_pct": 15.0
+      },
+      "llm_rerank": {
+        "enabled": false,
+        "top_k": 0,
+        "weight": 0.0,
+        "context_docs": 0,
+        "mode": "",
+        "candidate_scope": "",
+        "horizon": "",
+        "top_k_meaning": ""
+      },
+      "selection_inputs": [
+        "20d momentum",
+        "60d momentum",
+        "150d trend",
+        "20d volume ratio",
+        "news/dart/forum document signal",
+        "20d volatility penalty"
+      ],
+      "prediction_model": "momentum_price_forecast_v1"
+    },
+    "metrics": {
+      "rebalance_count": 2,
+      "risk_off_count": 0,
+      "traded_rebalance_count": 2,
+      "position_count": 6,
+      "total_return_pct": 10.58,
+      "benchmark_return_pct": 8.88,
+      "excess_return_pct": 1.7,
+      "cagr_pct": 18928.83,
+      "benchmark_cagr_pct": 8387.79,
+      "mdd_pct": 0.0,
+      "benchmark_mdd_pct": -1.15,
+      "sharpe": 17.536,
+      "avg_period_return_pct": 5.17,
+      "avg_benchmark_period_return_pct": 4.5,
+      "win_rate_pct": 100.0,
+      "prediction_hit_rate_pct": 83.33,
+      "avg_position_return_pct": 5.67,
+      "median_position_return_pct": 5.24,
+      "loss_period_count": 0,
+      "max_consecutive_loss_periods": 0,
+      "worst_period_return_pct": 3.69,
+      "best_period_return_pct": 6.65
+    },
+    "leaders": [
+      {
+        "stock_name": "삼성중공업",
+        "stock_code": "010140",
+        "selection_count": 2,
+        "avg_leader_score": 81.0,
+        "avg_realized_return_pct": 11.23,
+        "win_rate_pct": 100.0
+      },
+      {
+        "stock_name": "한라IMS",
+        "stock_code": "092460",
+        "selection_count": 1,
+        "avg_leader_score": 74.0,
+        "avg_realized_return_pct": 8.37,
+        "win_rate_pct": 100.0
+      },
+      {
+        "stock_name": "한화엔진",
+        "stock_code": "082740",
+        "selection_count": 1,
+        "avg_leader_score": 74.0,
+        "avg_realized_return_pct": 6.64,
+        "win_rate_pct": 100.0
+      },
+      {
+        "stock_name": "HJ중공업",
+        "stock_code": "097230",
+        "selection_count": 1,
+        "avg_leader_score": 75.0,
+        "avg_realized_return_pct": 2.1,
+        "win_rate_pct": 100.0
+      },
+      {
+        "stock_name": "대창솔루션",
+        "stock_code": "096350",
+        "selection_count": 1,
+        "avg_leader_score": 85.0,
+        "avg_realized_return_pct": -5.57,
+        "win_rate_pct": 0.0
+      }
+    ],
+    "predictions": [
+      {
+        "as_of_date": "2026-01-02",
+        "entry_date": "2026-01-02",
+        "exit_date": "2026-01-09",
+        "stock_name": "대창솔루션",
+        "stock_code": "096350",
+        "rank": 1,
+        "leader_score": 85,
+        "predicted_return_pct": 55.0,
+        "target_price": 3758.75,
+        "realized_return_pct": -5.57,
+        "prediction_model": "momentum_price_forecast_v1"
+      },
+      {
+        "as_of_date": "2026-01-02",
+        "entry_date": "2026-01-02",
+        "exit_date": "2026-01-09",
+        "stock_name": "삼성중공업",
+        "stock_code": "010140",
+        "rank": 2,
+        "leader_score": 81,
+        "predicted_return_pct": 4.9,
+        "target_price": 25332.31,
+        "realized_return_pct": 18.63,
+        "prediction_model": "momentum_price_forecast_v1"
+      },
+      {
+        "as_of_date": "2026-01-02",
+        "entry_date": "2026-01-02",
+        "exit_date": "2026-01-09",
+        "stock_name": "한라IMS",
+        "stock_code": "092460",
+        "rank": 3,
+        "leader_score": 74,
+        "predicted_return_pct": 5.55,
+        "target_price": 17151.65,
+        "realized_return_pct": 8.37,
+        "prediction_model": "momentum_price_forecast_v1"
+      },
+      {
+        "as_of_date": "2026-01-09",
+        "entry_date": "2026-01-09",
+        "exit_date": "2026-01-16",
+        "stock_name": "삼성중공업",
+        "stock_code": "010140",
+        "rank": 1,
+        "leader_score": 81,
+        "predicted_return_pct": 19.8,
+        "target_price": 34322.96,
+        "realized_return_pct": 3.84,
+        "prediction_model": "momentum_price_forecast_v1"
+      },
+      {
+        "as_of_date": "2026-01-09",
+        "entry_date": "2026-01-09",
+        "exit_date": "2026-01-16",
+        "stock_name": "HJ중공업",
+        "stock_code": "097230",
+        "rank": 2,
+        "leader_score": 75,
+        "predicted_return_pct": 19.13,
+        "target_price": 31272.48,
+        "realized_return_pct": 2.1,
+        "prediction_model": "momentum_price_forecast_v1"
+      },
+      {
+        "as_of_date": "2026-01-09",
+        "entry_date": "2026-01-09",
+        "exit_date": "2026-01-16",
+        "stock_name": "한화엔진",
+        "stock_code": "082740",
+        "rank": 3,
+        "leader_score": 74,
+        "predicted_return_pct": 12.82,
+        "target_price": 56070.94,
+        "realized_return_pct": 6.64,
+        "prediction_model": "momentum_price_forecast_v1"
+      }
+    ],
+    "positions": [
+      {
+        "as_of_date": "2026-01-02",
+        "entry_date": "2026-01-02",
+        "exit_date": "2026-01-09",
+        "planned_exit_date": "2026-01-09",
+        "exit_reason": "holding_period_exit",
+        "stock_name": "대창솔루션",
+        "stock_code": "096350",
+        "entry_price": 2425.0,
+        "exit_price": 2290.0,
+        "return_5d": 0.07538802660753885,
+        "return_20d": 0.15476190476190466,
+        "return_60d": 3.5928030303030303,
+        "trend_150d": 1.4006731784582893,
+        "volatility_20d": 0.46918904203362,
+        "volume_ratio_20d": 2.0971854061771067,
+        "avg_trading_value_20d": 654076354.0,
+        "doc_signal": 7.828351942249924,
+        "doc_counts": {
+          "dart": 34,
+          "forum": 0,
+          "news": 7
+        },
+        "return_60d_rank": 1.0,
+        "return_20d_rank": 1.0,
+        "trend_150d_rank": 1.0,
+        "volume_rank": 1.0,
+        "doc_rank": 0.39473684210526316,
+        "low_vol_rank": 0.3684210526315789,
+        "leader_score": 85,
+        "target_price": 3758.75,
+        "rank": 1,
+        "weight": 0.333333,
+        "realized_return_pct": -5.57,
+        "predicted_return_pct": 55.0
+      },
+      {
+        "as_of_date": "2026-01-02",
+        "entry_date": "2026-01-02",
+        "exit_date": "2026-01-09",
+        "planned_exit_date": "2026-01-09",
+        "exit_reason": "holding_period_exit",
+        "stock_name": "삼성중공업",
+        "stock_code": "010140",
+        "entry_price": 24150.0,
+        "exit_price": 28650.0,
+        "return_5d": -0.03976143141153077,
+        "return_20d": -0.014285714285714235,
+        "return_60d": 0.10273972602739723,
+        "trend_150d": 0.12638874637363462,
+        "volatility_20d": 0.4450321690179692,
+        "volume_ratio_20d": 1.0649897573596023,
+        "avg_trading_value_20d": 88117506390.0,
+        "doc_signal": 10.19796117523382,
+        "doc_counts": {
+          "dart": 50,
+          "forum": 0,
+          "news": 35
+        },
+        "return_60d_rank": 0.9210526315789473,
+        "return_20d_rank": 0.7631578947368421,
+        "trend_150d_rank": 0.8421052631578947,
+        "volume_rank": 0.7631578947368421,
+        "doc_rank": 0.8947368421052632,
+        "low_vol_rank": 0.5,
+        "leader_score": 81,
+        "target_price": 25332.31,
+        "rank": 2,
+        "weight": 0.333333,
+        "realized_return_pct": 18.63,
+        "predicted_return_pct": 4.9
+      },
+      {
+        "as_of_date": "2026-01-02",
+        "entry_date": "2026-01-02",
+        "exit_date": "2026-01-09",
+        "planned_exit_date": "2026-01-09",
+        "exit_reason": "holding_period_exit",
+        "stock_name": "한라IMS",
+        "stock_code": "092460",
+        "entry_price": 16250.0,
+        "exit_price": 17610.0,
+        "return_5d": -0.07407407407407407,
+        "return_20d": -0.02049427365883061,
+        "return_60d": 0.08768406961178044,
+        "trend_150d": 0.19714159422425226,
+        "volatility_20d": 0.416480264122332,
+        "volume_ratio_20d": 0.4589006881619439,
+        "avg_trading_value_20d": 7330801443.5,
+        "doc_signal": 9.798173061224164,
+        "doc_counts": {
+          "dart": 51,
+          "forum": 164,
+          "news": 2
+        },
+        "return_60d_rank": 0.8947368421052632,
+        "return_20d_rank": 0.6842105263157895,
+        "trend_150d_rank": 0.9210526315789473,
+        "volume_rank": 0.23684210526315788,
+        "doc_rank": 0.7631578947368421,
+        "low_vol_rank": 0.5526315789473685,
+        "leader_score": 74,
+        "target_price": 17151.65,
+        "rank": 3,
+        "weight": 0.333333,
+        "realized_return_pct": 8.37,
+        "predicted_return_pct": 5.55
+      },
+      {
+        "as_of_date": "2026-01-09",
+        "entry_date": "2026-01-09",
+        "exit_date": "2026-01-16",
+        "planned_exit_date": "2026-01-16",
+        "exit_reason": "holding_period_exit",
+        "stock_name": "삼성중공업",
+        "stock_code": "010140",
+        "entry_price": 28650.0,
+        "exit_price": 29750.0,
+        "return_5d": 0.18633540372670798,
+        "return_20d": 0.05914972273567476,
+        "return_60d": 0.3514150943396226,
+        "trend_150d": 0.31504862390374355,
+        "volatility_20d": 0.5317887337595456,
+        "volume_ratio_20d": 3.6657762759129104,
+        "avg_trading_value_20d": 124089219920.0,
+        "doc_signal": 10.19796117523382,
+        "doc_counts": {
+          "dart": 50,
+          "forum": 0,
+          "news": 35
+        },
+        "return_60d_rank": 0.9473684210526315,
+        "return_20d_rank": 0.7368421052631579,
+        "trend_150d_rank": 0.868421052631579,
+        "volume_rank": 0.8947368421052632,
+        "doc_rank": 0.8421052631578947,
+        "low_vol_rank": 0.39473684210526316,
+        "leader_score": 81,
+        "target_price": 34322.96,
+        "rank": 1,
+        "weight": 0.333333,
+        "realized_return_pct": 3.84,
+        "predicted_return_pct": 19.8
+      },
+      {
+        "as_of_date": "2026-01-09",
+        "entry_date": "2026-01-09",
+        "exit_date": "2026-01-16",
+        "planned_exit_date": "2026-01-16",
+        "exit_reason": "holding_period_exit",
+        "stock_name": "HJ중공업",
+        "stock_code": "097230",
+        "entry_price": 26250.0,
+        "exit_price": 26800.0,
+        "return_5d": 0.232394366197183,
+        "return_20d": 0.15638766519823788,
+        "return_60d": 0.09603340292275564,
+        "trend_150d": 0.42164437768984153,
+        "volatility_20d": 0.7028726655082362,
+        "volume_ratio_20d": 1.4883057901243377,
+        "avg_trading_value_20d": 39156337375.0,
+        "doc_signal": 10.61735692250436,
+        "doc_counts": {
+          "dart": 61,
+          "forum": 0,
+          "news": 39
+        },
+        "return_60d_rank": 0.6842105263157895,
+        "return_20d_rank": 0.9473684210526315,
+        "trend_150d_rank": 0.9210526315789473,
+        "volume_rank": 0.42105263157894735,
+        "doc_rank": 0.9473684210526315,
+        "low_vol_rank": 0.21052631578947367,
+        "leader_score": 75,
+        "target_price": 31272.48,
+        "rank": 2,
+        "weight": 0.333333,
+        "realized_return_pct": 2.1,
+        "predicted_return_pct": 19.13
+      },
+      {
+        "as_of_date": "2026-01-09",
+        "entry_date": "2026-01-09",
+        "exit_date": "2026-01-16",
+        "planned_exit_date": "2026-01-16",
+        "exit_reason": "holding_period_exit",
+        "stock_name": "한화엔진",
+        "stock_code": "082740",
+        "entry_price": 49700.0,
+        "exit_price": 53000.0,
+        "return_5d": 0.18192627824019025,
+        "return_20d": 0.07112068965517238,
+        "return_60d": 0.13729977116704806,
+        "trend_150d": 0.25718814819811464,
+        "volatility_20d": 0.5915660409316653,
+        "volume_ratio_20d": 2.3918080353255773,
+        "avg_trading_value_20d": 50412744602.5,
+        "doc_signal": 10.615633076648368,
+        "doc_counts": {
+          "dart": 30,
+          "forum": 0,
+          "news": 94
+        },
+        "return_60d_rank": 0.7368421052631579,
+        "return_20d_rank": 0.7894736842105263,
+        "trend_150d_rank": 0.7631578947368421,
+        "volume_rank": 0.6842105263157895,
+        "doc_rank": 0.9210526315789473,
+        "low_vol_rank": 0.34210526315789475,
+        "leader_score": 74,
+        "target_price": 56070.94,
+        "rank": 3,
+        "weight": 0.333333,
+        "realized_return_pct": 6.64,
+        "predicted_return_pct": 12.82
+      }
+    ],
+    "trades": [
+      {
+        "date": "2026-01-02",
+        "stock_name": "대창솔루션",
+        "stock_code": "096350",
+        "side": "BUY",
+        "price": 2425.0,
+        "weight": 0.333333,
+        "reason": "rank 1 leader_score 85"
+      },
+      {
+        "date": "2026-01-09",
+        "stock_name": "대창솔루션",
+        "stock_code": "096350",
+        "side": "SELL",
+        "price": 2290.0,
+        "weight": 0.333333,
+        "realized_return_pct": -5.57,
+        "reason": "holding_period_exit"
+      },
+      {
+        "date": "2026-01-02",
+        "stock_name": "삼성중공업",
+        "stock_code": "010140",
+        "side": "BUY",
+        "price": 24150.0,
+        "weight": 0.333333,
+        "reason": "rank 2 leader_score 81"
+      },
+      {
+        "date": "2026-01-09",
+        "stock_name": "삼성중공업",
+        "stock_code": "010140",
+        "side": "SELL",
+        "price": 28650.0,
+        "weight": 0.333333,
+        "realized_return_pct": 18.63,
+        "reason": "holding_period_exit"
+      },
+      {
+        "date": "2026-01-02",
+        "stock_name": "한라IMS",
+        "stock_code": "092460",
+        "side": "BUY",
+        "price": 16250.0,
+        "weight": 0.333333,
+        "reason": "rank 3 leader_score 74"
+      },
+      {
+        "date": "2026-01-09",
+        "stock_name": "한라IMS",
+        "stock_code": "092460",
+        "side": "SELL",
+        "price": 17610.0,
+        "weight": 0.333333,
+        "realized_return_pct": 8.37,
+        "reason": "holding_period_exit"
+      },
+      {
+        "date": "2026-01-09",
+        "stock_name": "삼성중공업",
+        "stock_code": "010140",
+        "side": "BUY",
+        "price": 28650.0,
+        "weight": 0.333333,
+        "reason": "rank 1 leader_score 81"
+      },
+      {
+        "date": "2026-01-16",
+        "stock_name": "삼성중공업",
+        "stock_code": "010140",
+        "side": "SELL",
+        "price": 29750.0,
+        "weight": 0.333333,
+        "realized_return_pct": 3.84,
+        "reason": "holding_period_exit"
+      },
+      {
+        "date": "2026-01-09",
+        "stock_name": "HJ중공업",
+        "stock_code": "097230",
+        "side": "BUY",
+        "price": 26250.0,
+        "weight": 0.333333,
+        "reason": "rank 2 leader_score 75"
+      },
+      {
+        "date": "2026-01-16",
+        "stock_name": "HJ중공업",
+        "stock_code": "097230",
+        "side": "SELL",
+        "price": 26800.0,
+        "weight": 0.333333,
+        "realized_return_pct": 2.1,
+        "reason": "holding_period_exit"
+      },
+      {
+        "date": "2026-01-09",
+        "stock_name": "한화엔진",
+        "stock_code": "082740",
+        "side": "BUY",
+        "price": 49700.0,
+        "weight": 0.333333,
+        "reason": "rank 3 leader_score 74"
+      },
+      {
+        "date": "2026-01-16",
+        "stock_name": "한화엔진",
+        "stock_code": "082740",
+        "side": "SELL",
+        "price": 53000.0,
+        "weight": 0.333333,
+        "realized_return_pct": 6.64,
+        "reason": "holding_period_exit"
+      }
+    ],
+    "periods": [
+      {
+        "as_of_date": "2026-01-02",
+        "entry_date": "2026-01-02",
+        "exit_date": "2026-01-09",
+        "selected_count": 3,
+        "active_target_count": 41,
+        "eligible_count": 38,
+        "risk_eligible_count": 36,
+        "risk_reject_count": 2,
+        "market_breadth_pct": 57.89,
+        "portfolio_return_pct": 6.65,
+        "benchmark_return_pct": 10.15,
+        "excess_return_pct": -3.5,
+        "candidate_rankings": [
+          {
+            "stock_name": "대창솔루션",
+            "stock_code": "096350",
+            "leader_score": 85,
+            "volatility_20d": 0.4692,
+            "volume_ratio_20d": 2.0972,
+            "doc_signal": 7.8284,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": 7.54,
+            "return_20d_pct": 15.48,
+            "return_60d_pct": 359.28,
+            "trend_150d_pct": 140.07,
+            "realized_return_pct": -5.57
+          },
+          {
+            "stock_name": "삼성중공업",
+            "stock_code": "010140",
+            "leader_score": 81,
+            "volatility_20d": 0.445,
+            "volume_ratio_20d": 1.065,
+            "doc_signal": 10.198,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -3.98,
+            "return_20d_pct": -1.43,
+            "return_60d_pct": 10.27,
+            "trend_150d_pct": 12.64,
+            "realized_return_pct": 18.63
+          },
+          {
+            "stock_name": "한라IMS",
+            "stock_code": "092460",
+            "leader_score": 74,
+            "volatility_20d": 0.4165,
+            "volume_ratio_20d": 0.4589,
+            "doc_signal": 9.7982,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -7.41,
+            "return_20d_pct": -2.05,
+            "return_60d_pct": 8.77,
+            "trend_150d_pct": 19.71,
+            "realized_return_pct": 8.37
+          },
+          {
+            "stock_name": "HD현대마린엔진",
+            "stock_code": "071970",
+            "leader_score": 73,
+            "volatility_20d": 0.6758,
+            "volume_ratio_20d": 0.9755,
+            "doc_signal": 9.0513,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -12.46,
+            "return_20d_pct": 6.38,
+            "return_60d_pct": 2.53,
+            "trend_150d_pct": 14.21,
+            "realized_return_pct": 18.24
+          },
+          {
+            "stock_name": "비엠티",
+            "stock_code": "086670",
+            "leader_score": 73,
+            "volatility_20d": 0.3301,
+            "volume_ratio_20d": 1.4645,
+            "doc_signal": 8.7537,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -2.48,
+            "return_20d_pct": -5.79,
+            "return_60d_pct": 2.87,
+            "trend_150d_pct": 8.7,
+            "realized_return_pct": -0.66
+          },
+          {
+            "stock_name": "인화정공",
+            "stock_code": "101930",
+            "leader_score": 71,
+            "volatility_20d": 0.3575,
+            "volume_ratio_20d": 1.1418,
+            "doc_signal": 10.174,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": 1.04,
+            "return_20d_pct": 2.0,
+            "return_60d_pct": -12.39,
+            "trend_150d_pct": 4.01,
+            "realized_return_pct": 5.47
+          },
+          {
+            "stock_name": "한화엔진",
+            "stock_code": "082740",
+            "leader_score": 68,
+            "volatility_20d": 0.5183,
+            "volume_ratio_20d": 0.5861,
+            "doc_signal": 10.4901,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -6.97,
+            "return_20d_pct": -1.64,
+            "return_60d_pct": -6.35,
+            "trend_150d_pct": 7.91,
+            "realized_return_pct": 18.19
+          },
+          {
+            "stock_name": "HD현대마린솔루션",
+            "stock_code": "443060",
+            "leader_score": 68,
+            "volatility_20d": 0.3616,
+            "volume_ratio_20d": 0.7848,
+            "doc_signal": 10.1319,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -1.17,
+            "return_20d_pct": 6.49,
+            "return_60d_pct": -7.86,
+            "trend_150d_pct": -5.0,
+            "realized_return_pct": -0.67
+          },
+          {
+            "stock_name": "HD한국조선해양",
+            "stock_code": "009540",
+            "leader_score": 68,
+            "volatility_20d": 0.3827,
+            "volume_ratio_20d": 1.7289,
+            "doc_signal": 10.1086,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -8.91,
+            "return_20d_pct": -4.72,
+            "return_60d_pct": -4.26,
+            "trend_150d_pct": 1.1,
+            "realized_return_pct": 13.6
+          },
+          {
+            "stock_name": "한화오션",
+            "stock_code": "042660",
+            "leader_score": 68,
+            "volatility_20d": 0.617,
+            "volume_ratio_20d": 0.7856,
+            "doc_signal": 7.1484,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -7.05,
+            "return_20d_pct": 8.11,
+            "return_60d_pct": 3.99,
+            "trend_150d_pct": 9.02,
+            "realized_return_pct": 17.18
+          }
+        ],
+        "top_symbols": [
+          {
+            "stock_name": "대창솔루션",
+            "stock_code": "096350",
+            "leader_score": 85,
+            "realized_return_pct": -5.57
+          },
+          {
+            "stock_name": "삼성중공업",
+            "stock_code": "010140",
+            "leader_score": 81,
+            "realized_return_pct": 18.63
+          },
+          {
+            "stock_name": "한라IMS",
+            "stock_code": "092460",
+            "leader_score": 74,
+            "realized_return_pct": 8.37
+          }
+        ]
+      },
+      {
+        "as_of_date": "2026-01-09",
+        "entry_date": "2026-01-09",
+        "exit_date": "2026-01-16",
+        "selected_count": 3,
+        "active_target_count": 41,
+        "eligible_count": 38,
+        "risk_eligible_count": 36,
+        "risk_reject_count": 2,
+        "market_breadth_pct": 71.05,
+        "portfolio_return_pct": 3.69,
+        "benchmark_return_pct": -1.15,
+        "excess_return_pct": 4.84,
+        "candidate_rankings": [
+          {
+            "stock_name": "삼성중공업",
+            "stock_code": "010140",
+            "leader_score": 81,
+            "volatility_20d": 0.5318,
+            "volume_ratio_20d": 3.6658,
+            "doc_signal": 10.198,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": 18.63,
+            "return_20d_pct": 5.91,
+            "return_60d_pct": 35.14,
+            "trend_150d_pct": 31.5,
+            "realized_return_pct": 3.84
+          },
+          {
+            "stock_name": "HJ중공업",
+            "stock_code": "097230",
+            "leader_score": 75,
+            "volatility_20d": 0.7029,
+            "volume_ratio_20d": 1.4883,
+            "doc_signal": 10.6174,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": 23.24,
+            "return_20d_pct": 15.64,
+            "return_60d_pct": 9.6,
+            "trend_150d_pct": 42.16,
+            "realized_return_pct": 2.1
+          },
+          {
+            "stock_name": "한화엔진",
+            "stock_code": "082740",
+            "leader_score": 74,
+            "volatility_20d": 0.5916,
+            "volume_ratio_20d": 2.3918,
+            "doc_signal": 10.6156,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": 18.19,
+            "return_20d_pct": 7.11,
+            "return_60d_pct": 13.73,
+            "trend_150d_pct": 25.72,
+            "realized_return_pct": 6.64
+          },
+          {
+            "stock_name": "한화오션",
+            "stock_code": "042660",
+            "leader_score": 73,
+            "volatility_20d": 0.6456,
+            "volume_ratio_20d": 1.8314,
+            "doc_signal": 8.3254,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": 17.18,
+            "return_20d_pct": 16.67,
+            "return_60d_pct": 30.36,
+            "trend_150d_pct": 25.87,
+            "realized_return_pct": 9.38
+          },
+          {
+            "stock_name": "HD현대마린엔진",
+            "stock_code": "071970",
+            "leader_score": 72,
+            "volatility_20d": 0.704,
+            "volume_ratio_20d": 1.6141,
+            "doc_signal": 9.1652,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": 18.24,
+            "return_20d_pct": 11.42,
+            "return_60d_pct": 18.1,
+            "trend_150d_pct": 31.96,
+            "realized_return_pct": -10.35
+          },
+          {
+            "stock_name": "대창솔루션",
+            "stock_code": "096350",
+            "leader_score": 71,
+            "volatility_20d": 0.4828,
+            "volume_ratio_20d": 0.625,
+            "doc_signal": 7.8284,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -5.57,
+            "return_20d_pct": 5.77,
+            "return_60d_pct": 370.23,
+            "trend_150d_pct": 113.0,
+            "realized_return_pct": -3.93
+          },
+          {
+            "stock_name": "삼영엠텍",
+            "stock_code": "054540",
+            "leader_score": 70,
+            "volatility_20d": 0.7851,
+            "volume_ratio_20d": 1.9876,
+            "doc_signal": 8.4274,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": 14.67,
+            "return_20d_pct": 4.34,
+            "return_60d_pct": 34.28,
+            "trend_150d_pct": 48.67,
+            "realized_return_pct": -5.22
+          },
+          {
+            "stock_name": "동방선기",
+            "stock_code": "099410",
+            "leader_score": 68,
+            "volatility_20d": 0.4776,
+            "volume_ratio_20d": 2.4447,
+            "doc_signal": 7.2652,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": 20.0,
+            "return_20d_pct": 12.5,
+            "return_60d_pct": 16.93,
+            "trend_150d_pct": 23.83,
+            "realized_return_pct": -7.47
+          },
+          {
+            "stock_name": "한라IMS",
+            "stock_code": "092460",
+            "leader_score": 65,
+            "volatility_20d": 0.4316,
+            "volume_ratio_20d": 0.9281,
+            "doc_signal": 9.9638,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": 8.37,
+            "return_20d_pct": -1.89,
+            "return_60d_pct": 22.29,
+            "trend_150d_pct": 27.48,
+            "realized_return_pct": -2.9
+          },
+          {
+            "stock_name": "HD한국조선해양",
+            "stock_code": "009540",
+            "leader_score": 65,
+            "volatility_20d": 0.4218,
+            "volume_ratio_20d": 2.2669,
+            "doc_signal": 10.3943,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": 13.6,
+            "return_20d_pct": -0.11,
+            "return_60d_pct": 9.56,
+            "trend_150d_pct": 13.64,
+            "realized_return_pct": -1.9
+          }
+        ],
+        "top_symbols": [
+          {
+            "stock_name": "삼성중공업",
+            "stock_code": "010140",
+            "leader_score": 81,
+            "realized_return_pct": 3.84
+          },
+          {
+            "stock_name": "HJ중공업",
+            "stock_code": "097230",
+            "leader_score": 75,
+            "realized_return_pct": 2.1
+          },
+          {
+            "stock_name": "한화엔진",
+            "stock_code": "082740",
+            "leader_score": 74,
+            "realized_return_pct": 6.64
+          }
+        ]
+      }
+    ],
+    "equity_curve": [
+      {
+        "date": "2026-01-09",
+        "equity": 1.066453,
+        "benchmark_equity": 1.101501,
+        "period_return_pct": 6.65,
+        "benchmark_return_pct": 10.15
+      },
+      {
+        "date": "2026-01-16",
+        "equity": 1.105821,
+        "benchmark_equity": 1.088843,
+        "period_return_pct": 3.69,
+        "benchmark_return_pct": -1.15
+      }
+    ],
+    "risk": {
+      "filters": {
+        "min_avg_trading_value": 0.0,
+        "position_value_krw": 10000000.0,
+        "max_position_pct_avg_trading_value": 5.0,
+        "max_volatility_20d": 1.2,
+        "max_return_5d": 0.35,
+        "max_return_20d": 0.9,
+        "min_trend_150d": -1.0,
+        "min_market_breadth_pct": 40.0
+      },
+      "reject_counts": {
+        "insufficient_liquidity_capacity": 3,
+        "overheated_5d": 1
+      }
+    },
+    "execution": {
+      "exit_rules": {
+        "stop_loss_pct": 0.0,
+        "take_profit_pct": 0.0,
+        "trailing_stop_pct": 15.0
+      },
+      "costs": {
+        "transaction_cost_bps": 15.0,
+        "slippage_bps": 5.0,
+        "market_impact_bps": 5.0,
+        "round_trip_cost_bps": 50.0
+      },
+      "exit_counts": {
+        "holding_period_exit": 6
+      },
+      "same_day_ohlc_policy": "stop_or_trailing_stop_before_take_profit"
+    },
+    "artifacts": {
+      "result_json": "data/backtest_results/multi_agent_validation/phase2/shipbuilding_2026_w01_short_hybrid05_top3_realistic_costs/runs/proof-조선-validation_2026_w01-deterministic_short.json"
+    },
+    "warnings": [
+      "future returns are used only for evaluation after each as_of_date signal.",
+      "selection uses deterministic price/document features, not the full LLM ThemeLeaderOrchestrator.",
+      "theme_membership may be inferred from local corpus evidence unless an official historical source is supplied."
+    ],
+    "metadata": {
+      "generated_at": "2026-05-18T10:39:22.459908",
+      "data_dir": "data",
+      "target_count": 41,
+      "membership_count": 41,
+      "point_in_time_universe": true,
+      "membership_sources": [
+        "local_corpus_inferred"
+      ],
+      "price_stock_count": 41,
+      "document_signal_count": 17676,
+      "llm": {}
+    }
+  },
+  {
+    "task_id": "proof-조선-validation_2026_w01-short_hybrid_05",
+    "mode": "backtest",
+    "result_type": "backtest",
+    "status": "completed",
+    "theme": "조선",
+    "theme_key": "조선",
+    "prediction_model": "multi_agent_broad_short_temporal_theme_leader_v1",
+    "period": {
+      "from_date": "2026-01-02",
+      "to_date": "2026-01-09",
+      "rebalance": "W",
+      "rebalance_count": 2,
+      "hold_days": 5
+    },
+    "strategy": {
+      "name": "ai_theme_leader_momentum_v1",
+      "top_n": 3,
+      "min_history_days": 150,
+      "transaction_cost_bps": 15.0,
+      "slippage_bps": 5.0,
+      "market_impact_bps": 5.0,
+      "round_trip_cost_bps": 50.0,
+      "risk_filters": {
+        "min_avg_trading_value": 0.0,
+        "position_value_krw": 10000000.0,
+        "max_position_pct_avg_trading_value": 5.0,
+        "max_volatility_20d": 1.2,
+        "max_return_5d": 0.35,
+        "max_return_20d": 0.9,
+        "min_trend_150d": -1.0,
+        "min_market_breadth_pct": 40.0
+      },
+      "exit_rules": {
+        "stop_loss_pct": 0.0,
+        "take_profit_pct": 0.0,
+        "trailing_stop_pct": 15.0
+      },
+      "llm_rerank": {
+        "enabled": true,
+        "top_k": 3,
+        "weight": 0.5,
+        "context_docs": 3,
+        "mode": "multi_agent",
+        "candidate_scope": "broad",
+        "horizon": "short",
+        "top_k_meaning": "deterministic_prefilter"
+      },
+      "selection_inputs": [
+        "20d momentum",
+        "60d momentum",
+        "150d trend",
+        "20d volume ratio",
+        "news/dart/forum document signal",
+        "20d volatility penalty",
+        "broad short-horizon point-in-time LLM theme leader score"
+      ],
+      "prediction_model": "multi_agent_broad_short_temporal_theme_leader_v1"
+    },
+    "metrics": {
+      "rebalance_count": 2,
+      "risk_off_count": 0,
+      "traded_rebalance_count": 2,
+      "position_count": 6,
+      "total_return_pct": 10.58,
+      "benchmark_return_pct": 8.88,
+      "excess_return_pct": 1.7,
+      "cagr_pct": 18928.83,
+      "benchmark_cagr_pct": 8387.79,
+      "mdd_pct": 0.0,
+      "benchmark_mdd_pct": -1.15,
+      "sharpe": 17.536,
+      "avg_period_return_pct": 5.17,
+      "avg_benchmark_period_return_pct": 4.5,
+      "win_rate_pct": 100.0,
+      "prediction_hit_rate_pct": 83.33,
+      "avg_position_return_pct": 5.67,
+      "median_position_return_pct": 5.24,
+      "loss_period_count": 0,
+      "max_consecutive_loss_periods": 0,
+      "worst_period_return_pct": 3.69,
+      "best_period_return_pct": 6.65
+    },
+    "leaders": [
+      {
+        "stock_name": "삼성중공업",
+        "stock_code": "010140",
+        "selection_count": 2,
+        "avg_leader_score": 78.0,
+        "avg_realized_return_pct": 11.23,
+        "win_rate_pct": 100.0
+      },
+      {
+        "stock_name": "한라IMS",
+        "stock_code": "092460",
+        "selection_count": 1,
+        "avg_leader_score": 65.0,
+        "avg_realized_return_pct": 8.37,
+        "win_rate_pct": 100.0
+      },
+      {
+        "stock_name": "한화엔진",
+        "stock_code": "082740",
+        "selection_count": 1,
+        "avg_leader_score": 78.0,
+        "avg_realized_return_pct": 6.64,
+        "win_rate_pct": 100.0
+      },
+      {
+        "stock_name": "HJ중공업",
+        "stock_code": "097230",
+        "selection_count": 1,
+        "avg_leader_score": 78.0,
+        "avg_realized_return_pct": 2.1,
+        "win_rate_pct": 100.0
+      },
+      {
+        "stock_name": "대창솔루션",
+        "stock_code": "096350",
+        "selection_count": 1,
+        "avg_leader_score": 88.0,
+        "avg_realized_return_pct": -5.57,
+        "win_rate_pct": 0.0
+      }
+    ],
+    "predictions": [
+      {
+        "as_of_date": "2026-01-02",
+        "entry_date": "2026-01-02",
+        "exit_date": "2026-01-09",
+        "stock_name": "대창솔루션",
+        "stock_code": "096350",
+        "rank": 1,
+        "leader_score": 88,
+        "predicted_return_pct": 55.0,
+        "target_price": 3758.75,
+        "realized_return_pct": -5.57,
+        "prediction_model": "multi_agent_broad_short_temporal_theme_leader_v1",
+        "deterministic_leader_score": 85,
+        "llm_score": 80,
+        "llm_raw_score": 80,
+        "llm_ranking_score": 90,
+        "llm_confidence": 73,
+        "llm_theme_fit_score": 85,
+        "llm_catalyst_score": 75,
+        "llm_risk_score": 64,
+        "llm_summary": "대창솔루션(096350)은 조선·원전 폐기물 저장장치 공급 계약이 2025년 11월에 체결된 등 단기 촉매가 존재하며, 현재 가격·거래량 리더십이 강한 상태입니다. Analyst는 중간 수준의 주도주 가능성을 평가하였고, Quant는 재무 안정성에 대한 우려를 표시했으나, Chartist의 강력한 트렌드·모멘텀·볼륨 지표가 이를 상쇄합니다. 따라서 단기 3~10거래일 내 주도주 가능성이 높다고 판단합니다.",
+        "llm_agent_scores": {
+          "analyst": {
+            "total_score": 74,
+            "theme_fit_score": 85,
+            "moat_score": 60,
+            "growth_score": 70,
+            "catalyst_score": 75,
+            "risk_score": 55,
+            "confidence": 75,
+            "summary": "대창솔루션(096350)은 조선 테마와 관련된 사업부문(조선기자재 부문)을 운영하고 있으며, 최근 대규모 원자력 핵 폐기물 저장장치 공급 계약을 체결한 것으로 확인되어 단기적인 촉매제가 될 가능성이 있습니다. 주가 리더십(5일, 20일, 60일 수익률)과 거래량 비중(20일 평균 거래량 대비 2.1배)을 고려할 때, 향후 3~10거래일 주도주 가능성이 중간 수준으로 평가됩니다. 다만, 신용등급(B)과 최근 공시 자료의 부정적 요소를 고려하면 위험성은 중간 수준으로 판단됩니다."
+          },
+          "quant": {
+            "total_score": 50,
+            "valuation_score": 50,
+            "profitability_score": 50,
+            "growth_score": 50,
+            "stability_score": 50,
+            "risk_score": 60,
+            "confidence": 40,
+            "summary": "대창솔루션(096350)은 해양솔루션, 원전폐기물, 발전설비, 조선기자재 등 다양한 사업부문에서 주강품 및 관련 제품을 생산하고 있으며, 최근 2025년 11월에 원자력 핵 폐기물 저장장치 공급 계약을 체결한 것으로 보여 성장 잠재력이 존재합니다. 그러나 재무 정보에 대한 직접적인 언급이 부족하고, 신용등급은 B로 유지되고 있어 재무 안정성에 대한 확신이 부족합니다. 따라서 기초체력과 재무 리스크는 보수적으로 평가되었습니다."
+          },
+          "chartist": {
+            "trend_score": 100,
+            "momentum_score": 100,
+            "volatility_score": 70,
+            "volume_score": 81,
+            "total_score": 91,
+            "confidence": 80,
+            "horizon": "short",
+            "summary": "trend=100, momentum=100, volatility=70, volume=81"
+          },
+          "risk_manager": {
+            "final_score": 80,
+            "raw_final_score": 80,
+            "calibrated_final_score": 80,
+            "agent_weight_profile": "short",
+            "agent_weights": {
+              "analyst": 0.3,
+              "quant": 0.15,
+              "chartist": 0.55
+            },
+            "confidence": 73,
+            "risk_score": 64,
+            "action": "BUY",
+            "summary": "대창솔루션(096350)은 조선·원전 폐기물 저장장치 공급 계약이 2025년 11월에 체결된 등 단기 촉매가 존재하며, 현재 가격·거래량 리더십이 강한 상태입니다. Analyst는 중간 수준의 주도주 가능성을 평가하였고, Quant는 재무 안정성에 대한 우려를 표시했으나, Chartist의 강력한 트렌드·모멘텀·볼륨 지표가 이를 상쇄합니다. 따라서 단기 3~10거래일 내 주도주 가능성이 높다고 판단합니다."
+          }
+        },
+        "llm_mode": "multi_agent",
+        "llm_candidate_scope": "broad",
+        "llm_horizon": "short"
+      },
+      {
+        "as_of_date": "2026-01-02",
+        "entry_date": "2026-01-02",
+        "exit_date": "2026-01-09",
+        "stock_name": "삼성중공업",
+        "stock_code": "010140",
+        "rank": 2,
+        "leader_score": 72,
+        "predicted_return_pct": 4.9,
+        "target_price": 25332.31,
+        "realized_return_pct": 18.63,
+        "prediction_model": "multi_agent_broad_short_temporal_theme_leader_v1",
+        "deterministic_leader_score": 81,
+        "llm_score": 62,
+        "llm_raw_score": 62,
+        "llm_ranking_score": 62,
+        "llm_confidence": 76,
+        "llm_theme_fit_score": 85,
+        "llm_catalyst_score": 80,
+        "llm_risk_score": 64,
+        "llm_summary": "삼성중공업(010140)은 조선 테마 주도주 후보로서 3분기 깜짝 실적과 업계 실적 개선이 촉매로 작용하고 있다. 단기 하락세가 있지만 60일·150일 이동평균선에서 상승 추세를 유지하고, 거래량 리더십이 확인된다. 그러나 단기 수익률 하락과 재무 구조 정보 부족, 시장 변동성 확대 가능성이 리스크로 남는다. 3~10거래일 단기 투자에서는 매수 권고.",
+        "llm_agent_scores": {
+          "analyst": {
+            "total_score": 77,
+            "theme_fit_score": 85,
+            "moat_score": 65,
+            "growth_score": 70,
+            "catalyst_score": 80,
+            "risk_score": 55,
+            "confidence": 80,
+            "summary": "삼성중공업(010140)은 조선 테마 내에서 최근 3분기 깜짝 실적을 기록하며 주도주 가능성을 높이고 있다. 단기적으로는 5일 및 20일 이동평균선 기준 약간의 하락세를 보이고 있으나, 60일 및 150일 이동평균선 기준으로는 상승 추세를 유지하고 있다. 최근 뉴스 및 공시에서 조선업종의 실적 개선과 함께 삼성중공업의 강한 성과가 언급되며, 이는 단기적인 주도주 후보로의 가능성을 높이는 촉매제로 작용하고 있다. 다만, 변동성과 거래량은 상대적으로 안정적이며, 장기적인 성장 가능성은 보조 지표로 평가된다."
+          },
+          "quant": {
+            "total_score": 60,
+            "valuation_score": 55,
+            "profitability_score": 60,
+            "growth_score": 65,
+            "stability_score": 60,
+            "risk_score": 58,
+            "confidence": 50,
+            "summary": "삼성중공업(010140)은 2025년 11월 기준으로 조선업종 내에서 깜짝 실적을 기록하며 시장 전망치를 상회한 것으로 나타났다. 이는 증권가의 긍정적인 분석과 함께, 국내외 증시 활황으로 인한 거래대금 증가 및 자산관리 수익률 개선 등의 영향을 받은 것으로 보인다. 다만, 재무 구조에 대한 구체적인 정보는 제시되지 않았으며, 단기 수익률은 하락세를 보이고 있다. 따라서 재무 리스크에 대한 직접적인 근거는 부족하지만, 장기적인 성장 가능성은 어느 정도 존재한다."
+          },
+          "chartist": {
+            "trend_score": 58,
+            "momentum_score": 44,
+            "volatility_score": 71,
+            "volume_score": 58,
+            "total_score": 54,
+            "confidence": 80,
+            "horizon": "short",
+            "summary": "trend=58, momentum=44, volatility=71, volume=58"
+          },
+          "risk_manager": {
+            "final_score": 62,
+            "raw_final_score": 62,
+            "calibrated_final_score": 62,
+            "agent_weight_profile": "short",
+            "agent_weights": {
+              "analyst": 0.3,
+              "quant": 0.15,
+              "chartist": 0.55
+            },
+            "confidence": 76,
+            "risk_score": 64,
+            "action": "BUY",
+            "summary": "삼성중공업(010140)은 조선 테마 주도주 후보로서 3분기 깜짝 실적과 업계 실적 개선이 촉매로 작용하고 있다. 단기 하락세가 있지만 60일·150일 이동평균선에서 상승 추세를 유지하고, 거래량 리더십이 확인된다. 그러나 단기 수익률 하락과 재무 구조 정보 부족, 시장 변동성 확대 가능성이 리스크로 남는다. 3~10거래일 단기 투자에서는 매수 권고."
+          }
+        },
+        "llm_mode": "multi_agent",
+        "llm_candidate_scope": "broad",
+        "llm_horizon": "short"
+      },
+      {
+        "as_of_date": "2026-01-02",
+        "entry_date": "2026-01-02",
+        "exit_date": "2026-01-09",
+        "stock_name": "한라IMS",
+        "stock_code": "092460",
+        "rank": 3,
+        "leader_score": 65,
+        "predicted_return_pct": 5.55,
+        "target_price": 17151.65,
+        "realized_return_pct": 8.37,
+        "prediction_model": "multi_agent_broad_short_temporal_theme_leader_v1",
+        "deterministic_leader_score": 74,
+        "llm_score": 56,
+        "llm_raw_score": 56,
+        "llm_ranking_score": 56,
+        "llm_confidence": 74,
+        "llm_theme_fit_score": 85,
+        "llm_catalyst_score": 70,
+        "llm_risk_score": 66,
+        "llm_summary": "한라IMS(092460)은 조선·MRO 테마와 연계된 최근 유형자산 양수와 단일 판매계약 체결 등 주요 경영 이벤트가 발표되어 단기 주도주 가능성이 존재합니다. 하지만 5일·20일 수익률이 부정적이며 변동성·거래량 비율이 낮아 단기 주도성에 제약이 있을 수 있고, 대규모 자산 양수로 인한 재무 부담 위험이 존재합니다. Chartist의 추세 점수는 양호(62)이지만 모멘텀은 낮고 변동성은 높아 3~10거래일 내 변동성이 예상됩니다. 따라서 매수는 가능하지만 리스크가 높으므로 주의가 필요합니다.",
+        "llm_agent_scores": {
+          "analyst": {
+            "total_score": 71,
+            "theme_fit_score": 85,
+            "moat_score": 60,
+            "growth_score": 65,
+            "catalyst_score": 70,
+            "risk_score": 55,
+            "confidence": 75,
+            "summary": "한라IMS(092460)는 조선 테마와의 연관성이 높으며, 최근 유형자산 양수 결정 및 단일판매계약 체결과 같은 중요한 경영 결정을 발표한 것으로 보여, 단기적으로 주도주 가능성이 존재합니다. 다만, 최근 5일 및 20일 수익률은 부정적이며, 변동성과 거래량 비율은 상대적으로 낮아 단기 주도성에 제약이 있을 수 있습니다."
+          },
+          "quant": {
+            "total_score": 55,
+            "valuation_score": 55,
+            "profitability_score": 55,
+            "growth_score": 55,
+            "stability_score": 55,
+            "risk_score": 60,
+            "confidence": 50,
+            "summary": "한라IMS(092460)는 유형자산 양수 결정 및 대규모 계약 체결 등 주요 경영사항을 공시한 것으로 보이며, 재무상황에 대한 직접적인 악화 근거는 확인되지 않았다. 다만, 대규모 자산 양수 및 신규 사업 확대에 따른 재무 부담 가능성은 존재할 수 있어 보수적인 리스크 평가가 필요하다."
+          },
+          "chartist": {
+            "trend_score": 62,
+            "momentum_score": 37,
+            "volatility_score": 73,
+            "volume_score": 45,
+            "total_score": 48,
+            "confidence": 80,
+            "horizon": "short",
+            "summary": "trend=62, momentum=37, volatility=73, volume=45"
+          },
+          "risk_manager": {
+            "final_score": 56,
+            "raw_final_score": 56,
+            "calibrated_final_score": 56,
+            "agent_weight_profile": "short",
+            "agent_weights": {
+              "analyst": 0.3,
+              "quant": 0.15,
+              "chartist": 0.55
+            },
+            "confidence": 74,
+            "risk_score": 66,
+            "action": "BUY",
+            "summary": "한라IMS(092460)은 조선·MRO 테마와 연계된 최근 유형자산 양수와 단일 판매계약 체결 등 주요 경영 이벤트가 발표되어 단기 주도주 가능성이 존재합니다. 하지만 5일·20일 수익률이 부정적이며 변동성·거래량 비율이 낮아 단기 주도성에 제약이 있을 수 있고, 대규모 자산 양수로 인한 재무 부담 위험이 존재합니다. Chartist의 추세 점수는 양호(62)이지만 모멘텀은 낮고 변동성은 높아 3~10거래일 내 변동성이 예상됩니다. 따라서 매수는 가능하지만 리스크가 높으므로 주의가 필요합니다."
+          }
+        },
+        "llm_mode": "multi_agent",
+        "llm_candidate_scope": "broad",
+        "llm_horizon": "short"
+      },
+      {
+        "as_of_date": "2026-01-09",
+        "entry_date": "2026-01-09",
+        "exit_date": "2026-01-16",
+        "stock_name": "삼성중공업",
+        "stock_code": "010140",
+        "rank": 1,
+        "leader_score": 84,
+        "predicted_return_pct": 19.8,
+        "target_price": 34322.96,
+        "realized_return_pct": 3.84,
+        "prediction_model": "multi_agent_broad_short_temporal_theme_leader_v1",
+        "deterministic_leader_score": 81,
+        "llm_score": 81,
+        "llm_raw_score": 81,
+        "llm_ranking_score": 88,
+        "llm_confidence": 76,
+        "llm_theme_fit_score": 85,
+        "llm_catalyst_score": 80,
+        "llm_risk_score": 61,
+        "llm_summary": "삼성중공업(010140)은 조선·해양 산업 내에서 강력한 실적 서프라이즈와 증시 활황 수혜가 동시에 작용해 단기적으로 주도주가 될 가능성이 높습니다. 차트리스트는 95점의 모멘텀과 100점의 거래량 리더십을 보이며, Analyst는 80점의 촉매와 85점의 테마 적합성을 평가했습니다. Quant는 55점의 밸류에이션과 60점의 수익성을 인정하나 장기 재무 구조와 지속성에 대한 불확실성을 지적합니다. 이로 인해 위험도는 중간 수준(61)으로 판단됩니다.",
+        "llm_agent_scores": {
+          "analyst": {
+            "total_score": 78,
+            "theme_fit_score": 85,
+            "moat_score": 65,
+            "growth_score": 75,
+            "catalyst_score": 80,
+            "risk_score": 55,
+            "confidence": 80,
+            "summary": "삼성중공업(010140)은 조선 테마 내에서 최근의 강한 실적과 긍정적인 뉴스 흐름을 바탕으로 향후 3~10거래일 주도주 가능성이 높아 보인다. 단기적으로는 실적 서프라이즈와 증시 활황에 따른 수혜가 기대되며, 높은 수준의 거래량과 가격 리더십도 주목할 만하다. 다만, 조선업종의 장기적인 성장성에 대한 우려는 여전히 존재한다."
+          },
+          "quant": {
+            "total_score": 60,
+            "valuation_score": 55,
+            "profitability_score": 60,
+            "growth_score": 65,
+            "stability_score": 60,
+            "risk_score": 58,
+            "confidence": 50,
+            "summary": "삼성중공업(010140)은 2025년 3분기 깜짝 실적을 기록하며 조선업종의 강세를 이끌었으며, 단기적으로는 수익성과 성장성에 긍정적인 신호가 나타났다. 다만, 장기적인 재무 구조에 대한 구체적인 정보는 부족하며, 지속 가능한 성장과 안정성에 대한 근거는 제한적이다. 따라서 기초체력과 재무 리스크는 보수적으로 평가하였다."
+          },
+          "chartist": {
+            "trend_score": 69,
+            "momentum_score": 95,
+            "volatility_score": 65,
+            "volume_score": 100,
+            "total_score": 88,
+            "confidence": 80,
+            "horizon": "short",
+            "summary": "trend=69, momentum=95, volatility=65, volume=100"
+          },
+          "risk_manager": {
+            "final_score": 81,
+            "raw_final_score": 81,
+            "calibrated_final_score": 81,
+            "agent_weight_profile": "short",
+            "agent_weights": {
+              "analyst": 0.3,
+              "quant": 0.15,
+              "chartist": 0.55
+            },
+            "confidence": 76,
+            "risk_score": 61,
+            "action": "BUY",
+            "summary": "삼성중공업(010140)은 조선·해양 산업 내에서 강력한 실적 서프라이즈와 증시 활황 수혜가 동시에 작용해 단기적으로 주도주가 될 가능성이 높습니다. 차트리스트는 95점의 모멘텀과 100점의 거래량 리더십을 보이며, Analyst는 80점의 촉매와 85점의 테마 적합성을 평가했습니다. Quant는 55점의 밸류에이션과 60점의 수익성을 인정하나 장기 재무 구조와 지속성에 대한 불확실성을 지적합니다. 이로 인해 위험도는 중간 수준(61)으로 판단됩니다."
+          }
+        },
+        "llm_mode": "multi_agent",
+        "llm_candidate_scope": "broad",
+        "llm_horizon": "short"
+      },
+      {
+        "as_of_date": "2026-01-09",
+        "entry_date": "2026-01-09",
+        "exit_date": "2026-01-16",
+        "stock_name": "HJ중공업",
+        "stock_code": "097230",
+        "rank": 2,
+        "leader_score": 78,
+        "predicted_return_pct": 19.13,
+        "target_price": 31272.48,
+        "realized_return_pct": 2.1,
+        "prediction_model": "multi_agent_broad_short_temporal_theme_leader_v1",
+        "deterministic_leader_score": 75,
+        "llm_score": 77,
+        "llm_raw_score": 77,
+        "llm_ranking_score": 81,
+        "llm_confidence": 76,
+        "llm_theme_fit_score": 90,
+        "llm_catalyst_score": 85,
+        "llm_risk_score": 55,
+        "llm_summary": "HJ중공업(097230)은 조선·공사 수주가 급증하면서 단기 주가 리더십이 기대됩니다. Analyst는 강력한 촉매(대규모 공사 수주)와 긍정적 성장 전망을 제시했으며, Chartist는 5‑일 모멘텀 100과 20‑일 볼륨 리더십(1.49배)으로 단기 상승세를 뒷받침합니다. Quant는 재무 구조에 대한 불확실성과 장기 지급 조건으로 인한 유동성 리스크를 지적했으나, 수주잔량 확대가 수익성 개선을 시사합니다. 이 세 에이전트의 시그널이 충돌할 경우에도 Chartist의 가격/거래량 리더십을 우선시하며, Analyst의 촉매와 Quant의 리스크를 함께 반영해 최종 점수 77(±10 범위 내)로 평가했습니다.",
+        "llm_agent_scores": {
+          "analyst": {
+            "total_score": 80,
+            "theme_fit_score": 90,
+            "moat_score": 65,
+            "growth_score": 70,
+            "catalyst_score": 85,
+            "risk_score": 55,
+            "confidence": 80,
+            "summary": "HJ중공업(097230)은 조선 테마에 강하게 부합하며, 최근 단일판매 및 공급계약 체결과 관련된 다수의 공시가 발표되어 향후 3~10거래일 주도주 가능성이 높아 보입니다. 주가 리더십과 긍정적인 공시가 함께 나타나고 있어 단기적인 촉매제가 될 수 있습니다. 다만, 계약 조건의 변동 가능성과 대규모 공사의 장기적 리스크가 존재합니다."
+          },
+          "quant": {
+            "total_score": 55,
+            "valuation_score": 55,
+            "profitability_score": 55,
+            "growth_score": 55,
+            "stability_score": 55,
+            "risk_score": 60,
+            "confidence": 50,
+            "summary": "HJ중공업(097230)은 최근 대규모 공사수주 계약을 여러 건 체결하며 수주잔량 확대에 성공한 것으로 보인다. 그러나 재무 상태에 대한 직접적인 정보는 부족하며, 기초체력과 재무 리스크에 대한 명확한 근거가 부족하다. 다만, 수주잔량 증가에 따른 향후 수익성 개선 가능성은 존재한다. 다만, 계약의 장기성과 지급 조건 등에 따른 유동성 리스크는 존재할 수 있다."
+          },
+          "chartist": {
+            "trend_score": 75,
+            "momentum_score": 100,
+            "volatility_score": 54,
+            "volume_score": 68,
+            "total_score": 81,
+            "confidence": 80,
+            "horizon": "short",
+            "summary": "trend=75, momentum=100, volatility=54, volume=68"
+          },
+          "risk_manager": {
+            "final_score": 77,
+            "raw_final_score": 77,
+            "calibrated_final_score": 77,
+            "agent_weight_profile": "short",
+            "agent_weights": {
+              "analyst": 0.3,
+              "quant": 0.15,
+              "chartist": 0.55
+            },
+            "confidence": 76,
+            "risk_score": 55,
+            "action": "BUY",
+            "summary": "HJ중공업(097230)은 조선·공사 수주가 급증하면서 단기 주가 리더십이 기대됩니다. Analyst는 강력한 촉매(대규모 공사 수주)와 긍정적 성장 전망을 제시했으며, Chartist는 5‑일 모멘텀 100과 20‑일 볼륨 리더십(1.49배)으로 단기 상승세를 뒷받침합니다. Quant는 재무 구조에 대한 불확실성과 장기 지급 조건으로 인한 유동성 리스크를 지적했으나, 수주잔량 확대가 수익성 개선을 시사합니다. 이 세 에이전트의 시그널이 충돌할 경우에도 Chartist의 가격/거래량 리더십을 우선시하며, Analyst의 촉매와 Qu"
+          }
+        },
+        "llm_mode": "multi_agent",
+        "llm_candidate_scope": "broad",
+        "llm_horizon": "short"
+      },
+      {
+        "as_of_date": "2026-01-09",
+        "entry_date": "2026-01-09",
+        "exit_date": "2026-01-16",
+        "stock_name": "한화엔진",
+        "stock_code": "082740",
+        "rank": 3,
+        "leader_score": 78,
+        "predicted_return_pct": 12.82,
+        "target_price": 56070.94,
+        "realized_return_pct": 6.64,
+        "prediction_model": "multi_agent_broad_short_temporal_theme_leader_v1",
+        "deterministic_leader_score": 74,
+        "llm_score": 76,
+        "llm_raw_score": 76,
+        "llm_ranking_score": 82,
+        "llm_confidence": 76,
+        "llm_theme_fit_score": 85,
+        "llm_catalyst_score": 80,
+        "llm_risk_score": 60,
+        "llm_summary": "한화엔진(082740)은 조선·방산 섹터에서 글로벌 지정학적 리스크 상승과 수주 물량 증가가 주도하는 긍정적 분위기 속에서 단기적으로 강력한 리더십을 보이고 있습니다. Chartist의 높은 모멘텀(91)과 거래량 리더십(88)으로 단기 매수 타이밍이 유리하며, Analyst와 Quant의 위험 인지(단기 변동성·거래량 급증, 재무 정보 부족)를 감안해 위험 관리가 필요합니다. 전체적으로 3~10거래일 내 AI 테마 주도주 가능성이 높다고 판단됩니다.",
+        "llm_agent_scores": {
+          "analyst": {
+            "total_score": 76,
+            "theme_fit_score": 85,
+            "moat_score": 60,
+            "growth_score": 70,
+            "catalyst_score": 80,
+            "risk_score": 55,
+            "confidence": 80,
+            "summary": "한화엔진(082740)은 조선 테마 내에서 최근 글로벌 지정학적 리스크와 미국의 방위비 증가 가능성에 따라 조선주와 방산주가 동반 상승한 상황에서 상승세를 보이고 있다. 또한, 수주 물량 증가에 대한 긍정적인 전망이 제시되어 있으며, 최근 5일간 18.19%의 높은 수익률을 기록하며 강한 리더십을 보이고 있다. 다만, 단기 변동성과 거래량 증가에 따른 위험 요소도 존재한다."
+          },
+          "quant": {
+            "total_score": 56,
+            "valuation_score": 55,
+            "profitability_score": 55,
+            "growth_score": 60,
+            "stability_score": 55,
+            "risk_score": 60,
+            "confidence": 50,
+            "summary": "한화엔진(082740)은 조선업 관련 주로, 최근 글로벌 지정학적 리스크 증가에 따라 방산 및 조선주가 상승하는 등 외부 환경에서 유리한 요인이 존재하고 있습니다. 다만, 재무 정보나 직접적인 수익성 관련 데이터는 제공되지 않았으며, 단기적으로는 수주 증가 등 성장성에 대한 긍정적 전망이 제시되고 있습니다. 그러나 장기적인 재무 건전성에 대한 구체적인 근거는 부족합니다."
+          },
+          "chartist": {
+            "trend_score": 65,
+            "momentum_score": 91,
+            "volatility_score": 62,
+            "volume_score": 88,
+            "total_score": 82,
+            "confidence": 80,
+            "horizon": "short",
+            "summary": "trend=65, momentum=91, volatility=62, volume=88"
+          },
+          "risk_manager": {
+            "final_score": 76,
+            "raw_final_score": 76,
+            "calibrated_final_score": 76,
+            "agent_weight_profile": "short",
+            "agent_weights": {
+              "analyst": 0.3,
+              "quant": 0.15,
+              "chartist": 0.55
+            },
+            "confidence": 76,
+            "risk_score": 60,
+            "action": "BUY",
+            "summary": "한화엔진(082740)은 조선·방산 섹터에서 글로벌 지정학적 리스크 상승과 수주 물량 증가가 주도하는 긍정적 분위기 속에서 단기적으로 강력한 리더십을 보이고 있습니다. Chartist의 높은 모멘텀(91)과 거래량 리더십(88)으로 단기 매수 타이밍이 유리하며, Analyst와 Quant의 위험 인지(단기 변동성·거래량 급증, 재무 정보 부족)를 감안해 위험 관리가 필요합니다. 전체적으로 3~10거래일 내 AI 테마 주도주 가능성이 높다고 판단됩니다."
+          }
+        },
+        "llm_mode": "multi_agent",
+        "llm_candidate_scope": "broad",
+        "llm_horizon": "short"
+      }
+    ],
+    "positions": [
+      {
+        "as_of_date": "2026-01-02",
+        "entry_date": "2026-01-02",
+        "exit_date": "2026-01-09",
+        "planned_exit_date": "2026-01-09",
+        "exit_reason": "holding_period_exit",
+        "stock_name": "대창솔루션",
+        "stock_code": "096350",
+        "entry_price": 2425.0,
+        "exit_price": 2290.0,
+        "return_5d": 0.07538802660753885,
+        "return_20d": 0.15476190476190466,
+        "return_60d": 3.5928030303030303,
+        "trend_150d": 1.4006731784582893,
+        "volatility_20d": 0.46918904203362,
+        "volume_ratio_20d": 2.0971854061771067,
+        "avg_trading_value_20d": 654076354.0,
+        "doc_signal": 7.828351942249924,
+        "doc_counts": {
+          "dart": 34,
+          "forum": 0,
+          "news": 7
+        },
+        "return_60d_rank": 1.0,
+        "return_20d_rank": 1.0,
+        "trend_150d_rank": 1.0,
+        "volume_rank": 1.0,
+        "doc_rank": 0.39473684210526316,
+        "low_vol_rank": 0.3684210526315789,
+        "leader_score": 88,
+        "target_price": 3758.75,
+        "deterministic_leader_score": 85,
+        "llm_candidate_scope": "broad",
+        "llm_score": 80,
+        "llm_confidence": 73,
+        "llm_theme_fit_score": 85,
+        "llm_catalyst_score": 75,
+        "llm_risk_score": 64,
+        "llm_summary": "대창솔루션(096350)은 조선·원전 폐기물 저장장치 공급 계약이 2025년 11월에 체결된 등 단기 촉매가 존재하며, 현재 가격·거래량 리더십이 강한 상태입니다. Analyst는 중간 수준의 주도주 가능성을 평가하였고, Quant는 재무 안정성에 대한 우려를 표시했으나, Chartist의 강력한 트렌드·모멘텀·볼륨 지표가 이를 상쇄합니다. 따라서 단기 3~10거래일 내 주도주 가능성이 높다고 판단합니다.",
+        "llm_catalysts": [
+          "2025년 11월 원자력 핵 폐기물 저장장치 공급 계약 체결",
+          "조선기자재 부문의 테마 적합성"
+        ],
+        "llm_risks": [
+          "신용등급(B) 재무 안정성 우려",
+          "계약 이행 리스크"
+        ],
+        "llm_horizon": "short",
+        "llm_fallback_used": false,
+        "llm_agent_scores": {
+          "analyst": {
+            "total_score": 74,
+            "theme_fit_score": 85,
+            "moat_score": 60,
+            "growth_score": 70,
+            "catalyst_score": 75,
+            "risk_score": 55,
+            "confidence": 75,
+            "summary": "대창솔루션(096350)은 조선 테마와 관련된 사업부문(조선기자재 부문)을 운영하고 있으며, 최근 대규모 원자력 핵 폐기물 저장장치 공급 계약을 체결한 것으로 확인되어 단기적인 촉매제가 될 가능성이 있습니다. 주가 리더십(5일, 20일, 60일 수익률)과 거래량 비중(20일 평균 거래량 대비 2.1배)을 고려할 때, 향후 3~10거래일 주도주 가능성이 중간 수준으로 평가됩니다. 다만, 신용등급(B)과 최근 공시 자료의 부정적 요소를 고려하면 위험성은 중간 수준으로 판단됩니다."
+          },
+          "quant": {
+            "total_score": 50,
+            "valuation_score": 50,
+            "profitability_score": 50,
+            "growth_score": 50,
+            "stability_score": 50,
+            "risk_score": 60,
+            "confidence": 40,
+            "summary": "대창솔루션(096350)은 해양솔루션, 원전폐기물, 발전설비, 조선기자재 등 다양한 사업부문에서 주강품 및 관련 제품을 생산하고 있으며, 최근 2025년 11월에 원자력 핵 폐기물 저장장치 공급 계약을 체결한 것으로 보여 성장 잠재력이 존재합니다. 그러나 재무 정보에 대한 직접적인 언급이 부족하고, 신용등급은 B로 유지되고 있어 재무 안정성에 대한 확신이 부족합니다. 따라서 기초체력과 재무 리스크는 보수적으로 평가되었습니다."
+          },
+          "chartist": {
+            "trend_score": 100,
+            "momentum_score": 100,
+            "volatility_score": 70,
+            "volume_score": 81,
+            "total_score": 91,
+            "confidence": 80,
+            "horizon": "short",
+            "summary": "trend=100, momentum=100, volatility=70, volume=81"
+          },
+          "risk_manager": {
+            "final_score": 80,
+            "raw_final_score": 80,
+            "calibrated_final_score": 80,
+            "agent_weight_profile": "short",
+            "agent_weights": {
+              "analyst": 0.3,
+              "quant": 0.15,
+              "chartist": 0.55
+            },
+            "confidence": 73,
+            "risk_score": 64,
+            "action": "BUY",
+            "summary": "대창솔루션(096350)은 조선·원전 폐기물 저장장치 공급 계약이 2025년 11월에 체결된 등 단기 촉매가 존재하며, 현재 가격·거래량 리더십이 강한 상태입니다. Analyst는 중간 수준의 주도주 가능성을 평가하였고, Quant는 재무 안정성에 대한 우려를 표시했으나, Chartist의 강력한 트렌드·모멘텀·볼륨 지표가 이를 상쇄합니다. 따라서 단기 3~10거래일 내 주도주 가능성이 높다고 판단합니다."
+          }
+        },
+        "cache_hit": false,
+        "llm_model": "qwen3:14b",
+        "llm_provider": "ollama",
+        "llm_prompt_version": "temporal_theme_leader_multi_agent_v3",
+        "llm_context_docs": 3,
+        "llm_mode": "multi_agent",
+        "llm_raw_score": 80,
+        "llm_ranking_score": 90,
+        "rank": 1,
+        "weight": 0.333333,
+        "realized_return_pct": -5.57,
+        "predicted_return_pct": 55.0
+      },
+      {
+        "as_of_date": "2026-01-02",
+        "entry_date": "2026-01-02",
+        "exit_date": "2026-01-09",
+        "planned_exit_date": "2026-01-09",
+        "exit_reason": "holding_period_exit",
+        "stock_name": "삼성중공업",
+        "stock_code": "010140",
+        "entry_price": 24150.0,
+        "exit_price": 28650.0,
+        "return_5d": -0.03976143141153077,
+        "return_20d": -0.014285714285714235,
+        "return_60d": 0.10273972602739723,
+        "trend_150d": 0.12638874637363462,
+        "volatility_20d": 0.4450321690179692,
+        "volume_ratio_20d": 1.0649897573596023,
+        "avg_trading_value_20d": 88117506390.0,
+        "doc_signal": 10.19796117523382,
+        "doc_counts": {
+          "dart": 50,
+          "forum": 0,
+          "news": 35
+        },
+        "return_60d_rank": 0.9210526315789473,
+        "return_20d_rank": 0.7631578947368421,
+        "trend_150d_rank": 0.8421052631578947,
+        "volume_rank": 0.7631578947368421,
+        "doc_rank": 0.8947368421052632,
+        "low_vol_rank": 0.5,
+        "leader_score": 72,
+        "target_price": 25332.31,
+        "deterministic_leader_score": 81,
+        "llm_candidate_scope": "broad",
+        "llm_score": 62,
+        "llm_confidence": 76,
+        "llm_theme_fit_score": 85,
+        "llm_catalyst_score": 80,
+        "llm_risk_score": 64,
+        "llm_summary": "삼성중공업(010140)은 조선 테마 주도주 후보로서 3분기 깜짝 실적과 업계 실적 개선이 촉매로 작용하고 있다. 단기 하락세가 있지만 60일·150일 이동평균선에서 상승 추세를 유지하고, 거래량 리더십이 확인된다. 그러나 단기 수익률 하락과 재무 구조 정보 부족, 시장 변동성 확대 가능성이 리스크로 남는다. 3~10거래일 단기 투자에서는 매수 권고.",
+        "llm_catalysts": [
+          "3분기 깜짝 실적 발표",
+          "조선업종 전반의 실적 개선"
+        ],
+        "llm_risks": [
+          "단기 수익률 하락",
+          "재무 구조 정보 부족",
+          "시장 변동성 확대 가능성"
+        ],
+        "llm_horizon": "short",
+        "llm_fallback_used": false,
+        "llm_agent_scores": {
+          "analyst": {
+            "total_score": 77,
+            "theme_fit_score": 85,
+            "moat_score": 65,
+            "growth_score": 70,
+            "catalyst_score": 80,
+            "risk_score": 55,
+            "confidence": 80,
+            "summary": "삼성중공업(010140)은 조선 테마 내에서 최근 3분기 깜짝 실적을 기록하며 주도주 가능성을 높이고 있다. 단기적으로는 5일 및 20일 이동평균선 기준 약간의 하락세를 보이고 있으나, 60일 및 150일 이동평균선 기준으로는 상승 추세를 유지하고 있다. 최근 뉴스 및 공시에서 조선업종의 실적 개선과 함께 삼성중공업의 강한 성과가 언급되며, 이는 단기적인 주도주 후보로의 가능성을 높이는 촉매제로 작용하고 있다. 다만, 변동성과 거래량은 상대적으로 안정적이며, 장기적인 성장 가능성은 보조 지표로 평가된다."
+          },
+          "quant": {
+            "total_score": 60,
+            "valuation_score": 55,
+            "profitability_score": 60,
+            "growth_score": 65,
+            "stability_score": 60,
+            "risk_score": 58,
+            "confidence": 50,
+            "summary": "삼성중공업(010140)은 2025년 11월 기준으로 조선업종 내에서 깜짝 실적을 기록하며 시장 전망치를 상회한 것으로 나타났다. 이는 증권가의 긍정적인 분석과 함께, 국내외 증시 활황으로 인한 거래대금 증가 및 자산관리 수익률 개선 등의 영향을 받은 것으로 보인다. 다만, 재무 구조에 대한 구체적인 정보는 제시되지 않았으며, 단기 수익률은 하락세를 보이고 있다. 따라서 재무 리스크에 대한 직접적인 근거는 부족하지만, 장기적인 성장 가능성은 어느 정도 존재한다."
+          },
+          "chartist": {
+            "trend_score": 58,
+            "momentum_score": 44,
+            "volatility_score": 71,
+            "volume_score": 58,
+            "total_score": 54,
+            "confidence": 80,
+            "horizon": "short",
+            "summary": "trend=58, momentum=44, volatility=71, volume=58"
+          },
+          "risk_manager": {
+            "final_score": 62,
+            "raw_final_score": 62,
+            "calibrated_final_score": 62,
+            "agent_weight_profile": "short",
+            "agent_weights": {
+              "analyst": 0.3,
+              "quant": 0.15,
+              "chartist": 0.55
+            },
+            "confidence": 76,
+            "risk_score": 64,
+            "action": "BUY",
+            "summary": "삼성중공업(010140)은 조선 테마 주도주 후보로서 3분기 깜짝 실적과 업계 실적 개선이 촉매로 작용하고 있다. 단기 하락세가 있지만 60일·150일 이동평균선에서 상승 추세를 유지하고, 거래량 리더십이 확인된다. 그러나 단기 수익률 하락과 재무 구조 정보 부족, 시장 변동성 확대 가능성이 리스크로 남는다. 3~10거래일 단기 투자에서는 매수 권고."
+          }
+        },
+        "cache_hit": false,
+        "llm_model": "qwen3:14b",
+        "llm_provider": "ollama",
+        "llm_prompt_version": "temporal_theme_leader_multi_agent_v3",
+        "llm_context_docs": 3,
+        "llm_mode": "multi_agent",
+        "llm_raw_score": 62,
+        "llm_ranking_score": 62,
+        "rank": 2,
+        "weight": 0.333333,
+        "realized_return_pct": 18.63,
+        "predicted_return_pct": 4.9
+      },
+      {
+        "as_of_date": "2026-01-02",
+        "entry_date": "2026-01-02",
+        "exit_date": "2026-01-09",
+        "planned_exit_date": "2026-01-09",
+        "exit_reason": "holding_period_exit",
+        "stock_name": "한라IMS",
+        "stock_code": "092460",
+        "entry_price": 16250.0,
+        "exit_price": 17610.0,
+        "return_5d": -0.07407407407407407,
+        "return_20d": -0.02049427365883061,
+        "return_60d": 0.08768406961178044,
+        "trend_150d": 0.19714159422425226,
+        "volatility_20d": 0.416480264122332,
+        "volume_ratio_20d": 0.4589006881619439,
+        "avg_trading_value_20d": 7330801443.5,
+        "doc_signal": 9.798173061224164,
+        "doc_counts": {
+          "dart": 51,
+          "forum": 164,
+          "news": 2
+        },
+        "return_60d_rank": 0.8947368421052632,
+        "return_20d_rank": 0.6842105263157895,
+        "trend_150d_rank": 0.9210526315789473,
+        "volume_rank": 0.23684210526315788,
+        "doc_rank": 0.7631578947368421,
+        "low_vol_rank": 0.5526315789473685,
+        "leader_score": 65,
+        "target_price": 17151.65,
+        "deterministic_leader_score": 74,
+        "llm_candidate_scope": "broad",
+        "llm_score": 56,
+        "llm_confidence": 74,
+        "llm_theme_fit_score": 85,
+        "llm_catalyst_score": 70,
+        "llm_risk_score": 66,
+        "llm_summary": "한라IMS(092460)은 조선·MRO 테마와 연계된 최근 유형자산 양수와 단일 판매계약 체결 등 주요 경영 이벤트가 발표되어 단기 주도주 가능성이 존재합니다. 하지만 5일·20일 수익률이 부정적이며 변동성·거래량 비율이 낮아 단기 주도성에 제약이 있을 수 있고, 대규모 자산 양수로 인한 재무 부담 위험이 존재합니다. Chartist의 추세 점수는 양호(62)이지만 모멘텀은 낮고 변동성은 높아 3~10거래일 내 변동성이 예상됩니다. 따라서 매수는 가능하지만 리스크가 높으므로 주의가 필요합니다.",
+        "llm_catalysts": [
+          "유형자산 양수 결정(대선조선 자산 확보)으로 선박수리 및 MRO 사업 확대 기대",
+          "단일판매계약 체결(도크게이트 제작납품)으로 수주 증가 기대"
+        ],
+        "llm_risks": [
+          "최근 5일 및 20일 수익률이 부정적이며 변동성·거래량 비율이 낮아 단기 주도성에 제약 가능성",
+          "유형자산 양수에 따른 자금 부담 및 신규 사업 확대에 따른 재무 리스크"
+        ],
+        "llm_horizon": "short",
+        "llm_fallback_used": false,
+        "llm_agent_scores": {
+          "analyst": {
+            "total_score": 71,
+            "theme_fit_score": 85,
+            "moat_score": 60,
+            "growth_score": 65,
+            "catalyst_score": 70,
+            "risk_score": 55,
+            "confidence": 75,
+            "summary": "한라IMS(092460)는 조선 테마와의 연관성이 높으며, 최근 유형자산 양수 결정 및 단일판매계약 체결과 같은 중요한 경영 결정을 발표한 것으로 보여, 단기적으로 주도주 가능성이 존재합니다. 다만, 최근 5일 및 20일 수익률은 부정적이며, 변동성과 거래량 비율은 상대적으로 낮아 단기 주도성에 제약이 있을 수 있습니다."
+          },
+          "quant": {
+            "total_score": 55,
+            "valuation_score": 55,
+            "profitability_score": 55,
+            "growth_score": 55,
+            "stability_score": 55,
+            "risk_score": 60,
+            "confidence": 50,
+            "summary": "한라IMS(092460)는 유형자산 양수 결정 및 대규모 계약 체결 등 주요 경영사항을 공시한 것으로 보이며, 재무상황에 대한 직접적인 악화 근거는 확인되지 않았다. 다만, 대규모 자산 양수 및 신규 사업 확대에 따른 재무 부담 가능성은 존재할 수 있어 보수적인 리스크 평가가 필요하다."
+          },
+          "chartist": {
+            "trend_score": 62,
+            "momentum_score": 37,
+            "volatility_score": 73,
+            "volume_score": 45,
+            "total_score": 48,
+            "confidence": 80,
+            "horizon": "short",
+            "summary": "trend=62, momentum=37, volatility=73, volume=45"
+          },
+          "risk_manager": {
+            "final_score": 56,
+            "raw_final_score": 56,
+            "calibrated_final_score": 56,
+            "agent_weight_profile": "short",
+            "agent_weights": {
+              "analyst": 0.3,
+              "quant": 0.15,
+              "chartist": 0.55
+            },
+            "confidence": 74,
+            "risk_score": 66,
+            "action": "BUY",
+            "summary": "한라IMS(092460)은 조선·MRO 테마와 연계된 최근 유형자산 양수와 단일 판매계약 체결 등 주요 경영 이벤트가 발표되어 단기 주도주 가능성이 존재합니다. 하지만 5일·20일 수익률이 부정적이며 변동성·거래량 비율이 낮아 단기 주도성에 제약이 있을 수 있고, 대규모 자산 양수로 인한 재무 부담 위험이 존재합니다. Chartist의 추세 점수는 양호(62)이지만 모멘텀은 낮고 변동성은 높아 3~10거래일 내 변동성이 예상됩니다. 따라서 매수는 가능하지만 리스크가 높으므로 주의가 필요합니다."
+          }
+        },
+        "cache_hit": false,
+        "llm_model": "qwen3:14b",
+        "llm_provider": "ollama",
+        "llm_prompt_version": "temporal_theme_leader_multi_agent_v3",
+        "llm_context_docs": 3,
+        "llm_mode": "multi_agent",
+        "llm_raw_score": 56,
+        "llm_ranking_score": 56,
+        "rank": 3,
+        "weight": 0.333333,
+        "realized_return_pct": 8.37,
+        "predicted_return_pct": 5.55
+      },
+      {
+        "as_of_date": "2026-01-09",
+        "entry_date": "2026-01-09",
+        "exit_date": "2026-01-16",
+        "planned_exit_date": "2026-01-16",
+        "exit_reason": "holding_period_exit",
+        "stock_name": "삼성중공업",
+        "stock_code": "010140",
+        "entry_price": 28650.0,
+        "exit_price": 29750.0,
+        "return_5d": 0.18633540372670798,
+        "return_20d": 0.05914972273567476,
+        "return_60d": 0.3514150943396226,
+        "trend_150d": 0.31504862390374355,
+        "volatility_20d": 0.5317887337595456,
+        "volume_ratio_20d": 3.6657762759129104,
+        "avg_trading_value_20d": 124089219920.0,
+        "doc_signal": 10.19796117523382,
+        "doc_counts": {
+          "dart": 50,
+          "forum": 0,
+          "news": 35
+        },
+        "return_60d_rank": 0.9473684210526315,
+        "return_20d_rank": 0.7368421052631579,
+        "trend_150d_rank": 0.868421052631579,
+        "volume_rank": 0.8947368421052632,
+        "doc_rank": 0.8421052631578947,
+        "low_vol_rank": 0.39473684210526316,
+        "leader_score": 84,
+        "target_price": 34322.96,
+        "deterministic_leader_score": 81,
+        "llm_candidate_scope": "broad",
+        "llm_score": 81,
+        "llm_confidence": 76,
+        "llm_theme_fit_score": 85,
+        "llm_catalyst_score": 80,
+        "llm_risk_score": 61,
+        "llm_summary": "삼성중공업(010140)은 조선·해양 산업 내에서 강력한 실적 서프라이즈와 증시 활황 수혜가 동시에 작용해 단기적으로 주도주가 될 가능성이 높습니다. 차트리스트는 95점의 모멘텀과 100점의 거래량 리더십을 보이며, Analyst는 80점의 촉매와 85점의 테마 적합성을 평가했습니다. Quant는 55점의 밸류에이션과 60점의 수익성을 인정하나 장기 재무 구조와 지속성에 대한 불확실성을 지적합니다. 이로 인해 위험도는 중간 수준(61)으로 판단됩니다.",
+        "llm_catalysts": [
+          "3분기 실적 서프라이즈",
+          "조선업종의 증시 활황 수혜"
+        ],
+        "llm_risks": [
+          "조선업종의 장기 성장성에 대한 우려",
+          "국제 시장의 불확실성"
+        ],
+        "llm_horizon": "short",
+        "llm_fallback_used": false,
+        "llm_agent_scores": {
+          "analyst": {
+            "total_score": 78,
+            "theme_fit_score": 85,
+            "moat_score": 65,
+            "growth_score": 75,
+            "catalyst_score": 80,
+            "risk_score": 55,
+            "confidence": 80,
+            "summary": "삼성중공업(010140)은 조선 테마 내에서 최근의 강한 실적과 긍정적인 뉴스 흐름을 바탕으로 향후 3~10거래일 주도주 가능성이 높아 보인다. 단기적으로는 실적 서프라이즈와 증시 활황에 따른 수혜가 기대되며, 높은 수준의 거래량과 가격 리더십도 주목할 만하다. 다만, 조선업종의 장기적인 성장성에 대한 우려는 여전히 존재한다."
+          },
+          "quant": {
+            "total_score": 60,
+            "valuation_score": 55,
+            "profitability_score": 60,
+            "growth_score": 65,
+            "stability_score": 60,
+            "risk_score": 58,
+            "confidence": 50,
+            "summary": "삼성중공업(010140)은 2025년 3분기 깜짝 실적을 기록하며 조선업종의 강세를 이끌었으며, 단기적으로는 수익성과 성장성에 긍정적인 신호가 나타났다. 다만, 장기적인 재무 구조에 대한 구체적인 정보는 부족하며, 지속 가능한 성장과 안정성에 대한 근거는 제한적이다. 따라서 기초체력과 재무 리스크는 보수적으로 평가하였다."
+          },
+          "chartist": {
+            "trend_score": 69,
+            "momentum_score": 95,
+            "volatility_score": 65,
+            "volume_score": 100,
+            "total_score": 88,
+            "confidence": 80,
+            "horizon": "short",
+            "summary": "trend=69, momentum=95, volatility=65, volume=100"
+          },
+          "risk_manager": {
+            "final_score": 81,
+            "raw_final_score": 81,
+            "calibrated_final_score": 81,
+            "agent_weight_profile": "short",
+            "agent_weights": {
+              "analyst": 0.3,
+              "quant": 0.15,
+              "chartist": 0.55
+            },
+            "confidence": 76,
+            "risk_score": 61,
+            "action": "BUY",
+            "summary": "삼성중공업(010140)은 조선·해양 산업 내에서 강력한 실적 서프라이즈와 증시 활황 수혜가 동시에 작용해 단기적으로 주도주가 될 가능성이 높습니다. 차트리스트는 95점의 모멘텀과 100점의 거래량 리더십을 보이며, Analyst는 80점의 촉매와 85점의 테마 적합성을 평가했습니다. Quant는 55점의 밸류에이션과 60점의 수익성을 인정하나 장기 재무 구조와 지속성에 대한 불확실성을 지적합니다. 이로 인해 위험도는 중간 수준(61)으로 판단됩니다."
+          }
+        },
+        "cache_hit": false,
+        "llm_model": "qwen3:14b",
+        "llm_provider": "ollama",
+        "llm_prompt_version": "temporal_theme_leader_multi_agent_v3",
+        "llm_context_docs": 3,
+        "llm_mode": "multi_agent",
+        "llm_raw_score": 81,
+        "llm_ranking_score": 88,
+        "rank": 1,
+        "weight": 0.333333,
+        "realized_return_pct": 3.84,
+        "predicted_return_pct": 19.8
+      },
+      {
+        "as_of_date": "2026-01-09",
+        "entry_date": "2026-01-09",
+        "exit_date": "2026-01-16",
+        "planned_exit_date": "2026-01-16",
+        "exit_reason": "holding_period_exit",
+        "stock_name": "HJ중공업",
+        "stock_code": "097230",
+        "entry_price": 26250.0,
+        "exit_price": 26800.0,
+        "return_5d": 0.232394366197183,
+        "return_20d": 0.15638766519823788,
+        "return_60d": 0.09603340292275564,
+        "trend_150d": 0.42164437768984153,
+        "volatility_20d": 0.7028726655082362,
+        "volume_ratio_20d": 1.4883057901243377,
+        "avg_trading_value_20d": 39156337375.0,
+        "doc_signal": 10.61735692250436,
+        "doc_counts": {
+          "dart": 61,
+          "forum": 0,
+          "news": 39
+        },
+        "return_60d_rank": 0.6842105263157895,
+        "return_20d_rank": 0.9473684210526315,
+        "trend_150d_rank": 0.9210526315789473,
+        "volume_rank": 0.42105263157894735,
+        "doc_rank": 0.9473684210526315,
+        "low_vol_rank": 0.21052631578947367,
+        "leader_score": 78,
+        "target_price": 31272.48,
+        "deterministic_leader_score": 75,
+        "llm_candidate_scope": "broad",
+        "llm_score": 77,
+        "llm_confidence": 76,
+        "llm_theme_fit_score": 90,
+        "llm_catalyst_score": 85,
+        "llm_risk_score": 55,
+        "llm_summary": "HJ중공업(097230)은 조선·공사 수주가 급증하면서 단기 주가 리더십이 기대됩니다. Analyst는 강력한 촉매(대규모 공사 수주)와 긍정적 성장 전망을 제시했으며, Chartist는 5‑일 모멘텀 100과 20‑일 볼륨 리더십(1.49배)으로 단기 상승세를 뒷받침합니다. Quant는 재무 구조에 대한 불확실성과 장기 지급 조건으로 인한 유동성 리스크를 지적했으나, 수주잔량 확대가 수익성 개선을 시사합니다. 이 세 에이전트의 시그널이 충돌할 경우에도 Chartist의 가격/거래량 리더십을 우선시하며, Analyst의 촉매와 Quant의 리스크를 함께 반영해 최종 점수 77(±10 범위 내)로 평가했습니다.",
+        "llm_catalysts": [
+          "2026년 1월에 발표된 대규모 공사 수주(강원 전기공급시설, 대전 삼성6구역 재개발정비사업 등)",
+          "계약금액의 증가 및 매출액 대비 비중 상승"
+        ],
+        "llm_risks": [
+          "계약 조건의 추후 변동 가능성",
+          "대규모 공사의 장기적 실행 리스크",
+          "계약의 장기성과 지급 조건에 따른 유동성 리스크",
+          "재무 상태에 대한 직접적인 정보 부족으로 인한 예측 불확실성"
+        ],
+        "llm_horizon": "short",
+        "llm_fallback_used": false,
+        "llm_agent_scores": {
+          "analyst": {
+            "total_score": 80,
+            "theme_fit_score": 90,
+            "moat_score": 65,
+            "growth_score": 70,
+            "catalyst_score": 85,
+            "risk_score": 55,
+            "confidence": 80,
+            "summary": "HJ중공업(097230)은 조선 테마에 강하게 부합하며, 최근 단일판매 및 공급계약 체결과 관련된 다수의 공시가 발표되어 향후 3~10거래일 주도주 가능성이 높아 보입니다. 주가 리더십과 긍정적인 공시가 함께 나타나고 있어 단기적인 촉매제가 될 수 있습니다. 다만, 계약 조건의 변동 가능성과 대규모 공사의 장기적 리스크가 존재합니다."
+          },
+          "quant": {
+            "total_score": 55,
+            "valuation_score": 55,
+            "profitability_score": 55,
+            "growth_score": 55,
+            "stability_score": 55,
+            "risk_score": 60,
+            "confidence": 50,
+            "summary": "HJ중공업(097230)은 최근 대규모 공사수주 계약을 여러 건 체결하며 수주잔량 확대에 성공한 것으로 보인다. 그러나 재무 상태에 대한 직접적인 정보는 부족하며, 기초체력과 재무 리스크에 대한 명확한 근거가 부족하다. 다만, 수주잔량 증가에 따른 향후 수익성 개선 가능성은 존재한다. 다만, 계약의 장기성과 지급 조건 등에 따른 유동성 리스크는 존재할 수 있다."
+          },
+          "chartist": {
+            "trend_score": 75,
+            "momentum_score": 100,
+            "volatility_score": 54,
+            "volume_score": 68,
+            "total_score": 81,
+            "confidence": 80,
+            "horizon": "short",
+            "summary": "trend=75, momentum=100, volatility=54, volume=68"
+          },
+          "risk_manager": {
+            "final_score": 77,
+            "raw_final_score": 77,
+            "calibrated_final_score": 77,
+            "agent_weight_profile": "short",
+            "agent_weights": {
+              "analyst": 0.3,
+              "quant": 0.15,
+              "chartist": 0.55
+            },
+            "confidence": 76,
+            "risk_score": 55,
+            "action": "BUY",
+            "summary": "HJ중공업(097230)은 조선·공사 수주가 급증하면서 단기 주가 리더십이 기대됩니다. Analyst는 강력한 촉매(대규모 공사 수주)와 긍정적 성장 전망을 제시했으며, Chartist는 5‑일 모멘텀 100과 20‑일 볼륨 리더십(1.49배)으로 단기 상승세를 뒷받침합니다. Quant는 재무 구조에 대한 불확실성과 장기 지급 조건으로 인한 유동성 리스크를 지적했으나, 수주잔량 확대가 수익성 개선을 시사합니다. 이 세 에이전트의 시그널이 충돌할 경우에도 Chartist의 가격/거래량 리더십을 우선시하며, Analyst의 촉매와 Qu"
+          }
+        },
+        "cache_hit": false,
+        "llm_model": "qwen3:14b",
+        "llm_provider": "ollama",
+        "llm_prompt_version": "temporal_theme_leader_multi_agent_v3",
+        "llm_context_docs": 3,
+        "llm_mode": "multi_agent",
+        "llm_raw_score": 77,
+        "llm_ranking_score": 81,
+        "rank": 2,
+        "weight": 0.333333,
+        "realized_return_pct": 2.1,
+        "predicted_return_pct": 19.13
+      },
+      {
+        "as_of_date": "2026-01-09",
+        "entry_date": "2026-01-09",
+        "exit_date": "2026-01-16",
+        "planned_exit_date": "2026-01-16",
+        "exit_reason": "holding_period_exit",
+        "stock_name": "한화엔진",
+        "stock_code": "082740",
+        "entry_price": 49700.0,
+        "exit_price": 53000.0,
+        "return_5d": 0.18192627824019025,
+        "return_20d": 0.07112068965517238,
+        "return_60d": 0.13729977116704806,
+        "trend_150d": 0.25718814819811464,
+        "volatility_20d": 0.5915660409316653,
+        "volume_ratio_20d": 2.3918080353255773,
+        "avg_trading_value_20d": 50412744602.5,
+        "doc_signal": 10.615633076648368,
+        "doc_counts": {
+          "dart": 30,
+          "forum": 0,
+          "news": 94
+        },
+        "return_60d_rank": 0.7368421052631579,
+        "return_20d_rank": 0.7894736842105263,
+        "trend_150d_rank": 0.7631578947368421,
+        "volume_rank": 0.6842105263157895,
+        "doc_rank": 0.9210526315789473,
+        "low_vol_rank": 0.34210526315789475,
+        "leader_score": 78,
+        "target_price": 56070.94,
+        "deterministic_leader_score": 74,
+        "llm_candidate_scope": "broad",
+        "llm_score": 76,
+        "llm_confidence": 76,
+        "llm_theme_fit_score": 85,
+        "llm_catalyst_score": 80,
+        "llm_risk_score": 60,
+        "llm_summary": "한화엔진(082740)은 조선·방산 섹터에서 글로벌 지정학적 리스크 상승과 수주 물량 증가가 주도하는 긍정적 분위기 속에서 단기적으로 강력한 리더십을 보이고 있습니다. Chartist의 높은 모멘텀(91)과 거래량 리더십(88)으로 단기 매수 타이밍이 유리하며, Analyst와 Quant의 위험 인지(단기 변동성·거래량 급증, 재무 정보 부족)를 감안해 위험 관리가 필요합니다. 전체적으로 3~10거래일 내 AI 테마 주도주 가능성이 높다고 판단됩니다.",
+        "llm_catalysts": [
+          "글로벌 지정학적 리스크 심화로 인한 방산 및 조선주 상승",
+          "2024년 수주 물량 2조원 달성에 대한 긍정적 전망"
+        ],
+        "llm_risks": [
+          "단기 변동성(20일 이동 평균 변동성 59.16%) 및 거래량 급증(20일 평균 대비 2.39배 증가)",
+          "재무 정보 부족으로 인한 장기적 성장성 및 안정성 평가의 어려움"
+        ],
+        "llm_horizon": "short",
+        "llm_fallback_used": false,
+        "llm_agent_scores": {
+          "analyst": {
+            "total_score": 76,
+            "theme_fit_score": 85,
+            "moat_score": 60,
+            "growth_score": 70,
+            "catalyst_score": 80,
+            "risk_score": 55,
+            "confidence": 80,
+            "summary": "한화엔진(082740)은 조선 테마 내에서 최근 글로벌 지정학적 리스크와 미국의 방위비 증가 가능성에 따라 조선주와 방산주가 동반 상승한 상황에서 상승세를 보이고 있다. 또한, 수주 물량 증가에 대한 긍정적인 전망이 제시되어 있으며, 최근 5일간 18.19%의 높은 수익률을 기록하며 강한 리더십을 보이고 있다. 다만, 단기 변동성과 거래량 증가에 따른 위험 요소도 존재한다."
+          },
+          "quant": {
+            "total_score": 56,
+            "valuation_score": 55,
+            "profitability_score": 55,
+            "growth_score": 60,
+            "stability_score": 55,
+            "risk_score": 60,
+            "confidence": 50,
+            "summary": "한화엔진(082740)은 조선업 관련 주로, 최근 글로벌 지정학적 리스크 증가에 따라 방산 및 조선주가 상승하는 등 외부 환경에서 유리한 요인이 존재하고 있습니다. 다만, 재무 정보나 직접적인 수익성 관련 데이터는 제공되지 않았으며, 단기적으로는 수주 증가 등 성장성에 대한 긍정적 전망이 제시되고 있습니다. 그러나 장기적인 재무 건전성에 대한 구체적인 근거는 부족합니다."
+          },
+          "chartist": {
+            "trend_score": 65,
+            "momentum_score": 91,
+            "volatility_score": 62,
+            "volume_score": 88,
+            "total_score": 82,
+            "confidence": 80,
+            "horizon": "short",
+            "summary": "trend=65, momentum=91, volatility=62, volume=88"
+          },
+          "risk_manager": {
+            "final_score": 76,
+            "raw_final_score": 76,
+            "calibrated_final_score": 76,
+            "agent_weight_profile": "short",
+            "agent_weights": {
+              "analyst": 0.3,
+              "quant": 0.15,
+              "chartist": 0.55
+            },
+            "confidence": 76,
+            "risk_score": 60,
+            "action": "BUY",
+            "summary": "한화엔진(082740)은 조선·방산 섹터에서 글로벌 지정학적 리스크 상승과 수주 물량 증가가 주도하는 긍정적 분위기 속에서 단기적으로 강력한 리더십을 보이고 있습니다. Chartist의 높은 모멘텀(91)과 거래량 리더십(88)으로 단기 매수 타이밍이 유리하며, Analyst와 Quant의 위험 인지(단기 변동성·거래량 급증, 재무 정보 부족)를 감안해 위험 관리가 필요합니다. 전체적으로 3~10거래일 내 AI 테마 주도주 가능성이 높다고 판단됩니다."
+          }
+        },
+        "cache_hit": false,
+        "llm_model": "qwen3:14b",
+        "llm_provider": "ollama",
+        "llm_prompt_version": "temporal_theme_leader_multi_agent_v3",
+        "llm_context_docs": 3,
+        "llm_mode": "multi_agent",
+        "llm_raw_score": 76,
+        "llm_ranking_score": 82,
+        "rank": 3,
+        "weight": 0.333333,
+        "realized_return_pct": 6.64,
+        "predicted_return_pct": 12.82
+      }
+    ],
+    "trades": [
+      {
+        "date": "2026-01-02",
+        "stock_name": "대창솔루션",
+        "stock_code": "096350",
+        "side": "BUY",
+        "price": 2425.0,
+        "weight": 0.333333,
+        "reason": "rank 1 leader_score 88"
+      },
+      {
+        "date": "2026-01-09",
+        "stock_name": "대창솔루션",
+        "stock_code": "096350",
+        "side": "SELL",
+        "price": 2290.0,
+        "weight": 0.333333,
+        "realized_return_pct": -5.57,
+        "reason": "holding_period_exit"
+      },
+      {
+        "date": "2026-01-02",
+        "stock_name": "삼성중공업",
+        "stock_code": "010140",
+        "side": "BUY",
+        "price": 24150.0,
+        "weight": 0.333333,
+        "reason": "rank 2 leader_score 72"
+      },
+      {
+        "date": "2026-01-09",
+        "stock_name": "삼성중공업",
+        "stock_code": "010140",
+        "side": "SELL",
+        "price": 28650.0,
+        "weight": 0.333333,
+        "realized_return_pct": 18.63,
+        "reason": "holding_period_exit"
+      },
+      {
+        "date": "2026-01-02",
+        "stock_name": "한라IMS",
+        "stock_code": "092460",
+        "side": "BUY",
+        "price": 16250.0,
+        "weight": 0.333333,
+        "reason": "rank 3 leader_score 65"
+      },
+      {
+        "date": "2026-01-09",
+        "stock_name": "한라IMS",
+        "stock_code": "092460",
+        "side": "SELL",
+        "price": 17610.0,
+        "weight": 0.333333,
+        "realized_return_pct": 8.37,
+        "reason": "holding_period_exit"
+      },
+      {
+        "date": "2026-01-09",
+        "stock_name": "삼성중공업",
+        "stock_code": "010140",
+        "side": "BUY",
+        "price": 28650.0,
+        "weight": 0.333333,
+        "reason": "rank 1 leader_score 84"
+      },
+      {
+        "date": "2026-01-16",
+        "stock_name": "삼성중공업",
+        "stock_code": "010140",
+        "side": "SELL",
+        "price": 29750.0,
+        "weight": 0.333333,
+        "realized_return_pct": 3.84,
+        "reason": "holding_period_exit"
+      },
+      {
+        "date": "2026-01-09",
+        "stock_name": "HJ중공업",
+        "stock_code": "097230",
+        "side": "BUY",
+        "price": 26250.0,
+        "weight": 0.333333,
+        "reason": "rank 2 leader_score 78"
+      },
+      {
+        "date": "2026-01-16",
+        "stock_name": "HJ중공업",
+        "stock_code": "097230",
+        "side": "SELL",
+        "price": 26800.0,
+        "weight": 0.333333,
+        "realized_return_pct": 2.1,
+        "reason": "holding_period_exit"
+      },
+      {
+        "date": "2026-01-09",
+        "stock_name": "한화엔진",
+        "stock_code": "082740",
+        "side": "BUY",
+        "price": 49700.0,
+        "weight": 0.333333,
+        "reason": "rank 3 leader_score 78"
+      },
+      {
+        "date": "2026-01-16",
+        "stock_name": "한화엔진",
+        "stock_code": "082740",
+        "side": "SELL",
+        "price": 53000.0,
+        "weight": 0.333333,
+        "realized_return_pct": 6.64,
+        "reason": "holding_period_exit"
+      }
+    ],
+    "periods": [
+      {
+        "as_of_date": "2026-01-02",
+        "entry_date": "2026-01-02",
+        "exit_date": "2026-01-09",
+        "selected_count": 3,
+        "active_target_count": 41,
+        "eligible_count": 38,
+        "risk_eligible_count": 36,
+        "risk_reject_count": 2,
+        "market_breadth_pct": 57.89,
+        "portfolio_return_pct": 6.65,
+        "benchmark_return_pct": 10.15,
+        "excess_return_pct": -3.5,
+        "candidate_rankings": [
+          {
+            "stock_name": "대창솔루션",
+            "stock_code": "096350",
+            "leader_score": 88,
+            "deterministic_leader_score": 85,
+            "llm_score": 80,
+            "llm_raw_score": 80,
+            "llm_ranking_score": 90,
+            "llm_confidence": 73,
+            "llm_candidate_scope": "broad",
+            "llm_horizon": "short",
+            "volatility_20d": 0.4692,
+            "volume_ratio_20d": 2.0972,
+            "doc_signal": 7.8284,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": 7.54,
+            "return_20d_pct": 15.48,
+            "return_60d_pct": 359.28,
+            "trend_150d_pct": 140.07,
+            "realized_return_pct": -5.57
+          },
+          {
+            "stock_name": "삼성중공업",
+            "stock_code": "010140",
+            "leader_score": 72,
+            "deterministic_leader_score": 81,
+            "llm_score": 62,
+            "llm_raw_score": 62,
+            "llm_ranking_score": 62,
+            "llm_confidence": 76,
+            "llm_candidate_scope": "broad",
+            "llm_horizon": "short",
+            "volatility_20d": 0.445,
+            "volume_ratio_20d": 1.065,
+            "doc_signal": 10.198,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -3.98,
+            "return_20d_pct": -1.43,
+            "return_60d_pct": 10.27,
+            "trend_150d_pct": 12.64,
+            "realized_return_pct": 18.63
+          },
+          {
+            "stock_name": "한라IMS",
+            "stock_code": "092460",
+            "leader_score": 65,
+            "deterministic_leader_score": 74,
+            "llm_score": 56,
+            "llm_raw_score": 56,
+            "llm_ranking_score": 56,
+            "llm_confidence": 74,
+            "llm_candidate_scope": "broad",
+            "llm_horizon": "short",
+            "volatility_20d": 0.4165,
+            "volume_ratio_20d": 0.4589,
+            "doc_signal": 9.7982,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -7.41,
+            "return_20d_pct": -2.05,
+            "return_60d_pct": 8.77,
+            "trend_150d_pct": 19.71,
+            "realized_return_pct": 8.37
+          }
+        ],
+        "top_symbols": [
+          {
+            "stock_name": "대창솔루션",
+            "stock_code": "096350",
+            "leader_score": 88,
+            "realized_return_pct": -5.57,
+            "deterministic_leader_score": 85,
+            "llm_score": 80,
+            "llm_ranking_score": 90,
+            "llm_confidence": 73
+          },
+          {
+            "stock_name": "삼성중공업",
+            "stock_code": "010140",
+            "leader_score": 72,
+            "realized_return_pct": 18.63,
+            "deterministic_leader_score": 81,
+            "llm_score": 62,
+            "llm_ranking_score": 62,
+            "llm_confidence": 76
+          },
+          {
+            "stock_name": "한라IMS",
+            "stock_code": "092460",
+            "leader_score": 65,
+            "realized_return_pct": 8.37,
+            "deterministic_leader_score": 74,
+            "llm_score": 56,
+            "llm_ranking_score": 56,
+            "llm_confidence": 74
+          }
+        ]
+      },
+      {
+        "as_of_date": "2026-01-09",
+        "entry_date": "2026-01-09",
+        "exit_date": "2026-01-16",
+        "selected_count": 3,
+        "active_target_count": 41,
+        "eligible_count": 38,
+        "risk_eligible_count": 36,
+        "risk_reject_count": 2,
+        "market_breadth_pct": 71.05,
+        "portfolio_return_pct": 3.69,
+        "benchmark_return_pct": -1.15,
+        "excess_return_pct": 4.84,
+        "candidate_rankings": [
+          {
+            "stock_name": "삼성중공업",
+            "stock_code": "010140",
+            "leader_score": 84,
+            "deterministic_leader_score": 81,
+            "llm_score": 81,
+            "llm_raw_score": 81,
+            "llm_ranking_score": 88,
+            "llm_confidence": 76,
+            "llm_candidate_scope": "broad",
+            "llm_horizon": "short",
+            "volatility_20d": 0.5318,
+            "volume_ratio_20d": 3.6658,
+            "doc_signal": 10.198,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": 18.63,
+            "return_20d_pct": 5.91,
+            "return_60d_pct": 35.14,
+            "trend_150d_pct": 31.5,
+            "realized_return_pct": 3.84
+          },
+          {
+            "stock_name": "HJ중공업",
+            "stock_code": "097230",
+            "leader_score": 78,
+            "deterministic_leader_score": 75,
+            "llm_score": 77,
+            "llm_raw_score": 77,
+            "llm_ranking_score": 81,
+            "llm_confidence": 76,
+            "llm_candidate_scope": "broad",
+            "llm_horizon": "short",
+            "volatility_20d": 0.7029,
+            "volume_ratio_20d": 1.4883,
+            "doc_signal": 10.6174,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": 23.24,
+            "return_20d_pct": 15.64,
+            "return_60d_pct": 9.6,
+            "trend_150d_pct": 42.16,
+            "realized_return_pct": 2.1
+          },
+          {
+            "stock_name": "한화엔진",
+            "stock_code": "082740",
+            "leader_score": 78,
+            "deterministic_leader_score": 74,
+            "llm_score": 76,
+            "llm_raw_score": 76,
+            "llm_ranking_score": 82,
+            "llm_confidence": 76,
+            "llm_candidate_scope": "broad",
+            "llm_horizon": "short",
+            "volatility_20d": 0.5916,
+            "volume_ratio_20d": 2.3918,
+            "doc_signal": 10.6156,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": 18.19,
+            "return_20d_pct": 7.11,
+            "return_60d_pct": 13.73,
+            "trend_150d_pct": 25.72,
+            "realized_return_pct": 6.64
+          }
+        ],
+        "top_symbols": [
+          {
+            "stock_name": "삼성중공업",
+            "stock_code": "010140",
+            "leader_score": 84,
+            "realized_return_pct": 3.84,
+            "deterministic_leader_score": 81,
+            "llm_score": 81,
+            "llm_ranking_score": 88,
+            "llm_confidence": 76
+          },
+          {
+            "stock_name": "HJ중공업",
+            "stock_code": "097230",
+            "leader_score": 78,
+            "realized_return_pct": 2.1,
+            "deterministic_leader_score": 75,
+            "llm_score": 77,
+            "llm_ranking_score": 81,
+            "llm_confidence": 76
+          },
+          {
+            "stock_name": "한화엔진",
+            "stock_code": "082740",
+            "leader_score": 78,
+            "realized_return_pct": 6.64,
+            "deterministic_leader_score": 74,
+            "llm_score": 76,
+            "llm_ranking_score": 82,
+            "llm_confidence": 76
+          }
+        ]
+      }
+    ],
+    "equity_curve": [
+      {
+        "date": "2026-01-09",
+        "equity": 1.066453,
+        "benchmark_equity": 1.101501,
+        "period_return_pct": 6.65,
+        "benchmark_return_pct": 10.15
+      },
+      {
+        "date": "2026-01-16",
+        "equity": 1.105821,
+        "benchmark_equity": 1.088843,
+        "period_return_pct": 3.69,
+        "benchmark_return_pct": -1.15
+      }
+    ],
+    "risk": {
+      "filters": {
+        "min_avg_trading_value": 0.0,
+        "position_value_krw": 10000000.0,
+        "max_position_pct_avg_trading_value": 5.0,
+        "max_volatility_20d": 1.2,
+        "max_return_5d": 0.35,
+        "max_return_20d": 0.9,
+        "min_trend_150d": -1.0,
+        "min_market_breadth_pct": 40.0
+      },
+      "reject_counts": {
+        "insufficient_liquidity_capacity": 3,
+        "overheated_5d": 1
+      }
+    },
+    "execution": {
+      "exit_rules": {
+        "stop_loss_pct": 0.0,
+        "take_profit_pct": 0.0,
+        "trailing_stop_pct": 15.0
+      },
+      "costs": {
+        "transaction_cost_bps": 15.0,
+        "slippage_bps": 5.0,
+        "market_impact_bps": 5.0,
+        "round_trip_cost_bps": 50.0
+      },
+      "exit_counts": {
+        "holding_period_exit": 6
+      },
+      "same_day_ohlc_policy": "stop_or_trailing_stop_before_take_profit"
+    },
+    "artifacts": {
+      "result_json": "data/backtest_results/multi_agent_validation/phase2/shipbuilding_2026_w01_short_hybrid05_top3_realistic_costs/runs/proof-조선-validation_2026_w01-short_hybrid_05.json"
+    },
+    "warnings": [
+      "future returns are used only for evaluation after each as_of_date signal.",
+      "selection uses point-in-time broad short-horizon Analyst/Quant/Chartist/RiskManager scoring over the risk-filtered universe.",
+      "theme_membership may be inferred from local corpus evidence unless an official historical source is supplied."
+    ],
+    "metadata": {
+      "generated_at": "2026-05-18T11:48:45.834211",
+      "data_dir": "data",
+      "target_count": 41,
+      "membership_count": 41,
+      "point_in_time_universe": true,
+      "membership_sources": [
+        "local_corpus_inferred"
+      ],
+      "price_stock_count": 41,
+      "document_signal_count": 17676,
+      "llm": {
+        "data_dir": "/Users/leedohoun/Desktop/HQA_Project/data",
+        "theme": "조선",
+        "theme_key": "조선",
+        "model_name": "qwen3:14b",
+        "provider": "ollama",
+        "context_docs": 3,
+        "cache_path": "data/backtest_results/multi_agent_validation/phase2/shipbuilding_2026_w01_short_hybrid05_top3_realistic_costs/llm_cache/qwen3_gptoss.real.multi_agent.jsonl",
+        "prompt_version": "temporal_theme_leader_multi_agent_v3",
+        "mode": "multi_agent",
+        "horizon": "short",
+        "thinking_model_name": "gpt-oss:20b",
+        "agents": [
+          "analyst",
+          "quant",
+          "chartist",
+          "risk_manager"
+        ],
+        "agent_weight_profile": "short",
+        "agent_weights": {
+          "analyst": 0.3,
+          "quant": 0.15,
+          "chartist": 0.55
+        }
+      }
+    }
+  }
+]

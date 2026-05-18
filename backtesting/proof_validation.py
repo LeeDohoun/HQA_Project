@@ -73,6 +73,7 @@ def run_proof_validation(
     stop_loss_pct: float = 0.0,
     take_profit_pct: float = 0.0,
     trailing_stop_pct: float = 15.0,
+    llm_cache_path: str | Path | None = None,
     submit_url: str = "",
     resume_completed: bool = True,
     runner: BacktestRunner = run_leader_backtest,
@@ -125,6 +126,7 @@ def run_proof_validation(
                 stop_loss_pct=stop_loss_pct,
                 take_profit_pct=take_profit_pct,
                 trailing_stop_pct=trailing_stop_pct,
+                llm_cache_path=llm_cache_path,
                 submit_url=submit_url,
             )
             try:
@@ -386,6 +388,7 @@ def _backtest_kwargs(
     stop_loss_pct: float,
     take_profit_pct: float,
     trailing_stop_pct: float,
+    llm_cache_path: str | Path | None,
     submit_url: str,
 ) -> Dict[str, Any]:
     kwargs: Dict[str, Any] = {
@@ -428,6 +431,8 @@ def _backtest_kwargs(
                 "llm_horizon": strategy.horizon,
             }
         )
+        if llm_cache_path:
+            kwargs["llm_cache_path"] = str(llm_cache_path)
     return kwargs
 
 
@@ -956,6 +961,11 @@ def main() -> int:
     parser.add_argument("--stop-loss-pct", type=float, default=0.0)
     parser.add_argument("--take-profit-pct", type=float, default=0.0)
     parser.add_argument("--trailing-stop-pct", type=float, default=15.0)
+    parser.add_argument(
+        "--llm-cache-path",
+        default="",
+        help="Optional explicit cache file for LLM strategy runs.",
+    )
     parser.add_argument("--submit-url", default="")
     parser.add_argument(
         "--no-resume",
@@ -1005,6 +1015,7 @@ def main() -> int:
         stop_loss_pct=args.stop_loss_pct,
         take_profit_pct=args.take_profit_pct,
         trailing_stop_pct=args.trailing_stop_pct,
+        llm_cache_path=args.llm_cache_path or None,
         submit_url=args.submit_url,
         resume_completed=not args.no_resume,
     )

@@ -1,0 +1,1482 @@
+[
+  {
+    "task_id": "proof-ai-validation_2024_w01-deterministic_short",
+    "mode": "backtest",
+    "result_type": "backtest",
+    "status": "completed",
+    "theme": "AI",
+    "theme_key": "ai",
+    "prediction_model": "momentum_price_forecast_v1",
+    "period": {
+      "from_date": "2024-01-02",
+      "to_date": "2024-01-05",
+      "rebalance": "W",
+      "rebalance_count": 1,
+      "hold_days": 5
+    },
+    "strategy": {
+      "name": "ai_theme_leader_momentum_v1",
+      "top_n": 3,
+      "min_history_days": 150,
+      "transaction_cost_bps": 15.0,
+      "slippage_bps": 5.0,
+      "market_impact_bps": 5.0,
+      "round_trip_cost_bps": 50.0,
+      "risk_filters": {
+        "min_avg_trading_value": 0.0,
+        "position_value_krw": 10000000.0,
+        "max_position_pct_avg_trading_value": 5.0,
+        "max_volatility_20d": 1.2,
+        "max_return_5d": 0.35,
+        "max_return_20d": 0.9,
+        "min_trend_150d": -1.0,
+        "min_market_breadth_pct": 40.0
+      },
+      "exit_rules": {
+        "stop_loss_pct": 0.0,
+        "take_profit_pct": 0.0,
+        "trailing_stop_pct": 15.0
+      },
+      "llm_rerank": {
+        "enabled": false,
+        "top_k": 0,
+        "weight": 0.0,
+        "context_docs": 0,
+        "mode": "",
+        "candidate_scope": "",
+        "horizon": "",
+        "top_k_meaning": ""
+      },
+      "selection_inputs": [
+        "20d momentum",
+        "60d momentum",
+        "150d trend",
+        "20d volume ratio",
+        "news/dart/forum document signal",
+        "20d volatility penalty"
+      ],
+      "prediction_model": "momentum_price_forecast_v1"
+    },
+    "metrics": {
+      "rebalance_count": 1,
+      "risk_off_count": 0,
+      "traded_rebalance_count": 1,
+      "position_count": 3,
+      "total_return_pct": -4.18,
+      "benchmark_return_pct": 1.07,
+      "excess_return_pct": -5.25,
+      "cagr_pct": -99.44,
+      "benchmark_cagr_pct": 265.44,
+      "mdd_pct": 0.0,
+      "benchmark_mdd_pct": 0.0,
+      "sharpe": 0.0,
+      "avg_period_return_pct": -4.18,
+      "avg_benchmark_period_return_pct": 1.07,
+      "win_rate_pct": 0.0,
+      "prediction_hit_rate_pct": 0.0,
+      "avg_position_return_pct": -3.68,
+      "median_position_return_pct": -4.69,
+      "loss_period_count": 1,
+      "max_consecutive_loss_periods": 1,
+      "worst_period_return_pct": -4.18,
+      "best_period_return_pct": -4.18
+    },
+    "leaders": [
+      {
+        "stock_name": "가온칩스",
+        "stock_code": "399720",
+        "selection_count": 1,
+        "avg_leader_score": 72.0,
+        "avg_realized_return_pct": -1.38,
+        "win_rate_pct": 0.0
+      },
+      {
+        "stock_name": "텔레칩스",
+        "stock_code": "054450",
+        "selection_count": 1,
+        "avg_leader_score": 70.0,
+        "avg_realized_return_pct": -4.69,
+        "win_rate_pct": 0.0
+      },
+      {
+        "stock_name": "에이디테크놀로지",
+        "stock_code": "200710",
+        "selection_count": 1,
+        "avg_leader_score": 73.0,
+        "avg_realized_return_pct": -4.96,
+        "win_rate_pct": 0.0
+      }
+    ],
+    "predictions": [
+      {
+        "as_of_date": "2024-01-05",
+        "entry_date": "2024-01-05",
+        "exit_date": "2024-01-12",
+        "stock_name": "에이디테크놀로지",
+        "stock_code": "200710",
+        "rank": 1,
+        "leader_score": 73,
+        "predicted_return_pct": 24.07,
+        "target_price": 37532.57,
+        "realized_return_pct": -4.96,
+        "prediction_model": "momentum_price_forecast_v1"
+      },
+      {
+        "as_of_date": "2024-01-05",
+        "entry_date": "2024-01-05",
+        "exit_date": "2024-01-12",
+        "stock_name": "가온칩스",
+        "stock_code": "399720",
+        "rank": 2,
+        "leader_score": 72,
+        "predicted_return_pct": 42.56,
+        "target_price": 82827.45,
+        "realized_return_pct": -1.38,
+        "prediction_model": "momentum_price_forecast_v1"
+      },
+      {
+        "as_of_date": "2024-01-05",
+        "entry_date": "2024-01-05",
+        "exit_date": "2024-01-12",
+        "stock_name": "텔레칩스",
+        "stock_code": "054450",
+        "rank": 3,
+        "leader_score": 70,
+        "predicted_return_pct": 19.94,
+        "target_price": 37062.28,
+        "realized_return_pct": -4.69,
+        "prediction_model": "momentum_price_forecast_v1"
+      }
+    ],
+    "positions": [
+      {
+        "as_of_date": "2024-01-05",
+        "entry_date": "2024-01-05",
+        "exit_date": "2024-01-12",
+        "planned_exit_date": "2024-01-12",
+        "exit_reason": "holding_period_exit",
+        "stock_name": "에이디테크놀로지",
+        "stock_code": "200710",
+        "entry_price": 30250.0,
+        "exit_price": 28750.0,
+        "return_5d": -0.04874213836477992,
+        "return_20d": 0.15900383141762453,
+        "return_60d": 0.3595505617977528,
+        "trend_150d": 0.2668954291250534,
+        "volatility_20d": 0.530444437904257,
+        "volume_ratio_20d": 0.5962222761785451,
+        "avg_trading_value_20d": 23710873652.5,
+        "doc_signal": 8.75522299776134,
+        "doc_counts": {
+          "dart": 29,
+          "forum": 0,
+          "news": 20
+        },
+        "return_60d_rank": 0.8064516129032258,
+        "return_20d_rank": 0.6451612903225806,
+        "trend_150d_rank": 0.8709677419354839,
+        "volume_rank": 0.1935483870967742,
+        "doc_rank": 1.0,
+        "low_vol_rank": 0.5161290322580645,
+        "leader_score": 73,
+        "target_price": 37532.57,
+        "rank": 1,
+        "weight": 0.333333,
+        "realized_return_pct": -4.96,
+        "predicted_return_pct": 24.07
+      },
+      {
+        "as_of_date": "2024-01-05",
+        "entry_date": "2024-01-05",
+        "exit_date": "2024-01-12",
+        "planned_exit_date": "2024-01-12",
+        "exit_reason": "holding_period_exit",
+        "stock_name": "가온칩스",
+        "stock_code": "399720",
+        "entry_price": 58100.0,
+        "exit_price": 57300.0,
+        "return_5d": 0.0017241379310344307,
+        "return_20d": 0.25485961123110146,
+        "return_60d": 0.7063142437591776,
+        "trend_150d": 0.43138704114313864,
+        "volatility_20d": 0.870904693604963,
+        "volume_ratio_20d": 0.5253684024441935,
+        "avg_trading_value_20d": 48572115907.5,
+        "doc_signal": 5.9474836436508784,
+        "doc_counts": {
+          "dart": 4,
+          "forum": 0,
+          "news": 18
+        },
+        "return_60d_rank": 0.9354838709677419,
+        "return_20d_rank": 0.8387096774193549,
+        "trend_150d_rank": 0.9354838709677419,
+        "volume_rank": 0.16129032258064516,
+        "doc_rank": 0.6451612903225806,
+        "low_vol_rank": 0.1935483870967742,
+        "leader_score": 72,
+        "target_price": 82827.45,
+        "rank": 2,
+        "weight": 0.333333,
+        "realized_return_pct": -1.38,
+        "predicted_return_pct": 42.56
+      },
+      {
+        "as_of_date": "2024-01-05",
+        "entry_date": "2024-01-05",
+        "exit_date": "2024-01-12",
+        "planned_exit_date": "2024-01-12",
+        "exit_reason": "holding_period_exit",
+        "stock_name": "텔레칩스",
+        "stock_code": "054450",
+        "entry_price": 30900.0,
+        "exit_price": 29450.0,
+        "return_5d": -0.12091038406827881,
+        "return_20d": 0.07291666666666674,
+        "return_60d": 0.3290322580645162,
+        "trend_150d": 0.3212920440259639,
+        "volatility_20d": 0.626847670909389,
+        "volume_ratio_20d": 1.049580764922889,
+        "avg_trading_value_20d": 32318996057.5,
+        "doc_signal": 8.701886736103969,
+        "doc_counts": {
+          "dart": 22,
+          "forum": 0,
+          "news": 27
+        },
+        "return_60d_rank": 0.7419354838709677,
+        "return_20d_rank": 0.41935483870967744,
+        "trend_150d_rank": 0.9032258064516129,
+        "volume_rank": 0.5161290322580645,
+        "doc_rank": 0.967741935483871,
+        "low_vol_rank": 0.4838709677419355,
+        "leader_score": 70,
+        "target_price": 37062.28,
+        "rank": 3,
+        "weight": 0.333333,
+        "realized_return_pct": -4.69,
+        "predicted_return_pct": 19.94
+      }
+    ],
+    "trades": [
+      {
+        "date": "2024-01-05",
+        "stock_name": "에이디테크놀로지",
+        "stock_code": "200710",
+        "side": "BUY",
+        "price": 30250.0,
+        "weight": 0.333333,
+        "reason": "rank 1 leader_score 73"
+      },
+      {
+        "date": "2024-01-12",
+        "stock_name": "에이디테크놀로지",
+        "stock_code": "200710",
+        "side": "SELL",
+        "price": 28750.0,
+        "weight": 0.333333,
+        "realized_return_pct": -4.96,
+        "reason": "holding_period_exit"
+      },
+      {
+        "date": "2024-01-05",
+        "stock_name": "가온칩스",
+        "stock_code": "399720",
+        "side": "BUY",
+        "price": 58100.0,
+        "weight": 0.333333,
+        "reason": "rank 2 leader_score 72"
+      },
+      {
+        "date": "2024-01-12",
+        "stock_name": "가온칩스",
+        "stock_code": "399720",
+        "side": "SELL",
+        "price": 57300.0,
+        "weight": 0.333333,
+        "realized_return_pct": -1.38,
+        "reason": "holding_period_exit"
+      },
+      {
+        "date": "2024-01-05",
+        "stock_name": "텔레칩스",
+        "stock_code": "054450",
+        "side": "BUY",
+        "price": 30900.0,
+        "weight": 0.333333,
+        "reason": "rank 3 leader_score 70"
+      },
+      {
+        "date": "2024-01-12",
+        "stock_name": "텔레칩스",
+        "stock_code": "054450",
+        "side": "SELL",
+        "price": 29450.0,
+        "weight": 0.333333,
+        "realized_return_pct": -4.69,
+        "reason": "holding_period_exit"
+      }
+    ],
+    "periods": [
+      {
+        "as_of_date": "2024-01-05",
+        "entry_date": "2024-01-05",
+        "exit_date": "2024-01-12",
+        "selected_count": 3,
+        "active_target_count": 32,
+        "eligible_count": 31,
+        "risk_eligible_count": 28,
+        "risk_reject_count": 3,
+        "market_breadth_pct": 58.06,
+        "portfolio_return_pct": -4.18,
+        "benchmark_return_pct": 1.07,
+        "excess_return_pct": -5.25,
+        "candidate_rankings": [
+          {
+            "stock_name": "에이디테크놀로지",
+            "stock_code": "200710",
+            "leader_score": 73,
+            "volatility_20d": 0.5304,
+            "volume_ratio_20d": 0.5962,
+            "doc_signal": 8.7552,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -4.87,
+            "return_20d_pct": 15.9,
+            "return_60d_pct": 35.96,
+            "trend_150d_pct": 26.69,
+            "realized_return_pct": -4.96
+          },
+          {
+            "stock_name": "가온칩스",
+            "stock_code": "399720",
+            "leader_score": 72,
+            "volatility_20d": 0.8709,
+            "volume_ratio_20d": 0.5254,
+            "doc_signal": 5.9475,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": 0.17,
+            "return_20d_pct": 25.49,
+            "return_60d_pct": 70.63,
+            "trend_150d_pct": 43.14,
+            "realized_return_pct": -1.38
+          },
+          {
+            "stock_name": "텔레칩스",
+            "stock_code": "054450",
+            "leader_score": 70,
+            "volatility_20d": 0.6268,
+            "volume_ratio_20d": 1.0496,
+            "doc_signal": 8.7019,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -12.09,
+            "return_20d_pct": 7.29,
+            "return_60d_pct": 32.9,
+            "trend_150d_pct": 32.13,
+            "realized_return_pct": -4.69
+          },
+          {
+            "stock_name": "네패스아크",
+            "stock_code": "330860",
+            "leader_score": 67,
+            "volatility_20d": 0.4968,
+            "volume_ratio_20d": 1.1843,
+            "doc_signal": 7.0396,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -2.02,
+            "return_20d_pct": 11.27,
+            "return_60d_pct": 36.81,
+            "trend_150d_pct": 12.57,
+            "realized_return_pct": 6.0
+          },
+          {
+            "stock_name": "로보티즈",
+            "stock_code": "108490",
+            "leader_score": 67,
+            "volatility_20d": 0.6586,
+            "volume_ratio_20d": 0.6868,
+            "doc_signal": 6.9493,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -1.94,
+            "return_20d_pct": 23.22,
+            "return_60d_pct": 40.37,
+            "trend_150d_pct": 11.42,
+            "realized_return_pct": 2.64
+          },
+          {
+            "stock_name": "오픈엣지테크놀로지",
+            "stock_code": "394280",
+            "leader_score": 66,
+            "volatility_20d": 0.8747,
+            "volume_ratio_20d": 0.4064,
+            "doc_signal": 4.8088,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -4.96,
+            "return_20d_pct": 28.28,
+            "return_60d_pct": 57.4,
+            "trend_150d_pct": 26.19,
+            "realized_return_pct": -10.24
+          },
+          {
+            "stock_name": "네패스",
+            "stock_code": "033640",
+            "leader_score": 63,
+            "volatility_20d": 0.8182,
+            "volume_ratio_20d": 0.6104,
+            "doc_signal": 5.7963,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": 8.61,
+            "return_20d_pct": 32.42,
+            "return_60d_pct": 28.64,
+            "trend_150d_pct": 13.11,
+            "realized_return_pct": -4.01
+          },
+          {
+            "stock_name": "마음AI",
+            "stock_code": "377480",
+            "leader_score": 58,
+            "volatility_20d": 0.4873,
+            "volume_ratio_20d": 10.0596,
+            "doc_signal": 3.7626,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": 17.4,
+            "return_20d_pct": 13.98,
+            "return_60d_pct": 21.28,
+            "trend_150d_pct": 9.12,
+            "realized_return_pct": -2.56
+          },
+          {
+            "stock_name": "에이팩트",
+            "stock_code": "200470",
+            "leader_score": 54,
+            "volatility_20d": 1.1579,
+            "volume_ratio_20d": 0.3636,
+            "doc_signal": 4.7032,
+            "exit_reason": "trailing_stop",
+            "return_5d_pct": 13.72,
+            "return_20d_pct": 48.02,
+            "return_60d_pct": 18.98,
+            "trend_150d_pct": 12.46,
+            "realized_return_pct": 12.12
+          },
+          {
+            "stock_name": "대덕전자",
+            "stock_code": "353200",
+            "leader_score": 53,
+            "volatility_20d": 0.3025,
+            "volume_ratio_20d": 1.6742,
+            "doc_signal": 4.3651,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": 4.59,
+            "return_20d_pct": 11.11,
+            "return_60d_pct": 16.09,
+            "trend_150d_pct": 2.09,
+            "realized_return_pct": -3.33
+          }
+        ],
+        "top_symbols": [
+          {
+            "stock_name": "에이디테크놀로지",
+            "stock_code": "200710",
+            "leader_score": 73,
+            "realized_return_pct": -4.96
+          },
+          {
+            "stock_name": "가온칩스",
+            "stock_code": "399720",
+            "leader_score": 72,
+            "realized_return_pct": -1.38
+          },
+          {
+            "stock_name": "텔레칩스",
+            "stock_code": "054450",
+            "leader_score": 70,
+            "realized_return_pct": -4.69
+          }
+        ]
+      }
+    ],
+    "equity_curve": [
+      {
+        "date": "2024-01-12",
+        "equity": 0.958239,
+        "benchmark_equity": 1.010701,
+        "period_return_pct": -4.18,
+        "benchmark_return_pct": 1.07
+      }
+    ],
+    "risk": {
+      "filters": {
+        "min_avg_trading_value": 0.0,
+        "position_value_krw": 10000000.0,
+        "max_position_pct_avg_trading_value": 5.0,
+        "max_volatility_20d": 1.2,
+        "max_return_5d": 0.35,
+        "max_return_20d": 0.9,
+        "min_trend_150d": -1.0,
+        "min_market_breadth_pct": 40.0
+      },
+      "reject_counts": {
+        "high_volatility": 2,
+        "insufficient_liquidity_capacity": 1
+      }
+    },
+    "execution": {
+      "exit_rules": {
+        "stop_loss_pct": 0.0,
+        "take_profit_pct": 0.0,
+        "trailing_stop_pct": 15.0
+      },
+      "costs": {
+        "transaction_cost_bps": 15.0,
+        "slippage_bps": 5.0,
+        "market_impact_bps": 5.0,
+        "round_trip_cost_bps": 50.0
+      },
+      "exit_counts": {
+        "holding_period_exit": 3
+      },
+      "same_day_ohlc_policy": "stop_or_trailing_stop_before_take_profit"
+    },
+    "artifacts": {
+      "result_json": "data/backtest_results/multi_agent_validation/phase2/ai_2024_w01_short_hybrid05_top3_realistic_costs/runs/proof-ai-validation_2024_w01-deterministic_short.json"
+    },
+    "warnings": [
+      "future returns are used only for evaluation after each as_of_date signal.",
+      "selection uses deterministic price/document features, not the full LLM ThemeLeaderOrchestrator.",
+      "theme_membership may be inferred from local corpus evidence unless an official historical source is supplied."
+    ],
+    "metadata": {
+      "generated_at": "2026-05-18T10:01:05.190303",
+      "data_dir": "data",
+      "target_count": 50,
+      "membership_count": 50,
+      "point_in_time_universe": true,
+      "membership_sources": [
+        "local_corpus_inferred"
+      ],
+      "price_stock_count": 50,
+      "document_signal_count": 30497,
+      "llm": {}
+    }
+  },
+  {
+    "task_id": "proof-ai-validation_2024_w01-short_hybrid_05",
+    "mode": "backtest",
+    "result_type": "backtest",
+    "status": "completed",
+    "theme": "AI",
+    "theme_key": "ai",
+    "prediction_model": "multi_agent_broad_short_temporal_theme_leader_v1",
+    "period": {
+      "from_date": "2024-01-02",
+      "to_date": "2024-01-05",
+      "rebalance": "W",
+      "rebalance_count": 1,
+      "hold_days": 5
+    },
+    "strategy": {
+      "name": "ai_theme_leader_momentum_v1",
+      "top_n": 3,
+      "min_history_days": 150,
+      "transaction_cost_bps": 15.0,
+      "slippage_bps": 5.0,
+      "market_impact_bps": 5.0,
+      "round_trip_cost_bps": 50.0,
+      "risk_filters": {
+        "min_avg_trading_value": 0.0,
+        "position_value_krw": 10000000.0,
+        "max_position_pct_avg_trading_value": 5.0,
+        "max_volatility_20d": 1.2,
+        "max_return_5d": 0.35,
+        "max_return_20d": 0.9,
+        "min_trend_150d": -1.0,
+        "min_market_breadth_pct": 40.0
+      },
+      "exit_rules": {
+        "stop_loss_pct": 0.0,
+        "take_profit_pct": 0.0,
+        "trailing_stop_pct": 15.0
+      },
+      "llm_rerank": {
+        "enabled": true,
+        "top_k": 3,
+        "weight": 0.5,
+        "context_docs": 3,
+        "mode": "multi_agent",
+        "candidate_scope": "broad",
+        "horizon": "short",
+        "top_k_meaning": "deterministic_prefilter"
+      },
+      "selection_inputs": [
+        "20d momentum",
+        "60d momentum",
+        "150d trend",
+        "20d volume ratio",
+        "news/dart/forum document signal",
+        "20d volatility penalty",
+        "broad short-horizon point-in-time LLM theme leader score"
+      ],
+      "prediction_model": "multi_agent_broad_short_temporal_theme_leader_v1"
+    },
+    "metrics": {
+      "rebalance_count": 1,
+      "risk_off_count": 0,
+      "traded_rebalance_count": 1,
+      "position_count": 3,
+      "total_return_pct": -4.18,
+      "benchmark_return_pct": 1.07,
+      "excess_return_pct": -5.25,
+      "cagr_pct": -99.44,
+      "benchmark_cagr_pct": 265.44,
+      "mdd_pct": 0.0,
+      "benchmark_mdd_pct": 0.0,
+      "sharpe": 0.0,
+      "avg_period_return_pct": -4.18,
+      "avg_benchmark_period_return_pct": 1.07,
+      "win_rate_pct": 0.0,
+      "prediction_hit_rate_pct": 0.0,
+      "avg_position_return_pct": -3.68,
+      "median_position_return_pct": -4.69,
+      "loss_period_count": 1,
+      "max_consecutive_loss_periods": 1,
+      "worst_period_return_pct": -4.18,
+      "best_period_return_pct": -4.18
+    },
+    "leaders": [
+      {
+        "stock_name": "가온칩스",
+        "stock_code": "399720",
+        "selection_count": 1,
+        "avg_leader_score": 69.0,
+        "avg_realized_return_pct": -1.38,
+        "win_rate_pct": 0.0
+      },
+      {
+        "stock_name": "텔레칩스",
+        "stock_code": "054450",
+        "selection_count": 1,
+        "avg_leader_score": 66.0,
+        "avg_realized_return_pct": -4.69,
+        "win_rate_pct": 0.0
+      },
+      {
+        "stock_name": "에이디테크놀로지",
+        "stock_code": "200710",
+        "selection_count": 1,
+        "avg_leader_score": 64.0,
+        "avg_realized_return_pct": -4.96,
+        "win_rate_pct": 0.0
+      }
+    ],
+    "predictions": [
+      {
+        "as_of_date": "2024-01-05",
+        "entry_date": "2024-01-05",
+        "exit_date": "2024-01-12",
+        "stock_name": "가온칩스",
+        "stock_code": "399720",
+        "rank": 1,
+        "leader_score": 69,
+        "predicted_return_pct": 42.56,
+        "target_price": 82827.45,
+        "realized_return_pct": -1.38,
+        "prediction_model": "multi_agent_broad_short_temporal_theme_leader_v1",
+        "deterministic_leader_score": 72,
+        "llm_score": 66,
+        "llm_raw_score": 66,
+        "llm_ranking_score": 66,
+        "llm_confidence": 73,
+        "llm_theme_fit_score": 75,
+        "llm_catalyst_score": 65,
+        "llm_risk_score": 55,
+        "llm_summary": "가온칩스(399720)는 AI 테마와의 연관성이 높고 최근 단일판매 및 공급계약 체결 등 긍정적 뉴스가 주가에 영향을 미칠 가능성이 큽니다. Chartist 분석에서 강력한 추세(76)와 모멘텀(85)을 보이며 거래량 리더십이 확인돼 단기 매수에 유리합니다. 그러나 Analyst와 Quant에서 제시한 계약 불확실성, 변동성, 재무 데이터 부족 등의 리스크가 존재하므로 주의가 필요합니다.",
+        "llm_agent_scores": {
+          "analyst": {
+            "total_score": 68,
+            "theme_fit_score": 75,
+            "moat_score": 60,
+            "growth_score": 70,
+            "catalyst_score": 65,
+            "risk_score": 55,
+            "confidence": 70,
+            "summary": "가온칩스는 AI 테마와의 연관성이 상대적으로 높은 수준으로 평가되며, 최근 단일판매 및 공급계약 체결과 같은 뉴스가 주가에 긍정적인 영향을 미칠 가능성이 있다. 그러나 단기적으로는 변동성과 유보기한 등으로 인한 불확실성이 존재한다."
+          },
+          "quant": {
+            "total_score": 56,
+            "valuation_score": 55,
+            "profitability_score": 55,
+            "growth_score": 60,
+            "stability_score": 55,
+            "risk_score": 60,
+            "confidence": 50,
+            "summary": "가온칩스(399720)는 최근 주가 상승세가 지속되고 있으며, 단일판매 및 공급계약 체결 등 긍정적인 재무 관련 소식이 있음. 그러나 재무 데이터에 대한 직접적인 정보는 부족하며, 장기적인 성장성에 대한 확실한 근거도 부족함. 따라서 기초체력과 재무 리스크는 중립 수준으로 평가되나, 보수적인 관점에서 약간의 리스크를 반영함."
+          },
+          "chartist": {
+            "trend_score": 76,
+            "momentum_score": 85,
+            "volatility_score": 43,
+            "volume_score": 47,
+            "total_score": 68,
+            "confidence": 80,
+            "horizon": "short",
+            "summary": "trend=76, momentum=85, volatility=43, volume=47"
+          },
+          "risk_manager": {
+            "final_score": 66,
+            "raw_final_score": 66,
+            "calibrated_final_score": 66,
+            "agent_weight_profile": "short",
+            "agent_weights": {
+              "analyst": 0.3,
+              "quant": 0.15,
+              "chartist": 0.55
+            },
+            "confidence": 73,
+            "risk_score": 55,
+            "action": "BUY",
+            "summary": "가온칩스(399720)는 AI 테마와의 연관성이 높고 최근 단일판매 및 공급계약 체결 등 긍정적 뉴스가 주가에 영향을 미칠 가능성이 큽니다. Chartist 분석에서 강력한 추세(76)와 모멘텀(85)을 보이며 거래량 리더십이 확인돼 단기 매수에 유리합니다. 그러나 Analyst와 Quant에서 제시한 계약 불확실성, 변동성, 재무 데이터 부족 등의 리스크가 존재하므로 주의가 필요합니다."
+          }
+        },
+        "llm_mode": "multi_agent",
+        "llm_candidate_scope": "broad",
+        "llm_horizon": "short"
+      },
+      {
+        "as_of_date": "2024-01-05",
+        "entry_date": "2024-01-05",
+        "exit_date": "2024-01-12",
+        "stock_name": "텔레칩스",
+        "stock_code": "054450",
+        "rank": 2,
+        "leader_score": 66,
+        "predicted_return_pct": 19.94,
+        "target_price": 37062.28,
+        "realized_return_pct": -4.69,
+        "prediction_model": "multi_agent_broad_short_temporal_theme_leader_v1",
+        "deterministic_leader_score": 70,
+        "llm_score": 62,
+        "llm_raw_score": 62,
+        "llm_ranking_score": 62,
+        "llm_confidence": 77,
+        "llm_theme_fit_score": 85,
+        "llm_catalyst_score": 80,
+        "llm_risk_score": 59,
+        "llm_summary": "텔레칩스는 AI 테마와의 연관성이 높고, 3분기 역대 최대 실적을 기록한 뒤 증권사의 매수 의견과 목표주가 상향이 이어져 단기 주도주 가능성이 큽니다. Quant 분석은 매출·영업이익 성장과 안정성을 인정하지만 재무 정보 부족과 실적 지속성에 대한 불확실성을 지적합니다. Chartist는 150일 추세가 강세(69)지만 모멘텀은 중간(41)이며 변동성·거래량이 평균 수준(59, 58)으로 단기 리더십은 확인되지만 급격한 변동에 주의가 필요합니다. 이 세 관점이 충돌할 경우 Chartist의 가격·거래량 리더십을 우선시하되, Analyst의 촉매와 Quant의 치명적 리스크를 함께 반영해 최종적으로 매수 권고를 내립니다.",
+        "llm_agent_scores": {
+          "analyst": {
+            "total_score": 78,
+            "theme_fit_score": 85,
+            "moat_score": 65,
+            "growth_score": 75,
+            "catalyst_score": 80,
+            "risk_score": 55,
+            "confidence": 80,
+            "summary": "텔레칩스는 AI 테마와의 연관성이 높으며, 최근 3분기 역대 최대 실적을 기록하며 상승세를 보이고 있다. 단기적으로는 실적 호조와 함께 증권사의 긍정적인 전망이 주도주 가능성을 높이는 요인으로 작용하고 있다. 다만, 단기 변동성과 시장의 일반적인 흐름에 따라 변동성이 발생할 수 있어 주의가 필요하다."
+          },
+          "quant": {
+            "total_score": 68,
+            "valuation_score": 60,
+            "profitability_score": 70,
+            "growth_score": 75,
+            "stability_score": 65,
+            "risk_score": 60,
+            "confidence": 60,
+            "summary": "텔레칩스는 3분기 역대 최대 실적을 기록하며 매출과 영업이익이 전년 동기 대비 각각 34.5%, 59.3% 증가한 것으로 나타났다. 이는 자동차용 애플리케이션프로세서(AP) 제품의 해외 판매 호조로 인한 것으로 분석되고 있다. 증권사들도 텔레칩스에 대한 투자의견을 '매수'로 제시하며, 4분기 실적 성장에 대한 기대감이 유지되고 있다. 다만, 재무 관련 직접적인 악재나 부정적 요소는 확인되지 않았으며, 기초체력과 재무 리스크에 대한 구체적인 정보는 부족한 것으로 보인다."
+          },
+          "chartist": {
+            "trend_score": 69,
+            "momentum_score": 41,
+            "volatility_score": 59,
+            "volume_score": 58,
+            "total_score": 52,
+            "confidence": 80,
+            "horizon": "short",
+            "summary": "trend=69, momentum=41, volatility=59, volume=58"
+          },
+          "risk_manager": {
+            "final_score": 62,
+            "raw_final_score": 62,
+            "calibrated_final_score": 62,
+            "agent_weight_profile": "short",
+            "agent_weights": {
+              "analyst": 0.3,
+              "quant": 0.15,
+              "chartist": 0.55
+            },
+            "confidence": 77,
+            "risk_score": 59,
+            "action": "BUY",
+            "summary": "텔레칩스는 AI 테마와의 연관성이 높고, 3분기 역대 최대 실적을 기록한 뒤 증권사의 매수 의견과 목표주가 상향이 이어져 단기 주도주 가능성이 큽니다. Quant 분석은 매출·영업이익 성장과 안정성을 인정하지만 재무 정보 부족과 실적 지속성에 대한 불확실성을 지적합니다. Chartist는 150일 추세가 강세(69)지만 모멘텀은 중간(41)이며 변동성·거래량이 평균 수준(59, 58)으로 단기 리더십은 확인되지만 급격한 변동에 주의가 필요합니다. 이 세 관점이 충돌할 경우 Chartist의 가격·거래량 리더십을 우선시하되, Anal"
+          }
+        },
+        "llm_mode": "multi_agent",
+        "llm_candidate_scope": "broad",
+        "llm_horizon": "short"
+      },
+      {
+        "as_of_date": "2024-01-05",
+        "entry_date": "2024-01-05",
+        "exit_date": "2024-01-12",
+        "stock_name": "에이디테크놀로지",
+        "stock_code": "200710",
+        "rank": 3,
+        "leader_score": 64,
+        "predicted_return_pct": 24.07,
+        "target_price": 37532.57,
+        "realized_return_pct": -4.96,
+        "prediction_model": "multi_agent_broad_short_temporal_theme_leader_v1",
+        "deterministic_leader_score": 73,
+        "llm_score": 54,
+        "llm_raw_score": 54,
+        "llm_ranking_score": 54,
+        "llm_confidence": 65,
+        "llm_theme_fit_score": 55,
+        "llm_catalyst_score": 40,
+        "llm_risk_score": 63,
+        "llm_summary": "에이디테크놀로지(200710)는 AI 테마와 직접적인 연관성은 부족하지만, 최근 유형자산 취득 공시가 사업 확장 의도를 시사한다. 차트리스트는 상승 추세와 모멘텀을 보이며 리더십을 보여 주지만, 변동성은 높고 거래량 리더십은 중간 수준이다. Analyst와 Quant는 재무 일관성 및 유동성 부담을 경계하며, 전반적으로 중간 위험 수준에서 주도주 가능성은 낮으나 단기 매수보다는 보유가 적절하다.",
+        "llm_agent_scores": {
+          "analyst": {
+            "total_score": 46,
+            "theme_fit_score": 55,
+            "moat_score": 45,
+            "growth_score": 50,
+            "catalyst_score": 40,
+            "risk_score": 60,
+            "confidence": 50,
+            "summary": "에이디테크놀로지(200710)는 AI 테마와의 직접적인 연관성은 명확하지 않으나, 최근 유형자산 취득 결정과 관련된 공시가 있었으며, 단기적으로는 주가가 하락 중인 상태입니다. 다만, 장기적인 성장 가능성은 보여주지 않으며, 테마와의 연관성 부족으로 인해 향후 3~10거래일 주도주 가능성은 낮습니다."
+          },
+          "quant": {
+            "total_score": 55,
+            "valuation_score": 55,
+            "profitability_score": 55,
+            "growth_score": 55,
+            "stability_score": 55,
+            "risk_score": 60,
+            "confidence": 40,
+            "summary": "에이디테크놀로지(200710)는 2023년 상반기 분기보고서의 기재정정을 포함한 재무 관련 공시가 일부 있었으나, 직접적인 재무 악화나 지속적인 리스크 요소는 명확히 확인되지 않았다. 유형자산 취득 결정과 관련한 공시는 사업 확장의 의도를 나타내지만, 재무적 부담이나 유동성 위험에 대한 구체적인 언급은 없었다. 다만, 공시의 정정 사항과 관련하여 일관성 있는 재무 정보를 제공하지 못한 점은 신뢰도에 약간의 감점을 주는 요인이다. 가격/거래량 리더십은 재무 근거 부족으로 인해 중립으로 판단되며, 단기적인 리스크 가드 역할을 수행해야 "
+          },
+          "chartist": {
+            "trend_score": 66,
+            "momentum_score": 61,
+            "volatility_score": 66,
+            "volume_score": 48,
+            "total_score": 59,
+            "confidence": 80,
+            "horizon": "short",
+            "summary": "trend=66, momentum=61, volatility=66, volume=48"
+          },
+          "risk_manager": {
+            "final_score": 54,
+            "raw_final_score": 55,
+            "calibrated_final_score": 54,
+            "agent_weight_profile": "short",
+            "agent_weights": {
+              "analyst": 0.3,
+              "quant": 0.15,
+              "chartist": 0.55
+            },
+            "confidence": 65,
+            "risk_score": 63,
+            "action": "HOLD",
+            "summary": "에이디테크놀로지(200710)는 AI 테마와 직접적인 연관성은 부족하지만, 최근 유형자산 취득 공시가 사업 확장 의도를 시사한다. 차트리스트는 상승 추세와 모멘텀을 보이며 리더십을 보여 주지만, 변동성은 높고 거래량 리더십은 중간 수준이다. Analyst와 Quant는 재무 일관성 및 유동성 부담을 경계하며, 전반적으로 중간 위험 수준에서 주도주 가능성은 낮으나 단기 매수보다는 보유가 적절하다."
+          }
+        },
+        "llm_mode": "multi_agent",
+        "llm_candidate_scope": "broad",
+        "llm_horizon": "short"
+      }
+    ],
+    "positions": [
+      {
+        "as_of_date": "2024-01-05",
+        "entry_date": "2024-01-05",
+        "exit_date": "2024-01-12",
+        "planned_exit_date": "2024-01-12",
+        "exit_reason": "holding_period_exit",
+        "stock_name": "가온칩스",
+        "stock_code": "399720",
+        "entry_price": 58100.0,
+        "exit_price": 57300.0,
+        "return_5d": 0.0017241379310344307,
+        "return_20d": 0.25485961123110146,
+        "return_60d": 0.7063142437591776,
+        "trend_150d": 0.43138704114313864,
+        "volatility_20d": 0.870904693604963,
+        "volume_ratio_20d": 0.5253684024441935,
+        "avg_trading_value_20d": 48572115907.5,
+        "doc_signal": 5.9474836436508784,
+        "doc_counts": {
+          "dart": 4,
+          "forum": 0,
+          "news": 18
+        },
+        "return_60d_rank": 0.9354838709677419,
+        "return_20d_rank": 0.8387096774193549,
+        "trend_150d_rank": 0.9354838709677419,
+        "volume_rank": 0.16129032258064516,
+        "doc_rank": 0.6451612903225806,
+        "low_vol_rank": 0.1935483870967742,
+        "leader_score": 69,
+        "target_price": 82827.45,
+        "deterministic_leader_score": 72,
+        "llm_candidate_scope": "broad",
+        "llm_score": 66,
+        "llm_confidence": 73,
+        "llm_theme_fit_score": 75,
+        "llm_catalyst_score": 65,
+        "llm_risk_score": 55,
+        "llm_summary": "가온칩스(399720)는 AI 테마와의 연관성이 높고 최근 단일판매 및 공급계약 체결 등 긍정적 뉴스가 주가에 영향을 미칠 가능성이 큽니다. Chartist 분석에서 강력한 추세(76)와 모멘텀(85)을 보이며 거래량 리더십이 확인돼 단기 매수에 유리합니다. 그러나 Analyst와 Quant에서 제시한 계약 불확실성, 변동성, 재무 데이터 부족 등의 리스크가 존재하므로 주의가 필요합니다.",
+        "llm_catalysts": [
+          "최근 단일판매 및 공급계약 체결",
+          "AI 관련 기술 및 제품 개발 가능성"
+        ],
+        "llm_risks": [
+          "계약 유보기한으로 인한 정보 불확실성",
+          "높은 변동성으로 인한 주가 변동 리스크",
+          "재무 데이터에 대한 직접적인 정보 부족",
+          "장기 성장성에 대한 확실한 근거 부족"
+        ],
+        "llm_horizon": "short",
+        "llm_fallback_used": false,
+        "llm_agent_scores": {
+          "analyst": {
+            "total_score": 68,
+            "theme_fit_score": 75,
+            "moat_score": 60,
+            "growth_score": 70,
+            "catalyst_score": 65,
+            "risk_score": 55,
+            "confidence": 70,
+            "summary": "가온칩스는 AI 테마와의 연관성이 상대적으로 높은 수준으로 평가되며, 최근 단일판매 및 공급계약 체결과 같은 뉴스가 주가에 긍정적인 영향을 미칠 가능성이 있다. 그러나 단기적으로는 변동성과 유보기한 등으로 인한 불확실성이 존재한다."
+          },
+          "quant": {
+            "total_score": 56,
+            "valuation_score": 55,
+            "profitability_score": 55,
+            "growth_score": 60,
+            "stability_score": 55,
+            "risk_score": 60,
+            "confidence": 50,
+            "summary": "가온칩스(399720)는 최근 주가 상승세가 지속되고 있으며, 단일판매 및 공급계약 체결 등 긍정적인 재무 관련 소식이 있음. 그러나 재무 데이터에 대한 직접적인 정보는 부족하며, 장기적인 성장성에 대한 확실한 근거도 부족함. 따라서 기초체력과 재무 리스크는 중립 수준으로 평가되나, 보수적인 관점에서 약간의 리스크를 반영함."
+          },
+          "chartist": {
+            "trend_score": 76,
+            "momentum_score": 85,
+            "volatility_score": 43,
+            "volume_score": 47,
+            "total_score": 68,
+            "confidence": 80,
+            "horizon": "short",
+            "summary": "trend=76, momentum=85, volatility=43, volume=47"
+          },
+          "risk_manager": {
+            "final_score": 66,
+            "raw_final_score": 66,
+            "calibrated_final_score": 66,
+            "agent_weight_profile": "short",
+            "agent_weights": {
+              "analyst": 0.3,
+              "quant": 0.15,
+              "chartist": 0.55
+            },
+            "confidence": 73,
+            "risk_score": 55,
+            "action": "BUY",
+            "summary": "가온칩스(399720)는 AI 테마와의 연관성이 높고 최근 단일판매 및 공급계약 체결 등 긍정적 뉴스가 주가에 영향을 미칠 가능성이 큽니다. Chartist 분석에서 강력한 추세(76)와 모멘텀(85)을 보이며 거래량 리더십이 확인돼 단기 매수에 유리합니다. 그러나 Analyst와 Quant에서 제시한 계약 불확실성, 변동성, 재무 데이터 부족 등의 리스크가 존재하므로 주의가 필요합니다."
+          }
+        },
+        "cache_hit": false,
+        "llm_model": "qwen3:14b",
+        "llm_provider": "ollama",
+        "llm_prompt_version": "temporal_theme_leader_multi_agent_v3",
+        "llm_context_docs": 3,
+        "llm_mode": "multi_agent",
+        "llm_raw_score": 66,
+        "llm_ranking_score": 66,
+        "rank": 1,
+        "weight": 0.333333,
+        "realized_return_pct": -1.38,
+        "predicted_return_pct": 42.56
+      },
+      {
+        "as_of_date": "2024-01-05",
+        "entry_date": "2024-01-05",
+        "exit_date": "2024-01-12",
+        "planned_exit_date": "2024-01-12",
+        "exit_reason": "holding_period_exit",
+        "stock_name": "텔레칩스",
+        "stock_code": "054450",
+        "entry_price": 30900.0,
+        "exit_price": 29450.0,
+        "return_5d": -0.12091038406827881,
+        "return_20d": 0.07291666666666674,
+        "return_60d": 0.3290322580645162,
+        "trend_150d": 0.3212920440259639,
+        "volatility_20d": 0.626847670909389,
+        "volume_ratio_20d": 1.049580764922889,
+        "avg_trading_value_20d": 32318996057.5,
+        "doc_signal": 8.701886736103969,
+        "doc_counts": {
+          "dart": 22,
+          "forum": 0,
+          "news": 27
+        },
+        "return_60d_rank": 0.7419354838709677,
+        "return_20d_rank": 0.41935483870967744,
+        "trend_150d_rank": 0.9032258064516129,
+        "volume_rank": 0.5161290322580645,
+        "doc_rank": 0.967741935483871,
+        "low_vol_rank": 0.4838709677419355,
+        "leader_score": 66,
+        "target_price": 37062.28,
+        "deterministic_leader_score": 70,
+        "llm_candidate_scope": "broad",
+        "llm_score": 62,
+        "llm_confidence": 77,
+        "llm_theme_fit_score": 85,
+        "llm_catalyst_score": 80,
+        "llm_risk_score": 59,
+        "llm_summary": "텔레칩스는 AI 테마와의 연관성이 높고, 3분기 역대 최대 실적을 기록한 뒤 증권사의 매수 의견과 목표주가 상향이 이어져 단기 주도주 가능성이 큽니다. Quant 분석은 매출·영업이익 성장과 안정성을 인정하지만 재무 정보 부족과 실적 지속성에 대한 불확실성을 지적합니다. Chartist는 150일 추세가 강세(69)지만 모멘텀은 중간(41)이며 변동성·거래량이 평균 수준(59, 58)으로 단기 리더십은 확인되지만 급격한 변동에 주의가 필요합니다. 이 세 관점이 충돌할 경우 Chartist의 가격·거래량 리더십을 우선시하되, Analyst의 촉매와 Quant의 치명적 리스크를 함께 반영해 최종적으로 매수 권고를 내립니다.",
+        "llm_catalysts": [
+          "3분기 역대 최대 실적 기록",
+          "증권사의 매수 의견 및 목표주가 상향"
+        ],
+        "llm_risks": [
+          "단기 변동성 확대 가능성",
+          "시장 전반의 AI 테마 하락세에 따른 약세 영향",
+          "재무 정보 부족으로 인한 리스크 평가의 불확실성",
+          "향후 실적 지속 가능성에 대한 의문"
+        ],
+        "llm_horizon": "short",
+        "llm_fallback_used": false,
+        "llm_agent_scores": {
+          "analyst": {
+            "total_score": 78,
+            "theme_fit_score": 85,
+            "moat_score": 65,
+            "growth_score": 75,
+            "catalyst_score": 80,
+            "risk_score": 55,
+            "confidence": 80,
+            "summary": "텔레칩스는 AI 테마와의 연관성이 높으며, 최근 3분기 역대 최대 실적을 기록하며 상승세를 보이고 있다. 단기적으로는 실적 호조와 함께 증권사의 긍정적인 전망이 주도주 가능성을 높이는 요인으로 작용하고 있다. 다만, 단기 변동성과 시장의 일반적인 흐름에 따라 변동성이 발생할 수 있어 주의가 필요하다."
+          },
+          "quant": {
+            "total_score": 68,
+            "valuation_score": 60,
+            "profitability_score": 70,
+            "growth_score": 75,
+            "stability_score": 65,
+            "risk_score": 60,
+            "confidence": 60,
+            "summary": "텔레칩스는 3분기 역대 최대 실적을 기록하며 매출과 영업이익이 전년 동기 대비 각각 34.5%, 59.3% 증가한 것으로 나타났다. 이는 자동차용 애플리케이션프로세서(AP) 제품의 해외 판매 호조로 인한 것으로 분석되고 있다. 증권사들도 텔레칩스에 대한 투자의견을 '매수'로 제시하며, 4분기 실적 성장에 대한 기대감이 유지되고 있다. 다만, 재무 관련 직접적인 악재나 부정적 요소는 확인되지 않았으며, 기초체력과 재무 리스크에 대한 구체적인 정보는 부족한 것으로 보인다."
+          },
+          "chartist": {
+            "trend_score": 69,
+            "momentum_score": 41,
+            "volatility_score": 59,
+            "volume_score": 58,
+            "total_score": 52,
+            "confidence": 80,
+            "horizon": "short",
+            "summary": "trend=69, momentum=41, volatility=59, volume=58"
+          },
+          "risk_manager": {
+            "final_score": 62,
+            "raw_final_score": 62,
+            "calibrated_final_score": 62,
+            "agent_weight_profile": "short",
+            "agent_weights": {
+              "analyst": 0.3,
+              "quant": 0.15,
+              "chartist": 0.55
+            },
+            "confidence": 77,
+            "risk_score": 59,
+            "action": "BUY",
+            "summary": "텔레칩스는 AI 테마와의 연관성이 높고, 3분기 역대 최대 실적을 기록한 뒤 증권사의 매수 의견과 목표주가 상향이 이어져 단기 주도주 가능성이 큽니다. Quant 분석은 매출·영업이익 성장과 안정성을 인정하지만 재무 정보 부족과 실적 지속성에 대한 불확실성을 지적합니다. Chartist는 150일 추세가 강세(69)지만 모멘텀은 중간(41)이며 변동성·거래량이 평균 수준(59, 58)으로 단기 리더십은 확인되지만 급격한 변동에 주의가 필요합니다. 이 세 관점이 충돌할 경우 Chartist의 가격·거래량 리더십을 우선시하되, Anal"
+          }
+        },
+        "cache_hit": false,
+        "llm_model": "qwen3:14b",
+        "llm_provider": "ollama",
+        "llm_prompt_version": "temporal_theme_leader_multi_agent_v3",
+        "llm_context_docs": 3,
+        "llm_mode": "multi_agent",
+        "llm_raw_score": 62,
+        "llm_ranking_score": 62,
+        "rank": 2,
+        "weight": 0.333333,
+        "realized_return_pct": -4.69,
+        "predicted_return_pct": 19.94
+      },
+      {
+        "as_of_date": "2024-01-05",
+        "entry_date": "2024-01-05",
+        "exit_date": "2024-01-12",
+        "planned_exit_date": "2024-01-12",
+        "exit_reason": "holding_period_exit",
+        "stock_name": "에이디테크놀로지",
+        "stock_code": "200710",
+        "entry_price": 30250.0,
+        "exit_price": 28750.0,
+        "return_5d": -0.04874213836477992,
+        "return_20d": 0.15900383141762453,
+        "return_60d": 0.3595505617977528,
+        "trend_150d": 0.2668954291250534,
+        "volatility_20d": 0.530444437904257,
+        "volume_ratio_20d": 0.5962222761785451,
+        "avg_trading_value_20d": 23710873652.5,
+        "doc_signal": 8.75522299776134,
+        "doc_counts": {
+          "dart": 29,
+          "forum": 0,
+          "news": 20
+        },
+        "return_60d_rank": 0.8064516129032258,
+        "return_20d_rank": 0.6451612903225806,
+        "trend_150d_rank": 0.8709677419354839,
+        "volume_rank": 0.1935483870967742,
+        "doc_rank": 1.0,
+        "low_vol_rank": 0.5161290322580645,
+        "leader_score": 64,
+        "target_price": 37532.57,
+        "deterministic_leader_score": 73,
+        "llm_candidate_scope": "broad",
+        "llm_score": 54,
+        "llm_confidence": 65,
+        "llm_theme_fit_score": 55,
+        "llm_catalyst_score": 40,
+        "llm_risk_score": 63,
+        "llm_summary": "에이디테크놀로지(200710)는 AI 테마와 직접적인 연관성은 부족하지만, 최근 유형자산 취득 공시가 사업 확장 의도를 시사한다. 차트리스트는 상승 추세와 모멘텀을 보이며 리더십을 보여 주지만, 변동성은 높고 거래량 리더십은 중간 수준이다. Analyst와 Quant는 재무 일관성 및 유동성 부담을 경계하며, 전반적으로 중간 위험 수준에서 주도주 가능성은 낮으나 단기 매수보다는 보유가 적절하다.",
+        "llm_catalysts": [
+          "유형자산 취득 결정 관련 공시",
+          "AI 테마와의 간접적 연관성"
+        ],
+        "llm_risks": [
+          "AI 테마와의 직접적 연관성 부족",
+          "공시의 정정 사항으로 인한 재무 정보의 일관성 부족"
+        ],
+        "llm_horizon": "short",
+        "llm_fallback_used": false,
+        "llm_agent_scores": {
+          "analyst": {
+            "total_score": 46,
+            "theme_fit_score": 55,
+            "moat_score": 45,
+            "growth_score": 50,
+            "catalyst_score": 40,
+            "risk_score": 60,
+            "confidence": 50,
+            "summary": "에이디테크놀로지(200710)는 AI 테마와의 직접적인 연관성은 명확하지 않으나, 최근 유형자산 취득 결정과 관련된 공시가 있었으며, 단기적으로는 주가가 하락 중인 상태입니다. 다만, 장기적인 성장 가능성은 보여주지 않으며, 테마와의 연관성 부족으로 인해 향후 3~10거래일 주도주 가능성은 낮습니다."
+          },
+          "quant": {
+            "total_score": 55,
+            "valuation_score": 55,
+            "profitability_score": 55,
+            "growth_score": 55,
+            "stability_score": 55,
+            "risk_score": 60,
+            "confidence": 40,
+            "summary": "에이디테크놀로지(200710)는 2023년 상반기 분기보고서의 기재정정을 포함한 재무 관련 공시가 일부 있었으나, 직접적인 재무 악화나 지속적인 리스크 요소는 명확히 확인되지 않았다. 유형자산 취득 결정과 관련한 공시는 사업 확장의 의도를 나타내지만, 재무적 부담이나 유동성 위험에 대한 구체적인 언급은 없었다. 다만, 공시의 정정 사항과 관련하여 일관성 있는 재무 정보를 제공하지 못한 점은 신뢰도에 약간의 감점을 주는 요인이다. 가격/거래량 리더십은 재무 근거 부족으로 인해 중립으로 판단되며, 단기적인 리스크 가드 역할을 수행해야 "
+          },
+          "chartist": {
+            "trend_score": 66,
+            "momentum_score": 61,
+            "volatility_score": 66,
+            "volume_score": 48,
+            "total_score": 59,
+            "confidence": 80,
+            "horizon": "short",
+            "summary": "trend=66, momentum=61, volatility=66, volume=48"
+          },
+          "risk_manager": {
+            "final_score": 54,
+            "raw_final_score": 55,
+            "calibrated_final_score": 54,
+            "agent_weight_profile": "short",
+            "agent_weights": {
+              "analyst": 0.3,
+              "quant": 0.15,
+              "chartist": 0.55
+            },
+            "confidence": 65,
+            "risk_score": 63,
+            "action": "HOLD",
+            "summary": "에이디테크놀로지(200710)는 AI 테마와 직접적인 연관성은 부족하지만, 최근 유형자산 취득 공시가 사업 확장 의도를 시사한다. 차트리스트는 상승 추세와 모멘텀을 보이며 리더십을 보여 주지만, 변동성은 높고 거래량 리더십은 중간 수준이다. Analyst와 Quant는 재무 일관성 및 유동성 부담을 경계하며, 전반적으로 중간 위험 수준에서 주도주 가능성은 낮으나 단기 매수보다는 보유가 적절하다."
+          }
+        },
+        "cache_hit": false,
+        "llm_model": "qwen3:14b",
+        "llm_provider": "ollama",
+        "llm_prompt_version": "temporal_theme_leader_multi_agent_v3",
+        "llm_context_docs": 3,
+        "llm_mode": "multi_agent",
+        "llm_raw_score": 54,
+        "llm_ranking_score": 54,
+        "rank": 3,
+        "weight": 0.333333,
+        "realized_return_pct": -4.96,
+        "predicted_return_pct": 24.07
+      }
+    ],
+    "trades": [
+      {
+        "date": "2024-01-05",
+        "stock_name": "가온칩스",
+        "stock_code": "399720",
+        "side": "BUY",
+        "price": 58100.0,
+        "weight": 0.333333,
+        "reason": "rank 1 leader_score 69"
+      },
+      {
+        "date": "2024-01-12",
+        "stock_name": "가온칩스",
+        "stock_code": "399720",
+        "side": "SELL",
+        "price": 57300.0,
+        "weight": 0.333333,
+        "realized_return_pct": -1.38,
+        "reason": "holding_period_exit"
+      },
+      {
+        "date": "2024-01-05",
+        "stock_name": "텔레칩스",
+        "stock_code": "054450",
+        "side": "BUY",
+        "price": 30900.0,
+        "weight": 0.333333,
+        "reason": "rank 2 leader_score 66"
+      },
+      {
+        "date": "2024-01-12",
+        "stock_name": "텔레칩스",
+        "stock_code": "054450",
+        "side": "SELL",
+        "price": 29450.0,
+        "weight": 0.333333,
+        "realized_return_pct": -4.69,
+        "reason": "holding_period_exit"
+      },
+      {
+        "date": "2024-01-05",
+        "stock_name": "에이디테크놀로지",
+        "stock_code": "200710",
+        "side": "BUY",
+        "price": 30250.0,
+        "weight": 0.333333,
+        "reason": "rank 3 leader_score 64"
+      },
+      {
+        "date": "2024-01-12",
+        "stock_name": "에이디테크놀로지",
+        "stock_code": "200710",
+        "side": "SELL",
+        "price": 28750.0,
+        "weight": 0.333333,
+        "realized_return_pct": -4.96,
+        "reason": "holding_period_exit"
+      }
+    ],
+    "periods": [
+      {
+        "as_of_date": "2024-01-05",
+        "entry_date": "2024-01-05",
+        "exit_date": "2024-01-12",
+        "selected_count": 3,
+        "active_target_count": 32,
+        "eligible_count": 31,
+        "risk_eligible_count": 28,
+        "risk_reject_count": 3,
+        "market_breadth_pct": 58.06,
+        "portfolio_return_pct": -4.18,
+        "benchmark_return_pct": 1.07,
+        "excess_return_pct": -5.25,
+        "candidate_rankings": [
+          {
+            "stock_name": "가온칩스",
+            "stock_code": "399720",
+            "leader_score": 69,
+            "deterministic_leader_score": 72,
+            "llm_score": 66,
+            "llm_raw_score": 66,
+            "llm_ranking_score": 66,
+            "llm_confidence": 73,
+            "llm_candidate_scope": "broad",
+            "llm_horizon": "short",
+            "volatility_20d": 0.8709,
+            "volume_ratio_20d": 0.5254,
+            "doc_signal": 5.9475,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": 0.17,
+            "return_20d_pct": 25.49,
+            "return_60d_pct": 70.63,
+            "trend_150d_pct": 43.14,
+            "realized_return_pct": -1.38
+          },
+          {
+            "stock_name": "텔레칩스",
+            "stock_code": "054450",
+            "leader_score": 66,
+            "deterministic_leader_score": 70,
+            "llm_score": 62,
+            "llm_raw_score": 62,
+            "llm_ranking_score": 62,
+            "llm_confidence": 77,
+            "llm_candidate_scope": "broad",
+            "llm_horizon": "short",
+            "volatility_20d": 0.6268,
+            "volume_ratio_20d": 1.0496,
+            "doc_signal": 8.7019,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -12.09,
+            "return_20d_pct": 7.29,
+            "return_60d_pct": 32.9,
+            "trend_150d_pct": 32.13,
+            "realized_return_pct": -4.69
+          },
+          {
+            "stock_name": "에이디테크놀로지",
+            "stock_code": "200710",
+            "leader_score": 64,
+            "deterministic_leader_score": 73,
+            "llm_score": 54,
+            "llm_raw_score": 54,
+            "llm_ranking_score": 54,
+            "llm_confidence": 65,
+            "llm_candidate_scope": "broad",
+            "llm_horizon": "short",
+            "volatility_20d": 0.5304,
+            "volume_ratio_20d": 0.5962,
+            "doc_signal": 8.7552,
+            "exit_reason": "holding_period_exit",
+            "return_5d_pct": -4.87,
+            "return_20d_pct": 15.9,
+            "return_60d_pct": 35.96,
+            "trend_150d_pct": 26.69,
+            "realized_return_pct": -4.96
+          }
+        ],
+        "top_symbols": [
+          {
+            "stock_name": "가온칩스",
+            "stock_code": "399720",
+            "leader_score": 69,
+            "realized_return_pct": -1.38,
+            "deterministic_leader_score": 72,
+            "llm_score": 66,
+            "llm_ranking_score": 66,
+            "llm_confidence": 73
+          },
+          {
+            "stock_name": "텔레칩스",
+            "stock_code": "054450",
+            "leader_score": 66,
+            "realized_return_pct": -4.69,
+            "deterministic_leader_score": 70,
+            "llm_score": 62,
+            "llm_ranking_score": 62,
+            "llm_confidence": 77
+          },
+          {
+            "stock_name": "에이디테크놀로지",
+            "stock_code": "200710",
+            "leader_score": 64,
+            "realized_return_pct": -4.96,
+            "deterministic_leader_score": 73,
+            "llm_score": 54,
+            "llm_ranking_score": 54,
+            "llm_confidence": 65
+          }
+        ]
+      }
+    ],
+    "equity_curve": [
+      {
+        "date": "2024-01-12",
+        "equity": 0.958239,
+        "benchmark_equity": 1.010701,
+        "period_return_pct": -4.18,
+        "benchmark_return_pct": 1.07
+      }
+    ],
+    "risk": {
+      "filters": {
+        "min_avg_trading_value": 0.0,
+        "position_value_krw": 10000000.0,
+        "max_position_pct_avg_trading_value": 5.0,
+        "max_volatility_20d": 1.2,
+        "max_return_5d": 0.35,
+        "max_return_20d": 0.9,
+        "min_trend_150d": -1.0,
+        "min_market_breadth_pct": 40.0
+      },
+      "reject_counts": {
+        "high_volatility": 2,
+        "insufficient_liquidity_capacity": 1
+      }
+    },
+    "execution": {
+      "exit_rules": {
+        "stop_loss_pct": 0.0,
+        "take_profit_pct": 0.0,
+        "trailing_stop_pct": 15.0
+      },
+      "costs": {
+        "transaction_cost_bps": 15.0,
+        "slippage_bps": 5.0,
+        "market_impact_bps": 5.0,
+        "round_trip_cost_bps": 50.0
+      },
+      "exit_counts": {
+        "holding_period_exit": 3
+      },
+      "same_day_ohlc_policy": "stop_or_trailing_stop_before_take_profit"
+    },
+    "artifacts": {
+      "result_json": "data/backtest_results/multi_agent_validation/phase2/ai_2024_w01_short_hybrid05_top3_realistic_costs/runs/proof-ai-validation_2024_w01-short_hybrid_05.json"
+    },
+    "warnings": [
+      "future returns are used only for evaluation after each as_of_date signal.",
+      "selection uses point-in-time broad short-horizon Analyst/Quant/Chartist/RiskManager scoring over the risk-filtered universe.",
+      "theme_membership may be inferred from local corpus evidence unless an official historical source is supplied."
+    ],
+    "metadata": {
+      "generated_at": "2026-05-18T10:09:11.624112",
+      "data_dir": "data",
+      "target_count": 50,
+      "membership_count": 50,
+      "point_in_time_universe": true,
+      "membership_sources": [
+        "local_corpus_inferred"
+      ],
+      "price_stock_count": 50,
+      "document_signal_count": 30497,
+      "llm": {
+        "data_dir": "/Users/leedohoun/Desktop/HQA_Project/data",
+        "theme": "AI",
+        "theme_key": "ai",
+        "model_name": "qwen3:14b",
+        "provider": "ollama",
+        "context_docs": 3,
+        "cache_path": "/Users/leedohoun/Desktop/HQA_Project/data/backtest_results/llm_cache/ai/qwen3_14b.multi_agent.jsonl",
+        "prompt_version": "temporal_theme_leader_multi_agent_v3",
+        "mode": "multi_agent",
+        "horizon": "short",
+        "thinking_model_name": "gpt-oss:20b",
+        "agents": [
+          "analyst",
+          "quant",
+          "chartist",
+          "risk_manager"
+        ],
+        "agent_weight_profile": "short",
+        "agent_weights": {
+          "analyst": 0.3,
+          "quant": 0.15,
+          "chartist": 0.55
+        }
+      }
+    }
+  }
+]
