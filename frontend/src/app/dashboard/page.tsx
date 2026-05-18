@@ -15,7 +15,8 @@ import type {
   UserPreference
 } from "@/types/api";
 
-type WorkspaceTab = "analysis" | "buy";
+type WorkspaceTab = "analysis" | "order";
+type OrderSide = "buy" | "sell";
 type ChartTimeframe = "1m" | "10m";
 
 const RECENT_STORAGE_KEY = "hqa.dashboard.recent";
@@ -94,6 +95,7 @@ export default function DashboardPage() {
   const [bulkAnalyzing, setBulkAnalyzing] = useState(false);
   const [buyQuantity, setBuyQuantity] = useState("1");
   const [buyPrice, setBuyPrice] = useState("");
+  const [orderSide, setOrderSide] = useState<OrderSide>("buy");
   const [timeframe, setTimeframe] = useState<ChartTimeframe>("1m");
   const [price, setPrice] = useState<RealtimePrice | null>(null);
   const [candles, setCandles] = useState<Candle[]>([]);
@@ -232,7 +234,7 @@ export default function DashboardPage() {
     }
   }
 
-  async function handleBuy() {
+  async function handleOrder() {
     if (!selected) {
       setMessage("종목을 먼저 선택해주세요.");
       return;
@@ -240,24 +242,29 @@ export default function DashboardPage() {
     const qty = Math.max(1, parseInt(buyQuantity || "1", 10) || 1);
     const orderPrice = Math.max(0, parseInt(buyPrice || "0", 10) || 0);
     const priceLabel = orderPrice > 0 ? `${orderPrice.toLocaleString("ko-KR")}원` : "시장가";
-    const confirmed = window.confirm(`${selected.name} ${qty}주를 ${priceLabel}로 매수할까요?`);
+    const sideLabel = orderSide === "buy" ? "매수" : "매도";
+    const confirmed = window.confirm(`${selected.name} ${qty}주를 ${priceLabel}로 ${sideLabel}할까요?`);
     if (!confirmed) return;
     try {
-      const result = await tradingApi.buy({
+      const payload = {
         stockName: selected.name,
         stockCode: selected.code,
         quantity: qty,
         limitPrice: orderPrice
-      });
+      };
+      const result =
+        orderSide === "buy"
+          ? await tradingApi.buy(payload)
+          : await tradingApi.sell(payload);
       if (result.success) {
-        setMessage(`${selected.name} ${qty}주 매수 주문이 접수되었습니다.`);
+        setMessage(`${selected.name} ${qty}주 ${sideLabel} 주문이 접수되었습니다.`);
       } else {
         const reason = result.error
-          ?? (typeof result.response?.msg1 === "string" ? (result.response.msg1 as string) : "매수 주문이 거부되었습니다.");
-        setMessage(`매수 실패: ${reason}`);
+          ?? (typeof result.response?.msg1 === "string" ? (result.response.msg1 as string) : `${sideLabel} 주문이 거부되었습니다.`);
+        setMessage(`${sideLabel} 실패: ${reason}`);
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "매수 요청에 실패했습니다.");
+      setMessage(error instanceof Error ? error.message : `${sideLabel} 요청에 실패했습니다.`);
     }
   }
 
@@ -580,7 +587,7 @@ export default function DashboardPage() {
           )}
         </main>
 
-        {/* ── RIGHT: Actions (Analysis / Buy) ── */}
+        {/* ── RIGHT: Actions (AI Analysis / Order) ── */}
         <aside className="action-pane">
           <div className="tab-switch action-tabs">
             <button
@@ -591,11 +598,11 @@ export default function DashboardPage() {
               AI 분석
             </button>
             <button
-              className={tab === "buy" ? "tab-chip active" : "tab-chip"}
-              onClick={() => setTab("buy")}
+              className={tab === "order" ? "tab-chip active" : "tab-chip"}
+              onClick={() => setTab("order")}
               type="button"
             >
-              매수
+              주문
             </button>
           </div>
 
@@ -647,10 +654,32 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="action-content">
+              {/* Sell / Buy side toggle */}
+              <div className="side-toggle" role="tablist" aria-label="주문 종류">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={orderSide === "sell"}
+                  className={`side-toggle-btn sell ${orderSide === "sell" ? "active" : ""}`}
+                  onClick={() => setOrderSide("sell")}
+                >
+                  매도
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={orderSide === "buy"}
+                  className={`side-toggle-btn buy ${orderSide === "buy" ? "active" : ""}`}
+                  onClick={() => setOrderSide("buy")}
+                >
+                  매수
+                </button>
+              </div>
+
               <p className="action-hint">
                 {selected
-                  ? `${selected.name} 매수 주문을 넣어요.`
-                  : "종목을 선택하면 매수할 수 있어요."}
+                  ? `${selected.name} ${orderSide === "buy" ? "매수" : "매도"} 주문을 넣어요.`
+                  : `종목을 선택하면 ${orderSide === "buy" ? "매수" : "매도"}할 수 있어요.`}
               </p>
 
               <div className="field">
@@ -675,12 +704,12 @@ export default function DashboardPage() {
               </div>
 
               <button
-                className="button action-cta"
+                className={`button action-cta order-cta ${orderSide}`}
                 disabled={!selected}
-                onClick={handleBuy}
+                onClick={handleOrder}
                 type="button"
               >
-                매수 주문
+                {orderSide === "buy" ? "매수 주문" : "매도 주문"}
               </button>
             </div>
           )}

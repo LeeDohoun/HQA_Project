@@ -4,6 +4,7 @@ public record UserSecretResponse(
         boolean configured,
         String kisAppKeyMasked,
         String kisAccountNoMasked,
-        String kisAccountProductCode
+        String kisAccountProductCode,
+        boolean kisIsReal
 ) {
 }

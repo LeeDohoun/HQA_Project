@@ -5,6 +5,7 @@ import com.hqa.backend.dto.AuthResponse;
 import com.hqa.backend.dto.AuthSignupRequest;
 import com.hqa.backend.dto.AuthUserResponse;
 import com.hqa.backend.dto.ErrorCode;
+import com.hqa.backend.dto.KisVerificationResult;
 import com.hqa.backend.dto.UserSecretRequest;
 import com.hqa.backend.dto.UserSecretResponse;
 import com.hqa.backend.dto.UserPreferenceRequest;
@@ -32,17 +33,20 @@ public class AuthService {
     private final UserPreferenceRepository userPreferenceRepository;
     private final PasswordEncoder passwordEncoder;
     private final SecretCipher secretCipher;
+    private final KisClient kisClient;
 
     public AuthService(UserRepository userRepository,
                        UserSecretRepository userSecretRepository,
                        UserPreferenceRepository userPreferenceRepository,
                        PasswordEncoder passwordEncoder,
-                       SecretCipher secretCipher) {
+                       SecretCipher secretCipher,
+                       KisClient kisClient) {
         this.userRepository = userRepository;
         this.userSecretRepository = userSecretRepository;
         this.userPreferenceRepository = userPreferenceRepository;
         this.passwordEncoder = passwordEncoder;
         this.secretCipher = secretCipher;
+        this.kisClient = kisClient;
     }
 
     public AuthResponse signup(AuthSignupRequest request, HttpSession session) {
@@ -89,6 +93,22 @@ public class AuthService {
 
     public UserSecretResponse upsertUserSecret(UserSecretRequest request, HttpSession session) {
         User user = requireUser(session);
+
+        String appKey = request.kisAppKey().trim();
+        String appSecret = request.kisAppSecret().trim();
+        String accountNo = request.kisAccountNo().trim();
+        String acntPrdtCd = request.kisAccountProductCode().trim();
+        boolean isReal = request.kisIsReal();
+
+        // 저장하기 전에 KIS API에 실제로 연결 가능한지 검증.
+        // 실패하면 잘못된 값이 DB에 들어가지 않도록 4xx로 즉시 거부.
+        KisVerificationResult verification = kisClient.verifyCredentials(
+                user.getUserId(), appKey, appSecret, accountNo, acntPrdtCd, isReal);
+        if (!verification.ok()) {
+            throw new ApiException(ErrorCode.KIS_SECRET_NOT_CONFIGURED, 400,
+                    verification.message(), verification.stage());
+        }
+
         UserSecret secret = user.getSecret();
         if (secret == null) {
             secret = new UserSecret();
@@ -96,14 +116,31 @@ public class AuthService {
             user.setSecret(secret);
         }
 
-        secret.setKisAppKey(secretCipher.encrypt(request.kisAppKey().trim()));
-        secret.setKisAppSecret(secretCipher.encrypt(request.kisAppSecret().trim()));
-        secret.setKisAccountNo(secretCipher.encrypt(request.kisAccountNo().trim()));
+        secret.setKisAppKey(secretCipher.encrypt(appKey));
+        secret.setKisAppSecret(secretCipher.encrypt(appSecret));
+        secret.setKisAccountNo(secretCipher.encrypt(accountNo));
         // Account product code is not sensitive (e.g. "01"); store as-is for direct use.
-        secret.setKisAccountProductCode(request.kisAccountProductCode().trim());
+        secret.setKisAccountProductCode(acntPrdtCd);
+        secret.setKisIsReal(isReal);
 
         userSecretRepository.save(secret);
         return toSecretResponse(secret);
+    }
+
+    /**
+     * 저장하지 않고 입력값이 KIS API에서 동작하는지만 확인.
+     * 온보딩 흐름에서 "다음" 버튼을 누르기 전 또는 설정 페이지에서 "테스트" 버튼용.
+     */
+    @Transactional(readOnly = true)
+    public KisVerificationResult verifyKisCredentials(UserSecretRequest request, HttpSession session) {
+        User user = requireUser(session);
+        return kisClient.verifyCredentials(
+                user.getUserId(),
+                request.kisAppKey().trim(),
+                request.kisAppSecret().trim(),
+                request.kisAccountNo().trim(),
+                request.kisAccountProductCode().trim(),
+                request.kisIsReal());
     }
 
     public UserPreferenceResponse savePreference(UserPreferenceRequest request, HttpSession session) {
@@ -189,7 +226,7 @@ public class AuthService {
 
     private UserSecretResponse toSecretResponse(UserSecret secret) {
         if (secret == null) {
-            return new UserSecretResponse(false, null, null, null);
+            return new UserSecretResponse(false, null, null, null, false);
         }
         boolean configured = !isBlank(secret.getKisAppKey())
                 && !isBlank(secret.getKisAppSecret())
@@ -202,7 +239,8 @@ public class AuthService {
                 configured,
                 mask(appKey, 4),
                 mask(accountNo, 4),
-                secret.getKisAccountProductCode()
+                secret.getKisAccountProductCode(),
+                secret.isKisIsReal()
         );
     }
 

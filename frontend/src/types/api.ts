@@ -38,6 +38,7 @@ export type KisCredentials = {
   kisAppSecret: string;
   kisAccountNo: string;
   kisAccountProductCode: string;
+  kisIsReal: boolean;
 };
 
 export type KisCredentialsStatus = {
@@ -45,6 +46,15 @@ export type KisCredentialsStatus = {
   kisAppKeyMasked: string | null;
   kisAccountNoMasked: string | null;
   kisAccountProductCode: string | null;
+  kisIsReal: boolean;
+};
+
+export type KisVerificationResult = {
+  ok: boolean;
+  tokenOk: boolean;
+  accountOk: boolean;
+  stage: "ok" | "token" | "account" | string;
+  message: string;
 };
 
 export type UserPreference = {

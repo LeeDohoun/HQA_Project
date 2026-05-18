@@ -80,7 +80,8 @@ const emptyKis: KisCredentials = {
   kisAppKey: "",
   kisAppSecret: "",
   kisAccountNo: "",
-  kisAccountProductCode: "01"
+  kisAccountProductCode: "01",
+  kisIsReal: false
 };
 
 export default function PreferencePage() {
@@ -406,11 +407,30 @@ function KisStep({
   onSkip: () => void;
 }) {
   const [showDetail, setShowDetail] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [verifyError, setVerifyError] = useState("");
   const valid =
     value.kisAppKey.trim().length > 0 &&
     value.kisAppSecret.trim().length > 0 &&
     value.kisAccountNo.trim().length > 0 &&
     value.kisAccountProductCode.trim().length > 0;
+
+  async function handleVerifyAndNext() {
+    setVerifying(true);
+    setVerifyError("");
+    try {
+      const result = await authApi.verifyKis(value);
+      if (result.ok) {
+        onNext();
+      } else {
+        setVerifyError(result.message || "연결에 실패했어요. 입력값을 다시 확인해주세요.");
+      }
+    } catch (e) {
+      setVerifyError(e instanceof Error ? e.message : "검증 요청에 실패했어요.");
+    } finally {
+      setVerifying(false);
+    }
+  }
 
   return (
     <>
@@ -420,6 +440,36 @@ function KisStep({
         AI 분석 결과로 <b>실제 매수·자동매매</b>를 하려면 한국투자증권(KIS) API 키가 필요해요.
         지금 안 넣어도 둘러보기는 가능해요.
       </p>
+
+      {/* 실전 / 모의 환경 토글 */}
+      <div className="field">
+        <label>투자 환경</label>
+        <div className="env-toggle" role="tablist" aria-label="투자 환경">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={!value.kisIsReal}
+            className={`env-toggle-btn ${!value.kisIsReal ? "active sandbox" : ""}`}
+            onClick={() => onChange({ kisIsReal: false })}
+          >
+            모의투자
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={value.kisIsReal}
+            className={`env-toggle-btn ${value.kisIsReal ? "active real" : ""}`}
+            onClick={() => onChange({ kisIsReal: true })}
+          >
+            실전투자
+          </button>
+        </div>
+        <p className="field-hint">
+          {value.kisIsReal
+            ? "⚠️ 실제 자금이 사용돼요. 발급받은 키가 실전용인지 확인해주세요."
+            : "안전한 모의투자로 먼저 테스트해볼 수 있어요."}
+        </p>
+      </div>
 
       <button
         type="button"
@@ -524,10 +574,19 @@ function KisStep({
         />
       </div>
 
-      <button type="button" className="wiz-cta" disabled={!valid} onClick={onNext}>
-        다음
+      {verifyError ? (
+        <p className="error-text" role="alert">{verifyError}</p>
+      ) : null}
+
+      <button
+        type="button"
+        className="wiz-cta"
+        disabled={!valid || verifying}
+        onClick={handleVerifyAndNext}
+      >
+        {verifying ? "KIS 서버에 확인 중..." : "연결 확인하고 다음"}
       </button>
-      <button type="button" className="wiz-skip" onClick={onSkip}>
+      <button type="button" className="wiz-skip" onClick={onSkip} disabled={verifying}>
         나중에 설정에서 입력할게요
       </button>
     </>

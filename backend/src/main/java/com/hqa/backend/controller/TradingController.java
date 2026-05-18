@@ -89,6 +89,15 @@ public class TradingController {
 
     @PostMapping("/buy")
     public Map<String, Object> directBuy(@Valid @RequestBody DirectBuyRequest request, HttpSession session) {
+        return executeDirectOrder(request, session, /* isBuy = */ true);
+    }
+
+    @PostMapping("/sell")
+    public Map<String, Object> directSell(@Valid @RequestBody DirectBuyRequest request, HttpSession session) {
+        return executeDirectOrder(request, session, /* isBuy = */ false);
+    }
+
+    private Map<String, Object> executeDirectOrder(DirectBuyRequest request, HttpSession session, boolean isBuy) {
         User user = authService.requireUser(session);
         UserSecret secret = user.getSecret();
         if (secret == null || isBlank(secret.getKisAppKey()) || isBlank(secret.getKisAppSecret())
@@ -101,13 +110,17 @@ public class TradingController {
             throw new ApiException(ErrorCode.SERVICE_UNAVAILABLE, 503,
                     "KIS 토큰 발급 실패", null);
         }
-        Map<String, Object> result = kisClient.buy(user.getUserId(), secret, token,
-                request.getStockCode(), request.getQuantity(), request.getLimitPrice());
+        Map<String, Object> result = isBuy
+                ? kisClient.buy(user.getUserId(), secret, token,
+                        request.getStockCode(), request.getQuantity(), request.getLimitPrice())
+                : kisClient.sell(user.getUserId(), secret, token,
+                        request.getStockCode(), request.getQuantity(), request.getLimitPrice());
         Map<String, Object> response = new HashMap<>();
         response.put("stockName", request.getStockName());
         response.put("stockCode", request.getStockCode());
         response.put("quantity", request.getQuantity());
         response.put("limitPrice", request.getLimitPrice());
+        response.put("side", isBuy ? "buy" : "sell");
         response.putAll(result);
         return response;
     }

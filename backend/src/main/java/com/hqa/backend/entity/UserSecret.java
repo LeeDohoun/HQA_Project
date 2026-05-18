@@ -1,5 +1,6 @@
 package com.hqa.backend.entity;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
@@ -22,6 +23,10 @@ public class UserSecret {
     private String kisAppSecret;
     private String kisAccountNo;
     private String kisAccountProductCode;
+    // columnDefinition으로 NOT NULL + DEFAULT를 명시해야, 기존 행이 있는 테이블에
+    // 이 컬럼을 새로 추가하는 ALTER가 실패하지 않음 (Hibernate ddl-auto: update 한계).
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    private boolean kisIsReal = false; // true = 실전투자, false = 모의투자
     private OffsetDateTime createdAt = OffsetDateTime.now();
     private OffsetDateTime updatedAt = OffsetDateTime.now();
 
@@ -78,6 +83,14 @@ public class UserSecret {
 
     public void setKisAccountProductCode(String kisAccountProductCode) {
         this.kisAccountProductCode = kisAccountProductCode;
+    }
+
+    public boolean isKisIsReal() {
+        return kisIsReal;
+    }
+
+    public void setKisIsReal(boolean kisIsReal) {
+        this.kisIsReal = kisIsReal;
     }
 
     public OffsetDateTime getCreatedAt() {

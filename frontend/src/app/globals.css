@@ -1117,6 +1117,107 @@ button {
   font-weight: 700;
 }
 
+/* Order CTA — colored by side (KR convention: red=buy, blue=sell) */
+.order-cta.buy {
+  background: var(--rising);
+  border-color: var(--rising);
+  color: #fff;
+}
+.order-cta.buy:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+.order-cta.sell {
+  background: var(--falling);
+  border-color: var(--falling);
+  color: #fff;
+}
+.order-cta.sell:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+/* Side toggle: two-pill segmented control above the order form */
+.side-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-2, var(--surface));
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+
+.side-toggle-btn {
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 10px 0;
+  border-radius: calc(var(--r-md) - 4px);
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+
+.side-toggle-btn:hover {
+  color: var(--text);
+}
+
+.side-toggle-btn.sell.active {
+  background: var(--falling);
+  color: #fff;
+}
+
+.side-toggle-btn.buy.active {
+  background: var(--rising);
+  color: #fff;
+}
+
+/* Environment toggle (모의 / 실전) — same shape as side-toggle, different colors */
+.env-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-2, var(--surface));
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+
+.env-toggle-btn {
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 10px 0;
+  border-radius: calc(var(--r-md) - 4px);
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+
+.env-toggle-btn:hover {
+  color: var(--text);
+}
+
+.env-toggle-btn.active.sandbox {
+  background: var(--accent);
+  color: #fff;
+}
+
+.env-toggle-btn.active.real {
+  background: var(--rising);
+  color: #fff;
+}
+
+.field-hint {
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 .empty-hero {
   flex: 1;
   display: flex;

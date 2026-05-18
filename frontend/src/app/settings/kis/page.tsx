@@ -9,7 +9,8 @@ const emptyKis: KisCredentials = {
   kisAppKey: "",
   kisAppSecret: "",
   kisAccountNo: "",
-  kisAccountProductCode: "01"
+  kisAccountProductCode: "01",
+  kisIsReal: false
 };
 
 export default function KisSettingsPage() {
@@ -28,9 +29,11 @@ export default function KisSettingsPage() {
       .then((current) => {
         if (!active) return;
         setStatus(current);
-        if (current.kisAccountProductCode) {
-          setForm((prev) => ({ ...prev, kisAccountProductCode: current.kisAccountProductCode! }));
-        }
+        setForm((prev) => ({
+          ...prev,
+          kisAccountProductCode: current.kisAccountProductCode ?? prev.kisAccountProductCode,
+          kisIsReal: current.kisIsReal
+        }));
       })
       .catch(() => {
         // not configured yet — that's fine
@@ -100,6 +103,10 @@ export default function KisSettingsPage() {
         {status?.configured ? (
           <div className="wiz-summary" style={{ marginBottom: 12 }}>
             <div className="wiz-summary-row">
+              <span>환경</span>
+              <span>{status.kisIsReal ? "실전투자" : "모의투자"}</span>
+            </div>
+            <div className="wiz-summary-row">
               <span>현재 App Key</span>
               <span>{status.kisAppKeyMasked}</span>
             </div>
@@ -117,6 +124,35 @@ export default function KisSettingsPage() {
         )}
 
         <form onSubmit={submit}>
+          <div className="field">
+            <label>투자 환경</label>
+            <div className="env-toggle" role="tablist" aria-label="투자 환경">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={!form.kisIsReal}
+                className={`env-toggle-btn ${!form.kisIsReal ? "active sandbox" : ""}`}
+                onClick={() => setForm({ ...form, kisIsReal: false })}
+              >
+                모의투자
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={form.kisIsReal}
+                className={`env-toggle-btn ${form.kisIsReal ? "active real" : ""}`}
+                onClick={() => setForm({ ...form, kisIsReal: true })}
+              >
+                실전투자
+              </button>
+            </div>
+            <p className="field-hint">
+              {form.kisIsReal
+                ? "⚠️ 실제 자금이 사용돼요. 발급받은 키가 실전용인지 확인해주세요."
+                : "안전한 모의투자로 먼저 테스트해볼 수 있어요."}
+            </p>
+          </div>
+
           <div className="field">
             <label>App Key</label>
             <input
@@ -173,7 +209,7 @@ export default function KisSettingsPage() {
           {savedMessage ? <p className="meta">{savedMessage}</p> : null}
 
           <button type="submit" className="wiz-cta" disabled={!valid || saving}>
-            {saving ? "저장 중..." : "저장하기"}
+            {saving ? "KIS 연결 확인 중..." : "연결 확인하고 저장"}
           </button>
         </form>
       </section>
