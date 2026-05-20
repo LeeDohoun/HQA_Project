@@ -1,0 +1,97 @@
+{
+  "task_id": "proof-ai-recent_2026apr_may-deterministic_long",
+  "mode": "backtest",
+  "result_type": "backtest",
+  "status": "skipped",
+  "skip_reason": "no_evaluable_rebalance_dates",
+  "theme": "AI",
+  "theme_key": "ai",
+  "prediction_model": "skipped_no_evaluable_rebalance",
+  "period": {
+    "from_date": "2026-04-01",
+    "to_date": "2026-05-07",
+    "rebalance": "M",
+    "rebalance_count": 0,
+    "hold_days": 60
+  },
+  "strategy": {
+    "name": "ai_theme_leader_momentum_v1",
+    "top_n": 3,
+    "min_history_days": 150,
+    "transaction_cost_bps": 15.0,
+    "risk_filters": {
+      "min_avg_trading_value": 0.0,
+      "max_volatility_20d": 1.2,
+      "max_return_5d": 0.35,
+      "max_return_20d": 0.9,
+      "min_trend_150d": -1.0,
+      "min_market_breadth_pct": 40.0
+    },
+    "exit_rules": {
+      "stop_loss_pct": 0.0,
+      "take_profit_pct": 0.0,
+      "trailing_stop_pct": 15.0
+    },
+    "llm_rerank": {
+      "enabled": false,
+      "top_k": 0,
+      "weight": 0.0,
+      "context_docs": 0,
+      "mode": "",
+      "candidate_scope": "",
+      "horizon": "",
+      "top_k_meaning": ""
+    },
+    "selection_inputs": [],
+    "prediction_model": "skipped_no_evaluable_rebalance"
+  },
+  "metrics": {
+    "rebalance_count": 0,
+    "risk_off_count": 0,
+    "traded_rebalance_count": 0,
+    "position_count": 0,
+    "total_return_pct": 0.0,
+    "benchmark_return_pct": 0.0,
+    "excess_return_pct": 0.0,
+    "cagr_pct": 0.0,
+    "benchmark_cagr_pct": 0.0,
+    "mdd_pct": 0.0,
+    "benchmark_mdd_pct": 0.0,
+    "sharpe": 0.0,
+    "avg_period_return_pct": 0.0,
+    "avg_benchmark_period_return_pct": 0.0,
+    "win_rate_pct": 0.0,
+    "prediction_hit_rate_pct": 0.0,
+    "avg_position_return_pct": 0.0,
+    "median_position_return_pct": 0.0
+  },
+  "leaders": [],
+  "predictions": [],
+  "positions": [],
+  "trades": [],
+  "periods": [],
+  "equity_curve": [],
+  "risk": {
+    "filters": {},
+    "reject_counts": {}
+  },
+  "execution": {
+    "exit_rules": {
+      "stop_loss_pct": 0.0,
+      "take_profit_pct": 0.0,
+      "trailing_stop_pct": 15.0
+    },
+    "exit_counts": {}
+  },
+  "artifacts": {
+    "result_json": "experiment_results/backtesting/ai_strategy_comparison/source_multi_agent_runs/runs/proof-ai-recent_2026apr_may-deterministic_long.json"
+  },
+  "warnings": [
+    "no rebalance dates in period: 20260401..20260507"
+  ],
+  "metadata": {
+    "generated_at": "2026-05-09T12:17:40.826658",
+    "data_dir": "/Users/leedohoun/Desktop/HQA_Project/data",
+    "llm": {}
+  }
+}

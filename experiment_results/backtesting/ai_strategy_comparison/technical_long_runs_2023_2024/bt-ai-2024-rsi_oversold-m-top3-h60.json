@@ -1,0 +1,718 @@
+{
+  "task_id": "bt-ai-2024-rsi_oversold-m-top3-h60",
+  "mode": "backtest",
+  "result_type": "backtest",
+  "status": "completed",
+  "theme": "AI",
+  "theme_key": "ai",
+  "prediction_model": "rsi_oversold_technical_baseline_v1",
+  "period": {
+    "from_date": "2024-01-01",
+    "to_date": "2024-12-31",
+    "rebalance": "M",
+    "rebalance_count": 12,
+    "hold_days": 60
+  },
+  "strategy": {
+    "name": "rsi_oversold",
+    "label": "RSI(14) <= 30",
+    "description": "Long the most oversold RSI(14) names.",
+    "top_n": 3,
+    "min_history_days": 150,
+    "transaction_cost_bps": 15.0,
+    "slippage_bps": 5.0,
+    "market_impact_bps": 5.0,
+    "round_trip_cost_bps": 50.0,
+    "risk_filters": {
+      "min_avg_trading_value": 0.0,
+      "position_value_krw": 10000000.0,
+      "max_position_pct_avg_trading_value": 5.0,
+      "max_volatility_20d": 1.2,
+      "max_return_5d": 0.35,
+      "max_return_20d": 0.9,
+      "min_trend_150d": -1.0,
+      "min_market_breadth_pct": 40.0
+    },
+    "exit_rules": {
+      "stop_loss_pct": 0.0,
+      "take_profit_pct": 0.0,
+      "trailing_stop_pct": 15.0
+    },
+    "selection_inputs": [
+      "RSI(14)",
+      "same point-in-time AI universe",
+      "same risk filters"
+    ],
+    "prediction_model": "rsi_oversold_technical_baseline_v1"
+  },
+  "metrics": {
+    "rebalance_count": 12,
+    "risk_off_count": 11,
+    "traded_rebalance_count": 1,
+    "position_count": 3,
+    "total_return_pct": 1.06,
+    "benchmark_return_pct": -40.32,
+    "excess_return_pct": 41.38,
+    "cagr_pct": 1.06,
+    "benchmark_cagr_pct": -40.34,
+    "mdd_pct": 0.0,
+    "benchmark_mdd_pct": -52.78,
+    "sharpe": 0.592,
+    "avg_period_return_pct": 0.09,
+    "avg_benchmark_period_return_pct": -3.9,
+    "win_rate_pct": 8.33,
+    "prediction_hit_rate_pct": 33.33,
+    "avg_position_return_pct": 1.56,
+    "median_position_return_pct": -1.68,
+    "loss_period_count": 0,
+    "max_consecutive_loss_periods": 0,
+    "worst_period_return_pct": 0.0,
+    "best_period_return_pct": 1.06
+  },
+  "leaders": [
+    {
+      "stock_name": "미래컴퍼니",
+      "stock_code": "049950",
+      "selection_count": 1,
+      "avg_leader_score": 79.0,
+      "avg_realized_return_pct": 10.98,
+      "win_rate_pct": 100.0
+    },
+    {
+      "stock_name": "대덕전자",
+      "stock_code": "353200",
+      "selection_count": 1,
+      "avg_leader_score": 75.0,
+      "avg_realized_return_pct": -1.68,
+      "win_rate_pct": 0.0
+    },
+    {
+      "stock_name": "큐렉소",
+      "stock_code": "060280",
+      "selection_count": 1,
+      "avg_leader_score": 79.0,
+      "avg_realized_return_pct": -4.61,
+      "win_rate_pct": 0.0
+    }
+  ],
+  "predictions": [
+    {
+      "as_of_date": "2024-01-31",
+      "entry_date": "2024-01-31",
+      "exit_date": "2024-03-07",
+      "stock_name": "큐렉소",
+      "stock_code": "060280",
+      "rank": 1,
+      "leader_score": 79,
+      "predicted_return_pct": 9.48,
+      "target_price": 16039.36,
+      "realized_return_pct": -4.61,
+      "rsi_14": 20.51630434782608,
+      "bb_middle_20": 17405.0,
+      "bb_upper_20": 19792.722764476646,
+      "bb_lower_20": 15017.277235523354,
+      "bb_percent_b": -0.07690952253492786
+    },
+    {
+      "as_of_date": "2024-01-31",
+      "entry_date": "2024-01-31",
+      "exit_date": "2024-03-25",
+      "stock_name": "미래컴퍼니",
+      "stock_code": "049950",
+      "rank": 2,
+      "leader_score": 79,
+      "predicted_return_pct": 9.01,
+      "target_price": 28886.46,
+      "realized_return_pct": 10.98,
+      "rsi_14": 20.994475138121558,
+      "bb_middle_20": 30335.0,
+      "bb_upper_20": 33579.39516705348,
+      "bb_lower_20": 27090.604832946516,
+      "bb_percent_b": -0.09101925051301554
+    },
+    {
+      "as_of_date": "2024-01-31",
+      "entry_date": "2024-01-31",
+      "exit_date": "2024-04-16",
+      "stock_name": "대덕전자",
+      "stock_code": "353200",
+      "rank": 3,
+      "leader_score": 75,
+      "predicted_return_pct": 5.0,
+      "target_price": 25462.5,
+      "realized_return_pct": -1.68,
+      "rsi_14": 25.0,
+      "bb_middle_20": 26990.0,
+      "bb_upper_20": 29340.87217857543,
+      "bb_lower_20": 24639.12782142457,
+      "bb_percent_b": -0.08276243705865158
+    }
+  ],
+  "positions": [
+    {
+      "as_of_date": "2024-01-31",
+      "entry_date": "2024-01-31",
+      "exit_date": "2024-03-07",
+      "planned_exit_date": "2024-04-30",
+      "exit_reason": "trailing_stop",
+      "stock_name": "큐렉소",
+      "stock_code": "060280",
+      "entry_price": 14650.0,
+      "exit_price": 13974.0,
+      "return_5d": -0.17184850197851897,
+      "return_20d": -0.1732505643340858,
+      "return_60d": -0.02657807308970095,
+      "trend_150d": -0.16941638035627227,
+      "volatility_20d": 0.5743976391465082,
+      "volume_ratio_20d": 0.5653741845120522,
+      "avg_trading_value_20d": 14452981610.5,
+      "doc_signal": 8.646093991439901,
+      "doc_counts": {
+        "dart": 16,
+        "forum": 0,
+        "news": 38
+      },
+      "return_60d_rank": 0.2727272727272727,
+      "return_20d_rank": 0.21212121212121213,
+      "trend_150d_rank": 0.21212121212121213,
+      "volume_rank": 0.6363636363636364,
+      "doc_rank": 0.9393939393939394,
+      "low_vol_rank": 0.5757575757575758,
+      "leader_score": 79,
+      "target_price": 16039.36,
+      "rsi_14": 20.51630434782608,
+      "bb_middle_20": 17405.0,
+      "bb_upper_20": 19792.722764476646,
+      "bb_lower_20": 15017.277235523354,
+      "bb_percent_b": -0.07690952253492786,
+      "rank": 1,
+      "weight": 0.333333,
+      "realized_return_pct": -4.61,
+      "predicted_return_pct": 9.48
+    },
+    {
+      "as_of_date": "2024-01-31",
+      "entry_date": "2024-01-31",
+      "exit_date": "2024-03-25",
+      "planned_exit_date": "2024-04-30",
+      "exit_reason": "trailing_stop",
+      "stock_name": "미래컴퍼니",
+      "stock_code": "049950",
+      "entry_price": 26500.0,
+      "exit_price": 29410.0,
+      "return_5d": -0.10169491525423724,
+      "return_20d": -0.17829457364341084,
+      "return_60d": -0.036363636363636376,
+      "trend_150d": -0.23010623565528132,
+      "volatility_20d": 0.36251561170990587,
+      "volume_ratio_20d": 0.9839207855114324,
+      "avg_trading_value_20d": 2188936430.0,
+      "doc_signal": 8.591567919242669,
+      "doc_counts": {
+        "dart": 21,
+        "forum": 0,
+        "news": 26
+      },
+      "return_60d_rank": 0.24242424242424243,
+      "return_20d_rank": 0.18181818181818182,
+      "trend_150d_rank": 0.15151515151515152,
+      "volume_rank": 0.9090909090909091,
+      "doc_rank": 0.8787878787878788,
+      "low_vol_rank": 0.8484848484848485,
+      "leader_score": 79,
+      "target_price": 28886.46,
+      "rsi_14": 20.994475138121558,
+      "bb_middle_20": 30335.0,
+      "bb_upper_20": 33579.39516705348,
+      "bb_lower_20": 27090.604832946516,
+      "bb_percent_b": -0.09101925051301554,
+      "rank": 2,
+      "weight": 0.333333,
+      "realized_return_pct": 10.98,
+      "predicted_return_pct": 9.01
+    },
+    {
+      "as_of_date": "2024-01-31",
+      "entry_date": "2024-01-31",
+      "exit_date": "2024-04-16",
+      "planned_exit_date": "2024-04-30",
+      "exit_reason": "trailing_stop",
+      "stock_name": "대덕전자",
+      "stock_code": "353200",
+      "entry_price": 24250.0,
+      "exit_price": 23842.5,
+      "return_5d": -0.1068139963167587,
+      "return_20d": -0.14462081128747795,
+      "return_60d": 0.09480812641083514,
+      "trend_150d": -0.13049194435148437,
+      "volatility_20d": 0.28999188524703956,
+      "volume_ratio_20d": 0.6487954896667137,
+      "avg_trading_value_20d": 14420116887.5,
+      "doc_signal": 4.365103391671663,
+      "doc_counts": {
+        "dart": 0,
+        "forum": 0,
+        "news": 37
+      },
+      "return_60d_rank": 0.48484848484848486,
+      "return_20d_rank": 0.2727272727272727,
+      "trend_150d_rank": 0.2727272727272727,
+      "volume_rank": 0.7575757575757576,
+      "doc_rank": 0.2727272727272727,
+      "low_vol_rank": 1.0,
+      "leader_score": 75,
+      "target_price": 25462.5,
+      "rsi_14": 25.0,
+      "bb_middle_20": 26990.0,
+      "bb_upper_20": 29340.87217857543,
+      "bb_lower_20": 24639.12782142457,
+      "bb_percent_b": -0.08276243705865158,
+      "rank": 3,
+      "weight": 0.333333,
+      "realized_return_pct": -1.68,
+      "predicted_return_pct": 5.0
+    }
+  ],
+  "trades": [
+    {
+      "date": "2024-01-31",
+      "stock_name": "큐렉소",
+      "stock_code": "060280",
+      "side": "BUY",
+      "price": 14650.0,
+      "weight": 0.333333,
+      "reason": "rank 1 leader_score 79"
+    },
+    {
+      "date": "2024-03-07",
+      "stock_name": "큐렉소",
+      "stock_code": "060280",
+      "side": "SELL",
+      "price": 13974.0,
+      "weight": 0.333333,
+      "realized_return_pct": -4.61,
+      "reason": "trailing_stop"
+    },
+    {
+      "date": "2024-01-31",
+      "stock_name": "미래컴퍼니",
+      "stock_code": "049950",
+      "side": "BUY",
+      "price": 26500.0,
+      "weight": 0.333333,
+      "reason": "rank 2 leader_score 79"
+    },
+    {
+      "date": "2024-03-25",
+      "stock_name": "미래컴퍼니",
+      "stock_code": "049950",
+      "side": "SELL",
+      "price": 29410.0,
+      "weight": 0.333333,
+      "realized_return_pct": 10.98,
+      "reason": "trailing_stop"
+    },
+    {
+      "date": "2024-01-31",
+      "stock_name": "대덕전자",
+      "stock_code": "353200",
+      "side": "BUY",
+      "price": 24250.0,
+      "weight": 0.333333,
+      "reason": "rank 3 leader_score 75"
+    },
+    {
+      "date": "2024-04-16",
+      "stock_name": "대덕전자",
+      "stock_code": "353200",
+      "side": "SELL",
+      "price": 23842.5,
+      "weight": 0.333333,
+      "realized_return_pct": -1.68,
+      "reason": "trailing_stop"
+    }
+  ],
+  "periods": [
+    {
+      "as_of_date": "2024-01-31",
+      "entry_date": "2024-01-31",
+      "exit_date": "2024-04-16",
+      "selected_count": 3,
+      "active_target_count": 35,
+      "eligible_count": 33,
+      "risk_eligible_count": 27,
+      "risk_reject_count": 6,
+      "market_breadth_pct": 45.45,
+      "portfolio_return_pct": 1.06,
+      "benchmark_return_pct": 7.98,
+      "excess_return_pct": -6.92,
+      "top_symbols": [
+        {
+          "stock_name": "큐렉소",
+          "stock_code": "060280",
+          "technical_score": 79.48,
+          "rsi_14": 20.52,
+          "bb_percent_b": -0.0769,
+          "realized_return_pct": -4.61
+        },
+        {
+          "stock_name": "미래컴퍼니",
+          "stock_code": "049950",
+          "technical_score": 79.01,
+          "rsi_14": 20.99,
+          "bb_percent_b": -0.091,
+          "realized_return_pct": 10.98
+        },
+        {
+          "stock_name": "대덕전자",
+          "stock_code": "353200",
+          "technical_score": 75.0,
+          "rsi_14": 25.0,
+          "bb_percent_b": -0.0828,
+          "realized_return_pct": -1.68
+        }
+      ]
+    },
+    {
+      "as_of_date": "2024-02-29",
+      "entry_date": "",
+      "exit_date": "",
+      "selected_count": 0,
+      "active_target_count": 35,
+      "eligible_count": 33,
+      "risk_eligible_count": 26,
+      "risk_reject_count": 7,
+      "market_breadth_pct": 57.58,
+      "portfolio_return_pct": 0.0,
+      "benchmark_return_pct": -2.02,
+      "excess_return_pct": 2.02,
+      "risk_off_reason": "rsi_oversold signal stocks 2 < top_n 3",
+      "top_symbols": []
+    },
+    {
+      "as_of_date": "2024-03-29",
+      "entry_date": "",
+      "exit_date": "",
+      "selected_count": 0,
+      "active_target_count": 36,
+      "eligible_count": 34,
+      "risk_eligible_count": 31,
+      "risk_reject_count": 3,
+      "market_breadth_pct": 47.06,
+      "portfolio_return_pct": 0.0,
+      "benchmark_return_pct": -7.57,
+      "excess_return_pct": 7.57,
+      "risk_off_reason": "rsi_oversold signal stocks 2 < top_n 3",
+      "top_symbols": []
+    },
+    {
+      "as_of_date": "2024-04-30",
+      "entry_date": "",
+      "exit_date": "",
+      "selected_count": 0,
+      "active_target_count": 37,
+      "eligible_count": 35,
+      "risk_eligible_count": 30,
+      "risk_reject_count": 5,
+      "market_breadth_pct": 45.71,
+      "portfolio_return_pct": 0.0,
+      "benchmark_return_pct": -3.93,
+      "excess_return_pct": 3.93,
+      "risk_off_reason": "rsi_oversold signal stocks 1 < top_n 3",
+      "top_symbols": []
+    },
+    {
+      "as_of_date": "2024-05-31",
+      "entry_date": "",
+      "exit_date": "",
+      "selected_count": 0,
+      "active_target_count": 38,
+      "eligible_count": 36,
+      "risk_eligible_count": 32,
+      "risk_reject_count": 4,
+      "market_breadth_pct": 30.56,
+      "portfolio_return_pct": 0.0,
+      "benchmark_return_pct": -6.24,
+      "excess_return_pct": 6.24,
+      "risk_off_reason": "market_breadth 30.56% < 40.0%",
+      "top_symbols": []
+    },
+    {
+      "as_of_date": "2024-06-28",
+      "entry_date": "",
+      "exit_date": "",
+      "selected_count": 0,
+      "active_target_count": 40,
+      "eligible_count": 38,
+      "risk_eligible_count": 32,
+      "risk_reject_count": 6,
+      "market_breadth_pct": 23.68,
+      "portfolio_return_pct": 0.0,
+      "benchmark_return_pct": -7.73,
+      "excess_return_pct": 7.73,
+      "risk_off_reason": "market_breadth 23.68% < 40.0%",
+      "top_symbols": []
+    },
+    {
+      "as_of_date": "2024-07-31",
+      "entry_date": "",
+      "exit_date": "",
+      "selected_count": 0,
+      "active_target_count": 41,
+      "eligible_count": 38,
+      "risk_eligible_count": 34,
+      "risk_reject_count": 4,
+      "market_breadth_pct": 7.89,
+      "portfolio_return_pct": 0.0,
+      "benchmark_return_pct": -11.35,
+      "excess_return_pct": 11.35,
+      "risk_off_reason": "market_breadth 7.89% < 40.0%",
+      "top_symbols": []
+    },
+    {
+      "as_of_date": "2024-08-30",
+      "entry_date": "",
+      "exit_date": "",
+      "selected_count": 0,
+      "active_target_count": 41,
+      "eligible_count": 38,
+      "risk_eligible_count": 32,
+      "risk_reject_count": 6,
+      "market_breadth_pct": 5.26,
+      "portfolio_return_pct": 0.0,
+      "benchmark_return_pct": -11.32,
+      "excess_return_pct": 11.32,
+      "risk_off_reason": "market_breadth 5.26% < 40.0%",
+      "top_symbols": []
+    },
+    {
+      "as_of_date": "2024-09-30",
+      "entry_date": "",
+      "exit_date": "",
+      "selected_count": 0,
+      "active_target_count": 41,
+      "eligible_count": 38,
+      "risk_eligible_count": 30,
+      "risk_reject_count": 8,
+      "market_breadth_pct": 5.26,
+      "portfolio_return_pct": 0.0,
+      "benchmark_return_pct": -8.42,
+      "excess_return_pct": 8.42,
+      "risk_off_reason": "market_breadth 5.26% < 40.0%",
+      "top_symbols": []
+    },
+    {
+      "as_of_date": "2024-10-31",
+      "entry_date": "",
+      "exit_date": "",
+      "selected_count": 0,
+      "active_target_count": 41,
+      "eligible_count": 38,
+      "risk_eligible_count": 34,
+      "risk_reject_count": 4,
+      "market_breadth_pct": 7.89,
+      "portfolio_return_pct": 0.0,
+      "benchmark_return_pct": -6.39,
+      "excess_return_pct": 6.39,
+      "risk_off_reason": "market_breadth 7.89% < 40.0%",
+      "top_symbols": []
+    },
+    {
+      "as_of_date": "2024-11-29",
+      "entry_date": "",
+      "exit_date": "",
+      "selected_count": 0,
+      "active_target_count": 41,
+      "eligible_count": 39,
+      "risk_eligible_count": 34,
+      "risk_reject_count": 5,
+      "market_breadth_pct": 12.82,
+      "portfolio_return_pct": 0.0,
+      "benchmark_return_pct": -6.91,
+      "excess_return_pct": 6.91,
+      "risk_off_reason": "market_breadth 12.82% < 40.0%",
+      "top_symbols": []
+    },
+    {
+      "as_of_date": "2024-12-30",
+      "entry_date": "",
+      "exit_date": "",
+      "selected_count": 0,
+      "active_target_count": 41,
+      "eligible_count": 39,
+      "risk_eligible_count": 32,
+      "risk_reject_count": 7,
+      "market_breadth_pct": 12.82,
+      "portfolio_return_pct": 0.0,
+      "benchmark_return_pct": 17.05,
+      "excess_return_pct": -17.05,
+      "risk_off_reason": "market_breadth 12.82% < 40.0%",
+      "top_symbols": []
+    }
+  ],
+  "equity_curve": [
+    {
+      "date": "2024-04-16",
+      "equity": 1.010621,
+      "benchmark_equity": 1.07982,
+      "period_return_pct": 1.06,
+      "benchmark_return_pct": 7.98
+    },
+    {
+      "date": "2024-02-29",
+      "equity": 1.010621,
+      "benchmark_equity": 1.057961,
+      "period_return_pct": 0.0,
+      "benchmark_return_pct": -2.02,
+      "risk_off_reason": "rsi_oversold signal stocks 2 < top_n 3"
+    },
+    {
+      "date": "2024-03-29",
+      "equity": 1.010621,
+      "benchmark_equity": 0.977865,
+      "period_return_pct": 0.0,
+      "benchmark_return_pct": -7.57,
+      "risk_off_reason": "rsi_oversold signal stocks 2 < top_n 3"
+    },
+    {
+      "date": "2024-04-30",
+      "equity": 1.010621,
+      "benchmark_equity": 0.939402,
+      "period_return_pct": 0.0,
+      "benchmark_return_pct": -3.93,
+      "risk_off_reason": "rsi_oversold signal stocks 1 < top_n 3"
+    },
+    {
+      "date": "2024-05-31",
+      "equity": 1.010621,
+      "benchmark_equity": 0.880804,
+      "period_return_pct": 0.0,
+      "benchmark_return_pct": -6.24,
+      "risk_off_reason": "market_breadth 30.56% < 40.0%"
+    },
+    {
+      "date": "2024-06-28",
+      "equity": 1.010621,
+      "benchmark_equity": 0.812755,
+      "period_return_pct": 0.0,
+      "benchmark_return_pct": -7.73,
+      "risk_off_reason": "market_breadth 23.68% < 40.0%"
+    },
+    {
+      "date": "2024-07-31",
+      "equity": 1.010621,
+      "benchmark_equity": 0.720485,
+      "period_return_pct": 0.0,
+      "benchmark_return_pct": -11.35,
+      "risk_off_reason": "market_breadth 7.89% < 40.0%"
+    },
+    {
+      "date": "2024-08-30",
+      "equity": 1.010621,
+      "benchmark_equity": 0.638958,
+      "period_return_pct": 0.0,
+      "benchmark_return_pct": -11.32,
+      "risk_off_reason": "market_breadth 5.26% < 40.0%"
+    },
+    {
+      "date": "2024-09-30",
+      "equity": 1.010621,
+      "benchmark_equity": 0.585142,
+      "period_return_pct": 0.0,
+      "benchmark_return_pct": -8.42,
+      "risk_off_reason": "market_breadth 5.26% < 40.0%"
+    },
+    {
+      "date": "2024-10-31",
+      "equity": 1.010621,
+      "benchmark_equity": 0.547774,
+      "period_return_pct": 0.0,
+      "benchmark_return_pct": -6.39,
+      "risk_off_reason": "market_breadth 7.89% < 40.0%"
+    },
+    {
+      "date": "2024-11-29",
+      "equity": 1.010621,
+      "benchmark_equity": 0.509917,
+      "period_return_pct": 0.0,
+      "benchmark_return_pct": -6.91,
+      "risk_off_reason": "market_breadth 12.82% < 40.0%"
+    },
+    {
+      "date": "2024-12-30",
+      "equity": 1.010621,
+      "benchmark_equity": 0.596834,
+      "period_return_pct": 0.0,
+      "benchmark_return_pct": 17.05,
+      "risk_off_reason": "market_breadth 12.82% < 40.0%"
+    }
+  ],
+  "risk": {
+    "filters": {
+      "min_avg_trading_value": 0.0,
+      "position_value_krw": 10000000.0,
+      "max_position_pct_avg_trading_value": 5.0,
+      "max_volatility_20d": 1.2,
+      "max_return_5d": 0.35,
+      "max_return_20d": 0.9,
+      "min_trend_150d": -1.0,
+      "min_market_breadth_pct": 40.0
+    },
+    "reject_counts": {
+      "high_volatility": 21,
+      "overheated_20d": 1,
+      "insufficient_liquidity_capacity": 43
+    }
+  },
+  "execution": {
+    "exit_rules": {
+      "stop_loss_pct": 0.0,
+      "take_profit_pct": 0.0,
+      "trailing_stop_pct": 15.0
+    },
+    "costs": {
+      "transaction_cost_bps": 15.0,
+      "slippage_bps": 5.0,
+      "market_impact_bps": 5.0,
+      "round_trip_cost_bps": 50.0
+    },
+    "exit_counts": {
+      "trailing_stop": 3
+    },
+    "same_day_ohlc_policy": "stop_or_trailing_stop_before_take_profit"
+  },
+  "artifacts": {
+    "result_json": "experiment_results/backtesting/ai_strategy_comparison/technical_long_runs_2023_2024/bt-ai-2024-rsi_oversold-m-top3-h60.json"
+  },
+  "warnings": [
+    "20240229: rsi_oversold signal stocks 2 < top_n 3",
+    "20240329: rsi_oversold signal stocks 2 < top_n 3",
+    "20240430: rsi_oversold signal stocks 1 < top_n 3",
+    "20240531: market_breadth 30.56% < 40.0%",
+    "20240628: market_breadth 23.68% < 40.0%",
+    "20240731: market_breadth 7.89% < 40.0%",
+    "20240830: market_breadth 5.26% < 40.0%",
+    "20240930: market_breadth 5.26% < 40.0%",
+    "20241031: market_breadth 7.89% < 40.0%",
+    "20241129: market_breadth 12.82% < 40.0%",
+    "20241230: market_breadth 12.82% < 40.0%",
+    "future returns are used only for evaluation after each as_of_date signal.",
+    "selection uses deterministic price/document features, not the full LLM ThemeLeaderOrchestrator.",
+    "theme_membership may be inferred from local corpus evidence unless an official historical source is supplied."
+  ],
+  "metadata": {
+    "generated_at": "2026-05-19T21:18:57.833656",
+    "data_dir": "data",
+    "target_count": 50,
+    "membership_count": 50,
+    "point_in_time_universe": true,
+    "membership_sources": [
+      "local_corpus_inferred"
+    ],
+    "price_stock_count": 50,
+    "document_signal_count": 30497,
+    "signal_skip_counts": {
+      "insufficient_signal": 3
+    }
+  }
+}
