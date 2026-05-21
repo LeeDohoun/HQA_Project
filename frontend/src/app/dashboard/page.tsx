@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { analysisApi, authApi, chartApi, stockApi, tradingApi } from "@/lib/api";
 import { StatusPill } from "@/components/common/status-pill";
+import { TradingViewChart } from "@/components/common/tradingview-chart";
 import type {
   AnalysisMode,
   AnalysisTaskResponse,
@@ -17,7 +18,20 @@ import type {
 
 type WorkspaceTab = "analysis" | "order";
 type OrderSide = "buy" | "sell";
-type ChartTimeframe = "1m" | "10m";
+type ChartTimeframe = "1d" | "1w" | "1M";
+
+const TIMEFRAME_TABS: Array<{ value: ChartTimeframe; label: string }> = [
+  { value: "1d", label: "일봉" },
+  { value: "1w", label: "주봉" },
+  { value: "1M", label: "월봉" }
+];
+
+// timeframe별로 한 번에 가져올 캔들 개수. 봉이 굵을수록 줄임.
+const TIMEFRAME_COUNT: Record<ChartTimeframe, number> = {
+  "1d": 200,
+  "1w": 120,
+  "1M": 60
+};
 
 const RECENT_STORAGE_KEY = "hqa.dashboard.recent";
 const RECENT_LIMIT = 8;
@@ -45,14 +59,6 @@ function formatSignedRate(value: number | null | undefined) {
   if (value > 0) return `+${value.toFixed(2)}%`;
   if (value < 0) return `${value.toFixed(2)}%`;
   return "0.00%";
-}
-
-function formatChartTime(time: number) {
-  return new Intl.DateTimeFormat("ko-KR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false
-  }).format(new Date(time));
 }
 
 function loadRecent(): StockSearchResult[] {
@@ -96,11 +102,16 @@ export default function DashboardPage() {
   const [buyQuantity, setBuyQuantity] = useState("1");
   const [buyPrice, setBuyPrice] = useState("");
   const [orderSide, setOrderSide] = useState<OrderSide>("buy");
-  const [timeframe, setTimeframe] = useState<ChartTimeframe>("1m");
+  const [timeframe, setTimeframe] = useState<ChartTimeframe>("1d");
   const [price, setPrice] = useState<RealtimePrice | null>(null);
   const [candles, setCandles] = useState<Candle[]>([]);
   const [loadingChart, setLoadingChart] = useState(false);
   const [chartError, setChartError] = useState("");
+  // 페이지네이션 상태: 더 가져올 게 있는지 + 동시에 두 번 안 부르도록 잠금.
+  const [hasMoreCandles, setHasMoreCandles] = useState(false);
+  const loadingMoreRef = useRef(false);
+  // (종목, timeframe)이 바뀌면 진행 중이던 prepend의 결과를 버리기 위한 토큰.
+  const seriesTokenRef = useRef(0);
 
   useEffect(() => {
     setRecent(loadRecent());
@@ -143,6 +154,11 @@ export default function DashboardPage() {
 
   useEffect(() => {
     let active = true;
+    // 종목/timeframe이 바뀔 때마다 토큰을 증가시켜, 진행 중이던 prepend의 결과를 무시할 수 있게 한다.
+    const myToken = ++seriesTokenRef.current;
+    // 새 시드 로드 시작 — 진행 중인 prepend 잠금을 해제하고 hasMore도 초기화.
+    loadingMoreRef.current = false;
+    setHasMoreCandles(false);
 
     async function loadMarketData() {
       if (!selected) {
@@ -158,25 +174,74 @@ export default function DashboardPage() {
       try {
         const [priceResponse, candleResponse] = await Promise.all([
           stockApi.price(selected.code),
-          chartApi.history(selected.code, timeframe, timeframe === "1m" ? 120 : 80)
+          chartApi.history(selected.code, timeframe, TIMEFRAME_COUNT[timeframe])
         ]);
 
-        if (!active) return;
+        if (!active || seriesTokenRef.current !== myToken) return;
         setPrice(priceResponse);
         setCandles(candleResponse.candles);
+        setHasMoreCandles(candleResponse.hasMore);
       } catch (error) {
-        if (!active) return;
+        if (!active || seriesTokenRef.current !== myToken) return;
         setPrice(null);
         setCandles([]);
+        setHasMoreCandles(false);
         setChartError(error instanceof Error ? error.message : "차트 데이터를 불러오지 못했습니다.");
       } finally {
-        if (active) setLoadingChart(false);
+        if (active && seriesTokenRef.current === myToken) setLoadingChart(false);
       }
     }
 
     void loadMarketData();
     return () => { active = false; };
   }, [selected, timeframe]);
+
+  // 과거 봉을 페이지네이션으로 prepend.
+  // 호출 조건은 TradingViewChart가 결정 (좌측 절반 진입). 여기서는 has_more / 잠금만 확인.
+  const loadMoreCandles = useCallback(async () => {
+    if (!selected) return;
+    if (loadingMoreRef.current) return;
+    if (!hasMoreCandles) return;
+    if (candles.length === 0) return;
+
+    const myToken = seriesTokenRef.current;
+    const before = candles[0].time; // 가장 오래된 캔들 이전을 요청
+    const currentSelected = selected;
+    const currentTimeframe = timeframe;
+
+    loadingMoreRef.current = true;
+    try {
+      const response = await chartApi.history(
+        currentSelected.code,
+        currentTimeframe,
+        TIMEFRAME_COUNT[currentTimeframe],
+        before
+      );
+      // 응답이 돌아오는 동안 종목/timeframe이 바뀌었으면 결과 폐기.
+      if (seriesTokenRef.current !== myToken) return;
+      if (response.candles.length === 0) {
+        setHasMoreCandles(false);
+        return;
+      }
+      setCandles((prev) => {
+        // 중복 제거: 새 페이지가 기존 가장 오래된 봉 시각 이상의 항목을 포함할 수 있음 (서버 페이지 경계).
+        const oldestExisting = prev[0]?.time ?? Number.POSITIVE_INFINITY;
+        const merged = [
+          ...response.candles.filter((c) => c.time < oldestExisting),
+          ...prev
+        ];
+        return merged;
+      });
+      setHasMoreCandles(response.hasMore);
+    } catch {
+      // prepend 실패는 silently swallow — 차트 자체는 사용 가능해야 함.
+      // 다음 트리거 때 다시 시도되도록 hasMore는 그대로 둔다.
+    } finally {
+      if (seriesTokenRef.current === myToken) {
+        loadingMoreRef.current = false;
+      }
+    }
+  }, [selected, timeframe, hasMoreCandles, candles]);
 
   function pickStock(stock: StockSearchResult) {
     setSelected(stock);
@@ -320,25 +385,6 @@ export default function DashboardPage() {
   const candleStats = useMemo(() => {
     if (candles.length === 0) return null;
     return candles[candles.length - 1];
-  }, [candles]);
-
-  const candleBars = useMemo(() => {
-    if (candles.length === 0) return [];
-
-    const visible = candles.slice(-48);
-    const high = Math.max(...visible.map((c) => c.high));
-    const low = Math.min(...visible.map((c) => c.low));
-    const range = Math.max(1, high - low);
-
-    return visible.map((candle) => ({
-      key: `${candle.time}`,
-      label: formatChartTime(candle.time),
-      bodyBottom: ((Math.min(candle.open, candle.close) - low) / range) * 100,
-      bodyHeight: Math.max((Math.abs(candle.close - candle.open) / range) * 100, 2),
-      wickBottom: ((candle.low - low) / range) * 100,
-      wickHeight: Math.max(((candle.high - candle.low) / range) * 100, 4),
-      rising: candle.close >= candle.open
-    }));
   }, [candles]);
 
   const priceChange = price?.change ?? 0;
@@ -490,20 +536,16 @@ export default function DashboardPage() {
                   <p className="chart-pane-code mono">{selected.code} · {selected.market}</p>
                 </div>
                 <div className="timeframe-switch">
-                  <button
-                    className={timeframe === "1m" ? "tab-chip active" : "tab-chip"}
-                    onClick={() => setTimeframe("1m")}
-                    type="button"
-                  >
-                    1분
-                  </button>
-                  <button
-                    className={timeframe === "10m" ? "tab-chip active" : "tab-chip"}
-                    onClick={() => setTimeframe("10m")}
-                    type="button"
-                  >
-                    10분
-                  </button>
+                  {TIMEFRAME_TABS.map((tab) => (
+                    <button
+                      key={tab.value}
+                      className={timeframe === tab.value ? "tab-chip active" : "tab-chip"}
+                      onClick={() => setTimeframe(tab.value)}
+                      type="button"
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
                 </div>
               </div>
 
@@ -520,24 +562,15 @@ export default function DashboardPage() {
               <div className="chart-canvas chart-canvas-large">
                 {loadingChart ? <div className="chart-empty">로딩 중...</div> : null}
                 {!loadingChart && chartError ? <div className="chart-empty">{chartError}</div> : null}
-                {!loadingChart && !chartError && candleBars.length === 0 ? (
+                {!loadingChart && !chartError && candles.length === 0 ? (
                   <div className="chart-empty">차트 데이터 없음</div>
                 ) : null}
-                {!loadingChart && !chartError && candleBars.length > 0 ? (
-                  <div className="candle-bars">
-                    {candleBars.map((bar) => (
-                      <div className="candle-bar" key={bar.key} title={bar.label}>
-                        <span
-                          className={bar.rising ? "candle-wick rising" : "candle-wick falling"}
-                          style={{ bottom: `${bar.wickBottom}%`, height: `${bar.wickHeight}%` }}
-                        />
-                        <span
-                          className={bar.rising ? "candle-body rising" : "candle-body falling"}
-                          style={{ bottom: `${bar.bodyBottom}%`, height: `${bar.bodyHeight}%` }}
-                        />
-                      </div>
-                    ))}
-                  </div>
+                {!loadingChart && !chartError && candles.length > 0 ? (
+                  <TradingViewChart
+                    candles={candles}
+                    timeframe={timeframe}
+                    onScrolledPastHalfLeft={loadMoreCandles}
+                  />
                 ) : null}
               </div>
 

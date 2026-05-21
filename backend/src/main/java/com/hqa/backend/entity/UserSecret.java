@@ -19,9 +19,15 @@ public class UserSecret {
     @Id
     private String id;
 
+    // KIS credentials are stored AES-GCM encrypted (see SecretCipher). The
+    // Base64-encoded ciphertext can exceed varchar(255), so map these to TEXT.
+    @Column(columnDefinition = "text")
     private String kisAppKey;
+    @Column(columnDefinition = "text")
     private String kisAppSecret;
+    @Column(columnDefinition = "text")
     private String kisAccountNo;
+    @Column(columnDefinition = "text")
     private String kisAccountProductCode;
     // columnDefinition으로 NOT NULL + DEFAULT를 명시해야, 기존 행이 있는 테이블에
     // 이 컬럼을 새로 추가하는 ALTER가 실패하지 않음 (Hibernate ddl-auto: update 한계).
