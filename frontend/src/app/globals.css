@@ -222,6 +222,10 @@ button {
   padding: 40px 0 80px;
 }
 
+.page-shell-wide {
+  width: min(1180px, calc(100vw - 32px));
+}
+
 .page-shell-narrow {
   width: min(560px, calc(100vw - 32px));
   margin: 0 auto;
@@ -1837,6 +1841,314 @@ button {
   box-shadow: var(--shadow-sm);
 }
 
+/* ================================================
+   BACKTEST REPORT
+   ================================================ */
+
+.backtest-page {
+  display: grid;
+  gap: 18px;
+}
+
+.backtest-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.backtest-metric-card {
+  min-height: 126px;
+  display: grid;
+  align-content: space-between;
+  gap: 10px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
+}
+
+.backtest-metric-card span {
+  color: var(--muted-2);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.backtest-metric-card strong {
+  color: var(--text-bright);
+  font-size: 1.55rem;
+  line-height: 1;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+
+.backtest-metric-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.backtest-conclusion {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 22px;
+  align-items: center;
+}
+
+.backtest-conclusion h2,
+.panel-head h2 {
+  margin: 0;
+  color: var(--text-bright);
+  font-size: 1rem;
+  font-weight: 850;
+}
+
+.backtest-conclusion p,
+.panel-head p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.65;
+}
+
+.panel-head {
+  margin-bottom: 18px;
+}
+
+.verdict-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.verdict-bar {
+  display: grid;
+  gap: 7px;
+}
+
+.verdict-bar > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted-2);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.verdict-bar strong {
+  color: var(--text-bright);
+  font-variant-numeric: tabular-nums;
+}
+
+.verdict-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: var(--r-pill);
+  background: var(--line);
+}
+
+.verdict-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--r-pill);
+}
+
+.verdict-fill-good { background: var(--good); }
+.verdict-fill-warn { background: var(--warn); }
+.verdict-fill-bad  { background: var(--bad); }
+
+.backtest-chart-block {
+  display: grid;
+  gap: 14px;
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  align-items: center;
+}
+
+.chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted-2);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.chart-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.backtest-chart-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 4px;
+}
+
+.backtest-chart {
+  display: block;
+  min-width: 840px;
+}
+
+.backtest-chart line {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.backtest-chart .chart-zero {
+  stroke: var(--line-2);
+  stroke-width: 1.5;
+}
+
+.backtest-chart text {
+  fill: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.backtest-chart .chart-x-label {
+  fill: var(--text-bright);
+}
+
+.backtest-chart .chart-x-sub {
+  fill: var(--muted);
+  font-size: 10px;
+}
+
+.backtest-table-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.backtest-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.segmented-control {
+  display: inline-flex;
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+
+.segmented-control button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted-2);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.segmented-control button.active {
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: var(--shadow-xs);
+}
+
+.backtest-table-wrap {
+  width: 100%;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+
+.backtest-table {
+  width: 100%;
+  min-width: 920px;
+  border-collapse: collapse;
+  background: var(--surface);
+}
+
+.backtest-table th,
+.backtest-table td {
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+  font-size: 0.84rem;
+}
+
+.backtest-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-2);
+  color: var(--muted-2);
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+
+.backtest-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.backtest-table strong {
+  display: block;
+  color: var(--text-bright);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.backtest-table span {
+  display: inline-block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.backtest-table-dense th,
+.backtest-table-dense td {
+  padding: 11px 12px;
+  white-space: nowrap;
+}
+
+.mini-badge {
+  margin-left: 0;
+  padding: 2px 7px;
+  border-radius: var(--r-pill);
+  background: var(--accent-soft);
+  color: var(--accent) !important;
+  font-size: 0.68rem !important;
+  font-weight: 850;
+}
+
+.value-good { color: var(--good) !important; font-weight: 800; }
+.value-bad  { color: var(--bad) !important; font-weight: 800; }
+
+.markdown-report {
+  max-height: 560px;
+  overflow: auto;
+  margin: 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.82rem;
+  line-height: 1.65;
+}
+
 .fieldset {
   border: 1px solid var(--line);
   border-radius: var(--r-md);
@@ -1921,4 +2233,39 @@ button {
 
   .wiz-card { padding: 32px 22px 24px; }
   .auth-card { padding: 32px 22px; }
+
+  .backtest-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .backtest-conclusion {
+    grid-template-columns: 1fr;
+  }
+
+  .backtest-table-head {
+    display: grid;
+  }
+
+  .backtest-filter-row {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 640px) {
+  .backtest-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .backtest-metric-card {
+    min-height: 108px;
+  }
+
+  .segmented-control {
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .segmented-control button {
+    flex: 1 0 auto;
+  }
 }

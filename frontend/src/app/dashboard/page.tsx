@@ -428,6 +428,9 @@ export default function DashboardPage() {
           <Link className="button-ghost" href="/settings/kis">
             KIS 설정
           </Link>
+          <Link className="button-ghost" href="/backtesting/ai">
+            백테스트
+          </Link>
           <Link className="button-ghost" href="/onboarding/preference">
             투자 성향
           </Link>
