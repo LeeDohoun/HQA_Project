@@ -35,8 +35,8 @@ export default function LoginPage() {
         </div>
 
         <div>
-          <h1 className="auth-title">다시 오신 걸<br />환영해요 👋</h1>
-          <p className="auth-sub">로그인하고 오늘의 분석을 이어가 보세요.</p>
+          <h1 className="auth-title">로그인</h1>
+          <p className="auth-sub">아이디와 비밀번호를 입력해 주세요.</p>
         </div>
 
         <form className="auth-form" onSubmit={onSubmit}>

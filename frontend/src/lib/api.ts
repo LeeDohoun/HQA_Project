@@ -415,12 +415,13 @@ export const stockApi = {
 };
 
 export const chartApi = {
-  history: async (stockCode: string, timeframe: string, count = 120) =>
-    mapCandleHistory(
-      await api<CandleHistoryWire>(
-        `/api/v1/charts/${stockCode}/history?timeframe=${encodeURIComponent(timeframe)}&count=${count}`
-      )
-    )
+  history: async (stockCode: string, timeframe: string, count = 120, before?: number) => {
+    const params = new URLSearchParams({ timeframe, count: String(count) });
+    if (before != null) params.set("before", String(before));
+    return mapCandleHistory(
+      await api<CandleHistoryWire>(`/api/v1/charts/${stockCode}/history?${params.toString()}`)
+    );
+  }
 };
 
 export type BulkAnalysisFailure = {
