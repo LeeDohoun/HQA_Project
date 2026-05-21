@@ -17,13 +17,14 @@ logger = logging.getLogger(__name__)
 # ==========================================
 
 DEFAULT_PROVIDER = "ollama"
-SUPPORTED_PROVIDERS = {"ollama", "gemini", "mock"}
+SUPPORTED_PROVIDERS = {"ollama", "gemini", "anthropic", "mock"}
 PROVIDER_ALIASES = {
     "google": "gemini",
     "google_ai": "gemini",
     "google-ai": "gemini",
     "google_genai": "gemini",
     "google-genai": "gemini",
+    "claude": "anthropic",
     "test": "mock",
     "fake": "mock",
 }
@@ -36,6 +37,12 @@ DEFAULT_OLLAMA_VISION_MODEL = "llava:13b"
 DEFAULT_GEMINI_INSTRUCT_MODEL = "gemini-2.5-flash-lite"
 DEFAULT_GEMINI_THINKING_MODEL = "gemini-2.5-pro"
 DEFAULT_GEMINI_VISION_MODEL = "gemini-2.5-flash"
+
+# 모든 역할에 Sonnet 4.5 단일 모델을 기본으로 사용한다.
+# Claude는 비전이 내장돼 있어 instruct/thinking/vision을 같은 모델로 처리해도 무방.
+DEFAULT_ANTHROPIC_INSTRUCT_MODEL = "claude-sonnet-4-5"
+DEFAULT_ANTHROPIC_THINKING_MODEL = "claude-sonnet-4-5"
+DEFAULT_ANTHROPIC_VISION_MODEL = "claude-sonnet-4-5"
 
 
 def _env(name: str, default: str = "", *, allow_blank: bool = False) -> str:
@@ -52,6 +59,15 @@ def _env(name: str, default: str = "", *, allow_blank: bool = False) -> str:
 def _get_google_api_key() -> str:
     return _env("GOOGLE_API_KEY", "", allow_blank=True) or _env(
         "GEMINI_API_KEY",
+        "",
+        allow_blank=True,
+    )
+
+
+def _get_anthropic_api_key() -> str:
+    # ANTHROPIC_API_KEY가 표준. CLAUDE_API_KEY도 허용.
+    return _env("ANTHROPIC_API_KEY", "", allow_blank=True) or _env(
+        "CLAUDE_API_KEY",
         "",
         allow_blank=True,
     )
@@ -81,6 +97,17 @@ GEMINI_THINKING_VALIDATOR_MODEL = _env(
 )
 GEMINI_VISION_MODEL = _env("GEMINI_VISION_MODEL", DEFAULT_GEMINI_VISION_MODEL)
 
+# Anthropic 설정
+ANTHROPIC_API_KEY = _get_anthropic_api_key()
+ANTHROPIC_INSTRUCT_MODEL = _env("ANTHROPIC_INSTRUCT_MODEL", DEFAULT_ANTHROPIC_INSTRUCT_MODEL)
+ANTHROPIC_THINKING_MODEL = _env("ANTHROPIC_THINKING_MODEL", DEFAULT_ANTHROPIC_THINKING_MODEL)
+ANTHROPIC_THINKING_VALIDATOR_MODEL = _env(
+    "ANTHROPIC_THINKING_VALIDATOR_MODEL",
+    "",
+    allow_blank=True,
+)
+ANTHROPIC_VISION_MODEL = _env("ANTHROPIC_VISION_MODEL", DEFAULT_ANTHROPIC_VISION_MODEL)
+
 
 @dataclass(frozen=True)
 class LLMConfig:
@@ -98,10 +125,20 @@ class LLMConfig:
     gemini_thinking_model: str
     gemini_thinking_validator_model: str
     gemini_vision_model: str
+    anthropic_api_key: str
+    anthropic_instruct_model: str
+    anthropic_thinking_model: str
+    anthropic_thinking_validator_model: str
+    anthropic_vision_model: str
 
     @property
     def api_key_set(self) -> bool:
-        return bool(self.google_api_key)
+        # 현재 활성 provider 기준 API 키가 있는지.
+        if self.provider == "gemini":
+            return bool(self.google_api_key)
+        if self.provider == "anthropic":
+            return bool(self.anthropic_api_key)
+        return True
 
 
 _WARNED_FALLBACKS: set[str] = set()
@@ -119,6 +156,7 @@ def get_llm_config() -> LLMConfig:
     raw_provider = _env("LLM_PROVIDER", DEFAULT_PROVIDER).lower().strip()
     requested_provider = PROVIDER_ALIASES.get(raw_provider, raw_provider)
     google_api_key = _get_google_api_key()
+    anthropic_api_key = _get_anthropic_api_key()
     provider = requested_provider
     fallback_reason = ""
 
@@ -136,6 +174,13 @@ def get_llm_config() -> LLMConfig:
         _warn_once(
             fallback_reason,
             "LLM_PROVIDER=gemini이지만 GOOGLE_API_KEY/GEMINI_API_KEY가 미설정되어 Ollama로 폴백합니다.",
+        )
+    elif requested_provider == "anthropic" and not anthropic_api_key:
+        provider = DEFAULT_PROVIDER
+        fallback_reason = "missing_anthropic_api_key"
+        _warn_once(
+            fallback_reason,
+            "LLM_PROVIDER=anthropic이지만 ANTHROPIC_API_KEY가 미설정되어 Ollama로 폴백합니다.",
         )
 
     return LLMConfig(
@@ -161,6 +206,15 @@ def get_llm_config() -> LLMConfig:
             allow_blank=True,
         ),
         gemini_vision_model=_env("GEMINI_VISION_MODEL", DEFAULT_GEMINI_VISION_MODEL),
+        anthropic_api_key=anthropic_api_key,
+        anthropic_instruct_model=_env("ANTHROPIC_INSTRUCT_MODEL", DEFAULT_ANTHROPIC_INSTRUCT_MODEL),
+        anthropic_thinking_model=_env("ANTHROPIC_THINKING_MODEL", DEFAULT_ANTHROPIC_THINKING_MODEL),
+        anthropic_thinking_validator_model=_env(
+            "ANTHROPIC_THINKING_VALIDATOR_MODEL",
+            "",
+            allow_blank=True,
+        ),
+        anthropic_vision_model=_env("ANTHROPIC_VISION_MODEL", DEFAULT_ANTHROPIC_VISION_MODEL),
     )
 
 
@@ -257,6 +311,35 @@ def _create_gemini_llm(
 
 
 # ==========================================
+# Anthropic (Claude) LLM 생성
+# ==========================================
+
+def _create_anthropic_llm(
+    model: str,
+    temperature: float = 0.3,
+    anthropic_api_key: Optional[str] = None,
+    **kwargs: Any,
+) -> Any:
+    """Anthropic Claude ChatModel 생성"""
+    try:
+        from langchain_anthropic import ChatAnthropic
+    except ImportError:
+        raise ImportError(
+            "LLM_PROVIDER=anthropic 사용 시 langchain-anthropic 패키지가 필요합니다.\n"
+            "  pip install langchain-anthropic"
+        )
+
+    # Claude 응답 토큰 상한 — 분석 응답이 잘리지 않도록 넉넉히.
+    return ChatAnthropic(
+        model=model,
+        anthropic_api_key=anthropic_api_key or get_llm_config().anthropic_api_key,
+        temperature=temperature,
+        max_tokens=kwargs.pop("max_tokens", 4096),
+        **kwargs,
+    )
+
+
+# ==========================================
 # 통합 팩토리 함수 (에이전트가 호출하는 인터페이스)
 # ==========================================
 
@@ -283,6 +366,13 @@ def get_instruct_llm() -> Any:
             google_api_key=config.google_api_key,
         )
         logger.debug("🤖 Instruct LLM: Gemini (%s)", config.gemini_instruct_model)
+    elif provider == "anthropic":
+        llm = _create_anthropic_llm(
+            config.anthropic_instruct_model,
+            temperature=0.3,
+            anthropic_api_key=config.anthropic_api_key,
+        )
+        logger.debug("🤖 Instruct LLM: Anthropic (%s)", config.anthropic_instruct_model)
     else:
         llm = _create_ollama_llm(
             config.ollama_instruct_model,
@@ -318,6 +408,13 @@ def get_thinking_llm() -> Any:
             google_api_key=config.google_api_key,
         )
         logger.debug("🧠 Thinking LLM: Gemini (%s)", config.gemini_thinking_model)
+    elif provider == "anthropic":
+        llm = _create_anthropic_llm(
+            config.anthropic_thinking_model,
+            temperature=0.5,
+            anthropic_api_key=config.anthropic_api_key,
+        )
+        logger.debug("🧠 Thinking LLM: Anthropic (%s)", config.anthropic_thinking_model)
     else:
         llm = _create_ollama_llm(
             config.ollama_thinking_model,
@@ -354,6 +451,20 @@ def get_thinking_validator_llm() -> Optional[Any]:
         logger.debug(
             "🧪 Thinking Validator LLM: Gemini (%s)",
             config.gemini_thinking_validator_model,
+        )
+        return llm
+
+    if provider == "anthropic":
+        if not config.anthropic_thinking_validator_model:
+            return None
+        llm = _create_anthropic_llm(
+            config.anthropic_thinking_validator_model,
+            temperature=0.7,
+            anthropic_api_key=config.anthropic_api_key,
+        )
+        logger.debug(
+            "🧪 Thinking Validator LLM: Anthropic (%s)",
+            config.anthropic_thinking_validator_model,
         )
         return llm
 
@@ -396,6 +507,13 @@ def get_vision_llm() -> Any:
             google_api_key=config.google_api_key,
         )
         logger.debug("👁️ Vision LLM: Gemini (%s)", config.gemini_vision_model)
+    elif provider == "anthropic":
+        llm = _create_anthropic_llm(
+            config.anthropic_vision_model,
+            temperature=0.3,
+            anthropic_api_key=config.anthropic_api_key,
+        )
+        logger.debug("👁️ Vision LLM: Anthropic (%s)", config.anthropic_vision_model)
     else:
         llm = _create_ollama_llm(
             config.ollama_vision_model,
@@ -447,6 +565,16 @@ def get_llm_info() -> Dict[str, Any]:
             "thinking_model": config.gemini_thinking_model,
             "thinking_validator_model": config.gemini_thinking_validator_model,
             "vision_model": config.gemini_vision_model,
+            "api_key_set": config.api_key_set,
+        })
+        return info
+
+    if provider == "anthropic":
+        info.update({
+            "instruct_model": config.anthropic_instruct_model,
+            "thinking_model": config.anthropic_thinking_model,
+            "thinking_validator_model": config.anthropic_thinking_validator_model,
+            "vision_model": config.anthropic_vision_model,
             "api_key_set": config.api_key_set,
         })
         return info
