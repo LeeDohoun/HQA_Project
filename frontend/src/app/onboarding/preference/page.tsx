@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { authApi } from "@/lib/api";
 import {
   investmentExperienceOptions,
@@ -86,9 +86,16 @@ const emptyKis: KisCredentials = {
 
 export default function PreferencePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialStep = searchParams.get("step");
+  const initialStepIdx = (() => {
+    if (!initialStep) return 0;
+    const idx = STEPS.indexOf(initialStep as StepKey);
+    return idx >= 0 ? idx : 0;
+  })();
   const [form, setForm] = useState<UserPreference>(defaultPreference);
   const [kis, setKis] = useState<KisCredentials>(emptyKis);
-  const [stepIdx, setStepIdx] = useState(0);
+  const [stepIdx, setStepIdx] = useState(initialStepIdx);
   const [direction, setDirection] = useState<"forward" | "back">("forward");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -409,11 +416,13 @@ function KisStep({
   const [showDetail, setShowDetail] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [verifyError, setVerifyError] = useState("");
-  const valid =
+  const [agreedDisclaimer, setAgreedDisclaimer] = useState(false);
+  const filled =
     value.kisAppKey.trim().length > 0 &&
     value.kisAppSecret.trim().length > 0 &&
     value.kisAccountNo.trim().length > 0 &&
     value.kisAccountProductCode.trim().length > 0;
+  const valid = filled && agreedDisclaimer;
 
   async function handleVerifyAndNext() {
     setVerifying(true);
@@ -573,6 +582,66 @@ function KisStep({
           onChange={(e) => onChange({ kisAccountProductCode: e.target.value })}
         />
       </div>
+
+      <div
+        className="wiz-explainer"
+        style={{
+          marginTop: 16,
+          background: "#fff7ed",
+          border: "1px solid #fdba74",
+          borderRadius: 12,
+          padding: 14
+        }}
+      >
+        <div className="wiz-explainer-row" style={{ alignItems: "flex-start" }}>
+          <span className="wiz-explainer-icon" aria-hidden>⚠️</span>
+          <div>
+            <p className="wiz-explainer-title" style={{ color: "#9a3412" }}>
+              자동매매 이용 전 꼭 읽어주세요
+            </p>
+            <p className="wiz-explainer-text" style={{ color: "#7c2d12" }}>
+              자동매매는 AI 분석 결과에 따라 <b>실제 계좌의 주문을 자동으로 전송</b>해요.
+              네트워크·시세 급변·KIS 서버 장애로 주문이 지연·실패할 수 있고, AI 예측은
+              미래 수익을 보장하지 않으며 원금 손실이 발생할 수 있어요. 책임은 이용자
+              본인에게 있다는 점을 확인해주세요.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <label
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 10,
+          marginTop: 12,
+          padding: "10px 12px",
+          border: "1px solid #e5e7eb",
+          borderRadius: 10,
+          cursor: "pointer",
+          fontSize: 14,
+          lineHeight: 1.5
+        }}
+      >
+        <input
+          type="checkbox"
+          checked={agreedDisclaimer}
+          onChange={(e) => setAgreedDisclaimer(e.target.checked)}
+          style={{ marginTop: 3, width: 16, height: 16, accentColor: "#2563eb" }}
+        />
+        <span>
+          <b>자동매매 면책 사항</b>을 확인했으며, 위 내용에 동의합니다.{" "}
+          <a
+            href="/disclaimer"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: "#2563eb", textDecoration: "underline" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            투자 면책 동의서 전문 보기 ↗
+          </a>
+        </span>
+      </label>
 
       {verifyError ? (
         <p className="error-text" role="alert">{verifyError}</p>
