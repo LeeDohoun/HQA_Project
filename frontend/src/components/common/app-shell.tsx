@@ -5,10 +5,11 @@ type AppShellProps = {
   title: string;
   subtitle?: string;
   actions?: ReactNode;
+  wide?: boolean;
   children: ReactNode;
 };
 
-export function AppShell({ title, subtitle, actions, children }: AppShellProps) {
+export function AppShell({ title, subtitle, actions, wide = false, children }: AppShellProps) {
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", flexDirection: "column" }}>
       <header className="topbar">
@@ -23,7 +24,7 @@ export function AppShell({ title, subtitle, actions, children }: AppShellProps) 
         {actions ? <div className="topbar-actions">{actions}</div> : null}
       </header>
 
-      <div className="page-shell anim-fade-up" style={{ flex: 1 }}>
+      <div className={wide ? "page-shell page-shell-wide anim-fade-up" : "page-shell anim-fade-up"} style={{ flex: 1 }}>
         <div className="hero">
           <div>
             <h1>{title}</h1>

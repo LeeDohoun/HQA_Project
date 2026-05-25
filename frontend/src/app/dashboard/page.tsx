@@ -636,6 +636,14 @@ export default function DashboardPage() {
           <div className="ed-nav-right">
             <button
               type="button"
+              className="ed-tlink"
+              style={{ fontSize: ".84rem" }}
+              onClick={() => router.push("/backtesting/ai")}
+            >
+              백테스트
+            </button>
+            <button
+              type="button"
               className={`ed-statuschip${autoTradeEnabled ? " ed-statuschip--on" : ""}`}
               onClick={handleAutoTrade}
             >
@@ -667,6 +675,7 @@ export default function DashboardPage() {
             onRefresh={() => { void loadBalance(); void loadOrders(); void loadRecentAnalyses(); void loadIndices(); }}
             onGoTab={setTab}
             onGoKis={() => router.push("/settings/kis")}
+            onGoBacktest={() => router.push("/backtesting/ai")}
             onSelectStock={(code) => router.push(`/stocks/${code}`)}
           />
         )}
@@ -1226,12 +1235,13 @@ function HomeTab(props: {
   onRefresh: () => void;
   onGoTab: (t: WorkspaceTab) => void;
   onGoKis: () => void;
+  onGoBacktest: () => void;
   onSelectStock: (code: string) => void;
 }) {
   const {
     user, preference, balance, balanceLoading, balanceError,
     ordersData, autoTradeEnabled, recentAnalyses, recentAnalysesLoading, indices,
-    onRefresh, onGoTab, onGoKis, onSelectStock
+    onRefresh, onGoTab, onGoKis, onGoBacktest, onSelectStock
   } = props;
 
   const kisConfigured = !!user?.kisConfigured;
@@ -1549,6 +1559,14 @@ function HomeTab(props: {
             <span className="ed-row-main">
               <span className="ed-row-name">내 자산 · 투자 성향</span>
               <span className="ed-row-meta">목표 · 위험 성향 관리</span>
+            </span>
+            <span className="ed-row-num"><span className="ed-row-val" style={{ fontSize: ".95rem", color: "var(--ink-3)" }}>→</span></span>
+          </button>
+          <button type="button" className="ed-row" onClick={onGoBacktest}>
+            <span className="ed-row-mk" style={{ fontFamily: "var(--sans)", fontSize: ".72rem", fontWeight: 800 }}>BT</span>
+            <span className="ed-row-main">
+              <span className="ed-row-name">AI 백테스트 결과</span>
+              <span className="ed-row-meta">전략 비교 보고서</span>
             </span>
             <span className="ed-row-num"><span className="ed-row-val" style={{ fontSize: ".95rem", color: "var(--ink-3)" }}>→</span></span>
           </button>

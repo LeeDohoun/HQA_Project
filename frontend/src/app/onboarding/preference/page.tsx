@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { authApi } from "@/lib/api";
 import {
@@ -85,6 +85,24 @@ const emptyKis: KisCredentials = {
 };
 
 export default function PreferencePage() {
+  return (
+    <Suspense fallback={<PreferenceLoading />}>
+      <PreferencePageContent />
+    </Suspense>
+  );
+}
+
+function PreferenceLoading() {
+  return (
+    <div className="wiz-wrap">
+      <div className="wiz-card" style={{ marginTop: 40, textAlign: "center" }}>
+        <p className="meta">불러오는 중...</p>
+      </div>
+    </div>
+  );
+}
+
+function PreferencePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialStep = searchParams.get("step");
@@ -157,13 +175,7 @@ export default function PreferencePage() {
   }
 
   if (loading) {
-    return (
-      <div className="wiz-wrap">
-        <div className="wiz-card" style={{ marginTop: 40, textAlign: "center" }}>
-          <p className="meta">불러오는 중...</p>
-        </div>
-      </div>
-    );
+    return <PreferenceLoading />;
   }
 
   return (
