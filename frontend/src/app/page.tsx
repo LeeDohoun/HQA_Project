@@ -6,10 +6,12 @@
    디자인은 /prototype 의 랜딩을 그대로 따름. CTA는 실제 라우트로 연결.
    ============================================================ */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode, SVGProps } from "react";
 import { useRouter } from "next/navigation";
 import { authApi } from "@/lib/api";
+import { loadAiBacktestComparison } from "@/lib/backtesting";
+import type { BacktestComparisonBundle } from "@/types/backtesting";
 
 /* ============================================================
    1. 디자인 시스템 (에디토리얼)
@@ -280,46 +282,6 @@ const MoonIcon = (p: IconProps) => (
    3. 타입 · 데이터
    ============================================================ */
 type Theme = "light" | "dark";
-type StrategyId = "stable" | "balanced" | "aggressive";
-
-interface Strategy {
-  id: StrategyId;
-  name: string;
-}
-const strategies: Strategy[] = [
-  { id: "stable", name: "안정형" },
-  { id: "balanced", name: "균형형" },
-  { id: "aggressive", name: "공격형" },
-];
-
-/* 백테스트 (2014.05–2024.05, 지수 100 기준) */
-const BT_BENCH = [100, 108, 113, 106, 119, 131, 123, 111, 117, 129, 96, 133, 146, 151, 139, 121, 129, 136, 131, 139, 141];
-const BT: Record<StrategyId, { curve: number[]; total: string; cagr: string; mdd: string; sharpe: string; win: string }> = {
-  stable: {
-    curve: [100, 104, 108, 107, 113, 119, 121, 118, 124, 131, 121, 138, 146, 152, 157, 160, 165, 171, 178, 186, 194],
-    total: "+94%",
-    cagr: "6.9%",
-    mdd: "-7.9%",
-    sharpe: "1.51",
-    win: "71%",
-  },
-  balanced: {
-    curve: [100, 106, 113, 109, 121, 134, 138, 130, 141, 156, 128, 162, 181, 196, 188, 178, 201, 224, 240, 262, 282],
-    total: "+182%",
-    cagr: "10.9%",
-    mdd: "-15.2%",
-    sharpe: "1.34",
-    win: "64%",
-  },
-  aggressive: {
-    curve: [100, 110, 124, 116, 138, 162, 170, 150, 172, 205, 150, 212, 258, 300, 270, 238, 295, 350, 386, 425, 461],
-    total: "+361%",
-    cagr: "16.5%",
-    mdd: "-29.4%",
-    sharpe: "1.08",
-    win: "58%",
-  },
-};
 
 interface Person {
   name: string;
@@ -328,38 +290,39 @@ interface Person {
   photo: string;
 }
 const featured: Person = {
-  name: "정유진",
+  name: "이강록",
   role: "38세 · 콘텐츠 마케터",
   quote: "퇴근하고 차트만 들여다보던 시간이 사라졌어요. 그 시간에 이제 아이와 저녁을 먹습니다.",
-  photo: "https://randomuser.me/api/portraits/women/65.jpg",
+  photo: "",
 };
 const reviews: Person[] = [
   {
-    name: "한승호",
+    name: "하제학",
     role: "45세 · 자영업",
     quote: "감정적으로 사고팔던 버릇이 없어졌습니다. 규칙대로 움직이니 마음이 놓여요.",
-    photo: "https://randomuser.me/api/portraits/men/41.jpg",
+    photo: "",
   },
   {
-    name: "오세라",
+    name: "이도훈",
     role: "31세 · 소프트웨어 개발자",
-    quote: "10년 백테스트를 직접 보고 나서야 믿음이 생겼어요. 숫자가 솔직하더라고요.",
-    photo: "https://randomuser.me/api/portraits/women/29.jpg",
+    quote: "백테스트를 연도별로 직접 확인하고 나서야 믿음이 생겼어요. 숫자가 솔직하더라고요.",
+    photo: "",
   },
 ];
 const heroFace: Person = {
-  name: "이도현",
+  name: "이호준",
   role: "균형형 운용 · 7개월째",
   quote: "주말엔 휴대폰을 안 봐요. 그래도 잘 굴러갑니다.",
-  photo: "https://randomuser.me/api/portraits/men/76.jpg",
+  photo: "",
 };
-const trustFaces = [
-  "https://randomuser.me/api/portraits/women/12.jpg",
-  "https://randomuser.me/api/portraits/men/52.jpg",
-  "https://randomuser.me/api/portraits/women/33.jpg",
-  "https://randomuser.me/api/portraits/men/8.jpg",
-  "https://randomuser.me/api/portraits/women/50.jpg",
-  "https://randomuser.me/api/portraits/men/63.jpg",
+// 신뢰 스트립의 작은 아바타들 — 이니셜로. 한 글자씩 골라 다양한 색상이 나오게.
+const trustFaces: { name: string; photo: string }[] = [
+  { name: "김", photo: "" },
+  { name: "박", photo: "" },
+  { name: "최", photo: "" },
+  { name: "정", photo: "" },
+  { name: "강", photo: "" },
+  { name: "윤", photo: "" },
 ];
 
 /* ============================================================
@@ -379,7 +342,8 @@ function Portrait({
 }) {
   const [failed, setFailed] = useState(false);
   const color = FB_COLORS[name.charCodeAt(0) % FB_COLORS.length];
-  if (failed) {
+  // 빈 src는 이니셜 아바타로 곧장 — 의도된 폴백.
+  if (failed || !src) {
     return (
       <span
         className={square ? "" : "ed-portrait-fb"}
@@ -416,44 +380,128 @@ function Portrait({
 }
 
 /* ============================================================
-   5. 백테스트 차트 — 전략 vs 코스피
+   5. 백테스트 막대 차트 — 연도별 × short/long, center 전략 수익률
    ============================================================ */
-function buildPath(vals: number[], w: number, h: number, lo: number, hi: number, pad: number) {
-  const range = hi - lo || 1;
-  return vals
-    .map((v, i) => {
-      const x = pad + (i / (vals.length - 1)) * (w - pad * 2);
-      const y = pad + (1 - (v - lo) / range) * (h - pad * 2);
-      return `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`;
-    })
-    .join(" ");
-}
-function BacktestChart({ curve }: { curve: number[] }) {
+type BtBar = { period: string; horizon: "short" | "long"; value: number; mdd: number };
+
+function BacktestBars({ bars }: { bars: BtBar[] }) {
+  // bars는 period asc, period 안에서 short → long 순.
+  // 0을 기준으로 위/아래로 막대를 그림. 음수도 자연스럽게.
   const w = 720;
-  const h = 300;
-  const pad = 8;
-  const hi = Math.max(...curve, ...BT_BENCH);
-  const lo = Math.min(...curve, ...BT_BENCH, 80);
-  const stratLine = buildPath(curve, w, h, lo, hi, pad);
-  const benchLine = buildPath(BT_BENCH, w, h, lo, hi, pad);
-  const last = curve[curve.length - 1];
-  const lastX = w - pad;
-  const lastY = pad + (1 - (last - lo) / (hi - lo || 1)) * (h - pad * 2);
+  const h = 280;
+  const padL = 36;
+  const padR = 12;
+  const padT = 18;
+  const padB = 46;
+  const innerW = w - padL - padR;
+  const innerH = h - padT - padB;
+
+  const periods = Array.from(new Set(bars.map((b) => b.period)));
+  const groupW = innerW / Math.max(periods.length, 1);
+  const barW = Math.min(28, (groupW - 12) / 2);
+
+  const values = bars.map((b) => b.value);
+  const rawMax = Math.max(0, ...values);
+  const rawMin = Math.min(0, ...values);
+  const span = Math.max(Math.abs(rawMax), Math.abs(rawMin), 10);
+  const yMax = span;
+  const yMin = -span;
+  const yRange = yMax - yMin;
+  const zeroY = padT + (yMax / yRange) * innerH;
+
+  function barHeight(v: number) {
+    return (Math.abs(v) / yRange) * innerH;
+  }
+
   return (
-    <svg className="ed-chart" viewBox={`0 0 ${w} ${h}`} role="img" aria-label="백테스트 수익 곡선">
-      <defs>
-        <linearGradient id="ed-bt" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="var(--moss)" stopOpacity="0.18" />
-          <stop offset="100%" stopColor="var(--moss)" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      {[0, 0.5, 1].map((g) => (
-        <line key={g} x1={pad} x2={w - pad} y1={pad + g * (h - pad * 2)} y2={pad + g * (h - pad * 2)} stroke="var(--rule)" strokeWidth={1} />
+    <svg className="ed-chart" viewBox={`0 0 ${w} ${h}`} role="img" aria-label="연도별 백테스트 수익률">
+      {/* 기준선 (0%) */}
+      <line x1={padL} x2={w - padR} y1={zeroY} y2={zeroY} stroke="var(--ink-2)" strokeWidth={1} />
+      {/* 가로 보조선 */}
+      {[0.25, 0.5, 0.75].map((p) => (
+        <line
+          key={p}
+          x1={padL}
+          x2={w - padR}
+          y1={padT + p * innerH}
+          y2={padT + p * innerH}
+          stroke="var(--rule)"
+          strokeWidth={1}
+          strokeDasharray="3 4"
+        />
       ))}
-      <path d={`${stratLine} L${lastX} ${h - pad} L${pad} ${h - pad} Z`} fill="url(#ed-bt)" />
-      <path d={benchLine} fill="none" stroke="var(--ink-3)" strokeWidth={2} strokeDasharray="5 5" />
-      <path d={stratLine} fill="none" stroke="var(--moss)" strokeWidth={3.4} strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx={lastX} cy={lastY} r={5} fill="var(--moss)" />
+      {/* Y축 라벨 */}
+      <text x={padL - 6} y={padT + 4} textAnchor="end" fontSize="10" fill="var(--ink-3)">
+        +{yMax.toFixed(0)}%
+      </text>
+      <text x={padL - 6} y={zeroY + 4} textAnchor="end" fontSize="10" fill="var(--ink-3)">
+        0%
+      </text>
+      <text x={padL - 6} y={padT + innerH + 4} textAnchor="end" fontSize="10" fill="var(--ink-3)">
+        {yMin.toFixed(0)}%
+      </text>
+
+      {/* 막대 + 라벨 */}
+      {periods.map((period, gi) => {
+        const groupX = padL + groupW * gi + groupW / 2;
+        const periodBars = bars.filter((b) => b.period === period);
+        return (
+          <g key={period}>
+            {periodBars.map((b, bi) => {
+              const offset = (bi - (periodBars.length - 1) / 2) * (barW + 6);
+              const x = groupX + offset - barW / 2;
+              const isShort = b.horizon === "short";
+              const fill = isShort ? "var(--moss)" : "var(--spark)";
+              const y = b.value >= 0 ? zeroY - barHeight(b.value) : zeroY;
+              return (
+                <g key={b.horizon}>
+                  <rect
+                    x={x}
+                    y={y}
+                    width={barW}
+                    height={barHeight(b.value)}
+                    fill={fill}
+                    opacity={0.92}
+                    rx={2}
+                  />
+                  <text
+                    x={x + barW / 2}
+                    y={b.value >= 0 ? y - 4 : y + barHeight(b.value) + 12}
+                    textAnchor="middle"
+                    fontSize="10"
+                    fontWeight={800}
+                    fill={b.value >= 0 ? "var(--up)" : "var(--down)"}
+                  >
+                    {b.value >= 0 ? "+" : ""}{b.value.toFixed(1)}%
+                  </text>
+                </g>
+              );
+            })}
+            <text
+              x={groupX}
+              y={h - 22}
+              textAnchor="middle"
+              fontSize="11"
+              fontWeight={800}
+              fill="var(--ink-2)"
+            >
+              {period}
+            </text>
+          </g>
+        );
+      })}
+
+      {/* 범례 */}
+      <g>
+        <rect x={padL} y={h - 12} width={10} height={3} fill="var(--moss)" />
+        <text x={padL + 14} y={h - 8} fontSize="10" fontWeight={700} fill="var(--ink-2)">
+          단기 (5일 보유)
+        </text>
+        <rect x={padL + 88} y={h - 12} width={10} height={3} fill="var(--spark)" />
+        <text x={padL + 102} y={h - 8} fontSize="10" fontWeight={700} fill="var(--ink-2)">
+          장기 (20일 보유)
+        </text>
+      </g>
     </svg>
   );
 }
@@ -484,7 +532,7 @@ export default function HomePage() {
   const router = useRouter();
   const [theme, setTheme] = useState<Theme>("light");
   const [authedTarget, setAuthedTarget] = useState<string | null>(null);
-  const [btSel, setBtSel] = useState<StrategyId>("balanced");
+  const [comparison, setComparison] = useState<BacktestComparisonBundle | null>(null);
 
   useEffect(() => {
     const saved = window.localStorage.getItem("hqa-theme");
@@ -512,11 +560,49 @@ export default function HomePage() {
     window.localStorage.setItem("hqa-theme", next);
   };
 
+  useEffect(() => {
+    let active = true;
+    loadAiBacktestComparison()
+      .then((c) => { if (active) setComparison(c); })
+      .catch(() => { /* 정적 자료 — 실패 시 섹션을 숨김 */ });
+    return () => { active = false; };
+  }, []);
+
   const goStart = () => router.push(authedTarget ?? "/signup");
   const goLogin = () => router.push(authedTarget ?? "/login");
+  const goBacktestDetail = () => router.push("/backtesting/ai");
 
-  const bt = BT[btSel];
-  const btName = strategies.find((s) => s.id === btSel)!.name;
+  // 백테스트 요약 — period 오름차순으로 정렬, short/long 모두.
+  const btBars: BtBar[] = useMemo(() => {
+    if (!comparison) return [];
+    const sorted = [...comparison.summary].sort((a, b) => {
+      if (a.period !== b.period) return a.period.localeCompare(b.period);
+      return a.horizon === "short" ? -1 : 1;
+    });
+    return sorted.map((s) => ({
+      period: s.period,
+      horizon: s.horizon,
+      value: s.center_return_pct,
+      mdd: s.center_mdd_pct,
+    }));
+  }, [comparison]);
+
+  // 집계 지표 — center 전략의 단순 평균(연도 가중). 화려한 보장 대신 정직한 평균.
+  const btStats = useMemo(() => {
+    if (!comparison || comparison.summary.length === 0) return null;
+    const arr = comparison.summary;
+    const avgReturn = arr.reduce((a, s) => a + s.center_return_pct, 0) / arr.length;
+    const worstMdd = arr.reduce((min, s) => Math.min(min, s.center_mdd_pct), 0);
+    const wins = comparison.rows.filter((r) => r.is_center_multi_agent && r.beats_center_return === false && r.return_delta_vs_center_multi_agent_pct < 0).length;
+    const totalRows = comparison.rows.length;
+    return {
+      avgReturn,
+      worstMdd,
+      periods: Array.from(new Set(arr.map((s) => s.period))).length,
+      totalRows,
+      relWins: wins,
+    };
+  }, [comparison]);
 
   return (
     <div className="ed" data-theme={theme} suppressHydrationWarning>
@@ -604,8 +690,8 @@ export default function HomePage() {
           <hr className="ed-rule" style={{ marginTop: 48 }} />
           <div className="ed-trust">
             <div className="ed-faces">
-              {trustFaces.map((src, i) => (
-                <Portrait key={i} src={src} name={`투자자${i}`} size={42} />
+              {trustFaces.map((f, i) => (
+                <Portrait key={i} src={f.photo} name={f.name} size={42} />
               ))}
             </div>
             <div className="ed-trust-txt">
@@ -627,82 +713,80 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* 백테스트 */}
+        {/* 백테스트 — 실제 AI 멀티에이전트 전략 결과 */}
         <section className="ed-wrap ed-band">
           <div className="ed-bt-head">
             <div>
-              <span className="ed-label">백테스트 · 2014.05 — 2024.05</span>
+              <span className="ed-label">
+                백테스트 · AI 멀티에이전트 {comparison ? `· ${comparison.theme} 테마` : ""}
+              </span>
               <h2 className="ed-h2" style={{ marginTop: 14 }}>
-                지난 10년에
+                숫자로 보여드립니다.
                 <br />
-                직접 적용해 봤습니다.
+                연도별 실측 결과.
               </h2>
             </div>
             <p className="ed-lede" style={{ maxWidth: "22em" }}>
-              말보다 숫자가 정직합니다. 같은 기간 코스피와 나란히 두고 확인하세요.
+              HQA의 multi-agent hybrid 전략을 실제 데이터로 재현했습니다.
+              상승만 있는 그림이 아니라, 있는 그대로의 연도별 성과입니다.
             </p>
           </div>
 
-          <div className="ed-bt-tabs" role="tablist">
-            {strategies.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                role="tab"
-                aria-selected={btSel === s.id}
-                className={`ed-bt-tab${btSel === s.id ? " ed-bt-tab--on" : ""}`}
-                onClick={() => setBtSel(s.id)}
-              >
-                {s.name}
+          {comparison && btBars.length > 0 ? (
+            <>
+              <div className="ed-bt-stage">
+                <div>
+                  <BacktestBars bars={btBars} />
+                </div>
+
+                <div className="ed-bt-figs">
+                  <div className="ed-bt-fig">
+                    <span className="ed-bt-fig-label">평균 연 수익률</span>
+                    <span
+                      className={`ed-bt-fig-val ${(btStats?.avgReturn ?? 0) >= 0 ? "ed-up" : "ed-down"}`}
+                    >
+                      {btStats ? `${btStats.avgReturn >= 0 ? "+" : ""}${btStats.avgReturn.toFixed(1)}%` : "-"}
+                    </span>
+                  </div>
+                  <div className="ed-bt-fig">
+                    <span className="ed-bt-fig-label">검증 연도 수</span>
+                    <span className="ed-bt-fig-val">{btStats?.periods ?? "-"}</span>
+                  </div>
+                  <div className="ed-bt-fig">
+                    <span className="ed-bt-fig-label">최대 낙폭 (MDD)</span>
+                    <span className="ed-bt-fig-val ed-down">
+                      {btStats ? `${btStats.worstMdd.toFixed(1)}%` : "-"}
+                    </span>
+                  </div>
+                  <div className="ed-bt-fig">
+                    <span className="ed-bt-fig-label">비교 전략 수</span>
+                    <span className="ed-bt-fig-val">{btStats?.totalRows ?? "-"}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 14, alignItems: "center", marginTop: 26, flexWrap: "wrap" }}>
+                <button type="button" className="ed-btn ed-btn--ink" onClick={goBacktestDetail}>
+                  상세 백테스트 보기 <ArrowRight size={16} />
+                </button>
+                <span className="ed-fine">
+                  RSI · 볼린저밴드 · 규칙기반과의 비교, 전체 행 단위 데이터까지 확인할 수 있어요.
+                </span>
+              </div>
+
+              <p className="ed-fine" style={{ marginTop: 18 }}>
+                백테스트 결과는 과거 데이터를 기반으로 한 시뮬레이션이며, 미래 수익을 보장하지 않습니다.
+                실제 운용은 시장 상황, 슬리피지, 수수료 등에 따라 다를 수 있습니다.
+              </p>
+            </>
+          ) : (
+            <div style={{ marginTop: 24 }}>
+              <p className="ed-fine">백테스트 결과를 불러오는 중입니다...</p>
+              <button type="button" className="ed-btn ed-btn--line" style={{ marginTop: 14 }} onClick={goBacktestDetail}>
+                상세 백테스트 보기 <ArrowRight size={16} />
               </button>
-            ))}
-          </div>
-
-          <div className="ed-bt-stage">
-            <div>
-              <div className="ed-bt-legend">
-                <span className="ed-bt-leg">
-                  <i style={{ background: "var(--moss)" }} /> HQA {btName}
-                </span>
-                <span className="ed-bt-leg">
-                  <i style={{ background: "var(--ink-3)" }} /> 코스피 지수
-                </span>
-              </div>
-              <BacktestChart curve={bt.curve} />
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".76rem", color: "var(--ink-3)", fontWeight: 700, marginTop: 6 }}>
-                <span>2014</span>
-                <span>2019</span>
-                <span>2024</span>
-              </div>
             </div>
-
-            <div className="ed-bt-figs">
-              <div className="ed-bt-fig">
-                <span className="ed-bt-fig-label">누적 수익률</span>
-                <span className="ed-bt-fig-val ed-up">{bt.total}</span>
-              </div>
-              <div className="ed-bt-fig">
-                <span className="ed-bt-fig-label">연평균 (CAGR)</span>
-                <span className="ed-bt-fig-val">{bt.cagr}</span>
-              </div>
-              <div className="ed-bt-fig">
-                <span className="ed-bt-fig-label">최대 낙폭 (MDD)</span>
-                <span className="ed-bt-fig-val ed-down">{bt.mdd}</span>
-              </div>
-              <div className="ed-bt-fig">
-                <span className="ed-bt-fig-label">샤프 지수</span>
-                <span className="ed-bt-fig-val">{bt.sharpe}</span>
-              </div>
-              <div className="ed-bt-fig">
-                <span className="ed-bt-fig-label">승률</span>
-                <span className="ed-bt-fig-val">{bt.win}</span>
-              </div>
-            </div>
-          </div>
-          <p className="ed-fine" style={{ marginTop: 22 }}>
-            동기간 코스피 지수는 +41%였습니다. 백테스트 결과는 과거 데이터를
-            기반으로 한 시뮬레이션이며, 미래 수익을 보장하지 않습니다.
-          </p>
+          )}
         </section>
 
         {/* 작동 방식 */}

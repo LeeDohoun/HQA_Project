@@ -636,14 +636,6 @@ export default function DashboardPage() {
           <div className="ed-nav-right">
             <button
               type="button"
-              className="ed-tlink"
-              style={{ fontSize: ".84rem" }}
-              onClick={() => router.push("/backtesting/ai")}
-            >
-              백테스트
-            </button>
-            <button
-              type="button"
               className={`ed-statuschip${autoTradeEnabled ? " ed-statuschip--on" : ""}`}
               onClick={handleAutoTrade}
             >
