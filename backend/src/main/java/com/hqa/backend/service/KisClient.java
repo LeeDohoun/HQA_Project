@@ -32,6 +32,7 @@ public class KisClient {
     private static final String CHART_DAILY_PATH = "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice";
     private static final String CHART_TODAY_MINUTE_PATH = "/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice";
     private static final String CHART_DAILY_MINUTE_PATH = "/uapi/domestic-stock/v1/quotations/inquire-time-dailychartprice";
+    private static final String INDEX_PRICE_PATH = "/uapi/domestic-stock/v1/quotations/inquire-index-price";
 
     private static final ZoneId KIS_ZONE = ZoneId.of("Asia/Seoul");
     private static final DateTimeFormatter YYYYMMDD = DateTimeFormatter.ofPattern("yyyyMMdd");
@@ -209,6 +210,147 @@ public class KisClient {
         } catch (Exception e) {
             errorLogger.log("KisClient", userId, stockCode,
                     "Direct " + (isBuy ? "buy" : "sell") + " failed", e.getMessage());
+            return Map.of("success", false, "error", String.valueOf(e.getMessage()));
+        }
+    }
+
+    /**
+     * 시장지수 시세 조회. inquire-index-price.
+     * indexCode: "0001" 코스피, "1001" 코스닥, "2001" 코스피200 등.
+     * @return {"name":"코스피","current":2587.34,"change":12.5,"changeRate":0.49} 또는 null
+     */
+    public Map<String, Object> inquireIndexPrice(String userId, UserSecret secret, String token,
+                                                  String indexCode) {
+        try {
+            String appKey = secretCipher.decrypt(secret.getKisAppKey());
+            String appSecret = secretCipher.decrypt(secret.getKisAppSecret());
+            boolean isReal = secret.isKisIsReal();
+            String response = webClient.get()
+                    .uri(uriBuilder -> uriBuilder.scheme("https")
+                            .host(isReal ? "openapi.koreainvestment.com" : "openapivts.koreainvestment.com")
+                            .port(isReal ? 9443 : 29443)
+                            .path(INDEX_PRICE_PATH)
+                            .queryParam("FID_COND_MRKT_DIV_CODE", "U")
+                            .queryParam("FID_INPUT_ISCD", indexCode)
+                            .build())
+                    .header("authorization", "Bearer " + token)
+                    .header("appkey", appKey)
+                    .header("appsecret", appSecret)
+                    .header("tr_id", "FHPUP02100000")
+                    .header("custtype", "P")
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+            Map<String, Object> body = objectMapper.readValue(response, new TypeReference<>() {});
+            if (!"0".equals(String.valueOf(body.getOrDefault("rt_cd", "")))) {
+                errorLogger.log("KisClient", userId, indexCode,
+                        "inquire-index-price rejected: " + body.get("msg1"), response);
+                return null;
+            }
+            Object output = body.get("output");
+            if (!(output instanceof Map<?, ?> o)) return null;
+            Map<String, Object> result = new java.util.LinkedHashMap<>();
+            result.put("code", indexCode);
+            result.put("current", parseDouble(o.get("bstp_nmix_prpr")));
+            result.put("change", parseDouble(o.get("bstp_nmix_prdy_vrss")));
+            result.put("changeRate", parseDouble(o.get("bstp_nmix_prdy_ctrt")));
+            result.put("sign", asString(o.get("prdy_vrss_sign")));
+            return result;
+        } catch (Exception e) {
+            errorLogger.log("KisClient", userId, indexCode, "inquire-index-price failed", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 계좌 잔고 조회. inquire-balance.
+     * output1: 종목별 보유내역(평가금액·평가손익·보유수량 등)
+     * output2: 계좌 요약(총평가·예수금·총평가손익 등, 보통 1건)
+     *
+     * @return {"success": boolean, "holdings": List<Map>, "summary": Map, "raw": Map?}
+     */
+    public Map<String, Object> inquireBalance(String userId, UserSecret secret, String token) {
+        try {
+            String appKey = secretCipher.decrypt(secret.getKisAppKey());
+            String appSecret = secretCipher.decrypt(secret.getKisAppSecret());
+            String accountNo = secretCipher.decrypt(secret.getKisAccountNo());
+            boolean isReal = secret.isKisIsReal();
+            String balanceTr = isReal ? "TTTC8434R" : "VTTC8434R";
+
+            String response = webClient.get()
+                    .uri(uriBuilder -> uriBuilder.scheme("https")
+                            .host(isReal ? "openapi.koreainvestment.com" : "openapivts.koreainvestment.com")
+                            .port(isReal ? 9443 : 29443)
+                            .path(BALANCE_PATH)
+                            .queryParam("CANO", accountNo)
+                            .queryParam("ACNT_PRDT_CD", secret.getKisAccountProductCode())
+                            .queryParam("AFHR_FLPR_YN", "N")
+                            .queryParam("OFL_YN", "")
+                            .queryParam("INQR_DVSN", "02")
+                            .queryParam("UNPR_DVSN", "01")
+                            .queryParam("FUND_STTL_ICLD_YN", "N")
+                            .queryParam("FNCG_AMT_AUTO_RDPT_YN", "N")
+                            .queryParam("PRCS_DVSN", "01")
+                            .queryParam("CTX_AREA_FK100", "")
+                            .queryParam("CTX_AREA_NK100", "")
+                            .build())
+                    .header("authorization", "Bearer " + token)
+                    .header("appkey", appKey)
+                    .header("appsecret", appSecret)
+                    .header("tr_id", balanceTr)
+                    .header("custtype", "P")
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+
+            Map<String, Object> body = objectMapper.readValue(response, new TypeReference<>() {});
+            String rtCd = String.valueOf(body.getOrDefault("rt_cd", ""));
+            if (!"0".equals(rtCd)) {
+                errorLogger.log("KisClient", userId, null,
+                        "inquire-balance rejected: " + body.get("msg1"), response);
+                return Map.of("success", false, "error", String.valueOf(body.getOrDefault("msg1", "조회 실패")));
+            }
+
+            List<Map<String, Object>> holdings = new ArrayList<>();
+            Object output1 = body.get("output1");
+            if (output1 instanceof List<?> rows) {
+                for (Object row : rows) {
+                    if (!(row instanceof Map<?, ?> r)) continue;
+                    long quantity = parseLong(r.get("hldg_qty"));
+                    if (quantity <= 0) continue; // 보유수량 0인 정리행 제외
+                    Map<String, Object> h = new java.util.LinkedHashMap<>();
+                    h.put("stockCode", asString(r.get("pdno")));
+                    h.put("stockName", asString(r.get("prdt_name")));
+                    h.put("quantity", quantity);
+                    h.put("avgPrice", parseDouble(r.get("pchs_avg_pric")));
+                    h.put("currentPrice", parseLong(r.get("prpr")));
+                    h.put("evalAmount", parseLong(r.get("evlu_amt")));
+                    h.put("purchaseAmount", parseLong(r.get("pchs_amt")));
+                    h.put("evalProfit", parseLong(r.get("evlu_pfls_amt")));
+                    h.put("evalProfitRate", parseDouble(r.get("evlu_pfls_rt")));
+                    holdings.add(h);
+                }
+            }
+
+            Map<String, Object> summary = new java.util.LinkedHashMap<>();
+            Object output2 = body.get("output2");
+            if (output2 instanceof List<?> sumRows && !sumRows.isEmpty()
+                    && sumRows.get(0) instanceof Map<?, ?> s) {
+                summary.put("deposit", parseLong(s.get("dnca_tot_amt"))); // 예수금
+                summary.put("totalEvalAmount", parseLong(s.get("tot_evlu_amt"))); // 총평가
+                summary.put("totalPurchaseAmount", parseLong(s.get("pchs_amt_smtl_amt"))); // 매입금액 합
+                summary.put("totalEvalProfit", parseLong(s.get("evlu_pfls_smtl_amt"))); // 총평가손익
+                summary.put("stockEvalAmount", parseLong(s.get("scts_evlu_amt"))); // 유가증권 평가
+                summary.put("netAssetAmount", parseLong(s.get("nass_amt"))); // 순자산
+            }
+
+            Map<String, Object> result = new java.util.LinkedHashMap<>();
+            result.put("success", true);
+            result.put("holdings", holdings);
+            result.put("summary", summary);
+            return result;
+        } catch (Exception e) {
+            errorLogger.log("KisClient", userId, null, "inquire-balance failed", e.getMessage());
             return Map.of("success", false, "error", String.valueOf(e.getMessage()));
         }
     }

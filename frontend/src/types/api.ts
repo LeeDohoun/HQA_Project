@@ -100,6 +100,71 @@ export type RealtimePrice = {
   timestamp: string;
 };
 
+export type Holding = {
+  stockCode: string;
+  stockName: string;
+  quantity: number;
+  avgPrice: number;
+  currentPrice: number;
+  evalAmount: number;
+  purchaseAmount: number;
+  evalProfit: number;
+  evalProfitRate: number;
+};
+
+export type BalanceSummary = {
+  deposit: number;
+  totalEvalAmount: number;
+  totalPurchaseAmount: number;
+  totalEvalProfit: number;
+  stockEvalAmount: number;
+  netAssetAmount: number;
+};
+
+export type Balance = {
+  success: boolean;
+  holdings: Holding[];
+  summary: BalanceSummary;
+  error?: string;
+};
+
+export type NewsItem = {
+  stockCode: string | null;
+  stockName: string | null;
+  title: string;
+  summary: string | null;
+  source: string | null;
+  url: string;
+  publishedAt: string | null;
+  createdAt: string | null;
+};
+
+export type DisclosureItem = {
+  stockCode: string | null;
+  stockName: string | null;
+  reportName: string;
+  receiptNo: string | null;
+  receiptDate: string | null;
+  submitter: string | null;
+  url: string;
+  createdAt: string | null;
+};
+
+export type MarketIndex = {
+  code: string;
+  name: string;
+  current: number;
+  change: number;
+  changeRate: number;
+  sign: string | null;
+};
+
+export type MarketIndexResponse = {
+  items: MarketIndex[];
+  configured: boolean;
+  error?: string;
+};
+
 export type Candle = {
   time: number;
   open: number;
@@ -137,6 +202,24 @@ export type AnalysisTaskResponse = {
 export type StockInfo = {
   name: string;
   code: string;
+};
+
+export type AnalysisHistoryItem = {
+  taskId: string;
+  stock: StockInfo;
+  mode: AnalysisMode;
+  status: AnalysisStatus;
+  totalScore: number | null;
+  action: string | null;
+  createdAt: string;
+  completedAt: string | null;
+};
+
+export type AnalysisHistoryResponse = {
+  items: AnalysisHistoryItem[];
+  total: number;
+  page: number;
+  pageSize: number;
 };
 
 export type ScoreDetail = {

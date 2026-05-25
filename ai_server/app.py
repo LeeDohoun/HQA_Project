@@ -18,8 +18,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 # 프로젝트 루트를 sys.path에 추가 (src/ 패키지 접근용)
@@ -87,6 +89,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    try:
+        raw_body = (await request.body()).decode("utf-8", errors="replace")
+    except Exception:
+        raw_body = "<unavailable>"
+    logger.warning(
+        "[422] %s %s — errors=%s body=%s",
+        request.method,
+        request.url.path,
+        exc.errors(),
+        raw_body,
+    )
+    return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
 
 # ──────────────────────────────────────────────
@@ -600,6 +618,138 @@ def _load_order_logs(date: Optional[str], limit: int) -> List[Dict[str, Any]]:
 
     rows.sort(key=lambda row: str(row.get("timestamp", "")), reverse=True)
     return rows[:limit]
+
+# ──────────────────────────────────────────────
+# 종목 자료 (뉴스 · 공시)
+# 수집기가 data/raw/{source}/{theme}.jsonl 로 저장한 원본을 stock_code로 필터링.
+# 한 종목이 여러 테마에 속할 수 있으므로 모든 jsonl을 스캔.
+# ──────────────────────────────────────────────
+
+from src.config.settings import get_data_dir as _hqa_get_data_dir
+
+# jsonl 캐시: (source, file_path) → (mtime, list[record])
+# 디스크 I/O를 줄이고 핫 종목 조회를 빠르게 함. mtime 바뀌면 invalidate.
+_jsonl_cache: Dict[str, Any] = {}
+
+
+def _load_jsonl(path: Path) -> List[Dict[str, Any]]:
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return []
+    cached = _jsonl_cache.get(str(path))
+    if cached and cached[0] == mtime:
+        return cached[1]
+    rows: List[Dict[str, Any]] = []
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rows.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+    except OSError:
+        return []
+    _jsonl_cache[str(path)] = (mtime, rows)
+    return rows
+
+
+def _collect_records_for_stock(source_dir: str, stock_code: str) -> List[Dict[str, Any]]:
+    """
+    data/raw/{source_dir}/*.jsonl 전부 스캔 → stock_code 일치 record만 모음.
+    파일은 테마별로 묶여있고 한 종목이 여러 테마에 속할 수 있어서 합집합 필요.
+    """
+    base = _hqa_get_data_dir() / "raw" / source_dir
+    if not base.exists():
+        return []
+    matched: List[Dict[str, Any]] = []
+    for jsonl_path in base.glob("*.jsonl"):
+        for record in _load_jsonl(jsonl_path):
+            # stock_code는 record 본체 또는 metadata에 들어있을 수 있음
+            code = record.get("stock_code")
+            if not code:
+                meta = record.get("metadata") or {}
+                code = meta.get("stock_code") if isinstance(meta, dict) else None
+            if code == stock_code:
+                matched.append(record)
+    return matched
+
+
+def _record_sort_key(record: Dict[str, Any]) -> str:
+    """발행일 우선, 없으면 수집일. 문자열 비교(ISO/yyyy-mm-dd 호환)."""
+    published = record.get("published_at") or ""
+    if published:
+        return str(published)
+    meta = record.get("metadata") or {}
+    if isinstance(meta, dict):
+        return str(meta.get("collected_at") or "")
+    return ""
+
+
+@app.get("/stocks/{stock_code}/news")
+async def stock_news(stock_code: str, limit: int = Query(20, ge=1, le=100)):
+    try:
+        records = _collect_records_for_stock("news", stock_code)
+    except Exception as exc:
+        logger.warning("stock_news failed for %s: %s", stock_code, exc)
+        return {"items": [], "error": str(exc)}
+    records.sort(key=_record_sort_key, reverse=True)
+    items = []
+    seen_urls = set()
+    for r in records[: limit * 2]:  # dedupe 후에도 limit 채우도록 여유
+        url = r.get("url") or ""
+        if url and url in seen_urls:
+            continue
+        seen_urls.add(url)
+        meta = r.get("metadata") if isinstance(r.get("metadata"), dict) else {}
+        items.append({
+            "stockCode": r.get("stock_code") or (meta.get("stock_code") if meta else None),
+            "stockName": r.get("stock_name") or (meta.get("stock_name") if meta else None),
+            "title": r.get("title"),
+            "summary": (meta or {}).get("summary"),
+            "source": (meta or {}).get("press"),
+            "url": url,
+            "publishedAt": r.get("published_at"),
+            "createdAt": (meta or {}).get("collected_at"),
+        })
+        if len(items) >= limit:
+            break
+    return {"items": items}
+
+
+@app.get("/stocks/{stock_code}/disclosures")
+async def stock_disclosures(stock_code: str, limit: int = Query(20, ge=1, le=100)):
+    try:
+        records = _collect_records_for_stock("dart", stock_code)
+    except Exception as exc:
+        logger.warning("stock_disclosures failed for %s: %s", stock_code, exc)
+        return {"items": [], "error": str(exc)}
+    records.sort(key=_record_sort_key, reverse=True)
+    items = []
+    seen_keys = set()
+    for r in records[: limit * 2]:
+        meta = r.get("metadata") if isinstance(r.get("metadata"), dict) else {}
+        rcept = (meta or {}).get("rcept_no") or r.get("url") or ""
+        if rcept and rcept in seen_keys:
+            continue
+        seen_keys.add(rcept)
+        items.append({
+            "stockCode": r.get("stock_code") or (meta.get("stock_code") if meta else None),
+            "stockName": r.get("stock_name") or (meta.get("stock_name") if meta else None),
+            "reportName": (meta or {}).get("report_nm") or r.get("title"),
+            "receiptNo": (meta or {}).get("rcept_no"),
+            "receiptDate": r.get("published_at"),
+            "submitter": (meta or {}).get("flr_nm") or (meta or {}).get("corp_name"),
+            "url": r.get("url"),
+            "createdAt": (meta or {}).get("collected_at"),
+        })
+        if len(items) >= limit:
+            break
+    return {"items": items}
+
 
 @app.get("/health")
 async def health():

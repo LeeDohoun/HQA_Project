@@ -1,5 +1,6 @@
 package com.hqa.backend.scheduler;
 
+import com.hqa.backend.dto.AiAnalyzeRequest;
 import com.hqa.backend.entity.User;
 import com.hqa.backend.entity.UserSecret;
 import com.hqa.backend.repository.UserRepository;
@@ -109,12 +110,12 @@ public class TradingScheduler {
     private Map<String, Object> runAnalysis(String userId, String stockName, String stockCode) {
         String taskId = UUID.randomUUID().toString();
         try {
-            aiServerClient.submitAnalysis(Map.of(
-                    "task_id", taskId,
-                    "stock_name", stockName,
-                    "stock_code", stockCode,
-                    "mode", "quick",
-                    "max_retries", 0
+            aiServerClient.submitAnalysis(new AiAnalyzeRequest(
+                    taskId,
+                    stockName,
+                    stockCode,
+                    "quick",
+                    0
             ));
         } catch (Exception e) {
             errorLogger.log("TradingScheduler", userId, stockCode, "submit analysis failed", e.getMessage());
