@@ -87,6 +87,23 @@ public class TradingController {
         return aiServerClient.getTradingOrders(date, Math.max(1, Math.min(500, limit)));
     }
 
+    @GetMapping("/balance")
+    public Map<String, Object> balance(HttpSession session) {
+        User user = authService.requireUser(session);
+        UserSecret secret = user.getSecret();
+        if (secret == null || isBlank(secret.getKisAppKey()) || isBlank(secret.getKisAppSecret())
+                || isBlank(secret.getKisAccountNo())) {
+            throw new ApiException(ErrorCode.KIS_SECRET_NOT_CONFIGURED, 400,
+                    "KIS API 키가 설정되어 있지 않습니다", null);
+        }
+        String token = kisClient.fetchAccessToken(user.getUserId(), secret);
+        if (token == null) {
+            throw new ApiException(ErrorCode.SERVICE_UNAVAILABLE, 503,
+                    "KIS 토큰 발급 실패", null);
+        }
+        return kisClient.inquireBalance(user.getUserId(), secret, token);
+    }
+
     @PostMapping("/buy")
     public Map<String, Object> directBuy(@Valid @RequestBody DirectBuyRequest request, HttpSession session) {
         return executeDirectOrder(request, session, /* isBuy = */ true);

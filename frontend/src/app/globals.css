@@ -4,62 +4,65 @@
    ================================================ */
 
 :root {
-  /* === Surfaces === */
-  --bg: #f6f8fb;
-  --bg-tint: #eef2f8;
-  --surface: #ffffff;
-  --surface-2: #f9fafc;
-  --surface-hover: #f1f4f9;
+  /* === Editorial — warm paper surfaces === */
+  --bg: #f1ede1;
+  --bg-tint: #e8e0cc;
+  --surface: #fbf8ef;
+  --surface-2: #f3ecda;
+  --surface-hover: #ece3cd;
 
-  /* === Lines === */
-  --line: #eceff5;
-  --line-2: #dde2ec;
+  /* === Lines — warm hairlines === */
+  --line: #e1d7bc;
+  --line-2: #d0c4a0;
 
-  /* === Text === */
-  --text: #0f172a;
-  --text-bright: #060a17;
-  --muted: #6b7280;
-  --muted-2: #4b5563;
+  /* === Text — warm ink === */
+  --text: #2a251c;
+  --text-bright: #18150f;
+  --muted: #837a61;
+  --muted-2: #574f3d;
 
-  /* === Brand accent (Toss blue, slightly softer) === */
-  --accent: #3182f6;
-  --accent-hover: #1b6cf3;
-  --accent-soft: #e8f1ff;
-  --accent-dim: rgba(49, 130, 246, 0.12);
-  --accent-border: rgba(49, 130, 246, 0.28);
+  /* === Brand accent — forest green === */
+  --accent: #1f7a4f;
+  --accent-hover: #19663f;
+  --accent-soft: #e2efe4;
+  --accent-dim: rgba(31, 122, 79, 0.12);
+  --accent-border: rgba(31, 122, 79, 0.32);
 
-  /* === Cleo-style playful gradients === */
-  --grad-1: #a78bfa;   /* lavender */
-  --grad-2: #60a5fa;   /* sky      */
-  --grad-3: #34d399;   /* mint     */
-  --grad-4: #fbbf24;   /* sunshine */
-  --grad-5: #f472b6;   /* pink     */
+  /* === Soft editorial wash (background blobs) === */
+  --grad-1: #cdbfe1;   /* muted lilac */
+  --grad-2: #c1e0c8;   /* soft green  */
+  --grad-3: #e9d8b5;   /* warm sand   */
+  --grad-4: #ebc9a2;   /* soft peach  */
+  --grad-5: #d9c5a1;   /* warm clay   */
 
   /* === Status === */
-  --good: #10b981;
-  --good-dim: rgba(16, 185, 129, 0.12);
-  --bad: #ef4444;
-  --bad-dim: rgba(239, 68, 68, 0.12);
-  --warn: #f59e0b;
-  --warn-dim: rgba(245, 158, 11, 0.14);
+  --good: #1f7a4f;
+  --good-dim: rgba(31, 122, 79, 0.13);
+  --bad: #bc3a2c;
+  --bad-dim: rgba(188, 58, 44, 0.12);
+  --warn: #b07d1e;
+  --warn-dim: rgba(176, 125, 30, 0.16);
 
   /* === Korean market convention === */
-  --rising: #ef4444;
-  --falling: #2563eb;
+  --rising: #bc3a2c;
+  --falling: #2f59b6;
 
-  /* === Shadows (soft, Toss-y) === */
-  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
-  --shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.06);
-  --shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
-  --shadow-lg: 0 24px 60px rgba(15, 23, 42, 0.12);
-  --shadow-accent: 0 12px 24px rgba(49, 130, 246, 0.22);
+  /* === Shadows — warm, soft === */
+  --shadow-xs: 0 1px 2px rgba(58, 44, 16, 0.05);
+  --shadow-sm: 0 3px 10px rgba(58, 44, 16, 0.07);
+  --shadow: 0 14px 34px rgba(58, 44, 16, 0.11);
+  --shadow-lg: 0 26px 56px rgba(58, 44, 16, 0.17);
+  --shadow-accent: 0 12px 24px rgba(31, 122, 79, 0.2);
 
-  /* === Radius === */
-  --r-sm: 10px;
-  --r-md: 14px;
-  --r-lg: 20px;
-  --r-xl: 28px;
+  /* === Radius — crisp editorial === */
+  --r-sm: 4px;
+  --r-md: 7px;
+  --r-lg: 11px;
+  --r-xl: 14px;
   --r-pill: 999px;
+
+  /* === Type === */
+  --serif: Georgia, "Times New Roman", serif;
 
   /* === Motion === */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
@@ -73,25 +76,34 @@
    tokens under .theme-dark so existing classes inside that block keep working
    until Phase 3 redesigns the dashboard itself. */
 .theme-dark {
-  --bg: #131722;
-  --bg-2: #1a1f2e;
-  --bg-3: #1e2535;
-  --surface: #1e2535;
-  --surface-2: #252d3d;
-  --surface-hover: #2a3347;
-  --line: rgba(255, 255, 255, 0.07);
-  --line-2: rgba(255, 255, 255, 0.12);
-  --text: #d1d4dc;
-  --text-bright: #eaecf0;
-  --muted: #787b86;
-  --muted-2: #9598a1;
-  --accent: #4589ff;
-  --accent-hover: #5a97ff;
-  --accent-soft: rgba(69, 137, 255, 0.18);
-  --accent-dim: rgba(69, 137, 255, 0.15);
-  --accent-border: rgba(69, 137, 255, 0.35);
-  --shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+  /* Editorial — cozy warm dark (used by the dashboard) */
+  --bg: #14130d;
+  --bg-2: #1c1a12;
+  --bg-3: #221f15;
+  --surface: #221f15;
+  --surface-2: #2a2619;
+  --surface-hover: #322d1e;
+  --line: rgba(233, 228, 207, 0.09);
+  --line-2: rgba(233, 228, 207, 0.16);
+  --text: #d9d3c0;
+  --text-bright: #f1ecd9;
+  --muted: #968d75;
+  --muted-2: #b4ac93;
+  --accent: #36c98c;
+  --accent-hover: #45d49a;
+  --accent-soft: rgba(54, 201, 140, 0.17);
+  --accent-dim: rgba(54, 201, 140, 0.14);
+  --accent-border: rgba(54, 201, 140, 0.34);
+  --good: #36c98c;
+  --good-dim: rgba(54, 201, 140, 0.16);
+  --bad: #e0594d;
+  --bad-dim: rgba(224, 89, 77, 0.16);
+  --warn: #e0a341;
+  --warn-dim: rgba(224, 163, 65, 0.16);
+  --rising: #e0594d;
+  --falling: #5e86e0;
+  --shadow: 0 16px 38px rgba(0, 0, 0, 0.55);
+  --shadow-sm: 0 3px 12px rgba(0, 0, 0, 0.42);
   color: var(--text);
   background: var(--bg);
 }
@@ -1001,9 +1013,140 @@ button {
 .dashboard-main {
   flex: 1;
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 340px;
+  grid-template-columns: 340px minmax(0, 1fr);
   min-height: 0;
+  transition: grid-template-columns 220ms ease;
 }
+.dashboard-main.left-collapsed {
+  grid-template-columns: 44px minmax(0, 1fr);
+}
+
+/* ── New left tabbed pane (replaces old sidebar/action-pane) ── */
+.left-pane {
+  position: relative;
+  border-right: 1px solid var(--line);
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.left-pane.open { padding: 16px 14px; gap: 14px; }
+.left-pane.collapsed { padding: 0; align-items: center; }
+
+.left-pane-toggle {
+  position: absolute;
+  top: 12px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--surface, var(--bg));
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 0.7rem;
+  z-index: 2;
+}
+.left-pane.collapsed .left-pane-toggle {
+  position: static;
+  margin-top: 12px;
+}
+.left-pane-toggle:hover { color: var(--text-bright); border-color: var(--text-bright); }
+
+.left-pane.open .action-tabs {
+  margin-right: 32px;
+}
+
+.action-divider {
+  height: 1px;
+  background: var(--line);
+  margin: 4px 0;
+}
+.action-section-title {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ── Topbar search ── */
+.topbar-search {
+  position: relative;
+  flex: 1;
+  max-width: 480px;
+  margin: 0 16px;
+}
+.topbar-search-form { display: flex; gap: 8px; }
+.topbar-search-form .search-input { flex: 1; }
+.topbar-search-results {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: var(--surface, var(--bg));
+  border: 1px solid var(--line);
+  border-radius: var(--r-md, 10px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  padding: 10px;
+  max-height: 360px;
+  overflow-y: auto;
+  z-index: 30;
+}
+.topbar-search-heading {
+  margin: 0 0 8px;
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.topbar-search-list { display: grid; gap: 4px; }
+
+/* ── Orders tab ── */
+.orders-head { display: flex; justify-content: space-between; align-items: center; }
+.orders-list { display: grid; gap: 8px; max-height: 480px; overflow-y: auto; }
+.orders-item {
+  border: 1px solid var(--line);
+  background: var(--surface, var(--bg));
+  border-radius: var(--r-sm, 8px);
+  padding: 10px 12px;
+  display: grid;
+  gap: 4px;
+}
+.orders-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.orders-meta-row { font-size: 0.78rem; }
+.orders-name { font-size: 0.88rem; color: var(--text-bright); }
+.orders-side {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.orders-side.buy { background: rgba(37, 99, 235, 0.12); color: #2563eb; }
+.orders-side.sell { background: rgba(239, 68, 68, 0.12); color: #dc2626; }
+
+/* ── Assets tab ── */
+.assets-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+.assets-card {
+  border: 1px solid var(--line);
+  background: var(--surface, var(--bg));
+  border-radius: var(--r-sm, 8px);
+  padding: 12px;
+  display: grid;
+  gap: 4px;
+}
+.assets-label { font-size: 0.72rem; color: var(--muted); }
+.assets-value { font-size: 0.95rem; font-weight: 700; color: var(--text-bright); font-variant-numeric: tabular-nums; }
+.assets-meta { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 
 .sidebar {
   border-right: 1px solid var(--line);
@@ -1502,6 +1645,88 @@ button {
 .quote-label { font-size: 0.72rem; color: var(--muted); font-weight: 500; }
 .quote-value { font-size: 0.88rem; font-weight: 600; color: var(--text-bright); font-variant-numeric: tabular-nums; }
 
+/* ── Inline analysis panel (sits under the chart in dashboard) ── */
+.analysis-inline {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--surface-2, var(--surface));
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  display: grid;
+  gap: 14px;
+}
+.analysis-inline-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.analysis-inline-title { margin: 0 0 2px; font-size: 0.95rem; font-weight: 700; color: var(--text-bright); }
+.analysis-inline-sub { margin: 0; font-size: 0.78rem; color: var(--muted); }
+.analysis-inline-subtitle { margin: 0 0 8px; font-size: 0.8rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+
+.analysis-inline-progress { display: grid; gap: 6px; }
+.analysis-inline-progress-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.analysis-inline-percent { color: var(--accent); font-weight: 600; }
+
+.analysis-inline-scores {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+.analysis-inline-score {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm, 8px);
+  background: var(--surface);
+  display: grid;
+  gap: 6px;
+}
+.analysis-inline-score-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.analysis-inline-score-head strong { font-size: 0.88rem; color: var(--text-bright); }
+.analysis-inline-score-meta { margin: 0; font-size: 0.78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.analysis-inline-score-text { margin: 4px 0 0; font-size: 0.84rem; line-height: 1.5; color: var(--text); }
+
+.analysis-inline-decision-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+.analysis-inline-decision-item {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm, 8px);
+  background: var(--surface);
+  display: grid;
+  gap: 4px;
+}
+.analysis-inline-decision-label { font-size: 0.72rem; color: var(--muted); font-weight: 500; }
+.analysis-inline-decision-value { font-size: 0.88rem; color: var(--text-bright); }
+
+.analysis-inline-warnings ul { margin: 0; padding-left: 18px; color: var(--warn, #b45309); font-size: 0.84rem; line-height: 1.6; }
+.analysis-inline-errors .analysis-inline-error-item {
+  padding: 8px 10px;
+  border: 1px solid rgba(239, 83, 80, 0.25);
+  background: rgba(239, 83, 80, 0.08);
+  border-radius: var(--r-sm, 8px);
+  display: grid;
+  gap: 3px;
+  margin-bottom: 6px;
+}
+.analysis-inline-error-label { font-size: 0.72rem; color: var(--bad, #b91c1c); font-weight: 600; }
+.analysis-inline-error-value { font-size: 0.82rem; color: var(--text); }
+
 .candle-table {
   border: 1px solid var(--line);
   border-radius: var(--r-md);
@@ -1921,4 +2146,68 @@ button {
 
   .wiz-card { padding: 32px 22px 24px; }
   .auth-card { padding: 32px 22px; }
+}
+
+/* ================================================
+   EDITORIAL OVERRIDES
+   세리프 액센트 · 플랫 마크 · 포레스트 모션
+   (클래스명/구조는 그대로 — 외형만 보강)
+   ================================================ */
+
+/* 워드마크 — 세리프 이탤릭 */
+.auth-brand,
+.brand-chip {
+  font-family: var(--serif);
+  font-style: italic;
+  letter-spacing: -0.01em;
+}
+
+/* 브랜드 마크 — 그라데이션 대신 플랫 */
+.brand-chip,
+.auth-brand-mark {
+  background: var(--accent);
+}
+
+/* 큰 숫자 — 세리프로 편집 감각 */
+.account-value,
+.price-main,
+.price-delta,
+.price-rate,
+.quote-value,
+.assets-value,
+.stat strong,
+.market-value,
+.wiz-step-count,
+.analysis-inline-score-meta,
+.analysis-inline-percent {
+  font-family: var(--serif);
+}
+
+/* 디스플레이 헤드라인 — 더 단단한 자간 */
+.auth-title,
+.wiz-question,
+.empty-hero-title,
+.chart-pane-name,
+.content-stock-name,
+.hero h1 {
+  letter-spacing: -0.035em;
+}
+
+/* 진행 바 — 플랫 액센트 */
+.wiz-progress-fill,
+.progress-bar > span {
+  background: var(--accent);
+}
+
+/* 완료 마크 — 플랫 */
+.wiz-success-mark {
+  background: var(--good);
+  box-shadow: 0 12px 30px rgba(31, 122, 79, 0.3);
+}
+
+/* 펄스 링 — 포레스트 톤 */
+@keyframes pulse-ring {
+  0%   { box-shadow: 0 0 0 0 rgba(31, 122, 79, 0.4); }
+  70%  { box-shadow: 0 0 0 14px rgba(31, 122, 79, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(31, 122, 79, 0); }
 }

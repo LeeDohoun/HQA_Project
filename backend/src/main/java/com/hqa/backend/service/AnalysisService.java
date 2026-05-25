@@ -86,12 +86,12 @@ public class AnalysisService {
         String taskId = UUID.randomUUID().toString();
         TaskMeta meta = new TaskMeta(taskId, request.getStockName(), request.getStockCode(), request.getMode(), request.getMaxRetries());
         tasks.put(taskId, meta);
-        aiServerClient.submitAnalysis(Map.of(
-                "task_id", taskId,
-                "stock_name", request.getStockName(),
-                "stock_code", request.getStockCode(),
-                "mode", request.getMode().name(),
-                "max_retries", request.getMaxRetries()
+        aiServerClient.submitAnalysis(new AiAnalyzeRequest(
+                taskId,
+                request.getStockName(),
+                request.getStockCode(),
+                request.getMode().name(),
+                request.getMaxRetries()
         ));
         meta.status = AnalysisStatus.running;
         return new AnalysisTaskResponse(taskId, AnalysisStatus.pending,

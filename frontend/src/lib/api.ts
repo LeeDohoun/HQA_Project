@@ -1,4 +1,5 @@
 import type {
+  AnalysisHistoryResponse,
   AnalysisRequest,
   AnalysisResult,
   AnalysisTaskResponse,
@@ -6,11 +7,15 @@ import type {
   ApiError,
   AuthResponse,
   AuthUser,
+  Balance,
   CandleHistory,
+  DisclosureItem,
   KisCredentials,
   KisCredentialsStatus,
   KisVerificationResult,
   LoginRequest,
+  MarketIndexResponse,
+  NewsItem,
   RealtimePrice,
   ScoreDetail,
   SignupRequest,
@@ -411,7 +416,12 @@ export const stockApi = {
   search: (query: string) =>
     api<StockSearchResponse>(`/api/v1/stocks/search?q=${encodeURIComponent(query)}`),
   price: async (stockCode: string) =>
-    mapRealtimePrice(await api<RealtimePriceWire>(`/api/v1/stocks/${stockCode}/price`))
+    mapRealtimePrice(await api<RealtimePriceWire>(`/api/v1/stocks/${stockCode}/price`)),
+  news: (stockCode: string, limit = 20) =>
+    api<{ items: NewsItem[]; error?: string }>(`/api/v1/stocks/${stockCode}/news?limit=${limit}`),
+  disclosures: (stockCode: string, limit = 20) =>
+    api<{ items: DisclosureItem[]; error?: string }>(`/api/v1/stocks/${stockCode}/disclosures?limit=${limit}`),
+  indices: () => api<MarketIndexResponse>("/api/v1/stocks/indices")
 };
 
 export const chartApi = {
@@ -477,7 +487,9 @@ export const analysisApi = {
       { method: "POST" }
     )),
   result: async (taskId: string) =>
-    mapResult(await api<AnalysisResultWire>(`/api/v1/analysis/${taskId}`))
+    mapResult(await api<AnalysisResultWire>(`/api/v1/analysis/${taskId}`)),
+  history: (page = 1, pageSize = 10) =>
+    api<AnalysisHistoryResponse>(`/api/v1/analysis/history/list?page=${page}&pageSize=${pageSize}`)
 };
 
 export type AutoTradeStatus = {
@@ -544,7 +556,8 @@ export const tradingApi = {
     if (params?.limit) search.set("limit", String(params.limit));
     const qs = search.toString();
     return api<Record<string, unknown>>(`/api/v1/trading/orders${qs ? `?${qs}` : ""}`);
-  }
+  },
+  balance: () => api<Balance>("/api/v1/trading/balance")
 };
 
 export const chatApi = {
