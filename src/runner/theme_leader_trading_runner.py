@@ -10,6 +10,11 @@ import yaml
 from src.agents.risk_manager import InvestmentAction
 from src.config.settings import get_data_dir
 from src.runner.decision_adapter import build_final_decision_from_payload
+from src.utils.portfolio_context import (
+    build_portfolio_context_from_balance_response,
+    build_portfolio_context_from_holdings,
+    unavailable_portfolio_context,
+)
 from src.runner.trade_executor import TradeExecutor
 
 KST = timezone(timedelta(hours=9))
@@ -65,14 +70,17 @@ class ThemeLeaderTradingRunner:
         min_leader_score: Optional[int] = None,
         strategy_profile: str = "default",
         save_report: bool = True,
+        portfolio_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         orchestrator = self._get_orchestrator()
+        resolved_portfolio_context = portfolio_context or self.build_portfolio_context()
         theme_result = orchestrator.run(
             theme=theme,
             theme_key=theme_key,
             candidate_limit=candidate_limit,
             top_n=top_n,
             strategy_profile=strategy_profile,
+            portfolio_context=resolved_portfolio_context,
         )
 
         leaders = list(theme_result.get("leaders") or [])
@@ -97,9 +105,11 @@ class ThemeLeaderTradingRunner:
             "strategy_profile": theme_result.get("strategy_profile", strategy_profile),
             "candidate_count": theme_result.get("candidate_count", 0),
             "evaluated_count": theme_result.get("evaluated_count", 0),
+            "candidate_filter": theme_result.get("candidate_filter") or {},
             "selected_count": len(selected),
             "executed_at": datetime.now(KST).isoformat(),
             "runtime": self._executor.get_runtime_config(),
+            "portfolio_context": self._report_portfolio_context(resolved_portfolio_context),
             "leaders": leaders,
             "trade_results": trade_results,
             "summary": self._summarize_trade_results(trade_results),
@@ -178,7 +188,12 @@ class ThemeLeaderTradingRunner:
             return self._orchestrator
         from src.agents import ThemeLeaderOrchestrator
 
-        self._orchestrator = ThemeLeaderOrchestrator(data_dir=str(self._data_dir))
+        trading_config = dict(self._config.get("trading") or {})
+        universe_filters = dict(trading_config.get("theme_universe_filters") or {})
+        self._orchestrator = ThemeLeaderOrchestrator(
+            data_dir=str(self._data_dir),
+            universe_filters=universe_filters,
+        )
         return self._orchestrator
 
     def _preview_or_execute_leader(
@@ -304,6 +319,39 @@ class ThemeLeaderTradingRunner:
             return list(tool.get_holdings() or [])
         except Exception:
             return []
+
+    def build_portfolio_context(self) -> Dict[str, Any]:
+        try:
+            tool = self._get_realtime_tool()
+            if not tool.is_available:
+                return unavailable_portfolio_context("realtime_tool_unavailable")
+            from src.tools.realtime_tool import inquire_balance
+
+            response = inquire_balance(paper=self._is_paper_account())
+            context = build_portfolio_context_from_balance_response(response)
+            if context.get("available"):
+                return context
+        except Exception:
+            context = None
+
+        try:
+            holdings = self.get_holdings()
+            return build_portfolio_context_from_holdings(holdings)
+        except Exception as exc:
+            return unavailable_portfolio_context(f"portfolio_context_failed:{type(exc).__name__}")
+
+    @staticmethod
+    def _report_portfolio_context(context: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        if not context:
+            return unavailable_portfolio_context("not_provided")
+        return {
+            "available": bool(context.get("available")),
+            "source": context.get("source"),
+            "reason": context.get("reason"),
+            "captured_at": context.get("captured_at"),
+            "summary": dict(context.get("summary") or {}),
+            "positions_by_code": dict(context.get("positions_by_code") or {}),
+        }
 
     def _get_sell_quantity(self, stock_code: str) -> int:
         try:

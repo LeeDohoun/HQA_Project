@@ -176,6 +176,34 @@ def test_execute_buy_submits_to_kis_paper_without_real_trading_flag(tmp_path, mo
     reset_settings_cache()
 
 
+def test_execute_buy_accepts_amount_quantity_override_and_metadata(tmp_path, monkeypatch):
+    orders_dir = tmp_path / "orders"
+    monkeypatch.setenv("HQA_ORDERS_DIR", str(orders_dir))
+    reset_settings_cache()
+
+    config = _base_trading_config()
+    config["cooldown_minutes"] = 0
+    executor = TradeExecutor(config)
+
+    result = executor.execute_buy(
+        stock_name="AI Alpha",
+        stock_code="000001",
+        decision=_DummyDecision(),
+        current_price=10000,
+        amount_override=120000,
+        quantity_override=12,
+        metadata={"theme_key": "ai", "paper_trading_mode": "multi_theme"},
+    )
+
+    assert result["status"] == "simulated"
+    assert result["amount"] == 120000
+    assert result["quantity"] == 12
+    assert result["metadata"]["theme_key"] == "ai"
+    assert executor.get_daily_summary()["total_spent"] == 120000
+
+    reset_settings_cache()
+
+
 def test_execute_buy_blocks_real_account_without_explicit_flag(tmp_path, monkeypatch):
     orders_dir = tmp_path / "orders"
     monkeypatch.setenv("HQA_ORDERS_DIR", str(orders_dir))

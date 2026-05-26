@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from datetime import date, timedelta
 from types import SimpleNamespace
 
 from src.agents.theme_orchestrator import (
@@ -188,3 +190,87 @@ def test_strategy_profile_leader_score_weights():
 def test_unknown_strategy_profile_falls_back_to_default():
     orchestrator = _orchestrator()
     assert orchestrator._normalize_strategy_profile("unknown") == "default"
+
+
+def _write_jsonl(path, rows):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "\n".join(json.dumps(row, ensure_ascii=False) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _price_rows(stock_code: str, close: int = 10000, days: int = 65):
+    start = date(2026, 1, 1)
+    return [
+        {
+            "stock_code": stock_code,
+            "date": (start + timedelta(days=idx)).isoformat(),
+            "close": close + idx,
+            "volume": 200000,
+            "trading_value": 2_000_000_000,
+        }
+        for idx in range(days)
+    ]
+
+
+def test_extract_candidates_applies_universe_filter_before_limit(tmp_path):
+    theme_key = "ai"
+    _write_jsonl(
+        tmp_path / "raw" / "theme_targets" / f"{theme_key}.jsonl",
+        [
+            {"stock_code": "111111", "stock_name": "통과"},
+            {"stock_code": "222222", "stock_name": "제외"},
+        ],
+    )
+    _write_jsonl(
+        tmp_path / "canonical_index" / theme_key / "corpus.jsonl",
+        [
+            {"text": "문서", "metadata": {"stock_code": "111111", "stock_name": "통과", "source_type": "news"}},
+            {"text": "문서", "metadata": {"stock_code": "222222", "stock_name": "제외", "source_type": "news"}},
+        ],
+    )
+    _write_jsonl(tmp_path / "market_data" / theme_key / "chart.jsonl", _price_rows("111111"))
+
+    orchestrator = ThemeLeaderOrchestrator(
+        data_dir=str(tmp_path),
+        universe_filters={
+            "enabled": True,
+            "require_price_history": True,
+            "require_recent_documents": True,
+            "min_history_days": 60,
+            "min_avg_trading_value_20d": 1_000_000_000,
+        },
+    )
+
+    candidates = orchestrator.extract_candidates("AI", theme_key, candidate_limit=10)
+
+    assert [candidate.stock_code for candidate in candidates] == ["111111"]
+    report = orchestrator._last_candidate_filter_report
+    assert report["enabled"] is True
+    assert report["raw_candidate_count"] == 2
+    assert report["passed_count"] == 1
+    assert report["rejected_count"] == 1
+    assert report["rejection_reasons"]["missing_price_history"] == 1
+
+
+def test_extract_candidates_keeps_legacy_behavior_when_filter_disabled(tmp_path):
+    theme_key = "ai"
+    _write_jsonl(
+        tmp_path / "raw" / "theme_targets" / f"{theme_key}.jsonl",
+        [{"stock_code": "222222", "stock_name": "제외아님"}],
+    )
+    _write_jsonl(
+        tmp_path / "canonical_index" / theme_key / "corpus.jsonl",
+        [{"text": "문서", "metadata": {"stock_code": "222222", "stock_name": "제외아님", "source_type": "news"}}],
+    )
+
+    orchestrator = ThemeLeaderOrchestrator(
+        data_dir=str(tmp_path),
+        universe_filters={"enabled": False, "require_price_history": True},
+    )
+
+    candidates = orchestrator.extract_candidates("AI", theme_key, candidate_limit=10)
+
+    assert [candidate.stock_code for candidate in candidates] == ["222222"]
+    assert orchestrator._last_candidate_filter_report["status"] == "disabled"

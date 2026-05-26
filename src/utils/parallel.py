@@ -27,7 +27,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 def run_agents_parallel(
     tasks: Dict[str, Tuple[Callable, tuple]],
     max_workers: int | None = None,
-    timeout: float | None = 120,
+    timeout: float | None = None,
 ) -> Dict[str, Any]:
     """
     여러 에이전트 함수를 병렬로 실행합니다.

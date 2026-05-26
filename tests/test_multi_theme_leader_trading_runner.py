@@ -9,8 +9,10 @@ class _FakeThemeRunner:
     def __init__(self):
         self._config = {"trading": {}}
         self._executor = type("Executor", (), {"get_runtime_config": lambda self: {"enabled": True, "dry_run": True, "account_type": "paper"}})()
+        self.received_run_once_kwargs = []
 
     def run_once(self, **kwargs):
+        self.received_run_once_kwargs.append(dict(kwargs))
         theme_key = kwargs["theme_key"]
         if theme_key == "ai":
             leaders = [
@@ -63,6 +65,21 @@ class _FakeThemeRunner:
             "price": 10000,
             "preview": {"status": "ready"} if not execute else None,
             "trade": {"status": "filled"} if execute else None,
+        }
+
+    def build_portfolio_context(self):
+        return {
+            "available": True,
+            "source": "fake",
+            "summary": {"holding_count": 1, "total_profit_loss": -1000, "available_cash": 9000000},
+            "positions_by_code": {
+                "111111": {
+                    "stock_code": "111111",
+                    "stock_name": "AI-Alpha",
+                    "holding_quantity": 1,
+                    "profit_loss_rate": -15.0,
+                }
+            },
         }
 
 
@@ -234,3 +251,28 @@ def test_multi_theme_runner_execute_state_and_preview_state(tmp_path):
         save_report=False,
     )
     assert execute_result["trade_results"][0]["execution_state"] == "execute_sent"
+
+
+def test_multi_theme_runner_builds_and_reuses_portfolio_context(tmp_path):
+    _touch_theme_files(tmp_path)
+    theme_runner = _FakeThemeRunner()
+    runner = MultiThemeLeaderTradingRunner(
+        data_dir=str(tmp_path),
+        theme_runner=theme_runner,
+    )
+
+    result = runner.run_all(
+        candidate_limit=3,
+        per_theme_top_n=2,
+        top_n=1,
+        execute=False,
+        min_leader_score=75,
+        min_confidence=65,
+        max_risk_level="MEDIUM",
+        save_report=False,
+    )
+
+    assert result["portfolio_context"]["summary"]["holding_count"] == 1
+    assert theme_runner.received_run_once_kwargs
+    assert all("portfolio_context" in kwargs for kwargs in theme_runner.received_run_once_kwargs)
+    assert all(kwargs["portfolio_context"]["source"] == "fake" for kwargs in theme_runner.received_run_once_kwargs)

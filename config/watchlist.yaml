@@ -58,6 +58,18 @@ trading:
   stop_loss_pct: 10                 # 손절 기준 (%)
   cooldown_minutes: 30              # 동일 종목 재주문 대기 (분)
 
+  # 테마 주도주 분석 전 universe 선필터
+  # 백테스팅식 1차 필터를 multi-theme scheduler에도 적용합니다.
+  theme_universe_filters:
+    enabled: true
+    min_avg_trading_value_20d: 1000000000
+    max_volatility_20d: 1.2
+    max_return_5d: 0.35
+    max_return_20d: 0.9
+    require_price_history: true
+    require_recent_documents: true
+    min_history_days: 60
+
   # 자동 매수 조건 (FinalDecision 기반)
   auto_buy_conditions:
     min_total_score: 70              # 종합 점수 최소값

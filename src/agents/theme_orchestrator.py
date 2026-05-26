@@ -19,6 +19,7 @@ from src.agents.risk_manager import AgentScores, FinalDecision, RiskManagerAgent
 from src.config.settings import get_data_dir
 from src.ingestion.theme_targets import make_theme_key
 from src.runner.decision_adapter import final_decision_to_payload
+from src.utils.portfolio_context import candidate_portfolio_context
 from src.utils.parallel import is_error, run_agents_parallel
 
 logger = logging.getLogger(__name__)
@@ -87,12 +88,18 @@ class ThemeLeaderOrchestrator:
     - RiskManager가 최종 순위를 종합
     """
 
-    def __init__(self, data_dir: Optional[str] = None):
+    def __init__(
+        self,
+        data_dir: Optional[str] = None,
+        universe_filters: Optional[Dict[str, Any]] = None,
+    ):
         self.data_dir = Path(data_dir) if data_dir else get_data_dir()
         self.analyst = AnalystAgent()
         self.chartist = ChartistAgent()
         self.risk_manager = RiskManagerAgent()
         self.instruct_llm = get_instruct_llm()
+        self.universe_filters = dict(universe_filters or {})
+        self._last_candidate_filter_report: Dict[str, Any] = self._empty_filter_report(enabled=False)
 
     def run(
         self,
@@ -101,6 +108,7 @@ class ThemeLeaderOrchestrator:
         candidate_limit: int = 5,
         top_n: int = 3,
         strategy_profile: str = "default",
+        portfolio_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         resolved_key = theme_key or make_theme_key(theme, theme)
         resolved_profile = self._normalize_strategy_profile(strategy_profile)
@@ -115,6 +123,7 @@ class ThemeLeaderOrchestrator:
                 "message": f"테마 후보군을 찾지 못했습니다: {theme}",
                 "theme": theme,
                 "theme_key": resolved_key,
+                "candidate_filter": self._last_candidate_filter_report,
             }
 
         evaluations = []
@@ -125,6 +134,7 @@ class ThemeLeaderOrchestrator:
                     resolved_key,
                     candidate,
                     strategy_profile=resolved_profile,
+                    portfolio_context=portfolio_context,
                 )
             )
 
@@ -153,6 +163,7 @@ class ThemeLeaderOrchestrator:
             "strategy_profile": resolved_profile,
             "candidate_count": len(candidates),
             "evaluated_count": len(evaluations),
+            "candidate_filter": self._last_candidate_filter_report,
             "leaders": leaders,
             "summary": "\n".join(summary_lines),
         }
@@ -224,13 +235,97 @@ class ThemeLeaderOrchestrator:
             ),
             reverse=True,
         )
+        raw_count = len(candidates)
+        candidates = self._apply_universe_filter(
+            theme=theme,
+            theme_key=theme_key,
+            candidates=candidates,
+        )
         logger.info(
-            "[ThemeOrchestrator] theme=%s key=%s candidates=%s",
+            "[ThemeOrchestrator] theme=%s key=%s raw_candidates=%s filtered_candidates=%s candidates=%s",
             theme,
             theme_key,
+            raw_count,
+            len(candidates),
             [(c.stock_name, c.stock_code, c.seed_score) for c in candidates[:candidate_limit]],
         )
         return candidates[:candidate_limit]
+
+    def _apply_universe_filter(
+        self,
+        *,
+        theme: str,
+        theme_key: str,
+        candidates: List[ThemeCandidate],
+    ) -> List[ThemeCandidate]:
+        filters = dict(self.universe_filters or {})
+        if not candidates or not filters or not self._config_bool(filters.get("enabled", True)):
+            self._last_candidate_filter_report = self._empty_filter_report(
+                enabled=bool(filters and self._config_bool(filters.get("enabled", True))),
+                raw_candidate_count=len(candidates),
+            )
+            return candidates
+
+        try:
+            from src.runner.theme_candidate_filter import ThemeCandidateFilter
+        except Exception as exc:
+            logger.warning("ThemeCandidateFilter unavailable; skipping universe filter: %s", exc)
+            self._last_candidate_filter_report = {
+                **self._empty_filter_report(enabled=True, raw_candidate_count=len(candidates)),
+                "status": "skipped",
+                "reason": f"filter_unavailable:{type(exc).__name__}",
+            }
+            return candidates
+
+        price_rows = self._load_market_rows_by_code(theme_key)
+        universe = {
+            "theme": theme,
+            "theme_key": theme_key,
+            "candidates": [
+                self._candidate_to_filter_payload(candidate, price_rows.get(candidate.stock_code, []))
+                for candidate in candidates
+            ],
+        }
+        filtered = ThemeCandidateFilter(filters).filter_theme(universe)
+        passed_codes = {
+            str(row.get("stock_code") or "").strip()
+            for row in filtered.get("passed") or []
+            if str(row.get("stock_code") or "").strip()
+        }
+        rejected = list(filtered.get("rejected") or [])
+        self._last_candidate_filter_report = {
+            "enabled": True,
+            "status": "filtered",
+            "raw_candidate_count": len(candidates),
+            "passed_count": int(filtered.get("passed_count") or 0),
+            "rejected_count": int(filtered.get("rejected_count") or 0),
+            "filters": filters,
+            "rejection_reasons": self._summarize_rejection_reasons(rejected),
+            "rejected": rejected[:20],
+        }
+        return [candidate for candidate in candidates if candidate.stock_code in passed_codes]
+
+    def _candidate_to_filter_payload(
+        self,
+        candidate: ThemeCandidate,
+        price_history: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        source_counts = {
+            "news": candidate.news_docs,
+            "forum": candidate.forum_docs,
+            "dart": candidate.dart_docs,
+        }
+        return {
+            "stock_code": candidate.stock_code,
+            "stock_name": candidate.stock_name,
+            "price_history": price_history,
+            "source_counts": source_counts,
+            "data_flags": {
+                "has_price_history": bool(price_history),
+                "has_documents": candidate.corpus_docs > 0,
+                "has_recent_documents": candidate.corpus_docs > 0,
+            },
+        }
 
     def evaluate_candidate(
         self,
@@ -238,6 +333,7 @@ class ThemeLeaderOrchestrator:
         theme_key: str,
         candidate: ThemeCandidate,
         strategy_profile: str = "default",
+        portfolio_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         records = self._load_stock_records(theme_key, candidate.stock_code)
         source_counts = Counter((row.get("metadata") or {}).get("source_type", "") for row in records)
@@ -258,7 +354,7 @@ class ThemeLeaderOrchestrator:
                 (theme_key, candidate),
             ),
         }
-        results = run_agents_parallel(tasks, max_workers=3, timeout=240)
+        results = run_agents_parallel(tasks, max_workers=3)
 
         analyst_result = results.get("analyst")
         quant_result = results.get("quant")
@@ -294,10 +390,12 @@ class ThemeLeaderOrchestrator:
             chartist_context=chartist_result.analysis_packet,
         )
 
+        candidate_context = candidate_portfolio_context(portfolio_context, candidate.stock_code)
         final_decision = self.risk_manager.make_decision(
             candidate.stock_name,
             candidate.stock_code,
             scores,
+            portfolio_context=candidate_context,
         )
         data_presence_score = min(100, candidate.seed_score)
         leader_score = self._compute_leader_score(
@@ -324,6 +422,7 @@ class ThemeLeaderOrchestrator:
             "leader_score": leader_score,
             "data_presence_score": data_presence_score,
             "strategy_profile": strategy_profile,
+            "portfolio_context": candidate_context,
             "analyst": {
                 "total_score": analyst_result["total_score"],
                 "grade": analyst_result["grade"],
@@ -785,6 +884,54 @@ class ThemeLeaderOrchestrator:
                 if code:
                     counter[code] += 1
         return counter
+
+    def _load_market_rows_by_code(self, theme_key: str) -> Dict[str, List[Dict[str, Any]]]:
+        rows_by_code: Dict[str, List[Dict[str, Any]]] = {}
+        candidates = [
+            self.data_dir / "market_data" / theme_key / "chart.jsonl",
+            self.data_dir / "raw" / "chart" / f"{theme_key}.jsonl",
+        ]
+        for path in candidates:
+            if not path.exists():
+                continue
+            for row in self._iter_jsonl(path):
+                code = str(row.get("stock_code", "")).strip()
+                if code:
+                    rows_by_code.setdefault(code, []).append(row)
+        return rows_by_code
+
+    @staticmethod
+    def _empty_filter_report(
+        *,
+        enabled: bool,
+        raw_candidate_count: int = 0,
+    ) -> Dict[str, Any]:
+        return {
+            "enabled": enabled,
+            "status": "disabled" if not enabled else "not_run",
+            "raw_candidate_count": raw_candidate_count,
+            "passed_count": raw_candidate_count,
+            "rejected_count": 0,
+            "filters": {},
+            "rejection_reasons": {},
+            "rejected": [],
+        }
+
+    @staticmethod
+    def _summarize_rejection_reasons(rejected: List[Dict[str, Any]]) -> Dict[str, int]:
+        counts: Counter = Counter()
+        for row in rejected:
+            reasons = row.get("reasons") or [row.get("reason")]
+            for reason in reasons:
+                if reason:
+                    counts[str(reason)] += 1
+        return dict(counts)
+
+    @staticmethod
+    def _config_bool(value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        return str(value).strip().lower() not in {"0", "false", "no", "n", "off"}
 
     def _compose_context(
         self,

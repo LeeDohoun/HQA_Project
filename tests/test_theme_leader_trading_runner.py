@@ -240,6 +240,50 @@ def test_account_type_override_forces_paper_runtime(tmp_path):
     assert runner._is_paper_account() is True
 
 
+def test_theme_leader_runner_passes_universe_filters_to_orchestrator(tmp_path, monkeypatch):
+    config_path = tmp_path / "watchlist.yaml"
+    config_path.write_text(
+        """
+schedule:
+  enabled: false
+watchlist: []
+trading:
+  enabled: true
+  dry_run: true
+  account_type: "paper"
+  theme_universe_filters:
+    enabled: true
+    require_price_history: true
+    min_history_days: 60
+""",
+        encoding="utf-8",
+    )
+    created = {}
+
+    class FakeOrchestrator:
+        def __init__(self, **kwargs):
+            created.update(kwargs)
+
+    monkeypatch.setattr("src.agents.ThemeLeaderOrchestrator", FakeOrchestrator)
+
+    class FakeExecutor:
+        def get_runtime_config(self):
+            return {"enabled": True, "dry_run": True, "account_type": "paper"}
+
+    runner = ThemeLeaderTradingRunner(
+        config_path=str(config_path),
+        data_dir=str(tmp_path),
+        executor=FakeExecutor(),
+    )
+
+    orchestrator = runner._get_orchestrator()
+
+    assert isinstance(orchestrator, FakeOrchestrator)
+    assert created["data_dir"] == str(tmp_path)
+    assert created["universe_filters"]["enabled"] is True
+    assert created["universe_filters"]["min_history_days"] == 60
+
+
 def test_theme_leader_trading_blocks_malformed_leader_score(tmp_path, monkeypatch):
     config_path = tmp_path / "watchlist.yaml"
     _write_config(config_path)

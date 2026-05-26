@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from src.agents.risk_manager import InvestmentAction
 from src.config.settings import get_data_dir
+from src.utils.portfolio_context import unavailable_portfolio_context
 from src.runner.signal_quality_filter import SignalQualityFilter, resolve_signal_quality_config
 from src.runner.theme_leader_trading_runner import ThemeLeaderTradingRunner
 
@@ -59,9 +60,11 @@ class MultiThemeLeaderTradingRunner:
         include_theme_keys: Optional[Sequence[str]] = None,
         exclude_theme_keys: Optional[Sequence[str]] = None,
         save_report: bool = True,
+        portfolio_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         resolved_profile = self._normalize_strategy_profile(strategy_profile)
         themes = self._resolve_themes(include_theme_keys=include_theme_keys, exclude_theme_keys=exclude_theme_keys)
+        resolved_portfolio_context = portfolio_context or self._build_portfolio_context()
 
         per_theme_results: List[Dict[str, Any]] = []
         all_rows: List[Dict[str, Any]] = []
@@ -77,6 +80,7 @@ class MultiThemeLeaderTradingRunner:
                 min_leader_score=None,
                 strategy_profile=resolved_profile,
                 save_report=False,
+                portfolio_context=resolved_portfolio_context,
             )
             per_theme_results.append(
                 {
@@ -85,6 +89,7 @@ class MultiThemeLeaderTradingRunner:
                     "status": result.get("status"),
                     "candidate_count": int(result.get("candidate_count", 0) or 0),
                     "evaluated_count": int(result.get("evaluated_count", 0) or 0),
+                    "candidate_filter": dict(result.get("candidate_filter") or {}),
                     "leaders": list(result.get("leaders") or []),
                 }
             )
@@ -131,6 +136,7 @@ class MultiThemeLeaderTradingRunner:
             "mode": "execute" if execute else "preview",
             "executed_at": datetime.now(KST).isoformat(),
             "runtime": self._theme_runner._executor.get_runtime_config(),
+            "portfolio_context": self._report_portfolio_context(resolved_portfolio_context),
             "strategy_profile": resolved_profile,
             "theme_count": len(themes),
             "leader_count": len(all_rows),
@@ -177,6 +183,25 @@ class MultiThemeLeaderTradingRunner:
 
     def get_current_price(self, stock_code: str) -> Optional[int]:
         return self._theme_runner.get_current_price(stock_code)
+
+    def _build_portfolio_context(self) -> Dict[str, Any]:
+        builder = getattr(self._theme_runner, "build_portfolio_context", None)
+        if not callable(builder):
+            return unavailable_portfolio_context("theme_runner_portfolio_context_unavailable")
+        return builder()
+
+    @staticmethod
+    def _report_portfolio_context(context: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        if not context:
+            return unavailable_portfolio_context("not_provided")
+        return {
+            "available": bool(context.get("available")),
+            "source": context.get("source"),
+            "reason": context.get("reason"),
+            "captured_at": context.get("captured_at"),
+            "summary": dict(context.get("summary") or {}),
+            "positions_by_code": dict(context.get("positions_by_code") or {}),
+        }
 
     @staticmethod
     def _normalize_strategy_profile(strategy_profile: str) -> str:

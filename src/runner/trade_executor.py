@@ -269,6 +269,10 @@ class TradeExecutor:
         stock_code: str,
         decision,
         current_price: Optional[int] = None,
+        *,
+        amount_override: Optional[int] = None,
+        quantity_override: Optional[int] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         매수 주문 실행
@@ -288,9 +292,16 @@ class TradeExecutor:
             return {"status": "blocked", "reason": blocked, "dry_run": self._dry_run}
 
         # 주문 금액 계산
-        buy_amount = self._calculate_buy_amount(current_price)
+        max_buy_amount = self._calculate_buy_amount(current_price)
+        buy_amount = int(amount_override) if amount_override is not None else max_buy_amount
+        buy_amount = max(0, min(buy_amount, max_buy_amount))
         quantity = 0
-        if current_price and current_price > 0:
+        if quantity_override is not None:
+            quantity = max(0, int(quantity_override))
+            if current_price and current_price > 0:
+                quantity = min(quantity, max_buy_amount // current_price)
+                buy_amount = quantity * current_price
+        elif current_price and current_price > 0:
             quantity = buy_amount // current_price
 
         order = {
@@ -306,6 +317,8 @@ class TradeExecutor:
             "decision_action": decision.action.value,
             "dry_run": self._dry_run,
         }
+        if isinstance(metadata, dict):
+            order["metadata"] = metadata
 
         if self._dry_run:
             order["status"] = "simulated"
@@ -334,6 +347,8 @@ class TradeExecutor:
         decision,
         quantity: int = 0,
         current_price: Optional[int] = None,
+        *,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """매도 주문 실행"""
         blocked = self._check_circuit_breaker(stock_code, "SELL")
@@ -352,6 +367,8 @@ class TradeExecutor:
             "decision_action": decision.action.value,
             "dry_run": self._dry_run,
         }
+        if isinstance(metadata, dict):
+            order["metadata"] = metadata
 
         if self._dry_run:
             order["status"] = "simulated"
