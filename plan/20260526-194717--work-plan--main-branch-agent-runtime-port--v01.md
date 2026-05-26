@@ -1,30 +1,31 @@
 Plan Type: work-plan
 Workstream: main-branch-agent-runtime-port
 Version: v01
-Status: Implemented / Verified
+Status: Merged To Main / Verified
 Created: 2026-05-26 19:47:17 KST
-Last Updated: 2026-05-26 19:56:22 KST
+Last Updated: 2026-05-26 20:06:24 KST
 Supersedes: None
 Related Plan: docs/agent-system-spec.md, plan/20260526-192623--work-plan--agent-system-spec--v01.md
-Current Completion State: The main-based integration branch has the Python AI runtime port applied, focused verification has passed, and the final read-only diff review is complete.
-Completed So Far: Created a clean `origin/main`-based worktree branch `port/main-agent-runtime-20260526`, copied this approved plan into that worktree, ported the Python AI runtime/config/script/test surfaces from `ai-data-main`, excluded backend/frontend/generated-data/log areas, added a default skip gate for live KIS paper tests, ported the small backtesting helper changes required by the proof-validation tests, ran the focused spec test set, ran adjacent scheduler/KIS/tracing/proof tests, ran Python compile checks, ran `git diff --cached --check`, and confirmed the final diff has no backend/frontend/generated artifact paths.
-Remaining Work: None for the approved porting scope. Live KIS validation and fullstack backend/frontend build checks remain optional follow-up validation because those areas were intentionally not modified.
+Current Completion State: The Python AI runtime port has been fast-forward merged into local `main` and the focused Python verification suite passed on `main`.
+Completed So Far: Created a clean `origin/main`-based worktree branch `port/main-agent-runtime-20260526`, copied this approved plan into that worktree, ported the Python AI runtime/config/script/test surfaces from `ai-data-main`, excluded generated-data/log areas from the port commit, added a default skip gate for live KIS paper tests, ported the small backtesting helper changes required by the proof-validation tests, ran the focused spec test set, ran adjacent scheduler/KIS/tracing/proof tests, ran Python compile checks, ran `git diff --cached --check`, committed the port as `a5a0ef7`, fast-forward merged local `main` to that commit, reran the merged-main Python target suite, and reran Python compile checks on merged `main`.
+Remaining Work: None for the approved Python porting scope. Live KIS validation and fullstack backend/frontend build checks remain optional follow-up validation. The fast-forward also brought local `main` up to `origin/main`, so backend/frontend changes already present upstream are now visible locally; they were not part of the port commit's diff from `origin/main`.
 Current Blockers: None.
-Next Step: Hand off concise branch, changed-scope, and verification notes.
+Next Step: Hand off concise main-merge and verification notes.
 
 # Scoreboard
 
 Current Score: 50
 Score Source: provisional
-Last Updated: 2026-05-26 19:56:22 KST
-Score Rationale: The requested main-branch port is implemented in a clean main-based worktree, focused Python verification passes, backend/frontend/generated-data areas remain untouched, and read-only diff review found no path-scope violation. The score remains capped at 50 because the user has not provided an explicit score and fullstack verification was intentionally not run.
-What Improved: The port moved from approved plan to verified code. Python AI runtime files, configs, scripts, tests, proof-validation helpers, and safety gates are now present on the main-based branch. Live KIS checks are gated out of default pytest runs.
-What Remains Unsatisfactory: No live KIS paper order validation was run, and backend/frontend builds were not run because those areas were intentionally left unmodified.
-Actions To Raise Or Maintain Score: Review the final diff, run any desired fullstack checks separately if the branch will be used in a fullstack deployment, and run live KIS checks only with explicit credentials and `RUN_KIS_LIVE_TESTS=1`.
+Last Updated: 2026-05-26 20:06:24 KST
+Score Rationale: The requested port is now merged into local `main`, focused Python verification passes on `main`, and live KIS checks remain safely gated. The score remains capped at 50 because the user has not provided an explicit score, live broker validation was skipped by design, and fullstack frontend/backend builds were not runnable without additional local setup.
+What Improved: The work moved from a verified port branch to local `main`. The target Python suite passes after merge, and compile checks pass on merged `main`.
+What Remains Unsatisfactory: No live KIS paper order validation was run. Backend Maven tests were not run because no Maven executable or backend test files were present in the local tree. Frontend build/lint were not run because `frontend/node_modules` and lockfile were absent.
+Actions To Raise Or Maintain Score: Push local `main` if desired, run live KIS checks only with explicit credentials and `RUN_KIS_LIVE_TESTS=1`, and install frontend/backend toolchains before running fullstack checks.
 Score History:
 - 2026-05-26 19:47:17 KST: provisional 46. Approved planning state before implementation; exact conflict surface and verification results are still unknown.
 - 2026-05-26 19:55:08 KST: provisional 50. Main-based port implemented and focused Python verification passed; provisional score is capped pending explicit user feedback.
 - 2026-05-26 19:56:22 KST: provisional 50. Final read-only diff review passed with no backend/frontend/generated-data path changes; score remains capped pending explicit user feedback.
+- 2026-05-26 20:06:24 KST: provisional 50. Port commit fast-forward merged into local main, Python target tests passed on main, and compile checks passed; score remains capped pending explicit user feedback.
 
 # Objective
 
