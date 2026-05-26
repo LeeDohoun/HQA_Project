@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import os
 import re
 import shutil
+from pathlib import Path
 from typing import List, Tuple
 
 try:
@@ -17,19 +18,36 @@ except ImportError:
 from .base import BaseCollector, USER_AGENT
 
 
-def _first_existing_path(*candidates: str | None) -> str | None:
+def _is_snap_launcher(path: str) -> bool:
+    resolved = str(Path(path).resolve())
+    if "/snap/" in resolved:
+        return True
+    try:
+        text = Path(path).read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return False
+    return "snap" in text[:500].lower()
+
+
+def _first_existing_path(*candidates: str | None, skip_snap: bool = True) -> str | None:
     for candidate in candidates:
-        if candidate and candidate.strip():
-            return candidate.strip()
+        path = (candidate or "").strip()
+        if not path:
+            continue
+        if skip_snap and _is_snap_launcher(path):
+            continue
+        return path
     return None
 
 
 def _resolve_chrome_binary() -> str | None:
     return _first_existing_path(
         os.getenv("CHROME_BINARY"),
+        shutil.which("google-chrome"),
+        shutil.which("google-chrome-stable"),
+        "/opt/google/chrome/chrome" if Path("/opt/google/chrome/chrome").exists() else None,
         shutil.which("chromium"),
         shutil.which("chromium-browser"),
-        shutil.which("google-chrome"),
     )
 
 
@@ -54,7 +72,6 @@ class NaverThemeStockCollector(BaseCollector):
         from selenium import webdriver
         from selenium.webdriver.chrome.options import Options
         from selenium.webdriver.chrome.service import Service
-        from webdriver_manager.chrome import ChromeDriverManager
 
         options = Options()
         options.add_argument("--headless=new")
@@ -71,7 +88,7 @@ class NaverThemeStockCollector(BaseCollector):
         if chromedriver:
             return webdriver.Chrome(service=Service(chromedriver), options=options)
 
-        return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+        return webdriver.Chrome(options=options)
 
     def collect(self, theme_keyword: str, max_stocks: int = 30, max_pages: int = 10) -> List[ThemeStock]:
         if BeautifulSoup is None:

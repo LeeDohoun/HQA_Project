@@ -18,6 +18,7 @@ config/watchlist.yaml 설정을 읽고:
 """
 
 import logging
+import re
 import time
 import yaml
 from datetime import datetime, timedelta, timezone
@@ -65,6 +66,10 @@ class AutonomousRunner:
 
         # 실행 이력
         self._run_history: List[Dict[str, Any]] = []
+        self._long_pending_triggers: List[Dict[str, Any]] = []
+        self._last_short_run_at: Optional[datetime] = None
+        self._last_long_plan_date: Optional[str] = None
+        self._last_long_trigger_check_at: Optional[datetime] = None
 
     def _load_config(self) -> Dict[str, Any]:
         """YAML 설정 로드"""
@@ -95,6 +100,15 @@ class AutonomousRunner:
         items = self._config.get("watchlist", [])
         # priority 순 정렬
         return sorted(items, key=lambda x: x.get("priority", 99))
+
+    def _watchlist_for_strategy(self, strategy: str) -> List[Dict[str, str]]:
+        strategy_key = str(strategy or "").strip().lower()
+        rows = []
+        for item in self.watchlist:
+            raw = str(item.get("strategy", "short")).strip().lower()
+            if raw in {"both", "all"} or raw == strategy_key:
+                rows.append(item)
+        return rows
 
     # ──────────────────────────────────────────────
     # 1회 실행
@@ -341,6 +355,11 @@ class AutonomousRunner:
         - interval_minutes 간격으로 반복
         - market_hours_only=True면 장중에만 실행
         """
+        strategy_schedule = self._config.get("strategy_schedule", {})
+        if strategy_schedule:
+            self._run_loop_with_strategy_schedule(strategy_schedule)
+            return
+
         schedule = self._config.get("schedule", {})
         interval = schedule.get("interval_minutes", 60)
         market_only = schedule.get("market_hours_only", True)
@@ -378,6 +397,255 @@ class AutonomousRunner:
         except KeyboardInterrupt:
             print("\n\n👋 자율 에이전트 종료")
             self._print_daily_summary()
+
+    def _run_loop_with_strategy_schedule(self, strategy_schedule: Dict[str, Any]) -> None:
+        short_cfg = dict(strategy_schedule.get("short") or {})
+        long_cfg = dict(strategy_schedule.get("long") or {})
+
+        short_enabled = bool(short_cfg.get("enabled", True))
+        short_interval = int(short_cfg.get("interval_minutes", 60))
+        short_market_only = bool(short_cfg.get("market_hours_only", True))
+
+        long_enabled = bool(long_cfg.get("enabled", True))
+        long_analysis_time = str(long_cfg.get("analysis_time", "08:00"))
+        long_market_only = bool(long_cfg.get("market_hours_only", True))
+        long_check_interval = int(long_cfg.get("check_interval_minutes", 5))
+        long_plan_ttl_hours = int(long_cfg.get("plan_ttl_hours", 24))
+
+        print(f"\n🔁 [자율 에이전트] 전략 스케줄 반복 실행 시작")
+        print(f"   단기: enabled={short_enabled}, interval={short_interval}분, 장중만={short_market_only}")
+        print(
+            f"   장기: enabled={long_enabled}, analysis_time={long_analysis_time}, "
+            f"check_interval={long_check_interval}분, 장중만={long_market_only}"
+        )
+        print(f"   중지: Ctrl+C\n")
+
+        try:
+            while True:
+                now = datetime.now(KST)
+
+                if short_enabled:
+                    self._run_short_strategy_if_due(
+                        now=now,
+                        interval_minutes=short_interval,
+                        market_hours_only=short_market_only,
+                    )
+
+                if long_enabled:
+                    self._build_long_strategy_plan_if_due(
+                        now=now,
+                        analysis_time=long_analysis_time,
+                        plan_ttl_hours=long_plan_ttl_hours,
+                    )
+                    self._execute_long_strategy_triggers_if_due(
+                        now=now,
+                        check_interval_minutes=long_check_interval,
+                        market_hours_only=long_market_only,
+                    )
+
+                self.reload_config()
+                time.sleep(30)
+
+        except KeyboardInterrupt:
+            print("\n\n👋 자율 에이전트 종료")
+            self._print_daily_summary()
+
+    def _run_short_strategy_if_due(
+        self,
+        *,
+        now: datetime,
+        interval_minutes: int,
+        market_hours_only: bool,
+    ) -> None:
+        if market_hours_only and not self._is_market_hours(now):
+            return
+        if self._last_short_run_at:
+            elapsed = (now - self._last_short_run_at).total_seconds() / 60.0
+            if elapsed < max(1, interval_minutes):
+                return
+
+        rows = self._watchlist_for_strategy("short")
+        if not rows:
+            return
+        print(f"🕒 단기 전략 실행 ({len(rows)}종목)")
+        self._run_selected_watchlist(rows, label="short")
+        self._last_short_run_at = now
+
+    def _build_long_strategy_plan_if_due(
+        self,
+        *,
+        now: datetime,
+        analysis_time: str,
+        plan_ttl_hours: int,
+    ) -> None:
+        if now.weekday() >= 5:
+            return
+        hh, mm = self._parse_hhmm(analysis_time, default_hour=8, default_minute=0)
+        if (now.hour, now.minute) < (hh, mm):
+            return
+        today_key = now.strftime("%Y-%m-%d")
+        if self._last_long_plan_date == today_key:
+            return
+
+        rows = self._watchlist_for_strategy("long")
+        if not rows:
+            return
+
+        print(f"🕗 장기 전략 플랜 생성 ({len(rows)}종목)")
+        self._long_pending_triggers = []
+        expires_at = now + timedelta(hours=max(1, plan_ttl_hours))
+        buy_pct = float((self._config.get("strategy_schedule", {}).get("long", {}) or {}).get("buy_trigger_pct", -1.0))
+        sell_pct = float((self._config.get("strategy_schedule", {}).get("long", {}) or {}).get("sell_trigger_pct", 1.0))
+
+        for stock in rows:
+            name = stock.get("name", "")
+            code = stock.get("code", "")
+            mode = stock.get("mode", "full")
+            if not name or not code:
+                continue
+            result = self._analyze_stock(name, code, mode)
+            decision = result.get("final_decision")
+            if decision is None:
+                continue
+            current = self._get_current_price(code)
+            if current is None or current <= 0:
+                continue
+            trigger = self._build_long_trigger(
+                stock_name=name,
+                stock_code=code,
+                decision=decision,
+                current_price=current,
+                buy_trigger_pct=buy_pct,
+                sell_trigger_pct=sell_pct,
+                expires_at=expires_at,
+            )
+            if trigger:
+                self._long_pending_triggers.append(trigger)
+
+        self._last_long_plan_date = today_key
+
+    def _execute_long_strategy_triggers_if_due(
+        self,
+        *,
+        now: datetime,
+        check_interval_minutes: int,
+        market_hours_only: bool,
+    ) -> None:
+        if market_hours_only and not self._is_market_hours(now):
+            return
+        if self._last_long_trigger_check_at:
+            elapsed = (now - self._last_long_trigger_check_at).total_seconds() / 60.0
+            if elapsed < max(1, check_interval_minutes):
+                return
+        self._last_long_trigger_check_at = now
+
+        if not self._long_pending_triggers:
+            return
+
+        remaining: List[Dict[str, Any]] = []
+        for plan in self._long_pending_triggers:
+            if now > plan["expires_at"]:
+                continue
+            current = self._get_current_price(plan["stock_code"])
+            if current is None or current <= 0:
+                remaining.append(plan)
+                continue
+            if not self._is_trigger_hit(current_price=current, comparator=plan["comparator"], target_price=plan["target_price"]):
+                remaining.append(plan)
+                continue
+
+            decision = plan["decision"]
+            if decision.action.name in {"BUY", "STRONG_BUY"}:
+                trade = self._executor.execute_buy(plan["stock_name"], plan["stock_code"], decision, current)
+            elif decision.action.name in {"SELL", "STRONG_SELL"}:
+                qty = self._get_sell_quantity(plan["stock_code"])
+                if qty <= 0:
+                    remaining.append(plan)
+                    continue
+                trade = self._executor.execute_sell(plan["stock_name"], plan["stock_code"], decision, quantity=qty, current_price=current)
+            else:
+                continue
+
+            print(
+                f"🎯 장기 트리거 체결 시도: {plan['stock_name']}({plan['stock_code']}) "
+                f"{plan['comparator']} {plan['target_price']} 현재가={current} status={trade.get('status')}"
+            )
+
+        self._long_pending_triggers = remaining
+
+    def _run_selected_watchlist(self, rows: List[Dict[str, str]], *, label: str) -> List[Dict[str, Any]]:
+        results: List[Dict[str, Any]] = []
+        for stock in rows:
+            name = stock.get("name", "")
+            code = stock.get("code", "")
+            mode = stock.get("mode", "full")
+            if not name or not code:
+                continue
+            result = self._analyze_stock(name, code, mode)
+            result["stock_name"] = name
+            result["stock_code"] = code
+            result["mode"] = mode
+            result["strategy_label"] = label
+            decision = result.get("final_decision")
+            if decision and self._executor.is_enabled:
+                result["trade"] = self._evaluate_trade(name, code, decision)
+            results.append(result)
+        self._print_summary(results)
+        return results
+
+    def _build_long_trigger(
+        self,
+        *,
+        stock_name: str,
+        stock_code: str,
+        decision: Any,
+        current_price: int,
+        buy_trigger_pct: float,
+        sell_trigger_pct: float,
+        expires_at: datetime,
+    ) -> Optional[Dict[str, Any]]:
+        action = getattr(decision.action, "name", "")
+        if action in {"BUY", "STRONG_BUY"}:
+            pct = buy_trigger_pct
+        elif action in {"SELL", "STRONG_SELL"}:
+            pct = sell_trigger_pct
+        else:
+            return None
+        target = int(round(current_price * (1.0 + pct / 100.0)))
+        if target <= 0:
+            return None
+        comparator = self._resolve_comparator(action=action, trigger_pct=pct)
+        return {
+            "stock_name": stock_name,
+            "stock_code": stock_code,
+            "decision": decision,
+            "target_price": target,
+            "comparator": comparator,
+            "expires_at": expires_at,
+            "created_at": datetime.now(KST),
+        }
+
+    @staticmethod
+    def _resolve_comparator(*, action: str, trigger_pct: float) -> str:
+        if action in {"BUY", "STRONG_BUY"}:
+            return "lte" if trigger_pct <= 0 else "gte"
+        return "gte" if trigger_pct >= 0 else "lte"
+
+    @staticmethod
+    def _is_trigger_hit(*, current_price: int, comparator: str, target_price: int) -> bool:
+        if comparator == "lte":
+            return current_price <= target_price
+        return current_price >= target_price
+
+    @staticmethod
+    def _parse_hhmm(value: str, *, default_hour: int, default_minute: int) -> tuple[int, int]:
+        raw = str(value or "").strip()
+        m = re.match(r"^(\d{1,2}):(\d{2})$", raw)
+        if not m:
+            return default_hour, default_minute
+        hh = max(0, min(23, int(m.group(1))))
+        mm = max(0, min(59, int(m.group(2))))
+        return hh, mm
 
     def _is_market_hours(self, now: Optional[datetime] = None) -> bool:
         """장중 여부 확인 (09:00~15:30 KST, 평일)"""
