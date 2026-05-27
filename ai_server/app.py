@@ -12,6 +12,8 @@ import json
 import logging
 import os
 import sys
+import threading
+import uuid
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -43,6 +45,17 @@ logger = logging.getLogger(__name__)
 # ── 인메모리 결과 캐시 (Redis 폴백용) ──
 _results: OrderedDict[str, Dict[str, Any]] = OrderedDict()
 _MAX_CACHE = 500
+_runtime_tasks: OrderedDict[str, Dict[str, Any]] = OrderedDict()
+_runtime_loop_lock = threading.Lock()
+_runtime_loop_state: Dict[str, Any] = {
+    "status": "stopped",
+    "task_id": None,
+    "operation": "multi_theme_trade_loop",
+    "started_at": None,
+    "stopped_at": None,
+    "error": None,
+}
+_runtime_loop_stop_event: Optional[threading.Event] = None
 
 
 def _runtime_port() -> int:
@@ -193,6 +206,81 @@ class TradeDecisionRequest(BaseModel):
     trading_enabled_override: Optional[bool] = None
 
 
+class ThemeTradeRequest(BaseModel):
+    theme: str
+    theme_key: str = ""
+    candidate_limit: int = 5
+    top_n: int = 3
+    execute_top_n: int = 1
+    execute: bool = False
+    preview: bool = True
+    min_leader_score: Optional[int] = None
+    strategy_profile: str = "default"
+    config_path: str = "config/watchlist.yaml"
+    data_dir: Optional[str] = None
+    paper: bool = False
+    dry_run: bool = True
+    save_report: bool = True
+    dry_run_override: Optional[bool] = None
+    trading_enabled_override: Optional[bool] = None
+    account_type_override: Optional[str] = None
+
+
+class ThemeTradeReportRequest(BaseModel):
+    report_path: str
+    execute_top_n: Optional[int] = 1
+    execute: bool = False
+    preview: bool = True
+    config_path: str = "config/watchlist.yaml"
+    data_dir: Optional[str] = None
+    paper: bool = False
+    dry_run: bool = True
+    save_report: bool = True
+    dry_run_override: Optional[bool] = None
+    trading_enabled_override: Optional[bool] = None
+    account_type_override: Optional[str] = None
+
+
+class MultiThemeTradeRequest(BaseModel):
+    candidate_limit: int = 5
+    per_theme_top_n: int = 3
+    top_n: int = 3
+    execute: bool = False
+    preview: bool = True
+    min_leader_score: Optional[int] = None
+    min_confidence: Optional[int] = None
+    max_risk_level: Optional[str] = None
+    buy_only: bool = True
+    strategy_profile: str = "default"
+    include_theme_keys: Optional[List[str]] = None
+    exclude_theme_keys: Optional[List[str]] = None
+    config_path: str = "config/watchlist.yaml"
+    data_dir: Optional[str] = None
+    paper: bool = False
+    dry_run: bool = True
+    save_report: bool = True
+    dry_run_override: Optional[bool] = None
+    trading_enabled_override: Optional[bool] = None
+    account_type_override: Optional[str] = None
+
+
+class MultiThemeLoopStartRequest(MultiThemeTradeRequest):
+    trade_interval_minutes: int = 60
+    market_hours_only: bool = True
+    collect_interval_minutes: Optional[int] = None
+    collection_command: Optional[str] = None
+    long_plan_time: str = "08:00"
+    long_plan_window_minutes: int = 40
+    long_check_interval_minutes: int = 5
+    poll_seconds: int = 30
+
+
+class AutonomousRunRequest(BaseModel):
+    config_path: str = "config/watchlist.yaml"
+    dry_run: bool = True
+    loop: bool = False
+
+
 # ──────────────────────────────────────────────
 # Redis 헬퍼
 # ──────────────────────────────────────────────
@@ -247,6 +335,95 @@ def _normalize_backtest_result(request: BacktestResultRequest) -> Dict[str, Any]
     payload.setdefault("status", "completed")
     payload["received_at"] = datetime.now().isoformat()
     return payload
+
+
+def _trim_runtime_tasks() -> None:
+    while len(_runtime_tasks) > _MAX_CACHE:
+        _runtime_tasks.popitem(last=False)
+
+
+def _new_runtime_task(operation: str) -> str:
+    task_id = str(uuid.uuid4())
+    now = datetime.now().isoformat()
+    _runtime_tasks[task_id] = {
+        "task_id": task_id,
+        "operation": operation,
+        "status": "queued",
+        "created_at": now,
+        "started_at": None,
+        "completed_at": None,
+        "failed_at": None,
+        "error": None,
+        "result": None,
+    }
+    _trim_runtime_tasks()
+    return task_id
+
+
+async def _run_runtime_task(task_id: str, fn) -> None:
+    task = _runtime_tasks[task_id]
+    task["status"] = "running"
+    task["started_at"] = datetime.now().isoformat()
+    loop = asyncio.get_event_loop()
+    try:
+        result = await loop.run_in_executor(None, fn)
+        task["status"] = "completed"
+        task["completed_at"] = datetime.now().isoformat()
+        task["result"] = result
+    except Exception as exc:
+        logger.exception("runtime task failed: %s", task_id)
+        task["status"] = "failed"
+        task["failed_at"] = datetime.now().isoformat()
+        task["error"] = str(exc)
+
+
+def _submit_runtime_task(operation: str, fn) -> Dict[str, Any]:
+    task_id = _new_runtime_task(operation)
+    asyncio.create_task(_run_runtime_task(task_id, fn))
+    return {
+        "task_id": task_id,
+        "operation": operation,
+        "status": "queued",
+        "result_url": f"/runtime/tasks/{task_id}",
+    }
+
+
+def _resolve_runner_overrides(
+    *,
+    execute: bool,
+    paper: bool,
+    dry_run: bool,
+    dry_run_override: Optional[bool],
+    trading_enabled_override: Optional[bool],
+    account_type_override: Optional[str],
+) -> Dict[str, Any]:
+    account_type = account_type_override or "paper"
+    resolved_dry_run = True
+    resolved_trading_enabled = True
+
+    if execute:
+        if dry_run_override is False and not paper:
+            raise HTTPException(status_code=400, detail="dry_run_override=false requires paper=true")
+        if account_type == "real" and dry_run_override is False:
+            raise HTTPException(status_code=400, detail="real trading is not enabled through runtime API")
+        if paper:
+            resolved_dry_run = False
+            account_type = "paper"
+        elif dry_run or dry_run_override is True:
+            resolved_dry_run = True
+        else:
+            raise HTTPException(status_code=400, detail="execute requires paper=true or dry_run=true")
+
+    if dry_run_override is not None:
+        resolved_dry_run = bool(dry_run_override)
+    if trading_enabled_override is not None:
+        resolved_trading_enabled = bool(trading_enabled_override)
+
+    return {
+        "dry_run_override": resolved_dry_run,
+        "trading_enabled_override": resolved_trading_enabled,
+        "account_type_override": account_type,
+    }
 
 
 # ──────────────────────────────────────────────
@@ -619,6 +796,175 @@ def _load_order_logs(date: Optional[str], limit: int) -> List[Dict[str, Any]]:
     rows.sort(key=lambda row: str(row.get("timestamp", "")), reverse=True)
     return rows[:limit]
 
+
+def _run_theme_trade(request: ThemeTradeRequest) -> Dict[str, Any]:
+    from src.runner import ThemeLeaderTradingRunner
+
+    overrides = _resolve_runner_overrides(
+        execute=request.execute,
+        paper=request.paper,
+        dry_run=request.dry_run,
+        dry_run_override=request.dry_run_override,
+        trading_enabled_override=request.trading_enabled_override,
+        account_type_override=request.account_type_override,
+    )
+    runner = ThemeLeaderTradingRunner(
+        config_path=request.config_path,
+        data_dir=request.data_dir,
+        **overrides,
+    )
+    return runner.run_once(
+        theme=request.theme,
+        theme_key=request.theme_key,
+        candidate_limit=max(1, int(request.candidate_limit)),
+        top_n=max(1, int(request.top_n)),
+        execute_top_n=max(0, int(request.execute_top_n)),
+        execute=bool(request.execute),
+        min_leader_score=request.min_leader_score,
+        strategy_profile=request.strategy_profile,
+        save_report=bool(request.save_report),
+    )
+
+
+def _run_theme_trade_report(request: ThemeTradeReportRequest) -> Dict[str, Any]:
+    from src.runner import ThemeLeaderTradingRunner
+
+    overrides = _resolve_runner_overrides(
+        execute=request.execute,
+        paper=request.paper,
+        dry_run=request.dry_run,
+        dry_run_override=request.dry_run_override,
+        trading_enabled_override=request.trading_enabled_override,
+        account_type_override=request.account_type_override,
+    )
+    runner = ThemeLeaderTradingRunner(
+        config_path=request.config_path,
+        data_dir=request.data_dir,
+        **overrides,
+    )
+    return runner.run_from_report(
+        report_path=request.report_path,
+        execute_top_n=request.execute_top_n,
+        execute=bool(request.execute),
+        save_report=bool(request.save_report),
+    )
+
+
+def _run_multi_theme_trade(request: MultiThemeTradeRequest) -> Dict[str, Any]:
+    from src.runner import MultiThemeLeaderTradingRunner
+
+    overrides = _resolve_runner_overrides(
+        execute=request.execute,
+        paper=request.paper,
+        dry_run=request.dry_run,
+        dry_run_override=request.dry_run_override,
+        trading_enabled_override=request.trading_enabled_override,
+        account_type_override=request.account_type_override,
+    )
+    runner = MultiThemeLeaderTradingRunner(
+        config_path=request.config_path,
+        data_dir=request.data_dir,
+        **overrides,
+    )
+    return runner.run_all(
+        candidate_limit=max(1, int(request.candidate_limit)),
+        per_theme_top_n=max(1, int(request.per_theme_top_n)),
+        top_n=max(1, int(request.top_n)),
+        execute=bool(request.execute),
+        min_leader_score=request.min_leader_score,
+        min_confidence=request.min_confidence,
+        max_risk_level=request.max_risk_level,
+        buy_only=bool(request.buy_only),
+        strategy_profile=request.strategy_profile,
+        include_theme_keys=request.include_theme_keys,
+        exclude_theme_keys=request.exclude_theme_keys,
+        save_report=bool(request.save_report),
+    )
+
+
+def _run_autonomous_once(request: AutonomousRunRequest) -> Dict[str, Any]:
+    if request.loop:
+        raise ValueError("autonomous loop mode is not controllable through this endpoint; use one-shot mode")
+
+    from src.runner.autonomous_runner import AutonomousRunner
+
+    runner = AutonomousRunner(
+        config_path=request.config_path,
+        dry_run_override=True if request.dry_run else None,
+    )
+    results = runner.run_once()
+    return {
+        "status": "success",
+        "mode": "once",
+        "config_path": request.config_path,
+        "dry_run": bool(request.dry_run),
+        "result_count": len(results),
+        "results": results,
+        "completed_at": datetime.now().isoformat(),
+    }
+
+
+def _run_multi_theme_loop(task_id: str, request: MultiThemeLoopStartRequest, stop_event: threading.Event) -> None:
+    global _runtime_loop_state
+    from src.runner import MultiThemeLeaderTradingRunner
+    from src.runner.multi_theme_scheduler import MultiThemeScheduler
+
+    try:
+        overrides = _resolve_runner_overrides(
+            execute=request.execute,
+            paper=request.paper,
+            dry_run=request.dry_run,
+            dry_run_override=request.dry_run_override,
+            trading_enabled_override=request.trading_enabled_override,
+            account_type_override=request.account_type_override,
+        )
+        trade_runner = MultiThemeLeaderTradingRunner(
+            config_path=request.config_path,
+            data_dir=request.data_dir,
+            **overrides,
+        )
+        scheduler = MultiThemeScheduler(
+            trade_runner=trade_runner,
+            short_interval_minutes=request.trade_interval_minutes,
+            short_market_hours_only=request.market_hours_only,
+            long_plan_time=request.long_plan_time,
+            long_plan_window_minutes=request.long_plan_window_minutes,
+            long_trigger_check_minutes=request.long_check_interval_minutes,
+            long_market_hours_only=request.market_hours_only,
+            collect_interval_minutes=request.collect_interval_minutes,
+            collect_command=request.collection_command,
+            poll_seconds=request.poll_seconds,
+            stop_event=stop_event,
+        )
+        scheduler.run_loop(
+            candidate_limit=max(1, int(request.candidate_limit)),
+            per_theme_top_n=max(1, int(request.per_theme_top_n)),
+            short_top_n=max(1, int(request.top_n)),
+            long_top_n=max(1, int(request.top_n)),
+            execute=bool(request.execute),
+            min_leader_score=request.min_leader_score,
+            min_confidence=request.min_confidence,
+            max_risk_level=request.max_risk_level,
+            short_strategy_profile="short",
+            long_strategy_profile="long",
+            include_theme_keys=request.include_theme_keys,
+            exclude_theme_keys=request.exclude_theme_keys,
+        )
+        with _runtime_loop_lock:
+            _runtime_loop_state.update({
+                "status": "stopped",
+                "stopped_at": datetime.now().isoformat(),
+                "error": None,
+            })
+    except Exception as exc:
+        logger.exception("multi-theme loop failed")
+        with _runtime_loop_lock:
+            _runtime_loop_state.update({
+                "status": "failed",
+                "stopped_at": datetime.now().isoformat(),
+                "error": str(exc),
+            })
+
 # ──────────────────────────────────────────────
 # 종목 자료 (뉴스 · 공시)
 # 수집기가 data/raw/{source}/{theme}.jsonl 로 저장한 원본을 stock_code로 필터링.
@@ -845,6 +1191,84 @@ async def list_trading_orders(
         "count": len(rows),
         "orders": rows,
     }
+
+
+@app.post("/runtime/theme-trade", status_code=202)
+async def runtime_theme_trade(request: ThemeTradeRequest):
+    return _submit_runtime_task("theme_trade", lambda: _run_theme_trade(request))
+
+
+@app.post("/runtime/theme-trade-report", status_code=202)
+async def runtime_theme_trade_report(request: ThemeTradeReportRequest):
+    return _submit_runtime_task("theme_trade_report", lambda: _run_theme_trade_report(request))
+
+
+@app.post("/runtime/multi-theme-trade", status_code=202)
+async def runtime_multi_theme_trade(request: MultiThemeTradeRequest):
+    return _submit_runtime_task("multi_theme_trade", lambda: _run_multi_theme_trade(request))
+
+
+@app.post("/runtime/autonomous", status_code=202)
+async def runtime_autonomous(request: AutonomousRunRequest):
+    return _submit_runtime_task("autonomous", lambda: _run_autonomous_once(request))
+
+
+@app.get("/runtime/tasks/{task_id}")
+async def runtime_task(task_id: str):
+    task = _runtime_tasks.get(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail=f"runtime task not found: {task_id}")
+    return task
+
+
+@app.post("/runtime/multi-theme-trade/loop/start", status_code=202)
+async def runtime_multi_theme_loop_start(request: MultiThemeLoopStartRequest):
+    global _runtime_loop_stop_event
+    with _runtime_loop_lock:
+        if _runtime_loop_state.get("status") in {"running", "stopping"}:
+            raise HTTPException(
+                status_code=409,
+                detail=f"multi-theme loop is already running: {_runtime_loop_state.get('task_id')}",
+            )
+        task_id = str(uuid.uuid4())
+        stop_event = threading.Event()
+        _runtime_loop_stop_event = stop_event
+        _runtime_loop_state.update({
+            "status": "running",
+            "task_id": task_id,
+            "operation": "multi_theme_trade_loop",
+            "started_at": datetime.now().isoformat(),
+            "stopped_at": None,
+            "error": None,
+        })
+        thread = threading.Thread(
+            target=_run_multi_theme_loop,
+            args=(task_id, request, stop_event),
+            name=f"hqa-runtime-loop-{task_id[:8]}",
+            daemon=True,
+        )
+        _runtime_loop_state["thread_name"] = thread.name
+        thread.start()
+        return dict(_runtime_loop_state)
+
+
+@app.post("/runtime/multi-theme-trade/loop/stop")
+async def runtime_multi_theme_loop_stop():
+    global _runtime_loop_stop_event
+    with _runtime_loop_lock:
+        if _runtime_loop_state.get("status") != "running":
+            return {**_runtime_loop_state, "message": "multi-theme loop is not running"}
+        if _runtime_loop_stop_event is not None:
+            _runtime_loop_stop_event.set()
+        _runtime_loop_state["status"] = "stopping"
+        _runtime_loop_state["stopped_at"] = datetime.now().isoformat()
+        return dict(_runtime_loop_state)
+
+
+@app.get("/runtime/multi-theme-trade/loop/status")
+async def runtime_multi_theme_loop_status():
+    with _runtime_loop_lock:
+        return dict(_runtime_loop_state)
 
 
 @app.post("/analyze", status_code=202)

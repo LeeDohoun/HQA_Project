@@ -4,6 +4,7 @@ import logging
 import shlex
 import subprocess
 import time
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -35,6 +36,7 @@ class MultiThemeScheduler:
         collect_interval_minutes: Optional[int] = None,
         collect_command: Optional[str] = None,
         poll_seconds: int = 30,
+        stop_event: Optional[threading.Event] = None,
     ):
         self._trade_runner = trade_runner
         self._short_interval_minutes = max(1, int(short_interval_minutes))
@@ -53,6 +55,7 @@ class MultiThemeScheduler:
         )
         self._collect_command = str(collect_command or "").strip()
         self._poll_seconds = max(5, int(poll_seconds))
+        self._stop_event = stop_event
 
         self._last_short_trade_at: Optional[datetime] = None
         self._last_short_premarket_date: Optional[str] = None
@@ -99,7 +102,7 @@ class MultiThemeScheduler:
         print("   중지: Ctrl+C\n")
 
         try:
-            while True:
+            while not (self._stop_event and self._stop_event.is_set()):
                 now = datetime.now(KST)
 
                 if self._collect_interval_minutes and self._collect_command:
@@ -206,7 +209,10 @@ class MultiThemeScheduler:
                         execute=execute,
                     )
 
-                time.sleep(self._poll_seconds)
+                if self._stop_event:
+                    self._stop_event.wait(self._poll_seconds)
+                else:
+                    time.sleep(self._poll_seconds)
         except KeyboardInterrupt:
             print("\n👋 [Multi-Theme Scheduler] 종료")
 
