@@ -18,6 +18,8 @@ from src.agents.quant import QuantScore
 from src.agents.risk_manager import AgentScores, FinalDecision, RiskManagerAgent
 from src.config.settings import get_data_dir
 from src.ingestion.theme_targets import make_theme_key
+from src.runner.decision_adapter import final_decision_to_payload
+from src.utils.portfolio_context import candidate_portfolio_context
 from src.utils.parallel import is_error, run_agents_parallel
 
 logger = logging.getLogger(__name__)
@@ -48,6 +50,10 @@ class ThemeAnalystEvaluation(BaseModel):
     catalysts: List[str] = Field(default_factory=list)
     risks: List[str] = Field(default_factory=list)
     contrarian_view: str = ""
+    structured_parse_failed: bool = False
+    coerced_fields: List[str] = Field(default_factory=list)
+    fallback_used: bool = False
+    parse_fallback_used: bool = False
 
 
 class ThemeQuantEvaluation(BaseModel):
@@ -66,6 +72,10 @@ class ThemeQuantEvaluation(BaseModel):
     pbr: Optional[float] = None
     roe: Optional[float] = None
     debt_ratio: Optional[float] = None
+    structured_parse_failed: bool = False
+    coerced_fields: List[str] = Field(default_factory=list)
+    fallback_used: bool = False
+    parse_fallback_used: bool = False
 
 
 class ThemeLeaderOrchestrator:
@@ -78,12 +88,18 @@ class ThemeLeaderOrchestrator:
     - RiskManager가 최종 순위를 종합
     """
 
-    def __init__(self, data_dir: Optional[str] = None):
+    def __init__(
+        self,
+        data_dir: Optional[str] = None,
+        universe_filters: Optional[Dict[str, Any]] = None,
+    ):
         self.data_dir = Path(data_dir) if data_dir else get_data_dir()
         self.analyst = AnalystAgent()
         self.chartist = ChartistAgent()
         self.risk_manager = RiskManagerAgent()
         self.instruct_llm = get_instruct_llm()
+        self.universe_filters = dict(universe_filters or {})
+        self._last_candidate_filter_report: Dict[str, Any] = self._empty_filter_report(enabled=False)
 
     def run(
         self,
@@ -91,8 +107,11 @@ class ThemeLeaderOrchestrator:
         theme_key: str = "",
         candidate_limit: int = 5,
         top_n: int = 3,
+        strategy_profile: str = "default",
+        portfolio_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         resolved_key = theme_key or make_theme_key(theme, theme)
+        resolved_profile = self._normalize_strategy_profile(strategy_profile)
         candidates = self.extract_candidates(
             theme=theme,
             theme_key=resolved_key,
@@ -104,11 +123,20 @@ class ThemeLeaderOrchestrator:
                 "message": f"테마 후보군을 찾지 못했습니다: {theme}",
                 "theme": theme,
                 "theme_key": resolved_key,
+                "candidate_filter": self._last_candidate_filter_report,
             }
 
         evaluations = []
         for candidate in candidates:
-            evaluations.append(self.evaluate_candidate(theme, resolved_key, candidate))
+            evaluations.append(
+                self.evaluate_candidate(
+                    theme,
+                    resolved_key,
+                    candidate,
+                    strategy_profile=resolved_profile,
+                    portfolio_context=portfolio_context,
+                )
+            )
 
         evaluations.sort(
             key=lambda row: (
@@ -132,8 +160,10 @@ class ThemeLeaderOrchestrator:
             "status": "success",
             "theme": theme,
             "theme_key": resolved_key,
+            "strategy_profile": resolved_profile,
             "candidate_count": len(candidates),
             "evaluated_count": len(evaluations),
+            "candidate_filter": self._last_candidate_filter_report,
             "leaders": leaders,
             "summary": "\n".join(summary_lines),
         }
@@ -167,14 +197,19 @@ class ThemeLeaderOrchestrator:
             if corpus_docs <= 0 and market_rows <= 0:
                 # 로컬 텍스트/차트 근거가 전혀 없는 후보는 주도주 평가 대상에서 제외한다.
                 continue
-            seed_score = min(
-                100,
-                target_counter.get(code, 0) * 2
-                + min(corpus_docs * 2, 40)
-                + source_coverage * 8
-                + min(dart_docs * 4, 20)
-                + min(news_docs * 2, 15)
-                + (10 if market_rows >= 20 else 5 if market_rows > 0 else 0),
+            has_corpus = corpus_docs > 0
+            has_market = market_rows > 0
+            has_news = news_docs > 0
+            has_forum = forum_docs > 0
+            has_dart = dart_docs > 0
+            # 빈도(횟수) 대신 존재 여부/소스 다양성만 반영한다.
+            seed_score = (
+                (40 if has_corpus else 0)
+                + (30 if has_market else 0)
+                + (20 if source_coverage >= 2 else 10 if source_coverage == 1 else 0)
+                + (10 if has_dart else 0)
+                + (5 if has_news else 0)
+                + (5 if has_forum else 0)
             )
             candidates.append(
                 ThemeCandidate(
@@ -194,25 +229,111 @@ class ThemeLeaderOrchestrator:
         candidates.sort(
             key=lambda row: (
                 row.seed_score,
-                row.corpus_docs,
-                row.dart_docs,
-                row.news_docs,
+                row.source_coverage,
+                row.market_rows > 0,
+                row.stock_code,
             ),
             reverse=True,
         )
+        raw_count = len(candidates)
+        candidates = self._apply_universe_filter(
+            theme=theme,
+            theme_key=theme_key,
+            candidates=candidates,
+        )
         logger.info(
-            "[ThemeOrchestrator] theme=%s key=%s candidates=%s",
+            "[ThemeOrchestrator] theme=%s key=%s raw_candidates=%s filtered_candidates=%s candidates=%s",
             theme,
             theme_key,
+            raw_count,
+            len(candidates),
             [(c.stock_name, c.stock_code, c.seed_score) for c in candidates[:candidate_limit]],
         )
         return candidates[:candidate_limit]
+
+    def _apply_universe_filter(
+        self,
+        *,
+        theme: str,
+        theme_key: str,
+        candidates: List[ThemeCandidate],
+    ) -> List[ThemeCandidate]:
+        filters = dict(self.universe_filters or {})
+        if not candidates or not filters or not self._config_bool(filters.get("enabled", True)):
+            self._last_candidate_filter_report = self._empty_filter_report(
+                enabled=bool(filters and self._config_bool(filters.get("enabled", True))),
+                raw_candidate_count=len(candidates),
+            )
+            return candidates
+
+        try:
+            from src.runner.theme_candidate_filter import ThemeCandidateFilter
+        except Exception as exc:
+            logger.warning("ThemeCandidateFilter unavailable; skipping universe filter: %s", exc)
+            self._last_candidate_filter_report = {
+                **self._empty_filter_report(enabled=True, raw_candidate_count=len(candidates)),
+                "status": "skipped",
+                "reason": f"filter_unavailable:{type(exc).__name__}",
+            }
+            return candidates
+
+        price_rows = self._load_market_rows_by_code(theme_key)
+        universe = {
+            "theme": theme,
+            "theme_key": theme_key,
+            "candidates": [
+                self._candidate_to_filter_payload(candidate, price_rows.get(candidate.stock_code, []))
+                for candidate in candidates
+            ],
+        }
+        filtered = ThemeCandidateFilter(filters).filter_theme(universe)
+        passed_codes = {
+            str(row.get("stock_code") or "").strip()
+            for row in filtered.get("passed") or []
+            if str(row.get("stock_code") or "").strip()
+        }
+        rejected = list(filtered.get("rejected") or [])
+        self._last_candidate_filter_report = {
+            "enabled": True,
+            "status": "filtered",
+            "raw_candidate_count": len(candidates),
+            "passed_count": int(filtered.get("passed_count") or 0),
+            "rejected_count": int(filtered.get("rejected_count") or 0),
+            "filters": filters,
+            "rejection_reasons": self._summarize_rejection_reasons(rejected),
+            "rejected": rejected[:20],
+        }
+        return [candidate for candidate in candidates if candidate.stock_code in passed_codes]
+
+    def _candidate_to_filter_payload(
+        self,
+        candidate: ThemeCandidate,
+        price_history: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        source_counts = {
+            "news": candidate.news_docs,
+            "forum": candidate.forum_docs,
+            "dart": candidate.dart_docs,
+        }
+        return {
+            "stock_code": candidate.stock_code,
+            "stock_name": candidate.stock_name,
+            "price_history": price_history,
+            "source_counts": source_counts,
+            "data_flags": {
+                "has_price_history": bool(price_history),
+                "has_documents": candidate.corpus_docs > 0,
+                "has_recent_documents": candidate.corpus_docs > 0,
+            },
+        }
 
     def evaluate_candidate(
         self,
         theme: str,
         theme_key: str,
         candidate: ThemeCandidate,
+        strategy_profile: str = "default",
+        portfolio_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         records = self._load_stock_records(theme_key, candidate.stock_code)
         source_counts = Counter((row.get("metadata") or {}).get("source_type", "") for row in records)
@@ -233,7 +354,7 @@ class ThemeLeaderOrchestrator:
                 (theme_key, candidate),
             ),
         }
-        results = run_agents_parallel(tasks, max_workers=3, timeout=240)
+        results = run_agents_parallel(tasks, max_workers=3)
 
         analyst_result = results.get("analyst")
         quant_result = results.get("quant")
@@ -269,13 +390,22 @@ class ThemeLeaderOrchestrator:
             chartist_context=chartist_result.analysis_packet,
         )
 
+        candidate_context = candidate_portfolio_context(portfolio_context, candidate.stock_code)
         final_decision = self.risk_manager.make_decision(
             candidate.stock_name,
             candidate.stock_code,
             scores,
+            portfolio_context=candidate_context,
         )
         data_presence_score = min(100, candidate.seed_score)
-        leader_score = round(final_decision.total_score * 0.7 + data_presence_score * 0.3)
+        leader_score = self._compute_leader_score(
+            analyst_total=analyst_result["total_score"],
+            quant_total=quant_result.total_score,
+            chartist_total=chartist_result.total_score,
+            final_total=final_decision.total_score,
+            data_presence_score=data_presence_score,
+            strategy_profile=strategy_profile,
+        )
 
         return {
             "candidate": {
@@ -291,17 +421,21 @@ class ThemeLeaderOrchestrator:
             },
             "leader_score": leader_score,
             "data_presence_score": data_presence_score,
+            "strategy_profile": strategy_profile,
+            "portfolio_context": candidate_context,
             "analyst": {
                 "total_score": analyst_result["total_score"],
                 "grade": analyst_result["grade"],
                 "summary": analyst_result["summary"],
                 "catalysts": analyst_result["packet"].catalysts,
                 "risks": analyst_result["packet"].risks,
+                "quality_flags": analyst_result.get("quality_flags", {}),
             },
             "quant": {
                 "total_score": quant_result.total_score,
                 "grade": quant_result.grade,
                 "opinion": quant_result.opinion,
+                "quality_flags": quant_result.quality_flags,
             },
             "chartist": {
                 "total_score": chartist_result.total_score,
@@ -311,6 +445,48 @@ class ThemeLeaderOrchestrator:
             },
             "final_decision": self._decision_to_dict(final_decision),
         }
+
+    @staticmethod
+    def _normalize_strategy_profile(strategy_profile: str) -> str:
+        profile = str(strategy_profile or "default").strip().lower()
+        if profile in {"short", "long"}:
+            return profile
+        return "default"
+
+    def _compute_leader_score(
+        self,
+        *,
+        analyst_total: int,
+        quant_total: int,
+        chartist_total: int,
+        final_total: int,
+        data_presence_score: int,
+        strategy_profile: str,
+    ) -> int:
+        profile = self._normalize_strategy_profile(strategy_profile)
+        if profile == "default":
+            # Backward-compatible legacy formula.
+            return round(final_total * 0.7 + data_presence_score * 0.3)
+
+        analyst_norm = max(0.0, min(1.0, analyst_total / 70.0))
+        quant_norm = max(0.0, min(1.0, quant_total / 100.0))
+        chartist_norm = max(0.0, min(1.0, chartist_total / 100.0))
+        final_norm = max(0.0, min(1.0, final_total / 100.0))
+        data_norm = max(0.0, min(1.0, data_presence_score / 100.0))
+
+        weights = {
+            "short": {"analyst": 0.15, "quant": 0.15, "chartist": 0.45, "final": 0.20, "data": 0.05},
+            "long": {"analyst": 0.30, "quant": 0.30, "chartist": 0.10, "final": 0.25, "data": 0.05},
+        }
+        w = weights[profile]
+        score = (
+            analyst_norm * w["analyst"]
+            + quant_norm * w["quant"]
+            + chartist_norm * w["chartist"]
+            + final_norm * w["final"]
+            + data_norm * w["data"]
+        )
+        return round(score * 100)
 
     def _evaluate_analyst_candidate(
         self,
@@ -360,6 +536,7 @@ class ThemeLeaderOrchestrator:
         )
         if not data:
             return self._fallback_analyst(theme, candidate, context, source_counts)
+        quality_flags = self._extract_quality_flags(data, fallback_used=False)
 
         moat = max(0, min(40, int(data.get("moat_score", 20))))
         growth = max(0, min(30, int(data.get("growth_score", 15))))
@@ -388,6 +565,7 @@ class ThemeLeaderOrchestrator:
             "grade": packet.grade,
             "summary": packet.summary,
             "packet": packet,
+            "quality_flags": quality_flags,
         }
 
     def _evaluate_quant_candidate(
@@ -439,6 +617,7 @@ class ThemeLeaderOrchestrator:
         )
         if not data:
             return self._fallback_quant(theme, candidate, context, source_counts)
+        quality_flags = self._extract_quality_flags(data, fallback_used=False)
 
         valuation = max(0, min(25, int(data.get("valuation_score", 12))))
         profitability = max(0, min(25, int(data.get("profitability_score", 12))))
@@ -484,6 +663,7 @@ class ThemeLeaderOrchestrator:
             opinion=data.get("opinion", ""),
             grade=self._score_to_grade(total, 100),
             analysis_packet=packet.to_dict(),
+            quality_flags=quality_flags,
         )
 
     def _evaluate_chartist_candidate(
@@ -501,8 +681,27 @@ class ThemeLeaderOrchestrator:
         context: str,
         source_counts: Dict[str, int],
     ) -> Dict[str, Any]:
-        moat = min(40, candidate.dart_docs * 6 + candidate.news_docs * 2 + candidate.source_coverage * 4)
-        growth = min(30, candidate.news_docs * 2 + candidate.forum_docs + max(0, candidate.target_hits // 2))
+        has_news = candidate.news_docs > 0
+        has_forum = candidate.forum_docs > 0
+        has_dart = candidate.dart_docs > 0
+        has_market = candidate.market_rows > 0
+        moat = min(
+            40,
+            16
+            + (8 if has_dart else 0)
+            + (6 if has_news else 0)
+            + (4 if has_forum else 0)
+            + (6 if has_market else 0)
+            + candidate.source_coverage * 2,
+        )
+        growth = min(
+            30,
+            12
+            + (8 if has_news else 0)
+            + (6 if has_forum else 0)
+            + (4 if has_dart else 0)
+            + (4 if has_market else 0),
+        )
         total = moat + growth
         summary = (
             f"{candidate.stock_name}은(는) '{theme}' 데이터에서 "
@@ -515,7 +714,7 @@ class ThemeLeaderOrchestrator:
             summary=summary,
             key_points=[
                 f"DART {candidate.dart_docs}건 / 뉴스 {candidate.news_docs}건 / 게시판 {candidate.forum_docs}건",
-                f"theme_targets 등장 횟수 {candidate.target_hits}회",
+                f"로컬 차트 데이터 {'존재' if candidate.market_rows > 0 else '부재'}",
             ],
             catalysts=self._keyword_catalysts(context),
             risks=self._keyword_risks(context),
@@ -535,6 +734,12 @@ class ThemeLeaderOrchestrator:
             "grade": packet.grade,
             "summary": packet.summary,
             "packet": packet,
+            "quality_flags": {
+                "structured_parse_failed": True,
+                "coerced_fields": [],
+                "fallback_used": True,
+                "parse_fallback_used": True,
+            },
         }
 
     def _fallback_quant(
@@ -547,9 +752,18 @@ class ThemeLeaderOrchestrator:
         bad_keywords = len(re.findall(r"적자|감소|하락|부진|리스크|악화", context))
         good_keywords = len(re.findall(r"증가|개선|성장|수혜|확대|매수", context))
         valuation = max(5, min(25, 12 + good_keywords - bad_keywords))
-        profitability = max(5, min(25, 10 + candidate.dart_docs * 3 - bad_keywords))
+        profitability = max(5, min(25, 12 + (6 if candidate.dart_docs > 0 else 0) - bad_keywords))
         growth = max(5, min(25, 10 + good_keywords * 2))
-        stability = max(5, min(25, 12 + candidate.dart_docs * 2 - bad_keywords))
+        stability = max(
+            5,
+            min(
+                25,
+                12
+                + (6 if candidate.dart_docs > 0 else 0)
+                + (4 if candidate.market_rows > 0 else 0)
+                - bad_keywords,
+            ),
+        )
         total = valuation + profitability + growth + stability
         summary = (
             f"{candidate.stock_name}의 로컬 DART/뉴스 기반 정량 추정 점수는 {total}/100점입니다."
@@ -568,7 +782,7 @@ class ThemeLeaderOrchestrator:
             contrarian_view="수치 추출 대신 텍스트 신호 기반 휴리스틱",
             evidence=self._make_evidence(context, limit=3),
             score=total,
-            confidence=min(75, 25 + candidate.dart_docs * 10),
+            confidence=55 if candidate.dart_docs > 0 else 45,
             grade=self._score_to_grade(total, 100),
             signal=summary,
             next_action="risk_manager_review",
@@ -587,19 +801,16 @@ class ThemeLeaderOrchestrator:
             opinion=summary,
             grade=self._score_to_grade(total, 100),
             analysis_packet=packet.to_dict(),
+            quality_flags={
+                "structured_parse_failed": True,
+                "coerced_fields": [],
+                "fallback_used": True,
+                "parse_fallback_used": True,
+            },
         )
 
     def _decision_to_dict(self, decision: FinalDecision) -> Dict[str, Any]:
-        return {
-            "total_score": decision.total_score,
-            "action": decision.action.value,
-            "confidence": decision.confidence,
-            "risk_level": decision.risk_level.value,
-            "summary": decision.summary,
-            "key_catalysts": decision.key_catalysts,
-            "risk_factors": decision.risk_factors,
-            "detailed_reasoning": decision.detailed_reasoning,
-        }
+        return final_decision_to_payload(decision)
 
     def _load_theme_targets(self, theme_key: str) -> Tuple[Counter, Dict[str, str]]:
         path = self.data_dir / "raw" / "theme_targets" / f"{theme_key}.jsonl"
@@ -673,6 +884,54 @@ class ThemeLeaderOrchestrator:
                 if code:
                     counter[code] += 1
         return counter
+
+    def _load_market_rows_by_code(self, theme_key: str) -> Dict[str, List[Dict[str, Any]]]:
+        rows_by_code: Dict[str, List[Dict[str, Any]]] = {}
+        candidates = [
+            self.data_dir / "market_data" / theme_key / "chart.jsonl",
+            self.data_dir / "raw" / "chart" / f"{theme_key}.jsonl",
+        ]
+        for path in candidates:
+            if not path.exists():
+                continue
+            for row in self._iter_jsonl(path):
+                code = str(row.get("stock_code", "")).strip()
+                if code:
+                    rows_by_code.setdefault(code, []).append(row)
+        return rows_by_code
+
+    @staticmethod
+    def _empty_filter_report(
+        *,
+        enabled: bool,
+        raw_candidate_count: int = 0,
+    ) -> Dict[str, Any]:
+        return {
+            "enabled": enabled,
+            "status": "disabled" if not enabled else "not_run",
+            "raw_candidate_count": raw_candidate_count,
+            "passed_count": raw_candidate_count,
+            "rejected_count": 0,
+            "filters": {},
+            "rejection_reasons": {},
+            "rejected": [],
+        }
+
+    @staticmethod
+    def _summarize_rejection_reasons(rejected: List[Dict[str, Any]]) -> Dict[str, int]:
+        counts: Counter = Counter()
+        for row in rejected:
+            reasons = row.get("reasons") or [row.get("reason")]
+            for reason in reasons:
+                if reason:
+                    counts[str(reason)] += 1
+        return dict(counts)
+
+    @staticmethod
+    def _config_bool(value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        return str(value).strip().lower() not in {"0", "false", "no", "n", "off"}
 
     def _compose_context(
         self,
@@ -771,12 +1030,19 @@ class ThemeLeaderOrchestrator:
         *,
         label: str = "theme_orchestrator",
     ) -> Dict[str, Any]:
+        structured_parse_failed = False
         try:
             structured_llm = self._build_structured_llm(llm, schema)
             if structured_llm is not None:
                 structured = structured_llm.invoke(prompt)
-                return self._validate_structured_payload(structured, schema)
+                validated, coerced_fields = self._validate_with_tolerant_path(structured, schema)
+                validated["structured_parse_failed"] = False
+                validated["coerced_fields"] = coerced_fields
+                validated["fallback_used"] = False
+                validated["parse_fallback_used"] = False
+                return validated
         except Exception as exc:
+            structured_parse_failed = True
             logger.warning(
                 "Theme orchestration structured output failed (%s): %s",
                 label,
@@ -800,7 +1066,12 @@ class ThemeLeaderOrchestrator:
                     content,
                 )
                 return {}
-            return self._validate_structured_payload(payload, schema)
+            validated, coerced_fields = self._validate_with_tolerant_path(payload, schema)
+            validated["structured_parse_failed"] = structured_parse_failed
+            validated["coerced_fields"] = coerced_fields
+            validated["fallback_used"] = False
+            validated["parse_fallback_used"] = True
+            return validated
         except Exception as exc:
             logger.warning("Theme orchestration JSON parse failed (%s): %s", label, exc)
             return {}
@@ -822,6 +1093,78 @@ class ThemeLeaderOrchestrator:
         if not isinstance(payload, dict):
             raise TypeError(f"Expected dict payload for {schema.__name__}, got {type(payload).__name__}")
         return schema.model_validate(payload).model_dump()
+
+    @classmethod
+    def _validate_with_tolerant_path(
+        cls,
+        payload: Any,
+        schema: type[BaseModel],
+    ) -> Tuple[Dict[str, Any], List[str]]:
+        if isinstance(payload, BaseModel):
+            payload_dict = payload.model_dump()
+        elif isinstance(payload, dict):
+            payload_dict = dict(payload)
+        else:
+            raise TypeError(f"Expected dict payload for {schema.__name__}, got {type(payload).__name__}")
+
+        try:
+            return schema.model_validate(payload_dict, strict=True).model_dump(), []
+        except Exception:
+            pass
+
+        normalized, coerced_fields = cls._normalize_payload_for_schema(payload_dict)
+        return schema.model_validate(normalized).model_dump(), coerced_fields
+
+    @staticmethod
+    def _normalize_payload_for_schema(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str]]:
+        normalized = dict(payload)
+        coerced_fields: List[str] = []
+
+        int_fields = {
+            "moat_score",
+            "growth_score",
+            "valuation_score",
+            "profitability_score",
+            "stability_score",
+        }
+        float_fields = {"per", "pbr", "roe", "debt_ratio"}
+
+        for field_name in int_fields:
+            value = normalized.get(field_name)
+            if isinstance(value, str):
+                text = value.strip()
+                if not text:
+                    continue
+                try:
+                    normalized[field_name] = int(float(text))
+                    coerced_fields.append(field_name)
+                except (TypeError, ValueError):
+                    continue
+
+        for field_name in float_fields:
+            value = normalized.get(field_name)
+            if isinstance(value, str):
+                text = value.strip()
+                if not text:
+                    normalized[field_name] = None
+                    coerced_fields.append(field_name)
+                    continue
+                try:
+                    normalized[field_name] = float(text)
+                    coerced_fields.append(field_name)
+                except (TypeError, ValueError):
+                    continue
+
+        return normalized, sorted(set(coerced_fields))
+
+    @staticmethod
+    def _extract_quality_flags(data: Dict[str, Any], *, fallback_used: bool) -> Dict[str, Any]:
+        return {
+            "structured_parse_failed": bool(data.get("structured_parse_failed", False)),
+            "coerced_fields": list(data.get("coerced_fields", [])),
+            "fallback_used": bool(fallback_used),
+            "parse_fallback_used": bool(data.get("parse_fallback_used", False)),
+        }
 
     @staticmethod
     def _response_to_text(content: Any) -> str:

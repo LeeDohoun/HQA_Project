@@ -794,13 +794,42 @@ def _fallback_parallel_analysis(
         "quant": QuantAgent(),
         "chartist": ChartistAgent(),
     }
+
+    def _run_with_trace(agent_name: str, fn, *args):
+        if not tracer:
+            return fn(*args)
+        with tracer.trace_agent(agent_name, f"{stock_name}({stock_code}) [fallback]") as span:
+            result = fn(*args)
+            if is_error(result):
+                span.set_error(str(result), error_type="parallel_error")
+                return result
+            if agent_name == "analyst":
+                span.set_output(
+                    f"{result.hegemony_grade}등급 ({result.total_score}/70)"
+                )
+                span.set_reasoning(
+                    result.final_opinion[:200] if result.final_opinion else ""
+                )
+            elif agent_name == "quant":
+                span.set_output(
+                    f"{result.grade} ({result.total_score}/100)"
+                )
+                span.set_reasoning(result.opinion[:200] if result.opinion else "")
+            elif agent_name == "chartist":
+                span.set_output(
+                    f"{result.signal} ({result.total_score}/100)"
+                )
+                span.set_reasoning(
+                    f"trend:{result.trend_score} momentum:{result.momentum_score}"
+                )
+            return result
     
     # Phase 1: 병렬 실행 (타이밍 측정)
     t0 = time.time()
     parallel_results = run_agents_parallel({
-        "analyst":  (agents["analyst"].full_analysis,  (stock_name, stock_code)),
-        "quant":    (agents["quant"].full_analysis,    (stock_name, stock_code)),
-        "chartist": (agents["chartist"].full_analysis, (stock_name, stock_code)),
+        "analyst":  (_run_with_trace, ("analyst", agents["analyst"].full_analysis, stock_name, stock_code)),
+        "quant":    (_run_with_trace, ("quant", agents["quant"].full_analysis, stock_name, stock_code)),
+        "chartist": (_run_with_trace, ("chartist", agents["chartist"].full_analysis, stock_name, stock_code)),
     })
     parallel_elapsed = time.time() - t0
     
@@ -808,45 +837,7 @@ def _fallback_parallel_analysis(
     quant_score = parallel_results.get("quant")
     chartist_score = parallel_results.get("chartist")
     
-    # 트레이싱: 병렬 실행 결과 기록
     if tracer:
-        # Analyst
-        if is_error(analyst_score):
-            with tracer.trace_agent("analyst", f"{stock_name}({stock_code}) [fallback]") as span:
-                span.set_error(str(analyst_score), error_type="parallel_error")
-        else:
-            with tracer.trace_agent("analyst", f"{stock_name}({stock_code}) [fallback]") as span:
-                span.set_output(
-                    f"{analyst_score.hegemony_grade}등급 ({analyst_score.total_score}/70)"
-                )
-                span.set_reasoning(
-                    analyst_score.final_opinion[:200] if analyst_score.final_opinion else ""
-                )
-        
-        # Quant
-        if is_error(quant_score):
-            with tracer.trace_agent("quant", f"{stock_name}({stock_code}) [fallback]") as span:
-                span.set_error(str(quant_score), error_type="parallel_error")
-        else:
-            with tracer.trace_agent("quant", f"{stock_name}({stock_code}) [fallback]") as span:
-                span.set_output(
-                    f"{quant_score.grade} ({quant_score.total_score}/100)"
-                )
-                span.set_reasoning(quant_score.opinion[:200] if quant_score.opinion else "")
-        
-        # Chartist
-        if is_error(chartist_score):
-            with tracer.trace_agent("chartist", f"{stock_name}({stock_code}) [fallback]") as span:
-                span.set_error(str(chartist_score), error_type="parallel_error")
-        else:
-            with tracer.trace_agent("chartist", f"{stock_name}({stock_code}) [fallback]") as span:
-                span.set_output(
-                    f"{chartist_score.signal} ({chartist_score.total_score}/100)"
-                )
-                span.set_reasoning(
-                    f"trend:{chartist_score.trend_score} momentum:{chartist_score.momentum_score}"
-                )
-        
         tracer.set_metadata("parallel_elapsed_seconds", round(parallel_elapsed, 3))
     
     # 에러 복구

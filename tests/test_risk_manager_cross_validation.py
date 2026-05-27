@@ -12,8 +12,10 @@ class FakeLLM:
     def __init__(self, payload: str, should_fail: bool = False):
         self.payload = payload
         self.should_fail = should_fail
+        self.last_prompt = ""
 
     def invoke(self, prompt: str):
+        self.last_prompt = prompt
         if self.should_fail:
             raise RuntimeError("validator unavailable")
         return SimpleNamespace(content=self.payload)
@@ -154,3 +156,39 @@ def test_decision_parser_prefers_structured_output():
     assert decision.action == InvestmentAction.BUY
     assert decision.risk_level == RiskLevel.LOW
     assert decision.summary == "구조화 응답"
+
+
+def test_decision_prompt_includes_portfolio_position_context():
+    agent = RiskManagerAgent()
+    agent.llm = FakeLLM(build_response("HOLD", total_score=52, confidence=64))
+    agent.validator_llm = None
+
+    portfolio_context = {
+        "available": True,
+        "source": "kis_balance",
+        "summary": {
+            "holding_count": 1,
+            "total_evaluation_amount": 198560,
+            "total_profit_loss": -35440,
+            "available_cash": 9760000,
+        },
+        "position": {
+            "stock_code": "005930",
+            "stock_name": "삼성전자",
+            "holding_quantity": 8,
+            "orderable_quantity": 8,
+            "average_price": 29200,
+            "current_price": 24820,
+            "evaluation_amount": 198560,
+            "profit_loss": -35440,
+            "profit_loss_rate": -15.0,
+        },
+        "is_held": True,
+    }
+
+    decision = agent.make_decision("삼성전자", "005930", make_scores(), portfolio_context=portfolio_context)
+
+    assert decision.action == InvestmentAction.HOLD
+    assert "- current stock is held: yes" in agent.llm.last_prompt
+    assert "- unrealized profit/loss rate: -15.0%" in agent.llm.last_prompt
+    assert "- available cash: 9760000" in agent.llm.last_prompt

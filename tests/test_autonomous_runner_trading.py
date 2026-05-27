@@ -8,7 +8,9 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.runner.autonomous_runner import AutonomousRunner
+from src.runner.autonomous_runner import KST
 from src.tools import realtime_tool
+from datetime import datetime, timedelta
 
 
 class _EnumValue:
@@ -178,3 +180,97 @@ def test_kis_holdings_use_balance_tr_id_and_parse_quantities(monkeypatch):
     assert holdings[0].stock_code == "005930"
     assert holdings[0].holding_quantity == 10
     assert holdings[0].orderable_quantity == 7
+
+
+def test_long_plan_builds_trigger_at_analysis_time(tmp_path, monkeypatch):
+    config_path = tmp_path / "watchlist.yaml"
+    config_path.write_text(
+        """
+strategy_schedule:
+  short:
+    enabled: false
+  long:
+    enabled: true
+    analysis_time: "08:00"
+    buy_trigger_pct: -1.0
+watchlist:
+  - name: "삼성전자"
+    code: "005930"
+    mode: "full"
+    strategy: "long"
+trading:
+  enabled: true
+  dry_run: true
+  account_type: "paper"
+  auto_buy_conditions:
+    allowed_actions: ["BUY", "STRONG_BUY"]
+""",
+        encoding="utf-8",
+    )
+
+    runner = AutonomousRunner(config_path=str(config_path))
+
+    decision = _Decision()
+    decision.action = _EnumValue("BUY", "매수")
+    decision.total_score = 85
+    decision.confidence = 70
+    monkeypatch.setattr(runner, "_analyze_stock", lambda *_args, **_kwargs: {"final_decision": decision})
+    monkeypatch.setattr(runner, "_get_current_price", lambda _code: 100000)
+
+    now = datetime(2026, 5, 14, 8, 5, tzinfo=KST)
+    runner._build_long_strategy_plan_if_due(now=now, analysis_time="08:00", plan_ttl_hours=24)
+
+    assert len(runner._long_pending_triggers) == 1
+    trigger = runner._long_pending_triggers[0]
+    assert trigger["stock_code"] == "005930"
+    assert trigger["target_price"] == 99000
+    assert trigger["comparator"] == "lte"
+
+
+def test_long_trigger_executes_when_price_hits(tmp_path, monkeypatch):
+    config_path = tmp_path / "watchlist.yaml"
+    _write_config(config_path, account_type="paper")
+    runner = AutonomousRunner(config_path=str(config_path))
+
+    decision = _Decision()
+    decision.action = _EnumValue("BUY", "매수")
+    decision.total_score = 88
+    decision.confidence = 75
+
+    runner._long_pending_triggers = [
+        {
+            "stock_name": "삼성전자",
+            "stock_code": "005930",
+            "decision": decision,
+            "target_price": 99000,
+            "comparator": "lte",
+            "expires_at": datetime.now(KST) + timedelta(hours=2),
+            "created_at": datetime.now(KST),
+        }
+    ]
+
+    monkeypatch.setattr(runner, "_get_current_price", lambda _code: 98500)
+
+    calls = []
+
+    class _FakeExecutor:
+        is_enabled = True
+        is_dry_run = True
+
+        def execute_buy(self, stock_name, stock_code, decision, current_price=None):
+            calls.append((stock_name, stock_code, current_price))
+            return {"status": "simulated"}
+
+        def execute_sell(self, *args, **kwargs):
+            raise AssertionError("sell should not be called")
+
+    runner._executor = _FakeExecutor()
+    now = datetime.now(KST)
+    runner._execute_long_strategy_triggers_if_due(
+        now=now,
+        check_interval_minutes=1,
+        market_hours_only=False,
+    )
+
+    assert calls == [("삼성전자", "005930", 98500)]
+    assert runner._long_pending_triggers == []

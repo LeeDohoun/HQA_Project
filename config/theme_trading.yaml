@@ -1,0 +1,68 @@
+theme_trading:
+  enabled: true
+  dry_run: true
+  account_type: "paper"
+  order_type: "limit"
+
+  themes:
+    - theme: "AI"
+      theme_key: "ai"
+      enabled: true
+      max_candidates: 50
+
+    - theme: "반도체"
+      theme_key: "semiconductor"
+      enabled: true
+      max_candidates: 50
+
+    - theme: "2차전지"
+      theme_key: "battery"
+      enabled: true
+      max_candidates: 50
+
+    - theme: "로봇"
+      theme_key: "robot"
+      enabled: true
+      max_candidates: 50
+
+  universe_filters:
+    min_avg_trading_value_20d: 1000000000
+    max_volatility_20d: 1.2
+    max_return_5d: 0.35
+    max_return_20d: 0.9
+    min_trend_150d: -0.1
+    require_price_history: true
+    require_recent_documents: true
+    min_history_days: 60
+
+  llm_decision:
+    enabled: true
+    mode: "multi_theme_committee"
+    top_themes: 3
+    top_stocks_per_theme: 3
+    min_confidence_buy: 65
+    min_confidence_sell: 60
+    require_reason: true
+    require_invalidation: true
+    max_evidence_cards_per_theme: 10
+
+  portfolio:
+    total_budget: 10000000
+    max_positions: 5
+    max_position_ratio: 1.00
+    max_theme_ratio: 0.50
+    cash_buffer_ratio: 0.20
+    allow_scale_in: false
+    allow_rebalance: true
+
+  schedule:
+    market_hours_only: true
+    scan_interval_minutes: 30
+    review_interval_minutes: 30
+
+  order_guard:
+    cooldown_minutes: 30
+    block_if_price_missing: true
+    block_if_llm_error: true
+    block_duplicate_position: true
+    block_if_quantity_zero: true

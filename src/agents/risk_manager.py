@@ -14,7 +14,7 @@ Risk Manager Agent (리스크 매니저 에이전트)
 import json
 import logging
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.agents.llm_config import get_llm_info, get_thinking_llm, get_thinking_validator_llm
 from src.agents.context import AgentContextPacket
+from src.utils.portfolio_context import prompt_block_for_portfolio_context
 from src.utils.prompt_loader import load_prompt_optional
 
 logger = logging.getLogger(__name__)
@@ -160,7 +161,8 @@ class RiskManagerAgent:
         self,
         stock_name: str,
         stock_code: str,
-        scores: AgentScores
+        scores: AgentScores,
+        portfolio_context: Optional[Dict[str, Any]] = None,
     ) -> FinalDecision:
         """
         최종 투자 결정 수행
@@ -176,7 +178,7 @@ class RiskManagerAgent:
         print(f"🎯 [Risk Manager] {stock_name} 최종 판단 중 (Thinking 모델)...")
         
         # 프롬프트 구성
-        prompt = self._build_decision_prompt(stock_name, stock_code, scores)
+        prompt = self._build_decision_prompt(stock_name, stock_code, scores, portfolio_context=portfolio_context)
         
         try:
             primary_decision = self._invoke_decision_llm(
@@ -301,12 +303,14 @@ class RiskManagerAgent:
         self,
         stock_name: str,
         stock_code: str,
-        scores: AgentScores
+        scores: AgentScores,
+        portfolio_context: Optional[Dict[str, Any]] = None,
     ) -> str:
         """결정 프롬프트 구성"""
         analyst_context = self._format_context_packet(scores.analyst_context, "analyst")
         quant_context = self._format_context_packet(scores.quant_context, "quant")
         chartist_context = self._format_context_packet(scores.chartist_context, "chartist")
+        portfolio_context_block = prompt_block_for_portfolio_context(portfolio_context)
 
         return load_prompt_optional(
             "risk_manager",
@@ -321,6 +325,7 @@ class RiskManagerAgent:
             analyst_context=analyst_context,
             quant_context=quant_context,
             chartist_context=chartist_context,
+            portfolio_context=portfolio_context_block,
         )
     
     def _parse_decision(
@@ -528,6 +533,13 @@ class RiskManagerAgent:
 
 ### Chartist Packet
 {chartist_context}
+
+## 3. 현재 포트폴리오 컨텍스트
+{portfolio_context}
+
+판단 시 현재 보유 여부, 손익률, 주문가능수량, 현금 여력, 중복 노출을 반드시 함께 고려하세요.
+이미 보유 중인 종목이면 신규 매수 관점뿐 아니라 보유, 비중 축소, 매도, 손절/회복 조건을 명확히 구분하세요.
+손익률이 크게 악화된 포지션은 물타기 전제가 아니라 리스크 관리 대상으로 우선 검토하세요.
 
 ---
 
