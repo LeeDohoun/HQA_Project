@@ -828,6 +828,7 @@ def _run_theme_trade(request: ThemeTradeRequest) -> Dict[str, Any]:
         strategy_profile=request.strategy_profile,
         save_report=bool(request.save_report),
         investor_profile=request.investor_profile,
+        user_id=request.user_id,
     )
 
 
@@ -886,6 +887,7 @@ def _run_multi_theme_trade(request: MultiThemeTradeRequest) -> Dict[str, Any]:
         exclude_theme_keys=request.exclude_theme_keys,
         save_report=bool(request.save_report),
         investor_profile=request.investor_profile,
+        user_id=request.user_id,
     )
     if request.user_id:
         result["signal_submission"] = submit_trade_signals(
@@ -963,6 +965,7 @@ def _run_multi_theme_loop(task_id: str, request: MultiThemeLoopStartRequest, sto
             include_theme_keys=request.include_theme_keys,
             exclude_theme_keys=request.exclude_theme_keys,
             investor_profile=request.investor_profile,
+            user_id=request.user_id,
         )
         with _runtime_loop_lock:
             _runtime_loop_state.update({

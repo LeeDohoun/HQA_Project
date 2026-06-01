@@ -11,7 +11,7 @@ Chartist Agent - 기술적 분석 전문 에이전트
 점수 체계: 100점 만점 (추세 30 + 모멘텀 30 + 변동성 20 + 거래량 20)
 """
 
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 from dataclasses import dataclass, field
 
 from src.agents.llm_config import get_instruct_llm
@@ -43,6 +43,13 @@ class ChartistScore:
     
     # 핵심 지표
     current_price: float = 0
+    live_current_price: float = 0
+    price_snapshot_source: str = ""
+    price_snapshot_at: str = ""
+    live_vs_daily_close_pct: float = 0
+    entry_timing: str = ""
+    overheat_risk: str = ""
+    technical_invalid_price: str = ""
     rsi: float = 0
     macd_histogram: float = 0
     bb_position: str = ""
@@ -206,7 +213,12 @@ class ChartistAgent:
                 "stock_code": stock_code
             }
     
-    def full_analysis(self, stock_name: str, stock_code: str) -> ChartistScore:
+    def full_analysis(
+        self,
+        stock_name: str,
+        stock_code: str,
+        price_snapshot: Optional[Dict[str, Any]] = None,
+    ) -> ChartistScore:
         """
         전체 기술적 분석 수행 (Risk Manager 호환)
         
@@ -226,7 +238,14 @@ class ChartistAgent:
             if "error" in check_result:
                 return self._default_score(stock_code, check_result["error"])
             
-            # ChartistScore 생성
+            snapshot_context = self._build_price_snapshot_context(
+                daily_close=check_result["price"],
+                price_snapshot=price_snapshot,
+            )
+            packet = self._build_packet(stock_name, stock_code, check_result, snapshot_context).to_dict()
+            if snapshot_context:
+                packet["price_snapshot"] = snapshot_context
+
             return ChartistScore(
                 trend_score=check_result["trend_score"],
                 momentum_score=check_result["momentum_score"],
@@ -239,6 +258,13 @@ class ChartistAgent:
                 volatility_analysis=", ".join(check_result["volatility_signals"]),
                 volume_analysis=", ".join(check_result["volume_signals"]),
                 current_price=check_result["price"],
+                live_current_price=snapshot_context.get("current_price", 0) or 0,
+                price_snapshot_source=snapshot_context.get("source", ""),
+                price_snapshot_at=snapshot_context.get("snapshot_at", ""),
+                live_vs_daily_close_pct=snapshot_context.get("live_vs_daily_close_pct", 0) or 0,
+                entry_timing=snapshot_context.get("entry_timing", ""),
+                overheat_risk=snapshot_context.get("overheat_risk", ""),
+                technical_invalid_price=snapshot_context.get("technical_invalid_price", ""),
                 rsi=check_result["indicators"].get("rsi", 0),
                 macd_histogram=check_result["indicators"].get("macd_histogram", 0),
                 bb_position=check_result["indicators"].get("bb_position", ""),
@@ -247,7 +273,7 @@ class ChartistAgent:
                 mid_term_opinion=check_result["signal"],
                 stop_loss=f"-{check_result['indicators'].get('atr', 0) * 2:.0f}원 (2ATR)",
                 target_price=f"+{check_result['indicators'].get('atr', 0) * 3:.0f}원 (3ATR)",
-                analysis_packet=self._build_packet(stock_name, stock_code, check_result).to_dict(),
+                analysis_packet=packet,
             )
             
         except Exception as e:
@@ -330,8 +356,73 @@ class ChartistAgent:
 - 거래량 비율: {score.volume_ratio:.2f}x
 """
 
-    def _build_packet(self, stock_name: str, stock_code: str, check_result: dict) -> AgentContextPacket:
+    def _build_price_snapshot_context(
+        self,
+        *,
+        daily_close: float,
+        price_snapshot: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        if not price_snapshot or not price_snapshot.get("success", True):
+            return {}
+
+        try:
+            live_price = float(price_snapshot.get("current_price") or price_snapshot.get("currentPrice") or 0)
+            daily = float(daily_close or 0)
+        except (TypeError, ValueError):
+            return {}
+        if live_price <= 0 or daily <= 0:
+            return {}
+
+        drift = round(((live_price - daily) / daily) * 100, 2)
+        abs_drift = abs(drift)
+        if drift >= 10:
+            overheat_risk = "high"
+            entry_timing = "wait_for_pullback"
+        elif drift >= 5:
+            overheat_risk = "medium"
+            entry_timing = "cautious_entry"
+        elif drift <= -10:
+            overheat_risk = "low"
+            entry_timing = "falling_knife_watch"
+        elif abs_drift <= 3:
+            overheat_risk = "low"
+            entry_timing = "acceptable"
+        else:
+            overheat_risk = "medium"
+            entry_timing = "confirm_support"
+
+        invalid_price = int(round(min(daily, live_price) * 0.95))
+        return {
+            "current_price": int(round(live_price)),
+            "source": str(price_snapshot.get("source") or "kis"),
+            "snapshot_at": str(price_snapshot.get("snapshot_at") or price_snapshot.get("snapshotAt") or ""),
+            "live_vs_daily_close_pct": drift,
+            "entry_timing": entry_timing,
+            "overheat_risk": overheat_risk,
+            "technical_invalid_price": f"{invalid_price:,}원",
+        }
+
+    def _build_packet(
+        self,
+        stock_name: str,
+        stock_code: str,
+        check_result: dict,
+        price_snapshot_context: Optional[Dict[str, Any]] = None,
+    ) -> AgentContextPacket:
         indicators = check_result.get("indicators", {})
+        risks = [
+            f"RSI={indicators.get('rsi', 0):.1f}",
+            f"MACD={indicators.get('macd_histogram', 0):.2f}",
+            f"거래량비율={indicators.get('volume_ratio', 0):.2f}",
+        ]
+        if price_snapshot_context:
+            risks.append(
+                "현재가 괴리="
+                f"{price_snapshot_context.get('live_vs_daily_close_pct', 0):+.2f}%"
+            )
+            risks.append(f"진입타이밍={price_snapshot_context.get('entry_timing', '')}")
+            risks.append(f"과열위험={price_snapshot_context.get('overheat_risk', '')}")
+
         return AgentContextPacket(
             agent_name="chartist",
             stock_name=stock_name,
@@ -345,25 +436,29 @@ class ChartistAgent:
                     ", ".join(check_result.get("volume_signals", [])[:2]),
                 ] if s
             ],
-            risks=[
-                f"RSI={indicators.get('rsi', 0):.1f}",
-                f"MACD={indicators.get('macd_histogram', 0):.2f}",
-                f"거래량비율={indicators.get('volume_ratio', 0):.2f}",
-            ],
+            risks=risks,
             contrarian_view="기술적 신호는 단기 구간에 민감하므로 펀더멘털과 충돌할 수 있음",
             evidence=[
-                EvidenceItem(
-                    source="chart",
-                    title="기술 지표",
-                    snippet=str(indicators),
-                )
+                EvidenceItem(source="chart", title="기술 지표", snippet=str(indicators)),
+                *(
+                    [
+                        EvidenceItem(
+                            source="price_snapshot",
+                            title="KIS 현재가 스냅샷",
+                            snippet=str(price_snapshot_context),
+                        )
+                    ]
+                    if price_snapshot_context
+                    else []
+                ),
             ],
             score=check_result.get("total_score", 0),
             confidence=min(100, max(0, check_result.get("total_score", 0))),
             grade=check_result.get("signal", ""),
             signal=check_result.get("signal", ""),
             next_action="risk_manager_review",
-            source_tags=["charts", "technical"],
+            source_tags=["charts", "technical"]
+            + (["kis_price_snapshot"] if price_snapshot_context else []),
         )
 
     def _build_error_packet(self, stock_code: str, error: str) -> AgentContextPacket:

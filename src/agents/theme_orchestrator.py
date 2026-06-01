@@ -110,6 +110,7 @@ class ThemeLeaderOrchestrator:
         strategy_profile: str = "default",
         portfolio_context: Optional[Dict[str, Any]] = None,
         investor_profile: Optional[Dict[str, Any]] = None,
+        user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         resolved_key = theme_key or make_theme_key(theme, theme)
         resolved_profile = self._normalize_strategy_profile(strategy_profile)
@@ -137,6 +138,7 @@ class ThemeLeaderOrchestrator:
                     strategy_profile=resolved_profile,
                     portfolio_context=portfolio_context,
                     investor_profile=investor_profile,
+                    user_id=user_id,
                 )
             )
 
@@ -329,12 +331,14 @@ class ThemeLeaderOrchestrator:
         strategy_profile: str = "default",
         portfolio_context: Optional[Dict[str, Any]] = None,
         investor_profile: Optional[Dict[str, Any]] = None,
+        user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         records = self._load_stock_records(theme_key, candidate.stock_code)
         source_counts = Counter((row.get("metadata") or {}).get("source_type", "") for row in records)
         analyst_context = self._compose_context(records, {"news", "forum", "dart"}, max_docs=6)
         quant_context = self._compose_context(records, {"dart", "news"}, max_docs=5)
 
+        price_snapshot = self._fetch_price_snapshot(user_id, candidate.stock_code)
         tasks = {
             "analyst": (
                 self._evaluate_analyst_candidate,
@@ -346,7 +350,7 @@ class ThemeLeaderOrchestrator:
             ),
             "chartist": (
                 self._evaluate_chartist_candidate,
-                (theme_key, candidate),
+                (theme_key, candidate, price_snapshot),
             ),
         }
         results = run_agents_parallel(tasks, max_workers=3)
@@ -436,9 +440,21 @@ class ThemeLeaderOrchestrator:
                 "signal": chartist_result.signal,
                 "short_term_opinion": chartist_result.short_term_opinion,
                 "mid_term_opinion": chartist_result.mid_term_opinion,
+                "price_snapshot": chartist_result.analysis_packet.get("price_snapshot", {}),
             },
             "final_decision": self._decision_to_dict(final_decision),
         }
+
+    def _fetch_price_snapshot(self, user_id: Optional[str], stock_code: str) -> Optional[Dict[str, Any]]:
+        if not user_id:
+            return None
+        try:
+            from src.runner.price_snapshot_client import fetch_price_snapshot
+
+            return fetch_price_snapshot(user_id=user_id, stock_code=stock_code)
+        except Exception as exc:
+            logger.warning("price snapshot unavailable for %s: %s", stock_code, exc)
+            return None
 
     @staticmethod
     def _normalize_strategy_profile(strategy_profile: str) -> str:
@@ -681,9 +697,14 @@ class ThemeLeaderOrchestrator:
         self,
         theme_key: str,
         candidate: ThemeCandidate,
+        price_snapshot: Optional[Dict[str, Any]] = None,
     ) -> ChartistScore:
         # 현재 ChartistAgent는 로컬 market_data/raw chart를 우선 사용한다.
-        return self.chartist.full_analysis(candidate.stock_name, candidate.stock_code)
+        return self.chartist.full_analysis(
+            candidate.stock_name,
+            candidate.stock_code,
+            price_snapshot=price_snapshot,
+        )
 
     def _fallback_analyst(
         self,
