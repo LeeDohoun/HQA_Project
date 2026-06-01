@@ -12,6 +12,7 @@ import com.hqa.backend.service.AiServerClient;
 import com.hqa.backend.service.AuthService;
 import com.hqa.backend.service.AutoTradeService;
 import com.hqa.backend.service.KisClient;
+import com.hqa.backend.service.TradeSignalService;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 import java.util.HashMap;
@@ -32,13 +33,16 @@ public class TradingController {
     private final AutoTradeService autoTradeService;
     private final AuthService authService;
     private final KisClient kisClient;
+    private final TradeSignalService tradeSignalService;
 
     public TradingController(AiServerClient aiServerClient, AutoTradeService autoTradeService,
-                             AuthService authService, KisClient kisClient) {
+                             AuthService authService, KisClient kisClient,
+                             TradeSignalService tradeSignalService) {
         this.aiServerClient = aiServerClient;
         this.autoTradeService = autoTradeService;
         this.authService = authService;
         this.kisClient = kisClient;
+        this.tradeSignalService = tradeSignalService;
     }
 
     @GetMapping("/status")
@@ -85,6 +89,12 @@ public class TradingController {
     public Map<String, Object> orders(@RequestParam(required = false) String date,
                                       @RequestParam(defaultValue = "50") int limit) {
         return aiServerClient.getTradingOrders(date, Math.max(1, Math.min(500, limit)));
+    }
+
+    @GetMapping("/signals")
+    public Map<String, Object> signals(HttpSession session) {
+        User user = authService.requireUser(session);
+        return Map.of("items", tradeSignalService.recentForUser(user.getUserId()));
     }
 
     @GetMapping("/balance")

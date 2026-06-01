@@ -12,10 +12,12 @@ public class StockService {
 
     private final StockCatalogService stockCatalogService;
     private final AuthService authService;
+    private final KisClient kisClient;
 
-    public StockService(StockCatalogService stockCatalogService, AuthService authService) {
+    public StockService(StockCatalogService stockCatalogService, AuthService authService, KisClient kisClient) {
         this.stockCatalogService = stockCatalogService;
         this.authService = authService;
+        this.kisClient = kisClient;
     }
 
     public StockSearchResponse search(String query) {
@@ -24,11 +26,14 @@ public class StockService {
 
     public RealtimePriceResponse getRealtimePrice(String stockCode, HttpSession session) {
         stockCatalogService.validateCode(stockCode);
-        authService.requireUserSecret(session);
+        var user = authService.requireUser(session);
+        var secret = authService.requireUserSecret(session);
         StockInfo stock = stockCatalogService.getStockInfo(stockCode);
+        String token = kisClient.fetchAccessToken(user.getUserId(), secret);
+        Long current = token == null ? null : kisClient.inquireCurrentPrice(user.getUserId(), secret, token, stockCode);
         return new RealtimePriceResponse(
                 stock,
-                0,
+                current == null ? 0 : current.intValue(),
                 0,
                 0.0,
                 0,

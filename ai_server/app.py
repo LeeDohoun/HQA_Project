@@ -207,6 +207,8 @@ class TradeDecisionRequest(BaseModel):
 
 
 class ThemeTradeRequest(BaseModel):
+    user_id: Optional[str] = None
+    investor_profile: Optional[Dict[str, Any]] = None
     theme: str
     theme_key: str = ""
     candidate_limit: int = 5
@@ -242,6 +244,8 @@ class ThemeTradeReportRequest(BaseModel):
 
 
 class MultiThemeTradeRequest(BaseModel):
+    user_id: Optional[str] = None
+    investor_profile: Optional[Dict[str, Any]] = None
     candidate_limit: int = 5
     per_theme_top_n: int = 3
     top_n: int = 3
@@ -614,7 +618,7 @@ def _execute_theme(
                 "stock_name": candidate.get("stock_name"),
                 "stock_code": candidate.get("stock_code"),
                 "leader_score": row.get("leader_score"),
-                "seed_score": candidate.get("seed_score"),
+                "data_coverage": candidate.get("data_coverage"),
                 "action": decision.get("action"),
                 "confidence": decision.get("confidence"),
                 "summary": decision.get("summary"),
@@ -823,6 +827,7 @@ def _run_theme_trade(request: ThemeTradeRequest) -> Dict[str, Any]:
         min_leader_score=request.min_leader_score,
         strategy_profile=request.strategy_profile,
         save_report=bool(request.save_report),
+        investor_profile=request.investor_profile,
     )
 
 
@@ -852,6 +857,7 @@ def _run_theme_trade_report(request: ThemeTradeReportRequest) -> Dict[str, Any]:
 
 def _run_multi_theme_trade(request: MultiThemeTradeRequest) -> Dict[str, Any]:
     from src.runner import MultiThemeLeaderTradingRunner
+    from src.runner.trade_signal_submitter import submit_trade_signals
 
     overrides = _resolve_runner_overrides(
         execute=request.execute,
@@ -866,7 +872,7 @@ def _run_multi_theme_trade(request: MultiThemeTradeRequest) -> Dict[str, Any]:
         data_dir=request.data_dir,
         **overrides,
     )
-    return runner.run_all(
+    result = runner.run_all(
         candidate_limit=max(1, int(request.candidate_limit)),
         per_theme_top_n=max(1, int(request.per_theme_top_n)),
         top_n=max(1, int(request.top_n)),
@@ -879,7 +885,14 @@ def _run_multi_theme_trade(request: MultiThemeTradeRequest) -> Dict[str, Any]:
         include_theme_keys=request.include_theme_keys,
         exclude_theme_keys=request.exclude_theme_keys,
         save_report=bool(request.save_report),
+        investor_profile=request.investor_profile,
     )
+    if request.user_id:
+        result["signal_submission"] = submit_trade_signals(
+            user_id=request.user_id,
+            result=result,
+        )
+    return result
 
 
 def _run_autonomous_once(request: AutonomousRunRequest) -> Dict[str, Any]:
@@ -949,6 +962,7 @@ def _run_multi_theme_loop(task_id: str, request: MultiThemeLoopStartRequest, sto
             long_strategy_profile="long",
             include_theme_keys=request.include_theme_keys,
             exclude_theme_keys=request.exclude_theme_keys,
+            investor_profile=request.investor_profile,
         )
         with _runtime_loop_lock:
             _runtime_loop_state.update({

@@ -275,4 +275,26 @@ def test_multi_theme_runner_builds_and_reuses_portfolio_context(tmp_path):
     assert result["portfolio_context"]["summary"]["holding_count"] == 1
     assert theme_runner.received_run_once_kwargs
     assert all("portfolio_context" in kwargs for kwargs in theme_runner.received_run_once_kwargs)
+
+
+def test_multi_theme_runner_passes_investor_profile_to_theme_runner(tmp_path):
+    _touch_theme_files(tmp_path)
+    theme_runner = _FakeThemeRunner()
+    runner = MultiThemeLeaderTradingRunner(
+        data_dir=str(tmp_path),
+        theme_runner=theme_runner,
+    )
+    profile = {"investment_type": "STABLE", "loss_tolerance": "LEVEL_1"}
+
+    runner.run_all(
+        candidate_limit=3,
+        per_theme_top_n=1,
+        top_n=1,
+        execute=False,
+        save_report=False,
+        investor_profile=profile,
+    )
+
+    assert theme_runner.received_run_once_kwargs
+    assert all(kwargs["investor_profile"] == profile for kwargs in theme_runner.received_run_once_kwargs)
     assert all(kwargs["portfolio_context"]["source"] == "fake" for kwargs in theme_runner.received_run_once_kwargs)

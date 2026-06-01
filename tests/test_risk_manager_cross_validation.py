@@ -192,3 +192,37 @@ def test_decision_prompt_includes_portfolio_position_context():
     assert "- current stock is held: yes" in agent.llm.last_prompt
     assert "- unrealized profit/loss rate: -15.0%" in agent.llm.last_prompt
     assert "- available cash: 9760000" in agent.llm.last_prompt
+
+
+def test_decision_prompt_includes_investor_profile_context():
+    agent = RiskManagerAgent()
+    agent.llm = FakeLLM(build_response("HOLD", total_score=52, confidence=64))
+    agent.validator_llm = None
+
+    investor_profile = {
+        "total_assets": 50_000_000,
+        "monthly_investment": 1_000_000,
+        "investment_period_months": 36,
+        "target_return_rate": 12,
+        "investment_goal": "ASSET_GROWTH",
+        "investment_experience": "BEGINNER",
+        "investment_type": "STABLE",
+        "volatility_tolerance": "LOW",
+        "loss_action": "SELL_IMMEDIATELY",
+        "leverage_allowed": False,
+        "occupation_type": "EMPLOYEE",
+        "loss_tolerance": "LEVEL_1",
+    }
+
+    decision = agent.make_decision(
+        "삼성전자",
+        "005930",
+        make_scores(),
+        investor_profile=investor_profile,
+    )
+
+    assert decision.action == InvestmentAction.HOLD
+    assert "## 4. 투자자 프로필" in agent.llm.last_prompt
+    assert "- investment_type: STABLE" in agent.llm.last_prompt
+    assert "- volatility_tolerance: LOW" in agent.llm.last_prompt
+    assert "RiskManager만 사용자 적합성을 반영" in agent.llm.last_prompt
