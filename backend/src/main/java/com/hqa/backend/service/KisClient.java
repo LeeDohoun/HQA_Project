@@ -33,6 +33,7 @@ public class KisClient {
     private static final String CHART_TODAY_MINUTE_PATH = "/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice";
     private static final String CHART_DAILY_MINUTE_PATH = "/uapi/domestic-stock/v1/quotations/inquire-time-dailychartprice";
     private static final String INDEX_PRICE_PATH = "/uapi/domestic-stock/v1/quotations/inquire-index-price";
+    private static final String CURRENT_PRICE_PATH = "/uapi/domestic-stock/v1/quotations/inquire-price";
 
     private static final ZoneId KIS_ZONE = ZoneId.of("Asia/Seoul");
     private static final DateTimeFormatter YYYYMMDD = DateTimeFormatter.ofPattern("yyyyMMdd");
@@ -258,6 +259,46 @@ public class KisClient {
             return result;
         } catch (Exception e) {
             errorLogger.log("KisClient", userId, indexCode, "inquire-index-price failed", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 국내주식 현재가 조회. inquire-price.
+     */
+    public Long inquireCurrentPrice(String userId, UserSecret secret, String token, String stockCode) {
+        try {
+            String appKey = secretCipher.decrypt(secret.getKisAppKey());
+            String appSecret = secretCipher.decrypt(secret.getKisAppSecret());
+            boolean isReal = secret.isKisIsReal();
+            String response = webClient.get()
+                    .uri(uriBuilder -> uriBuilder.scheme("https")
+                            .host(isReal ? "openapi.koreainvestment.com" : "openapivts.koreainvestment.com")
+                            .port(isReal ? 9443 : 29443)
+                            .path(CURRENT_PRICE_PATH)
+                            .queryParam("FID_COND_MRKT_DIV_CODE", "J")
+                            .queryParam("FID_INPUT_ISCD", stockCode)
+                            .build())
+                    .header("authorization", "Bearer " + token)
+                    .header("appkey", appKey)
+                    .header("appsecret", appSecret)
+                    .header("tr_id", "FHKST01010100")
+                    .header("custtype", "P")
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+            Map<String, Object> body = objectMapper.readValue(response, new TypeReference<>() {});
+            if (!"0".equals(String.valueOf(body.getOrDefault("rt_cd", "")))) {
+                errorLogger.log("KisClient", userId, stockCode,
+                        "inquire-current-price rejected: " + body.get("msg1"), response);
+                return null;
+            }
+            Object output = body.get("output");
+            if (!(output instanceof Map<?, ?> row)) return null;
+            long price = parseLong(row.get("stck_prpr"));
+            return price > 0 ? price : null;
+        } catch (Exception e) {
+            errorLogger.log("KisClient", userId, stockCode, "inquire-current-price failed", e.getMessage());
             return null;
         }
     }

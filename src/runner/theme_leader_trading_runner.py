@@ -71,6 +71,7 @@ class ThemeLeaderTradingRunner:
         strategy_profile: str = "default",
         save_report: bool = True,
         portfolio_context: Optional[Dict[str, Any]] = None,
+        investor_profile: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         orchestrator = self._get_orchestrator()
         resolved_portfolio_context = portfolio_context or self.build_portfolio_context()
@@ -81,6 +82,7 @@ class ThemeLeaderTradingRunner:
             top_n=top_n,
             strategy_profile=strategy_profile,
             portfolio_context=resolved_portfolio_context,
+            investor_profile=investor_profile,
         )
 
         leaders = list(theme_result.get("leaders") or [])

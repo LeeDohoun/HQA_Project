@@ -52,6 +52,7 @@ hqa:
   secret-key: ${SECRET_KEY:change-me-in-production}
   rate-limit-per-minute: ${RATE_LIMIT_PER_MINUTE:30}
   ai-server-url: ${AI_SERVER_URL:http://localhost:8001}
+  internal-token: ${HQA_INTERNAL_TOKEN:}
   redis-url: ${REDIS_URL:redis://localhost:6379/0}
   kis-app-key: ${KIS_APP_KEY:}
   kis-app-secret: ${KIS_APP_SECRET:}

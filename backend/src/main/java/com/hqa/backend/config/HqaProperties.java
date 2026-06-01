@@ -14,6 +14,7 @@ public class HqaProperties {
     private int rateLimitPerMinute = 30;
     private String aiServerUrl = "http://localhost:8001";
     private String redisUrl = "redis://localhost:6379/0";
+    private String internalToken = "";
     private String kisAppKey = "";
     private String kisAppSecret = "";
     private String kisAccountNo = "";
@@ -73,6 +74,14 @@ public class HqaProperties {
 
     public void setRedisUrl(String redisUrl) {
         this.redisUrl = redisUrl;
+    }
+
+    public String getInternalToken() {
+        return internalToken;
+    }
+
+    public void setInternalToken(String internalToken) {
+        this.internalToken = internalToken;
     }
 
     public String getKisAppKey() {

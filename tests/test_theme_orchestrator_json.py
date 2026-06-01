@@ -8,7 +8,10 @@ from src.agents.theme_orchestrator import (
     ThemeAnalystEvaluation,
     ThemeQuantEvaluation,
     ThemeLeaderOrchestrator,
+    ThemeCandidate,
 )
+from src.agents.chartist import ChartistScore
+from src.agents.risk_manager import FinalDecision, InvestmentAction, RiskLevel
 
 
 def _orchestrator() -> ThemeLeaderOrchestrator:
@@ -142,7 +145,7 @@ def test_fallback_outputs_set_quality_flags():
             "market_rows": 0,
             "source_coverage": 0,
             "corpus_docs": 0,
-            "seed_score": 0,
+            "data_coverage": "missing",
         },
     )()
 
@@ -163,7 +166,6 @@ def test_strategy_profile_leader_score_weights():
         quant_total=85,
         chartist_total=95,
         final_total=72,
-        data_presence_score=80,
         strategy_profile="default",
     )
     short_score = orchestrator._compute_leader_score(
@@ -171,7 +173,6 @@ def test_strategy_profile_leader_score_weights():
         quant_total=85,
         chartist_total=95,
         final_total=72,
-        data_presence_score=80,
         strategy_profile="short",
     )
     long_score = orchestrator._compute_leader_score(
@@ -179,17 +180,111 @@ def test_strategy_profile_leader_score_weights():
         quant_total=85,
         chartist_total=95,
         final_total=72,
-        data_presence_score=80,
         strategy_profile="long",
     )
 
-    assert default_score == round(72 * 0.7 + 80 * 0.3)
+    assert default_score == 72
     assert short_score > long_score
+
+
+def test_leader_score_does_not_change_with_data_coverage():
+    orchestrator = _orchestrator()
+
+    score = orchestrator._compute_leader_score(
+        analyst_total=50,
+        quant_total=50,
+        chartist_total=50,
+        final_total=64,
+        strategy_profile="default",
+    )
+
+    assert score == 64
 
 
 def test_unknown_strategy_profile_falls_back_to_default():
     orchestrator = _orchestrator()
     assert orchestrator._normalize_strategy_profile("unknown") == "default"
+
+
+def test_evaluate_candidate_passes_investor_profile_to_risk_manager(monkeypatch):
+    orchestrator = _orchestrator()
+    orchestrator._load_stock_records = lambda _theme_key, _stock_code: []
+    orchestrator._compose_context = lambda _records, _sources, max_docs: ""
+    orchestrator._evaluate_analyst_candidate = lambda *args, **kwargs: {
+        "moat_score": 20,
+        "growth_score": 20,
+        "total_score": 40,
+        "grade": "B",
+        "summary": "분석",
+        "packet": SimpleNamespace(to_dict=lambda: {}, catalysts=[], risks=[]),
+        "quality_flags": {},
+    }
+    orchestrator._evaluate_quant_candidate = lambda *args, **kwargs: SimpleNamespace(
+        valuation_score=20,
+        profitability_score=20,
+        growth_score=20,
+        stability_score=20,
+        total_score=80,
+        grade="A",
+        opinion="양호",
+        analysis_packet={},
+        quality_flags={},
+    )
+    orchestrator._evaluate_chartist_candidate = lambda *args, **kwargs: ChartistScore(
+        trend_score=20,
+        momentum_score=20,
+        volatility_score=15,
+        volume_score=15,
+        total_score=70,
+        signal="매수",
+        trend_analysis="",
+        momentum_analysis="",
+        volatility_analysis="",
+        volume_analysis="",
+        short_term_opinion="매수",
+        mid_term_opinion="중립",
+        analysis_packet={},
+    )
+    monkeypatch.setattr(
+        "src.agents.theme_orchestrator.run_agents_parallel",
+        lambda tasks, max_workers=3: {name: fn(*args) for name, (fn, args) in tasks.items()},
+    )
+
+    received = {}
+
+    class FakeRiskManager:
+        def make_decision(self, stock_name, stock_code, scores, portfolio_context=None, investor_profile=None):
+            received["investor_profile"] = investor_profile
+            return FinalDecision(
+                stock_name=stock_name,
+                stock_code=stock_code,
+                total_score=70,
+                action=InvestmentAction.BUY,
+                confidence=75,
+                risk_level=RiskLevel.LOW,
+                risk_factors=[],
+                position_size="10%",
+                entry_strategy="분할",
+                exit_strategy="분할",
+                stop_loss="-5%",
+                signal_alignment="일치",
+                key_catalysts=[],
+                contrarian_view="",
+                summary="매수",
+                detailed_reasoning="",
+            )
+
+    orchestrator.risk_manager = FakeRiskManager()
+    profile = {"investment_type": "STABLE", "loss_tolerance": "LEVEL_1"}
+
+    orchestrator.evaluate_candidate(
+        "AI",
+        "ai",
+        ThemeCandidate(stock_name="테스트", stock_code="000001", data_coverage="enough"),
+        investor_profile=profile,
+    )
+
+    assert received["investor_profile"] == profile
 
 
 def _write_jsonl(path, rows):
@@ -273,4 +368,52 @@ def test_extract_candidates_keeps_legacy_behavior_when_filter_disabled(tmp_path)
     candidates = orchestrator.extract_candidates("AI", theme_key, candidate_limit=10)
 
     assert [candidate.stock_code for candidate in candidates] == ["222222"]
+    assert candidates[0].data_coverage == "weak"
     assert orchestrator._last_candidate_filter_report["status"] == "disabled"
+
+
+def test_extract_candidates_excludes_candidates_without_documents_or_market_data(tmp_path):
+    theme_key = "ai"
+    _write_jsonl(
+        tmp_path / "raw" / "theme_targets" / f"{theme_key}.jsonl",
+        [{"stock_code": "333333", "stock_name": "데이터없음"}],
+    )
+
+    orchestrator = ThemeLeaderOrchestrator(
+        data_dir=str(tmp_path),
+        universe_filters={"enabled": False},
+    )
+
+    candidates = orchestrator.extract_candidates("AI", theme_key, candidate_limit=10)
+
+    assert candidates == []
+
+
+def test_extract_candidates_reports_data_coverage(tmp_path):
+    theme_key = "ai"
+    _write_jsonl(
+        tmp_path / "raw" / "theme_targets" / f"{theme_key}.jsonl",
+        [
+            {"stock_code": "111111", "stock_name": "충분"},
+            {"stock_code": "222222", "stock_name": "약함"},
+        ],
+    )
+    _write_jsonl(
+        tmp_path / "canonical_index" / theme_key / "corpus.jsonl",
+        [
+            {"text": "뉴스", "metadata": {"stock_code": "111111", "stock_name": "충분", "source_type": "news"}},
+            {"text": "공시", "metadata": {"stock_code": "111111", "stock_name": "충분", "source_type": "dart"}},
+            {"text": "뉴스", "metadata": {"stock_code": "222222", "stock_name": "약함", "source_type": "news"}},
+        ],
+    )
+    _write_jsonl(tmp_path / "market_data" / theme_key / "chart.jsonl", _price_rows("111111"))
+
+    orchestrator = ThemeLeaderOrchestrator(
+        data_dir=str(tmp_path),
+        universe_filters={"enabled": False},
+    )
+
+    candidates = orchestrator.extract_candidates("AI", theme_key, candidate_limit=10)
+    coverage_by_code = {candidate.stock_code: candidate.data_coverage for candidate in candidates}
+
+    assert coverage_by_code == {"111111": "enough", "222222": "weak"}

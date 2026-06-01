@@ -81,6 +81,7 @@ class MultiThemeScheduler:
         long_strategy_profile: str = "long",
         include_theme_keys: Optional[Sequence[str]] = None,
         exclude_theme_keys: Optional[Sequence[str]] = None,
+        investor_profile: Optional[Dict[str, Any]] = None,
     ) -> None:
         print("\n🔁 [Multi-Theme Scheduler] 시작")
         print(
@@ -125,6 +126,7 @@ class MultiThemeScheduler:
                         include_theme_keys=include_theme_keys,
                         exclude_theme_keys=exclude_theme_keys,
                         save_report=True,
+                        investor_profile=investor_profile,
                     )
                     self._last_short_trade_at = now
                     print(
@@ -159,6 +161,7 @@ class MultiThemeScheduler:
                                 include_theme_keys=include_theme_keys,
                                 exclude_theme_keys=exclude_theme_keys,
                                 save_report=True,
+                                investor_profile=investor_profile,
                             )
                             print(
                                 "🏁 [Short/Execute] "
@@ -179,6 +182,7 @@ class MultiThemeScheduler:
                         long_strategy_profile=long_strategy_profile,
                         include_theme_keys=include_theme_keys,
                         exclude_theme_keys=exclude_theme_keys,
+                        investor_profile=investor_profile,
                     )
 
                 if self._should_check_long_triggers(now):
@@ -193,6 +197,7 @@ class MultiThemeScheduler:
                         include_theme_keys=include_theme_keys,
                         exclude_theme_keys=exclude_theme_keys,
                         execute=execute,
+                        investor_profile=investor_profile,
                     )
 
                 if self._should_check_holding_triggers(now):
@@ -207,6 +212,7 @@ class MultiThemeScheduler:
                         include_theme_keys=include_theme_keys,
                         exclude_theme_keys=exclude_theme_keys,
                         execute=execute,
+                        investor_profile=investor_profile,
                     )
 
                 if self._stop_event:
@@ -329,6 +335,7 @@ class MultiThemeScheduler:
         long_strategy_profile: str,
         include_theme_keys: Optional[Sequence[str]],
         exclude_theme_keys: Optional[Sequence[str]],
+        investor_profile: Optional[Dict[str, Any]],
     ) -> None:
         result = self._trade_runner.run_all(
             candidate_limit=candidate_limit,
@@ -343,6 +350,7 @@ class MultiThemeScheduler:
             include_theme_keys=include_theme_keys,
             exclude_theme_keys=exclude_theme_keys,
             save_report=True,
+            investor_profile=investor_profile,
         )
         rows = result.get("global_ranked_leaders") or []
         plan_expiry = now + timedelta(hours=self._long_plan_ttl_hours)
@@ -384,6 +392,7 @@ class MultiThemeScheduler:
         include_theme_keys: Optional[Sequence[str]],
         exclude_theme_keys: Optional[Sequence[str]],
         execute: bool,
+        investor_profile: Optional[Dict[str, Any]],
     ) -> None:
         self._last_long_trigger_check_at = now
         pending: List[Dict[str, Any]] = []
@@ -405,6 +414,7 @@ class MultiThemeScheduler:
                 include_theme_keys=[item["theme_key"]] if item.get("theme_key") else include_theme_keys,
                 exclude_theme_keys=exclude_theme_keys,
                 save_report=False,
+                investor_profile=investor_profile,
             )
             selected = reevaluated.get("best_leader_stocks") or []
             if not selected:
@@ -429,6 +439,7 @@ class MultiThemeScheduler:
                     include_theme_keys=[item["theme_key"]] if item.get("theme_key") else include_theme_keys,
                     exclude_theme_keys=exclude_theme_keys,
                     save_report=True,
+                    investor_profile=investor_profile,
                 )
                 print(
                     f"🎯 [Long Trigger] theme={item.get('theme_key')} "
@@ -452,6 +463,7 @@ class MultiThemeScheduler:
         include_theme_keys: Optional[Sequence[str]],
         exclude_theme_keys: Optional[Sequence[str]],
         execute: bool,
+        investor_profile: Optional[Dict[str, Any]],
     ) -> None:
         self._last_holding_check_at = now
         holdings = list(self._trade_runner.get_holdings() or [])
@@ -471,6 +483,7 @@ class MultiThemeScheduler:
             include_theme_keys=include_theme_keys,
             exclude_theme_keys=exclude_theme_keys,
             save_report=False,
+            investor_profile=investor_profile,
         )
         ranked = list(scan.get("global_ranked_leaders") or [])
         decision_by_code: Dict[str, Dict[str, Any]] = {

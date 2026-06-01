@@ -163,6 +163,7 @@ class RiskManagerAgent:
         stock_code: str,
         scores: AgentScores,
         portfolio_context: Optional[Dict[str, Any]] = None,
+        investor_profile: Optional[Dict[str, Any]] = None,
     ) -> FinalDecision:
         """
         최종 투자 결정 수행
@@ -178,7 +179,13 @@ class RiskManagerAgent:
         print(f"🎯 [Risk Manager] {stock_name} 최종 판단 중 (Thinking 모델)...")
         
         # 프롬프트 구성
-        prompt = self._build_decision_prompt(stock_name, stock_code, scores, portfolio_context=portfolio_context)
+        prompt = self._build_decision_prompt(
+            stock_name,
+            stock_code,
+            scores,
+            portfolio_context=portfolio_context,
+            investor_profile=investor_profile,
+        )
         
         try:
             primary_decision = self._invoke_decision_llm(
@@ -305,12 +312,14 @@ class RiskManagerAgent:
         stock_code: str,
         scores: AgentScores,
         portfolio_context: Optional[Dict[str, Any]] = None,
+        investor_profile: Optional[Dict[str, Any]] = None,
     ) -> str:
         """결정 프롬프트 구성"""
         analyst_context = self._format_context_packet(scores.analyst_context, "analyst")
         quant_context = self._format_context_packet(scores.quant_context, "quant")
         chartist_context = self._format_context_packet(scores.chartist_context, "chartist")
         portfolio_context_block = prompt_block_for_portfolio_context(portfolio_context)
+        investor_profile_block = self._format_investor_profile(investor_profile)
 
         return load_prompt_optional(
             "risk_manager",
@@ -326,7 +335,43 @@ class RiskManagerAgent:
             quant_context=quant_context,
             chartist_context=chartist_context,
             portfolio_context=portfolio_context_block,
+            investor_profile=investor_profile_block,
         )
+
+    @staticmethod
+    def _format_investor_profile(investor_profile: Optional[Dict[str, Any]]) -> str:
+        if not investor_profile:
+            return "## 4. 투자자 프로필\n- investor profile: not provided"
+
+        ordered_keys = [
+            "total_assets",
+            "monthly_investment",
+            "investment_period_months",
+            "target_return_rate",
+            "investment_goal",
+            "investment_experience",
+            "investment_type",
+            "volatility_tolerance",
+            "loss_action",
+            "leverage_allowed",
+            "occupation_type",
+            "loss_tolerance",
+        ]
+        lines = ["## 4. 투자자 프로필"]
+        for key in ordered_keys:
+            if key in investor_profile:
+                lines.append(f"- {key}: {investor_profile.get(key)}")
+        lines.extend(
+            [
+                "",
+                "RiskManager만 사용자 적합성을 반영하세요.",
+                "Analyst, Quant, Chartist의 시장 공통 평가는 바꾸지 말고, 최종 action/confidence/risk_level/position_size/stop_loss에만 투자자 성향을 반영하세요.",
+                "안정형·낮은 변동성·낮은 손실허용도는 매수 기준을 강화하고 포지션을 줄이세요.",
+                "공격형·높은 변동성·높은 손실허용도도 stop_loss와 risk_factors는 반드시 유지하세요.",
+                "leverage_allowed가 false이면 레버리지 전제의 진입 전략을 제안하지 마세요.",
+            ]
+        )
+        return "\n".join(lines)
     
     def _parse_decision(
         self,
@@ -540,6 +585,8 @@ class RiskManagerAgent:
 판단 시 현재 보유 여부, 손익률, 주문가능수량, 현금 여력, 중복 노출을 반드시 함께 고려하세요.
 이미 보유 중인 종목이면 신규 매수 관점뿐 아니라 보유, 비중 축소, 매도, 손절/회복 조건을 명확히 구분하세요.
 손익률이 크게 악화된 포지션은 물타기 전제가 아니라 리스크 관리 대상으로 우선 검토하세요.
+
+{investor_profile}
 
 ---
 

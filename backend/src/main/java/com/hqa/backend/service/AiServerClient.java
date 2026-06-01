@@ -87,6 +87,10 @@ public class AiServerClient {
         return postForMap("/trading/decision/execute", payload, "AI 서버가 매매 실행을 처리하지 못했습니다");
     }
 
+    public Map<String, Object> submitMultiThemeTrade(Map<String, Object> payload) {
+        return postForMap("/runtime/multi-theme-trade", payload, "AI 서버가 주도주 신호 생성을 처리하지 못했습니다");
+    }
+
     private void postBodiless(String path, Object payload, String failureMessage) {
         byte[] body = serialize(payload);
         log.info("[AiServerClient] POST {} bytes={} payload={}", path, body.length, payload);

@@ -36,7 +36,7 @@ class ThemeCandidate:
     dart_docs: int = 0
     market_rows: int = 0
     source_coverage: int = 0
-    seed_score: int = 0
+    data_coverage: str = "missing"
 
 
 class ThemeAnalystEvaluation(BaseModel):
@@ -109,6 +109,7 @@ class ThemeLeaderOrchestrator:
         top_n: int = 3,
         strategy_profile: str = "default",
         portfolio_context: Optional[Dict[str, Any]] = None,
+        investor_profile: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         resolved_key = theme_key or make_theme_key(theme, theme)
         resolved_profile = self._normalize_strategy_profile(strategy_profile)
@@ -135,6 +136,7 @@ class ThemeLeaderOrchestrator:
                     candidate,
                     strategy_profile=resolved_profile,
                     portfolio_context=portfolio_context,
+                    investor_profile=investor_profile,
                 )
             )
 
@@ -142,7 +144,7 @@ class ThemeLeaderOrchestrator:
             key=lambda row: (
                 row.get("leader_score", 0),
                 row.get("final_decision", {}).get("confidence", 0),
-                row.get("candidate", {}).get("seed_score", 0),
+                row.get("candidate", {}).get("source_coverage", 0),
             ),
             reverse=True,
         )
@@ -197,19 +199,10 @@ class ThemeLeaderOrchestrator:
             if corpus_docs <= 0 and market_rows <= 0:
                 # 로컬 텍스트/차트 근거가 전혀 없는 후보는 주도주 평가 대상에서 제외한다.
                 continue
-            has_corpus = corpus_docs > 0
-            has_market = market_rows > 0
-            has_news = news_docs > 0
-            has_forum = forum_docs > 0
-            has_dart = dart_docs > 0
-            # 빈도(횟수) 대신 존재 여부/소스 다양성만 반영한다.
-            seed_score = (
-                (40 if has_corpus else 0)
-                + (30 if has_market else 0)
-                + (20 if source_coverage >= 2 else 10 if source_coverage == 1 else 0)
-                + (10 if has_dart else 0)
-                + (5 if has_news else 0)
-                + (5 if has_forum else 0)
+            data_coverage = self._classify_data_coverage(
+                corpus_docs=corpus_docs,
+                market_rows=market_rows,
+                source_coverage=source_coverage,
             )
             candidates.append(
                 ThemeCandidate(
@@ -222,15 +215,16 @@ class ThemeLeaderOrchestrator:
                     dart_docs=dart_docs,
                     market_rows=market_rows,
                     source_coverage=source_coverage,
-                    seed_score=seed_score,
+                    data_coverage=data_coverage,
                 )
             )
 
         candidates.sort(
             key=lambda row: (
-                row.seed_score,
                 row.source_coverage,
                 row.market_rows > 0,
+                row.corpus_docs > 0,
+                row.target_hits,
                 row.stock_code,
             ),
             reverse=True,
@@ -247,7 +241,7 @@ class ThemeLeaderOrchestrator:
             theme_key,
             raw_count,
             len(candidates),
-            [(c.stock_name, c.stock_code, c.seed_score) for c in candidates[:candidate_limit]],
+            [(c.stock_name, c.stock_code, c.data_coverage) for c in candidates[:candidate_limit]],
         )
         return candidates[:candidate_limit]
 
@@ -334,6 +328,7 @@ class ThemeLeaderOrchestrator:
         candidate: ThemeCandidate,
         strategy_profile: str = "default",
         portfolio_context: Optional[Dict[str, Any]] = None,
+        investor_profile: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         records = self._load_stock_records(theme_key, candidate.stock_code)
         source_counts = Counter((row.get("metadata") or {}).get("source_type", "") for row in records)
@@ -396,14 +391,13 @@ class ThemeLeaderOrchestrator:
             candidate.stock_code,
             scores,
             portfolio_context=candidate_context,
+            investor_profile=investor_profile,
         )
-        data_presence_score = min(100, candidate.seed_score)
         leader_score = self._compute_leader_score(
             analyst_total=analyst_result["total_score"],
             quant_total=quant_result.total_score,
             chartist_total=chartist_result.total_score,
             final_total=final_decision.total_score,
-            data_presence_score=data_presence_score,
             strategy_profile=strategy_profile,
         )
 
@@ -411,7 +405,7 @@ class ThemeLeaderOrchestrator:
             "candidate": {
                 "stock_name": candidate.stock_name,
                 "stock_code": candidate.stock_code,
-                "seed_score": candidate.seed_score,
+                "data_coverage": candidate.data_coverage,
                 "target_hits": candidate.target_hits,
                 "corpus_docs": candidate.corpus_docs,
                 "news_docs": candidate.news_docs,
@@ -420,9 +414,9 @@ class ThemeLeaderOrchestrator:
                 "market_rows": candidate.market_rows,
             },
             "leader_score": leader_score,
-            "data_presence_score": data_presence_score,
             "strategy_profile": strategy_profile,
             "portfolio_context": candidate_context,
+            "investor_profile": investor_profile or {},
             "analyst": {
                 "total_score": analyst_result["total_score"],
                 "grade": analyst_result["grade"],
@@ -453,6 +447,27 @@ class ThemeLeaderOrchestrator:
             return profile
         return "default"
 
+    @staticmethod
+    def _classify_data_coverage(
+        *,
+        corpus_docs: int,
+        market_rows: int,
+        source_coverage: int,
+    ) -> str:
+        if corpus_docs <= 0 and market_rows <= 0:
+            return "missing"
+        if corpus_docs > 0 and market_rows > 0 and source_coverage >= 2:
+            return "enough"
+        return "weak"
+
+    @staticmethod
+    def _coverage_confidence_bonus(candidate: ThemeCandidate) -> int:
+        if candidate.data_coverage == "enough":
+            return 25
+        if candidate.data_coverage == "weak":
+            return 12
+        return 0
+
     def _compute_leader_score(
         self,
         *,
@@ -460,23 +475,20 @@ class ThemeLeaderOrchestrator:
         quant_total: int,
         chartist_total: int,
         final_total: int,
-        data_presence_score: int,
         strategy_profile: str,
     ) -> int:
         profile = self._normalize_strategy_profile(strategy_profile)
         if profile == "default":
-            # Backward-compatible legacy formula.
-            return round(final_total * 0.7 + data_presence_score * 0.3)
+            return round(final_total)
 
         analyst_norm = max(0.0, min(1.0, analyst_total / 70.0))
         quant_norm = max(0.0, min(1.0, quant_total / 100.0))
         chartist_norm = max(0.0, min(1.0, chartist_total / 100.0))
         final_norm = max(0.0, min(1.0, final_total / 100.0))
-        data_norm = max(0.0, min(1.0, data_presence_score / 100.0))
 
         weights = {
-            "short": {"analyst": 0.15, "quant": 0.15, "chartist": 0.45, "final": 0.20, "data": 0.05},
-            "long": {"analyst": 0.30, "quant": 0.30, "chartist": 0.10, "final": 0.25, "data": 0.05},
+            "short": {"analyst": 0.15, "quant": 0.15, "chartist": 0.45, "final": 0.25},
+            "long": {"analyst": 0.30, "quant": 0.30, "chartist": 0.10, "final": 0.30},
         }
         w = weights[profile]
         score = (
@@ -484,7 +496,6 @@ class ThemeLeaderOrchestrator:
             + quant_norm * w["quant"]
             + chartist_norm * w["chartist"]
             + final_norm * w["final"]
-            + data_norm * w["data"]
         )
         return round(score * 100)
 
@@ -552,7 +563,7 @@ class ThemeLeaderOrchestrator:
             contrarian_view=data.get("contrarian_view", ""),
             evidence=self._make_evidence(context, limit=3),
             score=total,
-            confidence=min(95, 40 + candidate.seed_score // 2),
+            confidence=min(95, 40 + self._coverage_confidence_bonus(candidate)),
             grade=str(data.get("grade", self._score_to_grade(total, 70))),
             signal=data.get("summary", ""),
             next_action="risk_manager_review",
@@ -721,7 +732,7 @@ class ThemeLeaderOrchestrator:
             contrarian_view="LLM JSON 평가 실패로 데이터 빈도 기반 휴리스틱 사용",
             evidence=self._make_evidence(context, limit=3),
             score=total,
-            confidence=min(80, 30 + candidate.seed_score // 2),
+            confidence=min(80, 30 + self._coverage_confidence_bonus(candidate)),
             grade=self._score_to_grade(total, 70),
             signal=summary,
             next_action="risk_manager_review",

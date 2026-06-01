@@ -61,6 +61,7 @@ class MultiThemeLeaderTradingRunner:
         exclude_theme_keys: Optional[Sequence[str]] = None,
         save_report: bool = True,
         portfolio_context: Optional[Dict[str, Any]] = None,
+        investor_profile: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         resolved_profile = self._normalize_strategy_profile(strategy_profile)
         themes = self._resolve_themes(include_theme_keys=include_theme_keys, exclude_theme_keys=exclude_theme_keys)
@@ -81,6 +82,7 @@ class MultiThemeLeaderTradingRunner:
                 strategy_profile=resolved_profile,
                 save_report=False,
                 portfolio_context=resolved_portfolio_context,
+                investor_profile=investor_profile,
             )
             per_theme_results.append(
                 {
