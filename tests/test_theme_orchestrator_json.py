@@ -287,6 +287,102 @@ def test_evaluate_candidate_passes_investor_profile_to_risk_manager(monkeypatch)
     assert received["investor_profile"] == profile
 
 
+def test_evaluate_candidate_passes_price_snapshot_only_to_chartist(monkeypatch):
+    orchestrator = _orchestrator()
+    orchestrator._load_stock_records = lambda _theme_key, _stock_code: []
+    orchestrator._compose_context = lambda _records, _sources, max_docs: ""
+    orchestrator._evaluate_analyst_candidate = lambda *args, **kwargs: {
+        "moat_score": 20,
+        "growth_score": 20,
+        "total_score": 40,
+        "grade": "B",
+        "summary": "분석",
+        "packet": SimpleNamespace(to_dict=lambda: {}, catalysts=[], risks=[]),
+        "quality_flags": {},
+    }
+    orchestrator._evaluate_quant_candidate = lambda *args, **kwargs: SimpleNamespace(
+        valuation_score=20,
+        profitability_score=20,
+        growth_score=20,
+        stability_score=20,
+        total_score=80,
+        grade="A",
+        opinion="양호",
+        analysis_packet={},
+        quality_flags={},
+    )
+
+    received = {}
+
+    def fake_chartist(theme_key, candidate, price_snapshot=None):
+        received["chartist_price_snapshot"] = price_snapshot
+        return ChartistScore(
+            trend_score=20,
+            momentum_score=20,
+            volatility_score=15,
+            volume_score=15,
+            total_score=70,
+            signal="매수",
+            trend_analysis="",
+            momentum_analysis="",
+            volatility_analysis="",
+            volume_analysis="",
+            short_term_opinion="매수",
+            mid_term_opinion="중립",
+            analysis_packet={"price_snapshot": price_snapshot},
+        )
+
+    orchestrator._evaluate_chartist_candidate = fake_chartist
+    orchestrator._fetch_price_snapshot = lambda user_id, stock_code: {
+        "stock_code": stock_code,
+        "current_price": 11200,
+        "snapshot_at": "2026-06-02T10:15:00+09:00",
+        "source": "kis",
+        "success": True,
+    }
+    monkeypatch.setattr(
+        "src.agents.theme_orchestrator.run_agents_parallel",
+        lambda tasks, max_workers=3: {name: fn(*args) for name, (fn, args) in tasks.items()},
+    )
+
+    class FakeRiskManager:
+        def make_decision(self, stock_name, stock_code, scores, portfolio_context=None, investor_profile=None):
+            received["risk_manager_scores"] = scores
+            received["risk_manager_investor_profile"] = investor_profile
+            return FinalDecision(
+                stock_name=stock_name,
+                stock_code=stock_code,
+                total_score=70,
+                action=InvestmentAction.BUY,
+                confidence=75,
+                risk_level=RiskLevel.LOW,
+                risk_factors=[],
+                position_size="10%",
+                entry_strategy="분할",
+                exit_strategy="분할",
+                stop_loss="-5%",
+                signal_alignment="일치",
+                key_catalysts=[],
+                contrarian_view="",
+                summary="매수",
+                detailed_reasoning="",
+            )
+
+    orchestrator.risk_manager = FakeRiskManager()
+
+    result = orchestrator.evaluate_candidate(
+        "AI",
+        "ai",
+        ThemeCandidate(stock_name="테스트", stock_code="000001", data_coverage="enough"),
+        user_id="user-1",
+    )
+
+    assert received["chartist_price_snapshot"]["current_price"] == 11200
+    assert received["risk_manager_investor_profile"] is None
+    assert received["risk_manager_scores"].chartist_context["price_snapshot"]["current_price"] == 11200
+    assert result["chartist"]["price_snapshot"]["current_price"] == 11200
+
+
 def _write_jsonl(path, rows):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(

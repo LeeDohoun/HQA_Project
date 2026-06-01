@@ -51,7 +51,7 @@ def build_trade_signal_payloads(
                 "confidence": int(decision.get("confidence") or row.get("confidence") or 0),
                 "riskLevel": str(decision.get("risk_level_code") or row.get("risk_level_code") or "MEDIUM"),
                 "positionSize": str(decision.get("position_size") or "0%"),
-                "signalPrice": row.get("price"),
+                "signalPrice": _signal_price_from_leader(leader, row),
                 "stopLoss": str(decision.get("stop_loss") or ""),
                 "reason": str(decision.get("summary") or ""),
                 "expiresAt": expires_at.isoformat(),
@@ -60,6 +60,12 @@ def build_trade_signal_payloads(
         )
 
     return payloads
+
+
+def _signal_price_from_leader(leader: Dict[str, Any], row: Dict[str, Any]) -> Any:
+    chartist = leader.get("chartist") if isinstance(leader.get("chartist"), dict) else {}
+    snapshot = chartist.get("price_snapshot") if isinstance(chartist.get("price_snapshot"), dict) else {}
+    return snapshot.get("current_price") or snapshot.get("currentPrice") or row.get("price")
 
 
 def submit_trade_signals(
