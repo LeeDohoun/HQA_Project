@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from src.runner.trade_signal_submitter import build_trade_signal_payloads
+from src.runner.trade_signal_submitter import build_trade_signal_payloads, submit_trade_signals
 
 
 KST = timezone(timedelta(hours=9))
@@ -69,3 +69,48 @@ def test_build_trade_signal_payloads_includes_user_profile_decision_and_expiry()
     assert payload["stopLoss"] == "-5%"
     assert payload["expiresAt"] == "2026-06-01T10:15:00+09:00"
     assert payload["rawPayload"]["leader"]["final_decision"]["summary"] == "조건부 매수"
+
+
+def test_submit_trade_signals_uses_hqa_internal_token_env(monkeypatch):
+    captured = {}
+
+    class _Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    def fake_urlopen(request, timeout):
+        captured["token"] = request.headers.get("X-hqa-internal-token")
+        captured["timeout"] = timeout
+        return _Response()
+
+    monkeypatch.setenv("HQA_INTERNAL_TOKEN", "shared-token")
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    result = {
+        "global_ranked_leaders": [
+            {
+                "eligible": True,
+                "theme": "AI",
+                "theme_key": "ai",
+                "stock_name": "AI-Alpha",
+                "stock_code": "111111",
+                "leader_score": 88,
+                "action_code": "BUY",
+                "leader": {"final_decision": {"action_code": "BUY"}},
+            }
+        ]
+    }
+
+    response = submit_trade_signals(
+        user_id="user-1",
+        result=result,
+        backend_signal_url="http://backend/api/v1/internal/trading/signals",
+    )
+
+    assert response["submitted"] == 1
+    assert captured == {"token": "shared-token", "timeout": 10}

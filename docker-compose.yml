@@ -2,29 +2,34 @@
 # HQA - Docker Compose
 # ==========================================
 # 서비스 구성:
-#   - api:    FastAPI 서비스 (port 8000) - ai_server.app의 호환 엔트리포인트
-#   - ai:     AI 서버 (port 8001)        - LLM/RAG/에이전트 (CPU 집약적)
+#   - backend: Spring Boot 백엔드 (port 8000) - 인증/KIS/주문 집행
+#   - ai:      AI 서버 (port 8001)            - LLM/RAG/에이전트
+#   - frontend: Next.js 프론트엔드 (port 3000)
 #   - redis:  Task Queue 브로커 + 캐시
-#   - postgres: 프로덕션 DB (선택)
+#   - postgres: 로컬 개발 DB
 # ==========================================
 
 services:
-  # ── FastAPI 서비스 (호환 엔트리포인트) ──
-  api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: hqa-api
+  # ── Spring Boot Backend ──
+  backend:
+    image: maven:3.9-eclipse-temurin-17
+    container_name: hqa-backend
+    working_dir: /workspace
     ports:
       - "${PORT:-8000}:8000"
     env_file:
       - .env
     environment:
-      - ENV=production
+      - ENV=local
       - PORT=8000
-      - DATABASE_URL=postgresql+asyncpg://hqa:hqa_password@postgres:5432/hqa
-      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=jdbc:postgresql://postgres:5432/hqa
+      - DATABASE_USERNAME=hqa
+      - DATABASE_PASSWORD=hqa_password
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
       - AI_SERVER_URL=http://ai:8001
+      - HQA_INTERNAL_TOKEN=${HQA_INTERNAL_TOKEN:-}
+      - HQA_KIS_ENC_KEY=${HQA_KIS_ENC_KEY:-local-dev-change-me}
     depends_on:
       redis:
         condition: service_healthy
@@ -33,8 +38,28 @@ services:
       ai:
         condition: service_healthy
     volumes:
-      - hqa-data:/app/data
-      - hqa-db:/app/database
+      - ./backend:/workspace
+      - maven-cache:/root/.m2
+    command: mvn -B spring-boot:run
+    restart: unless-stopped
+    networks:
+      - hqa-network
+
+  # ── Next.js Frontend ──
+  frontend:
+    image: node:22-alpine
+    container_name: hqa-frontend
+    working_dir: /workspace
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_BASE=http://localhost:8000
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/workspace
+      - frontend-node-modules:/workspace/node_modules
+    command: sh -c "npm install --no-audit --no-fund && npm run dev -- -H 0.0.0.0"
     restart: unless-stopped
     networks:
       - hqa-network
@@ -105,6 +130,8 @@ services:
 volumes:
   hqa-data:
   hqa-db:
+  maven-cache:
+  frontend-node-modules:
   redis-data:
   postgres-data:
 

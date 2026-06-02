@@ -36,7 +36,7 @@ def fetch_price_snapshot(
     payload = {"userId": user_id, "stockCodes": [stock_code]}
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
-    token = internal_token if internal_token is not None else os.getenv("BACKEND_INTERNAL_TOKEN", "").strip()
+    token = internal_token if internal_token is not None else os.getenv("HQA_INTERNAL_TOKEN", "").strip()
     if token:
         headers["X-HQA-Internal-Token"] = token
 
