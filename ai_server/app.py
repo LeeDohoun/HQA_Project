@@ -8,6 +8,7 @@ HQA AI Server - AI 에이전트 & RAG 전용 서버
 from __future__ import annotations
 
 import asyncio
+import re
 import json
 import logging
 import os
@@ -16,6 +17,7 @@ import threading
 import uuid
 from collections import OrderedDict
 from contextlib import asynccontextmanager
+from contextvars import copy_context
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -32,6 +34,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.config.settings import get_env_status, get_settings, load_project_env
+from src.utils.llm_queue import LLMTaskPriority, llm_task_priority
 
 load_project_env()
 
@@ -370,7 +373,9 @@ async def _run_runtime_task(task_id: str, fn) -> None:
     task["started_at"] = datetime.now().isoformat()
     loop = asyncio.get_event_loop()
     try:
-        result = await loop.run_in_executor(None, fn)
+        with llm_task_priority(LLMTaskPriority.RUNTIME):
+            context = copy_context()
+            result = await loop.run_in_executor(None, context.run, fn)
         task["status"] = "completed"
         task["completed_at"] = datetime.now().isoformat()
         task["result"] = result
@@ -442,14 +447,16 @@ async def _run_analysis_background(
     try:
         _publish_progress(task_id, "system", "started", f"{stock_name} 분석 시작", 0.0)
 
-        if mode == "quick":
-            result = await loop.run_in_executor(
-                None, _execute_quick, task_id, stock_name, stock_code
-            )
-        else:
-            result = await loop.run_in_executor(
-                None, _execute_full, task_id, stock_name, stock_code, max_retries
-            )
+        with llm_task_priority(LLMTaskPriority.UI_ANALYSIS):
+            context = copy_context()
+            if mode == "quick":
+                result = await loop.run_in_executor(
+                    None, context.run, _execute_quick, task_id, stock_name, stock_code
+                )
+            else:
+                result = await loop.run_in_executor(
+                    None, context.run, _execute_full, task_id, stock_name, stock_code, max_retries
+                )
 
         _store_result(task_id, {**result, "status": "completed"})
         _publish_progress(task_id, "system", "completed", "분석 완료", 1.0)
@@ -492,7 +499,7 @@ async def _run_theme_analysis_background(
 
 def _execute_quick(task_id: str, stock_name: str, stock_code: str) -> dict:
     """빠른 분석 (Quant + Chartist 병렬)"""
-    from src.agents import QuantAgent, ChartistAgent
+    from src.agents import QuantAgent, ChartistAgent, RiskManagerAgent
     from src.utils.parallel import run_agents_parallel, is_error
 
     _publish_progress(task_id, "quant", "started", "재무 분석 중...", 0.2)
@@ -516,6 +523,22 @@ def _execute_quick(task_id: str, stock_name: str, stock_code: str) -> dict:
 
     _publish_progress(task_id, "quant", "completed", f"재무: {quant_score.grade}", 1.0)
     _publish_progress(task_id, "chartist", "completed", f"기술: {chartist_score.signal}", 1.0)
+    _publish_progress(task_id, "quick_decision", "started", "빠른 판단 중...", 0.8)
+
+    risk_manager = RiskManagerAgent()
+    quick_opinion = risk_manager.quick_decision(
+        analyst_total=35,
+        quant_total=int(getattr(quant_score, "total_score", 0)),
+        chartist_total=int(getattr(chartist_score, "total_score", 0)),
+    )
+    quick_decision = _quick_decision_to_dict(
+        stock_name,
+        stock_code,
+        quick_opinion,
+        int(getattr(quant_score, "total_score", 0)),
+        int(getattr(chartist_score, "total_score", 0)),
+    )
+    _publish_progress(task_id, "quick_decision", "completed", f"판단: {quick_decision['action']}", 1.0)
 
     return {
         "task_id": task_id,
@@ -524,7 +547,9 @@ def _execute_quick(task_id: str, stock_name: str, stock_code: str) -> dict:
         "scores": {
             "quant": _score_to_dict(quant_score),
             "chartist": _score_to_dict(chartist_score),
+            "quick_decision": _quick_score_to_dict(quick_decision, quick_opinion),
         },
+        "final_decision": quick_decision,
         "completed_at": datetime.now().isoformat(),
     }
 
@@ -568,6 +593,7 @@ def _execute_full(task_id: str, stock_name: str, stock_code: str, max_retries: i
             "analyst": _score_to_dict(analyst_score) if analyst_score else None,
             "quant": _score_to_dict(quant_score) if quant_score else None,
             "chartist": _score_to_dict(chartist_score) if chartist_score else None,
+            "risk_manager": _risk_manager_score_to_dict(final_decision) if final_decision else None,
         },
         "final_decision": _decision_to_dict(final_decision) if final_decision else None,
         "research_quality": result.get("research_quality"),
@@ -669,6 +695,71 @@ def _decision_to_dict(decision) -> dict:
         "key_catalysts": getattr(decision, "key_catalysts", []),
         "risk_factors": getattr(decision, "risk_factors", []),
         "detailed_reasoning": getattr(decision, "detailed_reasoning", ""),
+    }
+
+
+def _quick_decision_to_dict(
+    stock_name: str,
+    stock_code: str,
+    quick_opinion: str,
+    quant_total: int,
+    chartist_total: int,
+) -> Dict[str, Any]:
+    score_match = re.search(r"점수:\s*(\d+)", quick_opinion)
+    total_score = int(score_match.group(1)) if score_match else int(round((quant_total * 0.55) + (chartist_total * 0.45)))
+    if "적극 매수" in quick_opinion:
+        action = "적극 매수"
+        action_code = "STRONG_BUY"
+    elif "매수" in quick_opinion:
+        action = "매수"
+        action_code = "BUY"
+    elif "매도" in quick_opinion:
+        action = "매도"
+        action_code = "SELL"
+    elif "축소" in quick_opinion:
+        action = "비중 축소"
+        action_code = "REDUCE"
+    else:
+        action = "보유/관망"
+        action_code = "HOLD"
+
+    risk_level = "낮음" if total_score >= 70 else "보통" if total_score >= 45 else "높음"
+    risk_code = "LOW" if total_score >= 70 else "MEDIUM" if total_score >= 45 else "HIGH"
+    return {
+        "stock_name": stock_name,
+        "stock_code": stock_code,
+        "total_score": total_score,
+        "action": action,
+        "action_code": action_code,
+        "confidence": min(95, max(35, total_score)),
+        "risk_level": risk_level,
+        "risk_level_code": risk_code,
+        "summary": quick_opinion,
+        "key_catalysts": [
+            f"재무 점수 {quant_total}/100",
+            f"기술 점수 {chartist_total}/100",
+        ],
+        "risk_factors": ["빠른 분석은 Analyst 정성 리서치를 생략합니다."],
+        "detailed_reasoning": "Quant와 Chartist 점수를 기반으로 빠른 판단을 생성했습니다.",
+    }
+
+
+def _quick_score_to_dict(decision: Dict[str, Any], opinion: str) -> Dict[str, Any]:
+    return {
+        "total_score": decision.get("total_score", 0),
+        "grade": decision.get("action", ""),
+        "opinion": opinion,
+        "confidence": decision.get("confidence", 0),
+        "risk_level": decision.get("risk_level", ""),
+    }
+
+
+def _risk_manager_score_to_dict(decision) -> Dict[str, Any]:
+    payload = _decision_to_dict(decision)
+    return {
+        **payload,
+        "grade": payload.get("action", ""),
+        "opinion": payload.get("summary", ""),
     }
 
 
@@ -951,22 +1042,23 @@ def _run_multi_theme_loop(task_id: str, request: MultiThemeLoopStartRequest, sto
             poll_seconds=request.poll_seconds,
             stop_event=stop_event,
         )
-        scheduler.run_loop(
-            candidate_limit=max(1, int(request.candidate_limit)),
-            per_theme_top_n=max(1, int(request.per_theme_top_n)),
-            short_top_n=max(1, int(request.top_n)),
-            long_top_n=max(1, int(request.top_n)),
-            execute=bool(request.execute),
-            min_leader_score=request.min_leader_score,
-            min_confidence=request.min_confidence,
-            max_risk_level=request.max_risk_level,
-            short_strategy_profile="short",
-            long_strategy_profile="long",
-            include_theme_keys=request.include_theme_keys,
-            exclude_theme_keys=request.exclude_theme_keys,
-            investor_profile=request.investor_profile,
-            user_id=request.user_id,
-        )
+        with llm_task_priority(LLMTaskPriority.RUNTIME):
+            scheduler.run_loop(
+                candidate_limit=max(1, int(request.candidate_limit)),
+                per_theme_top_n=max(1, int(request.per_theme_top_n)),
+                short_top_n=max(1, int(request.top_n)),
+                long_top_n=max(1, int(request.top_n)),
+                execute=bool(request.execute),
+                min_leader_score=request.min_leader_score,
+                min_confidence=request.min_confidence,
+                max_risk_level=request.max_risk_level,
+                short_strategy_profile="short",
+                long_strategy_profile="long",
+                include_theme_keys=request.include_theme_keys,
+                exclude_theme_keys=request.exclude_theme_keys,
+                investor_profile=request.investor_profile,
+                user_id=request.user_id,
+            )
         with _runtime_loop_lock:
             _runtime_loop_state.update({
                 "status": "stopped",

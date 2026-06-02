@@ -341,8 +341,8 @@ class MultiThemeScheduler:
         long_strategy_profile: str,
         include_theme_keys: Optional[Sequence[str]],
         exclude_theme_keys: Optional[Sequence[str]],
-        investor_profile: Optional[Dict[str, Any]],
-        user_id: Optional[str],
+        investor_profile: Optional[Dict[str, Any]] = None,
+        user_id: Optional[str] = None,
     ) -> None:
         result = self._trade_runner.run_all(
             candidate_limit=candidate_limit,
@@ -400,8 +400,8 @@ class MultiThemeScheduler:
         include_theme_keys: Optional[Sequence[str]],
         exclude_theme_keys: Optional[Sequence[str]],
         execute: bool,
-        investor_profile: Optional[Dict[str, Any]],
-        user_id: Optional[str],
+        investor_profile: Optional[Dict[str, Any]] = None,
+        user_id: Optional[str] = None,
     ) -> None:
         self._last_long_trigger_check_at = now
         pending: List[Dict[str, Any]] = []

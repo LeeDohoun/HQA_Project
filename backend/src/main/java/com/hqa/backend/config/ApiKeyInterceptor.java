@@ -20,6 +20,12 @@ public class ApiKeyInterceptor implements HandlerInterceptor {
         if (path.startsWith("/api/v1/auth")) {
             return true;
         }
+        if (path.startsWith("/api/v1/internal")) {
+            return true;
+        }
+        if (!path.startsWith("/api/v1/admin")) {
+            return true;
+        }
         if ("local".equalsIgnoreCase(properties.getEnv()) || "dev".equalsIgnoreCase(properties.getEnv())) {
             return true;
         }

@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { AgentDetailSections, AnalysisSummaryCard } from "@/components/common/analysis-report";
 import { AppShell } from "@/components/common/app-shell";
 import { StatusPill } from "@/components/common/status-pill";
 import { analysisApi, eventStreamUrl } from "@/lib/api";
-import { formatDate, titleCaseAgent } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 import type { AnalysisProgressEvent, AnalysisResult } from "@/types/api";
 
 export default function AnalysisPage() {
@@ -139,46 +140,16 @@ export default function AnalysisPage() {
           </div>
         </section>
 
-        {/* Scores */}
+        {/* Summary */}
         <section className="panel" style={{ gridColumn: "span 7" }}>
-          <h3 className="section-title">점수</h3>
-          {result?.scores?.length ? (
-            <div className="score-list">
-              {result.scores.map((score) => (
-                <div className="score-card" key={score.agent}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                    <strong style={{ fontSize: "0.9rem", color: "var(--text-bright)" }}>{titleCaseAgent(score.agent)}</strong>
-                    <StatusPill label={score.grade ?? "-"} tone="neutral" />
-                  </div>
-                  <p style={{ margin: "6px 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
-                    {score.totalScore} / {score.maxScore}
-                  </p>
-                  {score.opinion ? (
-                    <p style={{ margin: "8px 0 0", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1.5 }}>{score.opinion}</p>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-state"><strong>점수 없음</strong></div>
-          )}
+          <h3 className="section-title">요약</h3>
+          {result ? <AnalysisSummaryCard result={result} /> : <div className="empty-state"><strong>요약 없음</strong></div>}
         </section>
 
-        {/* Final Decision */}
+        {/* Agent Details */}
         <section className="panel" style={{ gridColumn: "span 5" }}>
-          <h3 className="section-title">최종 판단</h3>
-          {result?.finalDecision && Object.keys(result.finalDecision).length > 0 ? (
-            <div className="detail-list">
-              {Object.entries(result.finalDecision).map(([key, value]) => (
-                <div className="detail-item" key={key}>
-                  <span style={{ fontSize: "0.75rem", color: "var(--muted)", fontWeight: 500 }}>{key}</span>
-                  <div style={{ marginTop: 4, fontSize: "0.88rem", color: "var(--text-bright)" }}>{String(value)}</div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-state"><strong>판단 없음</strong></div>
-          )}
+          <h3 className="section-title">에이전트 상세</h3>
+          {result?.scores?.length ? <AgentDetailSections scores={result.scores} /> : <div className="empty-state"><strong>상세 없음</strong></div>}
         </section>
 
         {/* Warnings */}

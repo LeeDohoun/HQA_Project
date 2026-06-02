@@ -7,13 +7,11 @@ LLM_ENV_NAMES = [
     "OLLAMA_INSTRUCT_MODEL",
     "OLLAMA_THINKING_MODEL",
     "OLLAMA_THINKING_VALIDATOR_MODEL",
-    "OLLAMA_VISION_MODEL",
     "GOOGLE_API_KEY",
     "GEMINI_API_KEY",
     "GEMINI_INSTRUCT_MODEL",
     "GEMINI_THINKING_MODEL",
     "GEMINI_THINKING_VALIDATOR_MODEL",
-    "GEMINI_VISION_MODEL",
 ]
 
 
@@ -32,7 +30,7 @@ def test_llm_config_uses_project_ollama_defaults(monkeypatch):
     assert info["instruct_model"] == "qwen2.5:14b"
     assert info["thinking_model"] == "qwen2.5:14b"
     assert info["thinking_validator_model"] == ""
-    assert info["vision_model"] == "llava:13b"
+    assert "vision_model" not in info
 
 
 def test_llm_config_falls_back_when_gemini_key_is_missing(monkeypatch):
@@ -59,7 +57,7 @@ def test_llm_config_accepts_gemini_api_key_alias(monkeypatch):
     assert info["provider"] == "gemini"
     assert info["instruct_model"] == "gemini-2.5-flash-lite"
     assert info["thinking_model"] == "gemini-2.5-pro"
-    assert info["vision_model"] == "gemini-2.5-flash"
+    assert "vision_model" not in info
     assert info["api_key_set"] is True
 
 
