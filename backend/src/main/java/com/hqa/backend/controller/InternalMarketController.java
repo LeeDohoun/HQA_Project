@@ -6,6 +6,8 @@ import com.hqa.backend.dto.InternalPriceSnapshotRequest;
 import com.hqa.backend.dto.InternalPriceSnapshotResponse;
 import com.hqa.backend.exception.ApiException;
 import com.hqa.backend.service.PriceSnapshotService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -13,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+@Tag(name = "내부 API - 시장", description = "서버 간 호출용. X-HQA-Internal-Token 헤더 필요")
 @RestController
 @RequestMapping("/api/v1/internal/market")
 public class InternalMarketController {
@@ -25,6 +28,8 @@ public class InternalMarketController {
         this.properties = properties;
     }
 
+    @Operation(summary = "다종목 가격 스냅샷",
+            description = "여러 종목의 현재 가격 스냅샷을 일괄 조회한다. (서버 간 호출, 내부 토큰 필요)")
     @PostMapping("/price-snapshots")
     public InternalPriceSnapshotResponse priceSnapshots(
             @Valid @RequestBody InternalPriceSnapshotRequest request,
