@@ -8,6 +8,8 @@ import com.hqa.backend.service.AiServerClient;
 import com.hqa.backend.service.AuthService;
 import com.hqa.backend.service.KisClient;
 import com.hqa.backend.service.StockService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.constraints.NotBlank;
 import java.util.ArrayList;
@@ -21,6 +23,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+@Tag(name = "종목 / 시세", description = "종목 검색·실시간 시세·뉴스·공시·시장 지수 조회 (로그인 필요)")
 @Validated
 @RestController
 @RequestMapping("/api/v1/stocks")
@@ -39,22 +42,26 @@ public class StockController {
         this.kisClient = kisClient;
     }
 
+    @Operation(summary = "종목 검색", description = "검색어(q)로 종목명/코드를 검색한다.")
     @GetMapping("/search")
     public StockSearchResponse search(@RequestParam("q") @NotBlank String query) {
         return stockService.search(query);
     }
 
+    @Operation(summary = "실시간 시세", description = "종목의 현재가·등락·거래량 등 실시간 시세를 조회한다.")
     @GetMapping("/{stockCode}/price")
     public RealtimePriceResponse price(@PathVariable String stockCode, HttpSession session) {
         return stockService.getRealtimePrice(stockCode, session);
     }
 
+    @Operation(summary = "종목 뉴스", description = "종목 관련 최신 뉴스를 조회한다. limit 1~100(기본 20).")
     @GetMapping("/{stockCode}/news")
     public Map<String, Object> news(@PathVariable String stockCode,
                                     @RequestParam(defaultValue = "20") int limit) {
         return aiServerClient.getStockNews(stockCode, clamp(limit));
     }
 
+    @Operation(summary = "종목 공시", description = "종목 관련 최신 공시를 조회한다. limit 1~100(기본 20).")
     @GetMapping("/{stockCode}/disclosures")
     public Map<String, Object> disclosures(@PathVariable String stockCode,
                                            @RequestParam(defaultValue = "20") int limit) {
@@ -65,6 +72,8 @@ public class StockController {
      * 시장 지수 (코스피·코스닥) 일괄 조회.
      * KIS 키가 없으면 빈 리스트. 로그인된 사용자의 KIS 토큰으로 호출.
      */
+    @Operation(summary = "시장 지수 조회",
+            description = "코스피·코스닥 지수를 조회한다. KIS 키 미설정 시 빈 리스트와 configured=false를 반환한다.")
     @GetMapping("/indices")
     public Map<String, Object> indices(HttpSession session) {
         User user = authService.requireUser(session);

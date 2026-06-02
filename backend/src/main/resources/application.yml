@@ -39,6 +39,12 @@ spring:
       write-dates-as-timestamps: false
     property-naming-strategy: SNAKE_CASE
 
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
 management:
   endpoints:
     web:

@@ -86,6 +86,14 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- springdoc-openapi: serves auto-generated OpenAPI 3 spec at
+             /v3/api-docs and Swagger UI at /swagger-ui.html by scanning
+             the @RestController endpoints. -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>2.6.0</version>
+        </dependency>
     </dependencies>
 
     <build>

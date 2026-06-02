@@ -23,7 +23,8 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
         String path = request.getRequestURI();
-        if (path.startsWith("/health") || path.startsWith("/actuator")) {
+        if (path.startsWith("/health") || path.startsWith("/actuator")
+                || path.startsWith("/swagger-ui") || path.startsWith("/v3/api-docs")) {
             return true;
         }
 
