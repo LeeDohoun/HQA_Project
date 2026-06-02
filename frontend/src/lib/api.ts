@@ -440,6 +440,11 @@ export type BulkAnalysisFailure = {
   reason: string;
 };
 
+export type BulkAnalysisItem = {
+  stockName: string;
+  stockCode: string;
+};
+
 export type BulkAnalysisResponse = {
   total: number;
   submitted: number;
@@ -481,10 +486,13 @@ export const analysisApi = {
         max_retries: payload.maxRetries
       })
     })),
-  bulk: async (mode: "full" | "quick" = "quick", maxRetries = 0) =>
+  bulk: async (mode: "full" | "quick" = "quick", maxRetries = 0, items?: BulkAnalysisItem[]) =>
     mapBulk(await api<BulkAnalysisWire>(
       `/api/v1/analysis/bulk?mode=${mode}&maxRetries=${maxRetries}`,
-      { method: "POST" }
+      {
+        method: "POST",
+        body: items?.length ? JSON.stringify({ items }) : undefined
+      }
     )),
   result: async (taskId: string) =>
     mapResult(await api<AnalysisResultWire>(`/api/v1/analysis/${taskId}`)),

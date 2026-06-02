@@ -7,8 +7,8 @@
 
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AgentDetailSections, AnalysisSummaryCard } from "@/components/common/analysis-report";
 import { analysisApi, authApi, eventStreamUrl, stockApi, tradingApi } from "@/lib/api";
-import { titleCaseAgent } from "@/lib/format";
 import type {
   AnalysisHistoryItem,
   AnalysisMode,
@@ -552,12 +552,20 @@ export default function DashboardPage() {
 
   async function handleBulkAnalyze() {
     if (bulkAnalyzing) return;
+    if (recent.length === 0) {
+      setMessage("분석할 워치리스트 종목이 없습니다.");
+      return;
+    }
     const confirmed = window.confirm("워치리스트의 모든 종목을 분석할까요?");
     if (!confirmed) return;
     setBulkAnalyzing(true);
     setMessage("");
     try {
-      const result = await analysisApi.bulk("quick", 0);
+      const result = await analysisApi.bulk(
+        "quick",
+        0,
+        recent.map((stock) => ({ stockName: stock.name, stockCode: stock.code }))
+      );
       if (result.submitted === 0) {
         setMessage("분석할 종목이 없습니다. (워치리스트 비어 있음)");
       } else {
@@ -694,6 +702,7 @@ export default function DashboardPage() {
             submitAnalysis={submitAnalysis}
             bulkAnalyzing={bulkAnalyzing}
             handleBulkAnalyze={handleBulkAnalyze}
+            autoTradeEnabled={autoTradeEnabled}
             task={task}
             result={analysisResult}
             progress={analysisProgress}
@@ -840,12 +849,13 @@ function AnalysisTab(props: {
   submitAnalysis: () => void;
   bulkAnalyzing: boolean;
   handleBulkAnalyze: () => void;
+  autoTradeEnabled: boolean;
   task: AnalysisTaskResponse | null;
   result: AnalysisResult | null;
   progress: AnalysisProgressEvent | null;
   error: string;
 }) {
-  const { selected, mode, setMode, submitting, submitAnalysis, bulkAnalyzing, handleBulkAnalyze, task, result, progress, error } = props;
+  const { selected, mode, setMode, submitting, submitAnalysis, bulkAnalyzing, handleBulkAnalyze, autoTradeEnabled, task, result, progress, error } = props;
   return (
     <>
       <div className="ed-app-head">
@@ -858,6 +868,11 @@ function AnalysisTab(props: {
           ? `워치리스트에서 선택한 ${selected.name}을(를) 분석합니다.`
           : "워치리스트 탭에서 종목을 먼저 선택해주세요."}
       </p>
+      {autoTradeEnabled ? (
+        <p className="ed-msg" style={{ marginTop: 12 }}>
+          자동매매가 켜져 있어 분석 작업은 GPU 큐에서 대기할 수 있습니다.
+        </p>
+      ) : null}
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center", marginTop: 18 }}>
         <div className="ed-seg">
@@ -960,34 +975,8 @@ function AnalysisPanel({
 
       {error ? <p className="ed-msg" style={{ borderLeftColor: "var(--up)" }}>{error}</p> : null}
 
-      {result?.scores?.length ? (
-        <div className="ed-cardgrid" style={{ marginTop: 18 }}>
-          {result.scores.map((score) => (
-            <div className="ed-scard" key={score.agent}>
-              <div className="ed-scard-head">
-                <span className="ed-scard-name">{titleCaseAgent(score.agent)}</span>
-                <span className="ed-tag ed-tag--neutral">{score.grade ?? "-"}</span>
-              </div>
-              <p className="ed-scard-score">{score.totalScore} / {score.maxScore}</p>
-              {score.opinion ? <p className="ed-scard-text">{score.opinion}</p> : null}
-            </div>
-          ))}
-        </div>
-      ) : null}
-
-      {result?.finalDecision && Object.keys(result.finalDecision).length > 0 ? (
-        <div style={{ marginTop: 20 }}>
-          <p className="ed-label" style={{ marginBottom: 8 }}>최종 판단</p>
-          <div className="ed-kv">
-            {Object.entries(result.finalDecision).map(([key, value]) => (
-              <div className="ed-kv-cell" key={key}>
-                <small>{key}</small>
-                <span>{String(value)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
+      {result ? <AnalysisSummaryCard result={result} /> : null}
+      {result?.scores?.length ? <AgentDetailSections scores={result.scores} /> : null}
 
       {result?.qualityWarnings?.length ? (
         <div style={{ marginTop: 20 }}>
@@ -1252,6 +1241,9 @@ function HomeTab(props: {
 
   const orders = extractOrders(ordersData).slice(0, 5);
   const profitPositive = (totalProfit ?? 0) >= 0;
+  const [expandedAnalysisId, setExpandedAnalysisId] = useState<string | null>(null);
+  const [analysisDetails, setAnalysisDetails] = useState<Record<string, AnalysisResult>>({});
+  const [analysisDetailLoading, setAnalysisDetailLoading] = useState<string | null>(null);
 
   const fallbackAssets = preference?.totalAssets ?? null;
 
@@ -1431,15 +1423,14 @@ function HomeTab(props: {
                 const tone = scoreTone(score);
                 const action = (a.action ?? "").trim();
                 const actionTone = actionToneOf(action);
+                const detail = analysisDetails[a.taskId];
+                const expanded = expandedAnalysisId === a.taskId;
                 return (
-                  <button
+                  <div
                     key={a.taskId}
-                    type="button"
                     className="ed-scard"
-                    onClick={() => onSelectStock(a.stock.code)}
                     style={{
                       textAlign: "left",
-                      cursor: "pointer",
                       borderLeft: `3px solid ${tone.bar}`,
                       background: "var(--card)"
                     }}
@@ -1464,7 +1455,45 @@ function HomeTab(props: {
                     <p className="ed-scard-text" style={{ color: "var(--ink-3)", fontSize: ".78rem" }}>
                       {formatTimeAgo(a.completedAt ?? a.createdAt)}
                     </p>
-                  </button>
+                    <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        className="ed-btn ed-btn--line ed-btn--sm"
+                        onClick={() => {
+                          if (expanded) {
+                            setExpandedAnalysisId(null);
+                            return;
+                          }
+                          setExpandedAnalysisId(a.taskId);
+                          if (!analysisDetails[a.taskId]) {
+                            setAnalysisDetailLoading(a.taskId);
+                            analysisApi.result(a.taskId)
+                              .then((res) => setAnalysisDetails((prev) => ({ ...prev, [a.taskId]: res })))
+                              .catch(() => { /* 상세 조회 실패 시 카드 목록은 유지 */ })
+                              .finally(() => setAnalysisDetailLoading(null));
+                          }
+                        }}
+                      >
+                        {expanded ? "접기" : "상세"}
+                      </button>
+                      <button
+                        type="button"
+                        className="ed-btn ed-btn--line ed-btn--sm"
+                        onClick={() => onSelectStock(a.stock.code)}
+                      >
+                        종목 보기
+                      </button>
+                    </div>
+                    {expanded && analysisDetailLoading === a.taskId ? (
+                      <p className="ed-hint" style={{ marginTop: 12 }}>상세 분석을 불러오는 중...</p>
+                    ) : null}
+                    {expanded && detail ? (
+                      <>
+                        <AnalysisSummaryCard result={detail} />
+                        <AgentDetailSections scores={detail.scores} />
+                      </>
+                    ) : null}
+                  </div>
                 );
               })}
             </div>

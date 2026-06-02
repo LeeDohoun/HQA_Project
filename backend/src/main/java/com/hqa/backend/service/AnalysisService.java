@@ -3,7 +3,9 @@ package com.hqa.backend.service;
 import com.hqa.backend.dto.*;
 import com.hqa.backend.exception.ApiException;
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -66,6 +68,36 @@ public class AnalysisService {
                 watchlist.size(), submitted.size(), failures.size(), submitted, failures);
     }
 
+    public BulkAnalysisResponse submitBulkFromItems(List<? extends Map<String, ?>> items, AnalysisMode mode, int maxRetries) {
+        List<AnalysisTaskResponse> submitted = new ArrayList<>();
+        List<BulkAnalysisResponse.BulkAnalysisFailure> failures = new ArrayList<>();
+
+        for (Map<String, ?> entry : items) {
+            String code = firstString(entry, "stockCode", "stock_code", "code");
+            String name = firstString(entry, "stockName", "stock_name", "name");
+            if (name == null || name.isBlank()) {
+                name = code;
+            }
+            if (code == null || code.isBlank() || "null".equals(code)) {
+                failures.add(new BulkAnalysisResponse.BulkAnalysisFailure(name, code,
+                        "stock code missing"));
+                continue;
+            }
+            AnalysisRequest req = new AnalysisRequest();
+            req.setStockName(name);
+            req.setStockCode(code);
+            req.setMode(mode);
+            req.setMaxRetries(maxRetries);
+            try {
+                submitted.add(submit(req));
+            } catch (Exception e) {
+                failures.add(new BulkAnalysisResponse.BulkAnalysisFailure(name, code,
+                        e.getMessage()));
+            }
+        }
+        return new BulkAnalysisResponse(items.size(), submitted.size(), failures.size(), submitted, failures);
+    }
+
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> extractWatchlist(Map<String, Object> status) {
         Object runtime = status.get("runtime");
@@ -111,6 +143,7 @@ public class AnalysisService {
         } else if ("failed".equalsIgnoreCase(status)) {
             meta.status = AnalysisStatus.failed;
         }
+        updateMetaFromAiData(meta, aiData);
         return toResult(meta, aiData);
     }
 
@@ -163,6 +196,22 @@ public class AnalysisService {
     }
 
     public AnalysisHistoryResponse getHistory(int page, int pageSize) {
+        tasks.values().forEach(meta -> {
+            if (meta.status != AnalysisStatus.completed && meta.status != AnalysisStatus.failed) {
+                try {
+                    Map<String, Object> aiData = aiServerClient.getAnalysis(meta.taskId);
+                    String status = String.valueOf(aiData.getOrDefault("status", meta.status.name()));
+                    if ("completed".equalsIgnoreCase(status)) {
+                        meta.status = AnalysisStatus.completed;
+                    } else if ("failed".equalsIgnoreCase(status)) {
+                        meta.status = AnalysisStatus.failed;
+                    }
+                    updateMetaFromAiData(meta, aiData);
+                } catch (Exception ignored) {
+                    // Keep the existing in-memory status when the AI server cannot be reached.
+                }
+            }
+        });
         List<TaskMeta> all = tasks.values().stream().toList();
         int from = Math.min((page - 1) * pageSize, all.size());
         int to = Math.min(from + pageSize, all.size());
@@ -171,10 +220,10 @@ public class AnalysisService {
                         new StockInfo(meta.stockName, meta.stockCode),
                         meta.mode,
                         meta.status,
-                        null,
-                        null,
+                        meta.totalScore,
+                        meta.action,
                         meta.createdAt,
-                        null))
+                        meta.completedAt))
                 .collect(Collectors.toList());
         return new AnalysisHistoryResponse(items, all.size(), page, pageSize);
     }
@@ -182,7 +231,7 @@ public class AnalysisService {
     private AnalysisResultResponse toResult(TaskMeta meta, Map<String, Object> aiData) {
         Map<String, Object> scores = castMap(aiData.get("scores"));
         List<ScoreDetail> scoreDetails = new ArrayList<>();
-        if (scores.containsKey("analyst")) {
+        if (scores.containsKey("analyst") && !castMap(scores.get("analyst")).isEmpty()) {
             Map<String, Object> analyst = castMap(scores.get("analyst"));
             scoreDetails.add(new ScoreDetail("analyst",
                     number(analyst.get("total_score")),
@@ -191,7 +240,7 @@ public class AnalysisService {
                     stringOrNull(analyst.get("final_opinion")),
                     analyst));
         }
-        if (scores.containsKey("quant")) {
+        if (scores.containsKey("quant") && !castMap(scores.get("quant")).isEmpty()) {
             Map<String, Object> quant = castMap(scores.get("quant"));
             scoreDetails.add(new ScoreDetail("quant",
                     number(quant.get("total_score")),
@@ -200,7 +249,7 @@ public class AnalysisService {
                     stringOrNull(quant.get("opinion")),
                     quant));
         }
-        if (scores.containsKey("chartist")) {
+        if (scores.containsKey("chartist") && !castMap(scores.get("chartist")).isEmpty()) {
             Map<String, Object> chartist = castMap(scores.get("chartist"));
             scoreDetails.add(new ScoreDetail("chartist",
                     number(chartist.get("total_score")),
@@ -209,15 +258,26 @@ public class AnalysisService {
                     null,
                     chartist));
         }
-
-        OffsetDateTime completedAt = null;
-        if (aiData.containsKey("completed_at")) {
-            try {
-                completedAt = OffsetDateTime.parse(String.valueOf(aiData.get("completed_at")));
-            } catch (Exception ignored) {
-                completedAt = null;
-            }
+        if (scores.containsKey("risk_manager") && !castMap(scores.get("risk_manager")).isEmpty()) {
+            Map<String, Object> risk = castMap(scores.get("risk_manager"));
+            scoreDetails.add(new ScoreDetail("risk_manager",
+                    number(risk.get("total_score")),
+                    100.0,
+                    firstString(risk, "grade", "action"),
+                    firstString(risk, "opinion", "summary"),
+                    risk));
         }
+        if (scores.containsKey("quick_decision") && !castMap(scores.get("quick_decision")).isEmpty()) {
+            Map<String, Object> quick = castMap(scores.get("quick_decision"));
+            scoreDetails.add(new ScoreDetail("quick_decision",
+                    number(quick.get("total_score")),
+                    100.0,
+                    firstString(quick, "grade", "action"),
+                    firstString(quick, "opinion", "summary"),
+                    quick));
+        }
+
+        OffsetDateTime completedAt = parseCompletedAt(aiData.get("completed_at"));
         Double duration = completedAt == null ? null : (double) Duration.between(meta.createdAt, completedAt).toSeconds();
         return new AnalysisResultResponse(
                 meta.taskId,
@@ -254,8 +314,49 @@ public class AnalysisService {
         return value == null ? null : String.valueOf(value);
     }
 
+    private String firstString(Map<String, ?> map, String... keys) {
+        for (String key : keys) {
+            Object value = map.get(key);
+            if (value != null && !String.valueOf(value).isBlank() && !"null".equals(String.valueOf(value))) {
+                return String.valueOf(value);
+            }
+        }
+        return null;
+    }
+
     private double number(Object value) {
         return value instanceof Number number ? number.doubleValue() : 0.0;
+    }
+
+    private OffsetDateTime parseCompletedAt(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String raw = String.valueOf(value);
+        try {
+            return OffsetDateTime.parse(raw);
+        } catch (Exception ignored) {
+            try {
+                return LocalDateTime.parse(raw).atZone(ZoneId.systemDefault()).toOffsetDateTime();
+            } catch (Exception alsoIgnored) {
+                return null;
+            }
+        }
+    }
+
+    private void updateMetaFromAiData(TaskMeta meta, Map<String, Object> aiData) {
+        OffsetDateTime completedAt = parseCompletedAt(aiData.get("completed_at"));
+        if (completedAt != null) {
+            meta.completedAt = completedAt;
+        }
+        Map<String, Object> decision = castMap(aiData.get("final_decision"));
+        if (!decision.isEmpty()) {
+            Object score = decision.get("total_score");
+            if (score instanceof Number number) {
+                meta.totalScore = number.doubleValue();
+            }
+            meta.action = firstString(decision, "action", "action_code");
+        }
     }
 
     private static class TaskMeta {
@@ -266,6 +367,9 @@ public class AnalysisService {
         private final int maxRetries;
         private final OffsetDateTime createdAt = OffsetDateTime.now();
         private AnalysisStatus status = AnalysisStatus.pending;
+        private Double totalScore;
+        private String action;
+        private OffsetDateTime completedAt;
 
         private TaskMeta(String taskId, String stockName, String stockCode, AnalysisMode mode, int maxRetries) {
             this.taskId = taskId;

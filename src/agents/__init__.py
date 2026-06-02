@@ -82,24 +82,16 @@ try:
     from .llm_config import (
         get_instruct_llm,
         get_thinking_llm,
-        get_vision_llm,
-        VisionAnalyzer,
         get_llm_info,
         get_gemini_llm,
-        get_gemini_vision_llm,
         get_llm_config,
-        GeminiVisionAnalyzer,
     )
 except Exception as exc:  # pragma: no cover
     get_instruct_llm = _missing_dependency("get_instruct_llm", exc)
     get_thinking_llm = _missing_dependency("get_thinking_llm", exc)
-    get_vision_llm = _missing_dependency("get_vision_llm", exc)
-    VisionAnalyzer = _missing_dependency("VisionAnalyzer", exc)
     get_llm_info = _missing_dependency("get_llm_info", exc)
     get_gemini_llm = _missing_dependency("get_gemini_llm", exc)
-    get_gemini_vision_llm = _missing_dependency("get_gemini_vision_llm", exc)
     get_llm_config = _missing_dependency("get_llm_config", exc)
-    GeminiVisionAnalyzer = _missing_dependency("GeminiVisionAnalyzer", exc)
 
 try:
     from .theme_orchestrator import ThemeLeaderOrchestrator, ThemeCandidate
@@ -131,13 +123,9 @@ __all__ = [
     "EvidenceItem",
     "get_instruct_llm",
     "get_thinking_llm",
-    "get_vision_llm",
-    "VisionAnalyzer",
     "get_llm_info",
     "get_llm_config",
     "get_gemini_llm",
-    "get_gemini_vision_llm",
-    "GeminiVisionAnalyzer",
     "ThemeLeaderOrchestrator",
     "ThemeCandidate",
     "run_stock_analysis",
