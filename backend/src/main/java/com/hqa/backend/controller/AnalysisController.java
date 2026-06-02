@@ -30,7 +30,19 @@ public class AnalysisController {
     @ResponseStatus(HttpStatus.ACCEPTED)
     public BulkAnalysisResponse createBulk(
             @RequestParam(defaultValue = "quick") AnalysisMode mode,
-            @RequestParam(defaultValue = "0") int maxRetries) {
+            @RequestParam(defaultValue = "0") int maxRetries,
+            @RequestBody(required = false) BulkAnalysisRequest request) {
+        if (request != null && request.getItems() != null && !request.getItems().isEmpty()) {
+            var items = request.getItems().stream()
+                    .map(item -> {
+                        java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+                        row.put("stockName", item.getStockName());
+                        row.put("stockCode", item.getStockCode());
+                        return row;
+                    })
+                    .toList();
+            return analysisService.submitBulkFromItems(items, AnalysisMode.quick, Math.max(0, Math.min(3, maxRetries)));
+        }
         return analysisService.submitBulkFromWatchlist(mode, Math.max(0, Math.min(3, maxRetries)));
     }
 

@@ -320,7 +320,6 @@ OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_INSTRUCT_MODEL=qwen3.5:9b
 OLLAMA_THINKING_MODEL=gemma4:e4b
 OLLAMA_THINKING_VALIDATOR_MODEL=
-OLLAMA_VISION_MODEL=llava:13b
 ```
 
 Ollama 사용:
@@ -329,7 +328,6 @@ Ollama 사용:
 ollama serve
 ollama pull qwen3.5:9b
 ollama pull gemma4:e4b
-ollama pull llava:13b
 ```
 
 Gemini 사용:
@@ -340,7 +338,6 @@ GOOGLE_API_KEY=your_google_api_key_here
 GEMINI_INSTRUCT_MODEL=gemini-2.5-flash-lite
 GEMINI_THINKING_MODEL=gemini-2.5-pro
 GEMINI_THINKING_VALIDATOR_MODEL=gemini-2.5-flash
-GEMINI_VISION_MODEL=gemini-2.5-flash
 ```
 
 외부 LLM 없이 스모크 테스트만 할 때:
@@ -577,3 +574,4 @@ NEXT_PUBLIC_API_BASE=https://localhost:8000 npm run build
 - 백테스트 결과 해석: `data/backtest_results/README.md`
 - 검증 결과 해석: `data/backtest_results/validation/README.md`
 - LLM 최종 실험 결과: `data/backtest_results/llm_final/README.md`
+- 과거/초기 기획 참고: `README2.md`

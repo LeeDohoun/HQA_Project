@@ -12,7 +12,7 @@ LLM 호출 흐름 (구버전 → 신버전):
 역할:
 - 증권사 리포트 RAG 검색 (도구 호출, LLM 불필요)
 - 웹 검색 폴백 (도구 호출, LLM 불필요)
-- Vision 차트/그래프 분석 (선택적 LLM)
+- 차트/그래프 텍스트 분석
 - 수집된 원시 데이터를 하나의 Thinking 프롬프트에 주입
 - 독점력(Moat) + 성장성(Growth) + 최종 헤게모니 등급 도출
 """
@@ -24,7 +24,7 @@ from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from src.agents.llm_config import get_instruct_llm, get_thinking_llm, VisionAnalyzer
+from src.agents.llm_config import get_instruct_llm, get_thinking_llm
 from src.utils.prompt_loader import load_prompt_optional
 from src.agents.context import AgentContextPacket, EvidenceItem
 
@@ -190,7 +190,7 @@ class AnalystScore:
     moat_reason: str
     growth_reason: str
     report_summary: str
-    image_analysis: str    # Vision 분석 결과
+    image_analysis: str    # 차트/이미지 텍스트 분석 결과
     final_opinion: str
 
     # 추가 필드
@@ -222,7 +222,6 @@ class AnalystAgent:
     def __init__(self):
         self._instruct_llm = None   # 필요 시에만 로드 (Lazy)
         self._thinking_llm = None   # 필요 시에만 로드 (Lazy)
-        self.vision_analyzer = VisionAnalyzer()
 
         # Source-aware RAG tools (canonical retriever 기반)
         self.rag_tool = RAGSearchTool(top_k=5)
@@ -687,7 +686,7 @@ JSON만 출력하세요.
             source_tags=[
                 "rag",
                 "web_search",
-                "vision" if research_result.chart_analysis else "text",
+                "chart" if research_result.chart_analysis else "text",
             ],
         )
 
@@ -946,7 +945,7 @@ JSON만 출력하세요.
         return response.content
 
     def _analyze_charts(self, stock_name: str) -> Tuple[str, int]:
-        """차트/그래프 Vision 분석"""
+        """차트/그래프 텍스트 분석"""
         return "차트 분석은 PaddleOCR-VL이 텍스트로 변환하여 리포트에 포함됨", 0
 
     def _search_news(self, stock_name: str) -> str:
