@@ -20,7 +20,7 @@ AI_PORT="${AI_PORT:-8001}"
 BE_PORT="${BE_PORT:-8000}"
 FE_PORT="${FE_PORT:-3000}"
 
-VENV="${HQA_VENV:-$HOME/Desktop/school/capstone/HQA_project_2/HQA_Project/venv}"
+VENV="${HQA_VENV:-$ROOT/venv}"
 LOG_DIR="$ROOT/logs/dev"
 mkdir -p "$LOG_DIR"
 

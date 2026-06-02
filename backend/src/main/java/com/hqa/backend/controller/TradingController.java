@@ -87,7 +87,9 @@ public class TradingController {
 
     @GetMapping("/orders")
     public Map<String, Object> orders(@RequestParam(required = false) String date,
-                                      @RequestParam(defaultValue = "50") int limit) {
+                                      @RequestParam(defaultValue = "50") int limit,
+                                      HttpSession session) {
+        authService.requireUser(session);
         return aiServerClient.getTradingOrders(date, Math.max(1, Math.min(500, limit)));
     }
 

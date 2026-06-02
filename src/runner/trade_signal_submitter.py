@@ -86,7 +86,7 @@ def submit_trade_signals(
     for payload in payloads:
         body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
-        token = internal_token if internal_token is not None else os.getenv("BACKEND_INTERNAL_TOKEN", "").strip()
+        token = internal_token if internal_token is not None else os.getenv("HQA_INTERNAL_TOKEN", "").strip()
         if token:
             headers["X-HQA-Internal-Token"] = token
         request = urllib.request.Request(url, data=body, headers=headers, method="POST")
