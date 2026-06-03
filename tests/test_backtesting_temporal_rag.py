@@ -303,6 +303,53 @@ def test_llm_horizon_auto_and_agent_weights():
     assert short_totals["recommended_final_score"] > long_totals["recommended_final_score"]
 
 
+def test_agent_score_profiles_reweight_saved_multi_agent_scores():
+    from backtesting.llm_signal import _agent_profile_score, _normalize_agent_score_profile
+
+    payload = {
+        "llm_score": 61,
+        "llm_risk_score": 80,
+        "llm_agent_scores": {
+            "analyst": {"total_score": 70},
+            "quant": {"total_score": 50},
+            "chartist": {"total_score": 90},
+            "risk_manager": {"raw_final_score": 40, "risk_score": 80},
+        },
+    }
+    row = {"volume_ratio_20d": 2.0, "volatility_20d": 0.5}
+
+    assert _normalize_agent_score_profile("risk-adjusted") == "four_agent_risk_adjusted"
+    assert _agent_profile_score(payload, row=row, horizon="short", profile="current_hybrid_4agent") == 61
+    assert _agent_profile_score(payload, row=row, horizon="short", profile="three_agent_no_risk_manager") == 78
+    assert _agent_profile_score(payload, row=row, horizon="short", profile="four_agent_supervisor_final") == 40
+    assert _agent_profile_score(payload, row=row, horizon="short", profile="four_agent_raw_blend") == 67
+    assert _agent_profile_score(payload, row=row, horizon="short", profile="four_agent_risk_adjusted") == 73
+    assert _agent_profile_score(payload, row=row, horizon="short", profile="four_agent_plus_liquidity") == 77
+    assert _agent_profile_score(payload, row=row, horizon="short", profile="remove_chartist") == 63
+
+
+def test_pure_agent_feature_payload_excludes_deterministic_score(monkeypatch):
+    from backtesting.llm_signal import _feature_payload
+
+    row = {
+        "stock_name": "Alpha",
+        "stock_code": "000001",
+        "leader_score": 88,
+        "return_5d": 0.01,
+        "return_20d": 0.02,
+        "return_60d": 0.03,
+        "trend_150d": 0.04,
+        "volatility_20d": 0.2,
+        "volume_ratio_20d": 1.5,
+        "avg_trading_value_20d": 1000000,
+        "doc_counts": {"news": 2},
+    }
+
+    assert _feature_payload(row)["deterministic_leader_score"] == 88
+    monkeypatch.setenv("AGENT_PURE_FEATURES", "1")
+    assert "deterministic_leader_score" not in _feature_payload(row)
+
+
 def test_short_horizon_llm_ranking_score_uses_chartist_floor():
     from backtesting.leader_backtest import _effective_llm_ranking_score
 
@@ -320,6 +367,25 @@ def test_short_horizon_llm_ranking_score_uses_chartist_floor():
 
     assert round(_effective_llm_ranking_score(llm_result, 61)) == 77
     assert _effective_llm_ranking_score({**llm_result, "llm_horizon": "long"}, 61) == 61
+
+
+def test_short_horizon_llm_ranking_score_can_disable_chartist_floor(monkeypatch):
+    from backtesting.leader_backtest import _effective_llm_ranking_score
+
+    monkeypatch.setenv("AGENT_DISABLE_SHORT_CHARTIST_FLOOR", "1")
+    llm_result = {
+        "llm_horizon": "short",
+        "llm_score": 61,
+        "llm_theme_fit_score": 30,
+        "llm_risk_score": 60,
+        "llm_agent_scores": {
+            "analyst": {"theme_fit_score": 30},
+            "quant": {"risk_score": 60},
+            "chartist": {"total_score": 80},
+        },
+    }
+
+    assert _effective_llm_ranking_score(llm_result, 61) == 61
 
 
 def test_leader_backtest_writes_backend_ready_payload(tmp_path):
@@ -390,6 +456,11 @@ def test_leader_backtest_writes_backend_ready_payload(tmp_path):
     assert result["metrics"]["rebalance_count"] >= 1
     assert result["leaders"][0]["stock_code"] == "000001"
     assert Path(result["artifacts"]["result_json"]).exists()
+    assert Path(result["artifacts"]["summary_csv"]).exists()
+    assert Path(result["artifacts"]["positions_csv"]).exists()
+    assert Path(result["artifacts"]["periods_csv"]).exists()
+    assert "total_return_pct" in Path(result["artifacts"]["summary_csv"]).read_text(encoding="utf-8")
+    assert "stock_code" in Path(result["artifacts"]["positions_csv"]).read_text(encoding="utf-8")
 
     class FakeLLMScorer:
         def metadata(self):

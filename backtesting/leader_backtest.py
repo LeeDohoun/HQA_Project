@@ -9,8 +9,10 @@ period return.  The output payload is shaped for ``POST /backtest/results``.
 
 import argparse
 import bisect
+import csv
 import json
 import math
+import os
 import sys
 from collections import defaultdict
 from dataclasses import asdict, dataclass
@@ -411,6 +413,7 @@ def run_leader_backtest(
                 "mode": llm_metadata.get("mode", llm_mode if llm_enabled else ""),
                 "candidate_scope": llm_candidate_scope if llm_enabled else "",
                 "horizon": llm_horizon if llm_enabled else "",
+                "agent_score_profile": llm_metadata.get("agent_score_profile", "") if llm_enabled else "",
                 "top_k_meaning": (
                     "all_risk_filtered"
                     if llm_enabled and llm_candidate_scope == "broad" and llm_rerank_top_k <= 0
@@ -487,14 +490,16 @@ def run_leader_backtest(
         item for item in result["strategy"]["selection_inputs"] if item
     ]
 
-    out_path = _write_result(result, output_dir or data_root / "backtest_results", run_id)
+    resolved_output_dir = output_dir or data_root / "backtest_results"
+    result["artifacts"].update(_write_tabular_artifacts(result, resolved_output_dir, run_id))
+    out_path = _write_result(result, resolved_output_dir, run_id)
     result["artifacts"]["result_json"] = _display_path(out_path)
-    _write_result(result, output_dir or data_root / "backtest_results", run_id)
+    _write_result(result, resolved_output_dir, run_id)
 
     if submit_url:
         submit_status = submit_result(result, submit_url)
         result["artifacts"]["submit_status"] = submit_status
-        _write_result(result, output_dir or data_root / "backtest_results", run_id)
+        _write_result(result, resolved_output_dir, run_id)
 
     return result
 
@@ -873,6 +878,8 @@ def _rerank_with_llm(
                 (1.0 - llm_weight) * deterministic_score + llm_weight * llm_ranking_score
             )
         except Exception as exc:
+            if _env_flag("AGENT_FAIL_ON_LLM_ERROR"):
+                raise
             current["llm_error"] = str(exc)[:240]
             current["leader_score"] = round(deterministic_score)
             warnings.append(
@@ -897,7 +904,14 @@ def _top_symbol_payload(row: Dict[str, Any]) -> Dict[str, Any]:
         "leader_score": row["leader_score"],
         "realized_return_pct": _pct(row["realized_return"]),
     }
-    for key in ["deterministic_leader_score", "llm_score", "llm_ranking_score", "llm_confidence"]:
+    for key in [
+        "deterministic_leader_score",
+        "llm_score",
+        "llm_original_score",
+        "llm_ranking_score",
+        "llm_confidence",
+        "llm_score_profile",
+    ]:
         if key in row:
             payload[key] = row[key]
     return payload
@@ -910,9 +924,11 @@ def _candidate_audit_payload(row: Dict[str, Any]) -> Dict[str, Any]:
         "leader_score",
         "deterministic_leader_score",
         "llm_score",
+        "llm_original_score",
         "llm_raw_score",
         "llm_ranking_score",
         "llm_confidence",
+        "llm_score_profile",
         "llm_candidate_scope",
         "llm_horizon",
         "return_5d",
@@ -941,9 +957,11 @@ def _optional_prediction_payload(row: Dict[str, Any]) -> Dict[str, Any]:
         for key in [
             "deterministic_leader_score",
             "llm_score",
+            "llm_original_score",
             "llm_raw_score",
             "llm_ranking_score",
             "llm_confidence",
+            "llm_score_profile",
             "llm_theme_fit_score",
             "llm_catalyst_score",
             "llm_risk_score",
@@ -963,6 +981,8 @@ def _effective_llm_ranking_score(llm_result: Dict[str, Any], raw_llm_score: floa
     horizon = str(llm_result.get("llm_horizon") or "").strip().lower()
     agent_scores = llm_result.get("llm_agent_scores") or {}
     if horizon != "short" or not isinstance(agent_scores, dict):
+        return _clip(raw_llm_score, 0.0, 100.0)
+    if _env_flag("AGENT_DISABLE_SHORT_CHARTIST_FLOOR"):
         return _clip(raw_llm_score, 0.0, 100.0)
 
     chartist = agent_scores.get("chartist") if isinstance(agent_scores.get("chartist"), dict) else {}
@@ -985,6 +1005,10 @@ def _effective_llm_ranking_score(llm_result: Dict[str, Any], raw_llm_score: floa
     )
     short_term_floor = chartist_total - penalty
     return _clip(max(raw_llm_score, short_term_floor), 0.0, 100.0)
+
+
+def _env_flag(name: str) -> bool:
+    return str(os.environ.get(name) or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _score_float(value: Any, default: Any = 50.0) -> float:
@@ -1271,6 +1295,52 @@ def _write_result(result: Dict[str, Any], output_dir: str | Path, task_id: str) 
     with path.open("w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
     return path
+
+
+def _write_tabular_artifacts(result: Dict[str, Any], output_dir: str | Path, task_id: str) -> Dict[str, str]:
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    summary_path = out_dir / f"{task_id}-summary.csv"
+    positions_path = out_dir / f"{task_id}-positions.csv"
+    periods_path = out_dir / f"{task_id}-periods.csv"
+
+    summary_row = {
+        "task_id": result.get("task_id", task_id),
+        "theme": result.get("theme", ""),
+        "theme_key": result.get("theme_key", ""),
+        "prediction_model": result.get("prediction_model", ""),
+        **(result.get("metrics") or {}),
+    }
+    _write_csv_rows(summary_path, [summary_row])
+    _write_csv_rows(positions_path, result.get("positions") or [])
+    _write_csv_rows(periods_path, result.get("periods") or [])
+    return {
+        "summary_csv": _display_path(summary_path),
+        "positions_csv": _display_path(positions_path),
+        "periods_csv": _display_path(periods_path),
+    }
+
+
+def _write_csv_rows(path: Path, rows: List[Dict[str, Any]]) -> None:
+    if not rows:
+        path.write_text("", encoding="utf-8")
+        return
+    fieldnames: List[str] = []
+    for row in rows:
+        for key in row.keys():
+            if key not in fieldnames:
+                fieldnames.append(key)
+    with path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, lineterminator="\n")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({key: _csv_value(row.get(key)) for key in fieldnames})
+
+
+def _csv_value(value: Any) -> Any:
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    return value
 
 
 def _display_path(path: str | Path) -> str:
