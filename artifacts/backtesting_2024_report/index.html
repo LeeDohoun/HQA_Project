@@ -1,0 +1,570 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI 2024 Backtest Report</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f7fa;
+      --surface: #ffffff;
+      --surface-2: #eef3f7;
+      --ink: #17202a;
+      --muted: #5d6b7a;
+      --line: #d8e0e8;
+      --blue: #2f6fed;
+      --green: #14845f;
+      --red: #c13d3d;
+      --amber: #a96b00;
+      --teal: #197a8b;
+      --shadow: 0 8px 24px rgba(25, 35, 52, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      letter-spacing: 0;
+    }
+
+    header {
+      padding: 28px 32px 18px;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface);
+    }
+
+    main {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 24px 24px 48px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+      line-height: 1.2;
+      font-weight: 760;
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: 17px;
+      line-height: 1.25;
+    }
+
+    p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.55;
+      font-size: 14px;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-top: 18px;
+      flex-wrap: wrap;
+    }
+
+    .tabs {
+      display: inline-grid;
+      grid-template-columns: 1fr 1fr;
+      min-width: 220px;
+      padding: 4px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface-2);
+    }
+
+    .tab {
+      height: 36px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .tab[aria-selected="true"] {
+      background: var(--surface);
+      color: var(--ink);
+      box-shadow: var(--shadow);
+    }
+
+    .meta {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .grid {
+      display: grid;
+      gap: 16px;
+    }
+
+    .kpis {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      margin-bottom: 16px;
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      padding: 18px;
+    }
+
+    .metric-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 740;
+      text-transform: uppercase;
+    }
+
+    .metric-value {
+      margin-top: 8px;
+      font-size: 27px;
+      line-height: 1;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .metric-note {
+      margin-top: 9px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .positive {
+      color: var(--green);
+    }
+
+    .negative {
+      color: var(--red);
+    }
+
+    .neutral {
+      color: var(--teal);
+    }
+
+    .content-grid {
+      grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr);
+      align-items: start;
+    }
+
+    .bar-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .bar-row {
+      display: grid;
+      grid-template-columns: 210px minmax(180px, 1fr) 72px;
+      gap: 12px;
+      align-items: center;
+      min-height: 28px;
+    }
+
+    .bar-name {
+      min-width: 0;
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .bar-track {
+      position: relative;
+      height: 12px;
+      border-radius: 999px;
+      background: #edf1f5;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      border-radius: 999px;
+      min-width: 2px;
+    }
+
+    .bar-value {
+      text-align: right;
+      font-size: 12px;
+      font-weight: 760;
+      font-variant-numeric: tabular-nums;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    th,
+    td {
+      padding: 10px 8px;
+      border-bottom: 1px solid var(--line);
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    th:first-child,
+    td:first-child {
+      text-align: left;
+      min-width: 210px;
+    }
+
+    th {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 760;
+      background: #f8fafc;
+    }
+
+    tr.highlight td {
+      background: #eef6ff;
+      font-weight: 780;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .comparison {
+      display: grid;
+      gap: 12px;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .mini {
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+    }
+
+    .mini-title {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 760;
+    }
+
+    .mini-number {
+      margin-top: 8px;
+      font-size: 23px;
+      line-height: 1;
+      font-weight: 820;
+      white-space: nowrap;
+    }
+
+    .sources {
+      margin-top: 16px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+    }
+
+    @media (max-width: 920px) {
+      header {
+        padding: 22px 18px 16px;
+      }
+
+      main {
+        padding: 18px;
+      }
+
+      .kpis,
+      .content-grid,
+      .split {
+        grid-template-columns: 1fr;
+      }
+
+      .bar-row {
+        grid-template-columns: 150px minmax(120px, 1fr) 62px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>AI 테마 2024 백테스트</h1>
+    <p>대표 4-agent 구조와 단일/제거/추가 변형, 규칙기반 기준전략을 2024년 validation 구간만으로 비교합니다.</p>
+    <div class="toolbar">
+      <div class="tabs" role="tablist" aria-label="horizon">
+        <button class="tab" id="shortTab" type="button" role="tab" aria-selected="true" data-horizon="short">단타</button>
+        <button class="tab" id="longTab" type="button" role="tab" aria-selected="false" data-horizon="long">장타</button>
+      </div>
+      <div class="meta">
+        <span class="pill">Theme AI</span>
+        <span class="pill">Period 2024</span>
+        <span class="pill">LLM weight 1.0</span>
+        <span class="pill">Top K 0</span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="grid kpis" aria-label="key metrics">
+      <div class="panel">
+        <div class="metric-label">4-Agent Total Return</div>
+        <div class="metric-value" id="kpiReturn"></div>
+        <div class="metric-note" id="kpiReturnNote"></div>
+      </div>
+      <div class="panel">
+        <div class="metric-label">4-Agent Excess Return</div>
+        <div class="metric-value" id="kpiExcess"></div>
+        <div class="metric-note" id="kpiExcessNote"></div>
+      </div>
+      <div class="panel">
+        <div class="metric-label">4-Agent MDD</div>
+        <div class="metric-value" id="kpiMdd"></div>
+        <div class="metric-note" id="kpiMddNote"></div>
+      </div>
+      <div class="panel">
+        <div class="metric-label">Rank</div>
+        <div class="metric-value neutral" id="kpiRank"></div>
+        <div class="metric-note" id="kpiRankNote"></div>
+      </div>
+    </section>
+
+    <section class="grid content-grid">
+      <div class="panel">
+        <h2>초과수익률 순위</h2>
+        <div class="bar-list" id="excessBars"></div>
+      </div>
+
+      <div class="panel comparison">
+        <h2>대표 4-Agent vs 규칙기반</h2>
+        <div class="split">
+          <div class="mini">
+            <div class="mini-title">초과수익률 차이</div>
+            <div class="mini-number" id="deltaExcess"></div>
+          </div>
+          <div class="mini">
+            <div class="mini-title">총수익률 차이</div>
+            <div class="mini-number" id="deltaReturn"></div>
+          </div>
+          <div class="mini">
+            <div class="mini-title">MDD 차이</div>
+            <div class="mini-number" id="deltaMdd"></div>
+          </div>
+          <div class="mini">
+            <div class="mini-title">기준전략 수익률</div>
+            <div class="mini-number neutral" id="baselineReturn"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" style="margin-top:16px">
+      <h2>전략별 상세</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>전략</th>
+              <th>순위</th>
+              <th>총수익률</th>
+              <th>벤치마크</th>
+              <th>초과수익률</th>
+              <th>규칙 대비</th>
+              <th>MDD</th>
+            </tr>
+          </thead>
+          <tbody id="detailRows"></tbody>
+        </table>
+      </div>
+      <div class="sources">
+        Source:
+        <code>experiment_results/backtesting/agent_architecture_validation/uncontaminated_4agent_runs</code>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const profiles = {
+      short: [
+        { name: "deterministic_rule_baseline", total: 38.27, benchmark: -16.38, excess: 54.65, deltaRule: 0, mdd: -21.75, baseline: true },
+        { name: "four_agent_supervisor_final", total: 26.63, benchmark: -16.38, excess: 43.00, deltaRule: -11.65, mdd: -17.28, focus: true },
+        { name: "chartist_only", total: 19.10, benchmark: -16.38, excess: 35.48, deltaRule: -19.17, mdd: -25.46 },
+        { name: "remove_quant", total: 8.43, benchmark: -16.38, excess: 24.81, deltaRule: -29.84, mdd: -26.73 },
+        { name: "three_agent_no_risk_manager", total: 6.16, benchmark: -16.38, excess: 22.54, deltaRule: -32.11, mdd: -26.73 },
+        { name: "four_agent_plus_liquidity", total: 5.12, benchmark: -16.38, excess: 21.50, deltaRule: -33.15, mdd: -25.09 },
+        { name: "remove_analyst", total: 4.60, benchmark: -16.38, excess: 20.98, deltaRule: -33.67, mdd: -24.58 },
+        { name: "analyst_only", total: -23.37, benchmark: -16.38, excess: -6.99, deltaRule: -61.64, mdd: -24.42 },
+        { name: "quant_only", total: -30.55, benchmark: -16.38, excess: -14.17, deltaRule: -68.82, mdd: -33.82 },
+        { name: "remove_chartist", total: -30.74, benchmark: -16.38, excess: -14.36, deltaRule: -69.01, mdd: -29.11 }
+      ],
+      long: [
+        { name: "deterministic_rule_baseline", total: 16.78, benchmark: -40.32, excess: 57.10, deltaRule: 0, mdd: -9.97, baseline: true },
+        { name: "chartist_only", total: 7.16, benchmark: -40.32, excess: 47.47, deltaRule: -9.63, mdd: -12.91 },
+        { name: "four_agent_supervisor_final", total: 6.40, benchmark: -40.32, excess: 46.71, deltaRule: -10.39, mdd: -18.50, focus: true },
+        { name: "remove_analyst", total: -5.13, benchmark: -40.32, excess: 35.18, deltaRule: -21.92, mdd: -22.13 },
+        { name: "remove_quant", total: -19.60, benchmark: -40.32, excess: 20.72, deltaRule: -36.38, mdd: -25.23 },
+        { name: "quant_only", total: -21.15, benchmark: -40.32, excess: 19.17, deltaRule: -37.93, mdd: -26.84 },
+        { name: "four_agent_plus_liquidity", total: -23.11, benchmark: -40.32, excess: 17.20, deltaRule: -39.90, mdd: -25.23 },
+        { name: "remove_chartist", total: -23.11, benchmark: -40.32, excess: 17.20, deltaRule: -39.90, mdd: -25.23 },
+        { name: "three_agent_no_risk_manager", total: -23.11, benchmark: -40.32, excess: 17.20, deltaRule: -39.90, mdd: -25.23 },
+        { name: "analyst_only", total: -29.74, benchmark: -40.32, excess: 10.57, deltaRule: -46.53, mdd: -25.23 }
+      ]
+    };
+
+    const labels = {
+      deterministic_rule_baseline: "규칙기반 기준전략",
+      four_agent_supervisor_final: "대표 4-Agent",
+      chartist_only: "Chartist only",
+      analyst_only: "Analyst only",
+      quant_only: "Quant only",
+      remove_analyst: "Analyst 제거",
+      remove_quant: "Quant 제거",
+      remove_chartist: "Chartist 제거",
+      three_agent_no_risk_manager: "RiskManager 제거",
+      four_agent_plus_liquidity: "4-Agent + Liquidity"
+    };
+
+    let horizon = "short";
+
+    function fmt(value) {
+      const sign = value > 0 ? "+" : "";
+      return `${sign}${value.toFixed(2)}%`;
+    }
+
+    function cls(value) {
+      if (value > 0) return "positive";
+      if (value < 0) return "negative";
+      return "neutral";
+    }
+
+    function render() {
+      const rows = profiles[horizon].slice().sort((a, b) => b.excess - a.excess);
+      const focus = rows.find((r) => r.focus);
+      const baseline = rows.find((r) => r.baseline);
+      const focusRank = rows.findIndex((r) => r.focus) + 1;
+
+      document.querySelectorAll(".tab").forEach((button) => {
+        button.setAttribute("aria-selected", String(button.dataset.horizon === horizon));
+      });
+
+      setMetric("kpiReturn", focus.total);
+      document.getElementById("kpiReturnNote").textContent = `${labels[focus.name]} 총수익률`;
+      setMetric("kpiExcess", focus.excess);
+      document.getElementById("kpiExcessNote").textContent = "시장 벤치마크 대비";
+      setMetric("kpiMdd", focus.mdd);
+      document.getElementById("kpiMddNote").textContent = "최대낙폭";
+      document.getElementById("kpiRank").textContent = `${focusRank}/${rows.length}`;
+      document.getElementById("kpiRankNote").textContent = "초과수익률 기준";
+
+      setMini("deltaExcess", focus.excess - baseline.excess);
+      setMini("deltaReturn", focus.total - baseline.total);
+      setMini("deltaMdd", focus.mdd - baseline.mdd);
+      document.getElementById("baselineReturn").textContent = fmt(baseline.total);
+
+      renderBars(rows);
+      renderTable(rows);
+    }
+
+    function setMetric(id, value) {
+      const el = document.getElementById(id);
+      el.textContent = fmt(value);
+      el.className = `metric-value ${cls(value)}`;
+    }
+
+    function setMini(id, value) {
+      const el = document.getElementById(id);
+      el.textContent = `${value > 0 ? "+" : ""}${value.toFixed(2)}%p`;
+      el.className = `mini-number ${cls(value)}`;
+    }
+
+    function renderBars(rows) {
+      const target = document.getElementById("excessBars");
+      const values = rows.map((r) => r.excess);
+      const min = Math.min(...values, 0);
+      const max = Math.max(...values, 0);
+      const span = Math.max(max - min, 1);
+      target.innerHTML = "";
+
+      rows.forEach((row) => {
+        const width = Math.max(2, Math.abs(row.excess) / Math.max(Math.abs(max), Math.abs(min), 1) * 100);
+        const color = row.baseline ? "var(--teal)" : row.focus ? "var(--blue)" : row.excess >= 0 ? "var(--green)" : "var(--red)";
+        const item = document.createElement("div");
+        item.className = "bar-row";
+        item.innerHTML = `
+          <div class="bar-name" title="${labels[row.name]}">${labels[row.name]}</div>
+          <div class="bar-track">
+            <div class="bar-fill" style="left:${row.excess >= 0 ? ((0 - min) / span * 100) : ((row.excess - min) / span * 100)}%;width:${width}%;background:${color};"></div>
+          </div>
+          <div class="bar-value ${cls(row.excess)}">${fmt(row.excess)}</div>
+        `;
+        target.appendChild(item);
+      });
+    }
+
+    function renderTable(rows) {
+      const tbody = document.getElementById("detailRows");
+      tbody.innerHTML = "";
+      rows.forEach((row, index) => {
+        const tr = document.createElement("tr");
+        if (row.focus) tr.className = "highlight";
+        tr.innerHTML = `
+          <td>${labels[row.name]}</td>
+          <td>${index + 1}</td>
+          <td class="${cls(row.total)}">${fmt(row.total)}</td>
+          <td class="${cls(row.benchmark)}">${fmt(row.benchmark)}</td>
+          <td class="${cls(row.excess)}">${fmt(row.excess)}</td>
+          <td class="${cls(row.deltaRule)}">${row.baseline ? "-" : `${row.deltaRule > 0 ? "+" : ""}${row.deltaRule.toFixed(2)}%p`}</td>
+          <td class="${cls(row.mdd)}">${fmt(row.mdd)}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    document.querySelectorAll(".tab").forEach((button) => {
+      button.addEventListener("click", () => {
+        horizon = button.dataset.horizon;
+        render();
+      });
+    });
+
+    render();
+  </script>
+</body>
+</html>
