@@ -19,13 +19,19 @@ logger = logging.getLogger(__name__)
 # ==========================================
 
 DEFAULT_PROVIDER = "ollama"
-SUPPORTED_PROVIDERS = {"ollama", "gemini", "mock"}
+SUPPORTED_PROVIDERS = {"ollama", "gemini", "cliproxy", "mock"}
 PROVIDER_ALIASES = {
     "google": "gemini",
     "google_ai": "gemini",
     "google-ai": "gemini",
     "google_genai": "gemini",
     "google-genai": "gemini",
+    # CLIProxyAPI (https://github.com/router-for-me/CLIProxyAPI) 별칭.
+    # Anthropic(Claude) 호환 엔드포인트를 프록시로 노출하므로 claude/anthropic도 매핑.
+    "claude": "cliproxy",
+    "anthropic": "cliproxy",
+    "cli-proxy": "cliproxy",
+    "cli_proxy": "cliproxy",
     "test": "mock",
     "fake": "mock",
 }
@@ -36,6 +42,12 @@ DEFAULT_OLLAMA_THINKING_MODEL = "qwen2.5:14b"
 
 DEFAULT_GEMINI_INSTRUCT_MODEL = "gemini-2.5-flash-lite"
 DEFAULT_GEMINI_THINKING_MODEL = "gemini-2.5-pro"
+
+# CLIProxyAPI 기본값 (Anthropic 호환 프록시)
+# 프록시는 기본 포트 8317에서 Claude messages API를 노출한다.
+DEFAULT_CLIPROXY_BASE_URL = "http://localhost:8317"
+DEFAULT_CLIPROXY_INSTRUCT_MODEL = "claude-3-5-haiku-20241022"
+DEFAULT_CLIPROXY_THINKING_MODEL = "claude-opus-4-5-20251101"
 
 
 def _env(name: str, default: str = "", *, allow_blank: bool = False) -> str:
@@ -52,6 +64,15 @@ def _env(name: str, default: str = "", *, allow_blank: bool = False) -> str:
 def _get_google_api_key() -> str:
     return _env("GOOGLE_API_KEY", "", allow_blank=True) or _env(
         "GEMINI_API_KEY",
+        "",
+        allow_blank=True,
+    )
+
+
+def _get_cliproxy_api_key() -> str:
+    """CLIProxyAPI 인증 키. 전용 변수 우선, ANTHROPIC_API_KEY 폴백."""
+    return _env("CLIPROXY_API_KEY", "", allow_blank=True) or _env(
+        "ANTHROPIC_API_KEY",
         "",
         allow_blank=True,
     )
@@ -79,6 +100,17 @@ GEMINI_THINKING_VALIDATOR_MODEL = _env(
     allow_blank=True,
 )
 
+# CLIProxyAPI 설정 (Anthropic 호환)
+CLIPROXY_BASE_URL = _env("CLIPROXY_BASE_URL", DEFAULT_CLIPROXY_BASE_URL)
+CLIPROXY_API_KEY = _get_cliproxy_api_key()
+CLIPROXY_INSTRUCT_MODEL = _env("CLIPROXY_INSTRUCT_MODEL", DEFAULT_CLIPROXY_INSTRUCT_MODEL)
+CLIPROXY_THINKING_MODEL = _env("CLIPROXY_THINKING_MODEL", DEFAULT_CLIPROXY_THINKING_MODEL)
+CLIPROXY_THINKING_VALIDATOR_MODEL = _env(
+    "CLIPROXY_THINKING_VALIDATOR_MODEL",
+    "",
+    allow_blank=True,
+)
+
 
 @dataclass(frozen=True)
 class LLMConfig:
@@ -94,9 +126,16 @@ class LLMConfig:
     gemini_instruct_model: str
     gemini_thinking_model: str
     gemini_thinking_validator_model: str
+    cliproxy_base_url: str
+    cliproxy_api_key: str
+    cliproxy_instruct_model: str
+    cliproxy_thinking_model: str
+    cliproxy_thinking_validator_model: str
 
     @property
     def api_key_set(self) -> bool:
+        if self.provider == "cliproxy":
+            return bool(self.cliproxy_api_key)
         return bool(self.google_api_key)
 
 
@@ -115,6 +154,7 @@ def get_llm_config() -> LLMConfig:
     raw_provider = _env("LLM_PROVIDER", DEFAULT_PROVIDER).lower().strip()
     requested_provider = PROVIDER_ALIASES.get(raw_provider, raw_provider)
     google_api_key = _get_google_api_key()
+    cliproxy_api_key = _get_cliproxy_api_key()
     provider = requested_provider
     fallback_reason = ""
 
@@ -152,6 +192,15 @@ def get_llm_config() -> LLMConfig:
         gemini_thinking_model=_env("GEMINI_THINKING_MODEL", DEFAULT_GEMINI_THINKING_MODEL),
         gemini_thinking_validator_model=_env(
             "GEMINI_THINKING_VALIDATOR_MODEL",
+            "",
+            allow_blank=True,
+        ),
+        cliproxy_base_url=_env("CLIPROXY_BASE_URL", DEFAULT_CLIPROXY_BASE_URL),
+        cliproxy_api_key=cliproxy_api_key,
+        cliproxy_instruct_model=_env("CLIPROXY_INSTRUCT_MODEL", DEFAULT_CLIPROXY_INSTRUCT_MODEL),
+        cliproxy_thinking_model=_env("CLIPROXY_THINKING_MODEL", DEFAULT_CLIPROXY_THINKING_MODEL),
+        cliproxy_thinking_validator_model=_env(
+            "CLIPROXY_THINKING_VALIDATOR_MODEL",
             "",
             allow_blank=True,
         ),
@@ -281,6 +330,47 @@ def _create_gemini_llm(
 
 
 # ==========================================
+# CLIProxyAPI LLM 생성 (Anthropic 호환)
+# ==========================================
+
+def _create_cliproxy_llm(
+    model: str,
+    temperature: float = 0.3,
+    base_url: Optional[str] = None,
+    api_key: Optional[str] = None,
+    **kwargs: Any,
+) -> Any:
+    """
+    CLIProxyAPI(Anthropic 호환 프록시) ChatModel 생성.
+
+    프록시(https://github.com/router-for-me/CLIProxyAPI)는 Claude messages API를
+    로컬에서 노출한다. langchain-anthropic의 ChatAnthropic에 base_url만 프록시로
+    돌려 사용한다. 프록시가 OAuth로 상위 Claude 구독을 처리하면 api_key는 임의의
+    placeholder여도 동작하지만, 프록시의 api-keys 인증이 켜져 있으면 일치해야 한다.
+    """
+    try:
+        from langchain_anthropic import ChatAnthropic
+    except ImportError:
+        raise ImportError(
+            "LLM_PROVIDER=cliproxy 사용 시 langchain-anthropic 패키지가 필요합니다.\n"
+            "  pip install langchain-anthropic"
+        )
+
+    config = get_llm_config()
+    resolved_base_url = base_url or config.cliproxy_base_url
+    # 프록시 api-keys 인증이 꺼져 있어도 SDK가 비어있는 키를 거부하므로 placeholder 사용.
+    resolved_api_key = api_key or config.cliproxy_api_key or "cliproxy"
+
+    return ChatAnthropic(
+        model=model,
+        base_url=resolved_base_url,
+        api_key=resolved_api_key,
+        temperature=temperature,
+        **kwargs,
+    )
+
+
+# ==========================================
 # 통합 팩토리 함수 (에이전트가 호출하는 인터페이스)
 # ==========================================
 
@@ -307,6 +397,12 @@ def get_instruct_llm() -> Any:
             google_api_key=config.google_api_key,
         )
         logger.debug("🤖 Instruct LLM: Gemini (%s)", config.gemini_instruct_model)
+    elif provider == "cliproxy":
+        llm = _create_cliproxy_llm(
+            config.cliproxy_instruct_model,
+            temperature=0.3,
+        )
+        logger.debug("🤖 Instruct LLM: CLIProxyAPI (%s)", config.cliproxy_instruct_model)
     else:
         llm = _create_ollama_llm(
             config.ollama_instruct_model,
@@ -342,6 +438,12 @@ def get_thinking_llm() -> Any:
             google_api_key=config.google_api_key,
         )
         logger.debug("🧠 Thinking LLM: Gemini (%s)", config.gemini_thinking_model)
+    elif provider == "cliproxy":
+        llm = _create_cliproxy_llm(
+            config.cliproxy_thinking_model,
+            temperature=0.5,
+        )
+        logger.debug("🧠 Thinking LLM: CLIProxyAPI (%s)", config.cliproxy_thinking_model)
     else:
         llm = _create_ollama_llm(
             config.ollama_thinking_model,
@@ -378,6 +480,19 @@ def get_thinking_validator_llm() -> Optional[Any]:
         logger.debug(
             "🧪 Thinking Validator LLM: Gemini (%s)",
             config.gemini_thinking_validator_model,
+        )
+        return _with_tracing(llm)
+
+    if provider == "cliproxy":
+        if not config.cliproxy_thinking_validator_model:
+            return None
+        llm = _create_cliproxy_llm(
+            config.cliproxy_thinking_validator_model,
+            temperature=0.5,
+        )
+        logger.debug(
+            "🧪 Thinking Validator LLM: CLIProxyAPI (%s)",
+            config.cliproxy_thinking_validator_model,
         )
         return _with_tracing(llm)
 
@@ -432,6 +547,16 @@ def get_llm_info() -> Dict[str, Any]:
             "instruct_model": config.gemini_instruct_model,
             "thinking_model": config.gemini_thinking_model,
             "thinking_validator_model": config.gemini_thinking_validator_model,
+            "api_key_set": config.api_key_set,
+        })
+        return info
+
+    if provider == "cliproxy":
+        info.update({
+            "base_url": config.cliproxy_base_url,
+            "instruct_model": config.cliproxy_instruct_model,
+            "thinking_model": config.cliproxy_thinking_model,
+            "thinking_validator_model": config.cliproxy_thinking_validator_model,
             "api_key_set": config.api_key_set,
         })
         return info
