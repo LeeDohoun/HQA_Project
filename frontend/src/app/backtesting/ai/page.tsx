@@ -23,7 +23,6 @@ type ChartSeries<T> = {
 
 type RiskSummaryRow = BacktestSummaryRow & {
   center_mdd_depth_pct: number;
-  deterministic_mdd_depth_pct: number;
   best_rsi_bollinger_mdd_depth_pct: number;
 };
 
@@ -35,7 +34,6 @@ const HORIZON_LABELS: Record<BacktestHorizon, string> = {
 const GROUP_FILTERS: { value: FilterGroup; label: string }[] = [
   { value: "all", label: "전체" },
   { value: "multi_agent", label: "multi-agent" },
-  { value: "deterministic", label: "규칙기반" },
   { value: "technical", label: "기본전략" }
 ];
 
@@ -47,13 +45,11 @@ const HORIZON_FILTERS: { value: FilterHorizon; label: string }[] = [
 
 const RETURN_SERIES: ChartSeries<BacktestSummaryRow>[] = [
   { label: "multi-agent", color: "#3182f6", value: (row) => row.center_return_pct },
-  { label: "규칙기반", color: "#64748b", value: (row) => row.deterministic_return_pct },
   { label: "RSI/볼밴", color: "#10b981", value: (row) => row.best_rsi_bollinger_return_pct }
 ];
 
 const RISK_SERIES: ChartSeries<RiskSummaryRow>[] = [
   { label: "multi-agent", color: "#3182f6", value: (row) => row.center_mdd_depth_pct },
-  { label: "규칙기반", color: "#64748b", value: (row) => row.deterministic_mdd_depth_pct },
   { label: "RSI/볼밴", color: "#10b981", value: (row) => row.best_rsi_bollinger_mdd_depth_pct }
 ];
 
@@ -93,9 +89,6 @@ export default function AiBacktestPage() {
     const beatsRsiBollinger = comparison.summary.filter(
       (row) => row.center_return_pct >= row.best_rsi_bollinger_return_pct
     ).length;
-    const beatsDeterministic = comparison.summary.filter(
-      (row) => row.center_return_pct >= row.deterministic_return_pct
-    ).length;
     const bestCenter = [...comparison.summary].sort((a, b) => b.center_return_pct - a.center_return_pct)[0];
     const worstCenter = [...comparison.summary].sort((a, b) => a.center_return_pct - b.center_return_pct)[0];
 
@@ -103,7 +96,6 @@ export default function AiBacktestPage() {
       total,
       completedCoverage,
       beatsRsiBollinger,
-      beatsDeterministic,
       bestCenter,
       worstCenter
     };
@@ -126,13 +118,11 @@ export default function AiBacktestPage() {
     if (!comparison) return [];
 
     return comparison.summary.map((summaryRow) => {
-      const deterministic = findStrategyRow(comparison.rows, summaryRow, summaryRow.deterministic_strategy);
       const bestRsiBollinger = findStrategyRow(comparison.rows, summaryRow, summaryRow.best_rsi_bollinger_strategy);
 
       return {
         ...summaryRow,
         center_mdd_depth_pct: Math.abs(summaryRow.center_mdd_pct ?? 0),
-        deterministic_mdd_depth_pct: Math.abs(deterministic?.mdd_pct ?? 0),
         best_rsi_bollinger_mdd_depth_pct: Math.abs(bestRsiBollinger?.mdd_pct ?? 0)
       };
     });
@@ -142,6 +132,8 @@ export default function AiBacktestPage() {
     if (!comparison) return [];
 
     return comparison.rows.filter((row) => {
+      // deterministic(규칙기반)은 데이터는 유지하되 화면에서는 항상 숨긴다.
+      if (row.strategy_group === "deterministic") return false;
       const groupMatch = groupFilter === "all" || groupBucket(row.strategy_group) === groupFilter;
       const horizonMatch = horizonFilter === "all" || row.horizon === horizonFilter;
       return groupMatch && horizonMatch;
@@ -151,11 +143,12 @@ export default function AiBacktestPage() {
   return (
     <AppShell
       title="AI 백테스트 비교"
-      subtitle="multi-agent 중심 전략과 규칙기반, RSI, 볼린저밴드 전략을 같은 기간으로 비교합니다."
+      subtitle="multi-agent 중심 전략과 RSI, 볼린저밴드 전략을 같은 기간으로 비교합니다."
       wide
       actions={
         <>
           <Link className="button-ghost" href="/dashboard">대시보드</Link>
+          <Link className="button-ghost" href="/faq">FAQ</Link>
           <Link className="button-ghost" href="/backtesting/ai-strategy-comparison.json" target="_blank">원본 JSON</Link>
         </>
       }
@@ -177,11 +170,6 @@ export default function AiBacktestPage() {
               detail="multi-agent 수익률이 RSI/볼밴 최고 전략 이상"
             />
             <MetricCard
-              label="규칙기반 대비"
-              value={`${metrics.beatsDeterministic}/${metrics.total}`}
-              detail="multi-agent 수익률이 deterministic 이상"
-            />
-            <MetricCard
               label="최고 구간"
               value={formatPercent(metrics.bestCenter.center_return_pct)}
               detail={`${metrics.bestCenter.period} ${HORIZON_LABELS[metrics.bestCenter.horizon]}`}
@@ -198,7 +186,7 @@ export default function AiBacktestPage() {
               <h2>핵심 판정</h2>
               <p>
                 현재 AI 테마 결과만 보면 multi-agent hybrid는 기본 전략보다 나은 구간이 있지만 항상 우월하지는 않습니다.
-                장타는 2025년과 2026년 1분기에서 강했고, 2023년과 2024년 장타에서는 기본 전략과 규칙기반에 밀렸습니다.
+                장타는 2025년과 2026년 1분기에서 강했고, 2023년과 2024년 장타에서는 기본 전략에 밀렸습니다.
               </p>
             </div>
             <div className="verdict-stack" aria-label="판정 분포">
@@ -209,7 +197,7 @@ export default function AiBacktestPage() {
           </section>
 
           <section className="panel">
-            <PanelHeader title="기간별 수익률" subtitle="각 기간에서 multi-agent 중심 전략, 규칙기반, RSI/볼밴 최고 전략을 비교합니다." />
+            <PanelHeader title="기간별 수익률" subtitle="각 기간에서 multi-agent 중심 전략과 RSI/볼밴 최고 전략을 비교합니다." />
             <GroupedBarChart rows={comparison.summary} series={RETURN_SERIES} valueSuffix="%" />
           </section>
 
@@ -227,7 +215,6 @@ export default function AiBacktestPage() {
                     <th>기간</th>
                     <th>구간</th>
                     <th>multi-agent</th>
-                    <th>규칙기반</th>
                     <th>RSI/볼밴 최고</th>
                     <th>승자</th>
                     <th>판정</th>
@@ -243,16 +230,19 @@ export default function AiBacktestPage() {
                         <span>{formatPercent(row.center_return_pct)}</span>
                       </td>
                       <td>
-                        <strong>{row.deterministic_strategy}</strong>
-                        <span>{formatPercent(row.deterministic_return_pct)}</span>
-                      </td>
-                      <td>
                         <strong>{row.best_rsi_bollinger_strategy}</strong>
                         <span>{formatPercent(row.best_rsi_bollinger_return_pct)}</span>
                       </td>
                       <td>
-                        <strong>{row.winner_strategy}</strong>
-                        <span>{formatPercent(row.winner_return_pct)}</span>
+                        {(() => {
+                          const winner = visibleWinner(row);
+                          return (
+                            <>
+                              <strong>{winner.strategy}</strong>
+                              <span>{formatPercent(winner.returnPct)}</span>
+                            </>
+                          );
+                        })()}
                       </td>
                       <td><StatusPill label={verdictLabel(row.verdict)} tone={verdictTone(row.verdict)} /></td>
                     </tr>
@@ -311,10 +301,6 @@ export default function AiBacktestPage() {
             </div>
           </section>
 
-          <section className="panel">
-            <PanelHeader title="리포트 원문" subtitle={`생성 시각 ${comparison.generated_at}`} />
-            <pre className="markdown-report">{comparison.reportMarkdown}</pre>
-          </section>
         </div>
       ) : null}
     </AppShell>
@@ -477,6 +463,15 @@ function findStrategyRow(rows: BacktestComparisonRow[], summaryRow: BacktestSumm
     row.horizon === summaryRow.horizon &&
     row.strategy_id === strategyId
   ));
+}
+
+function visibleWinner(row: BacktestSummaryRow): { strategy: string; returnPct: number } {
+  // deterministic(규칙기반)은 화면에서 숨기므로, 표시 가능한 전략 중에서만 승자를 고른다.
+  const candidates = [
+    { strategy: row.center_strategy, returnPct: row.center_return_pct },
+    { strategy: row.best_rsi_bollinger_strategy, returnPct: row.best_rsi_bollinger_return_pct }
+  ];
+  return candidates.reduce((best, current) => (current.returnPct > best.returnPct ? current : best));
 }
 
 function groupBucket(group: string): Exclude<FilterGroup, "all"> {

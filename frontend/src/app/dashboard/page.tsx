@@ -96,6 +96,16 @@ const CSS = `
 }
 .ed-statuschip:hover{border-color:var(--ink-3);}
 .ed-statuschip--on{border-color:var(--moss); color:var(--moss);}
+.ed-navbal{
+  display:inline-flex; flex-direction:column; align-items:flex-end; justify-content:center;
+  height:36px; padding:0 13px; border:1px solid var(--rule); border-radius:5px;
+  background:transparent; cursor:pointer; line-height:1.05; text-align:right;
+}
+.ed-navbal:hover{border-color:var(--ink-3);}
+.ed-navbal small{font-size:.62rem; font-weight:800; letter-spacing:.04em; color:var(--ink-3);}
+.ed-navbal b{font-size:.86rem; font-weight:800; color:var(--ink); font-family:var(--serif);}
+.ed-navbal--loading b{color:var(--ink-3);}
+@media (max-width:560px){ .ed-navbal small{display:none;} }
 
 /* 앱 본문 */
 .ed-app{padding:clamp(24px,4vw,44px) 0 110px;}
@@ -343,6 +353,20 @@ export default function DashboardPage() {
     setRecent(loadRecent());
   }, []);
 
+  const loadBalance = useCallback(async () => {
+    setBalanceLoading(true);
+    setBalanceError("");
+    try {
+      const data = await tradingApi.balance();
+      setBalance(data);
+    } catch (e) {
+      setBalance(null);
+      setBalanceError(e instanceof Error ? e.message : "잔고를 불러오지 못했습니다.");
+    } finally {
+      setBalanceLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     let active = true;
 
@@ -355,6 +379,12 @@ export default function DashboardPage() {
         if (!responseUser.surveyCompleted) {
           router.replace("/onboarding/preference");
           return;
+        }
+
+        // KIS 계좌가 연결된 사용자는 로그인 직후 곧바로 실계좌 잔고를 불러와
+        // 앱 전역(상단 네비)에 계정 전체 잔고로 표시한다.
+        if (responseUser.kisConfigured) {
+          void loadBalance();
         }
 
         try {
@@ -376,7 +406,7 @@ export default function DashboardPage() {
       .catch(() => { /* 무시: 자동매매 상태는 fail-safe로 OFF 유지 */ });
 
     return () => { active = false; };
-  }, [router]);
+  }, [router, loadBalance]);
 
   // 종목 클릭 → 상세 페이지로 이동.
   // selected는 AI 분석 탭에서 "직전에 본 종목을 분석" 흐름에 사용됨.
@@ -472,20 +502,6 @@ export default function DashboardPage() {
       setOrdersError(e instanceof Error ? e.message : "주문 내역을 불러오지 못했습니다.");
     } finally {
       setOrdersLoading(false);
-    }
-  }, []);
-
-  const loadBalance = useCallback(async () => {
-    setBalanceLoading(true);
-    setBalanceError("");
-    try {
-      const data = await tradingApi.balance();
-      setBalance(data);
-    } catch (e) {
-      setBalance(null);
-      setBalanceError(e instanceof Error ? e.message : "잔고를 불러오지 못했습니다.");
-    } finally {
-      setBalanceLoading(false);
     }
   }, []);
 
@@ -642,6 +658,23 @@ export default function DashboardPage() {
             ))}
           </div>
           <div className="ed-nav-right">
+            {user?.kisConfigured ? (
+              <button
+                type="button"
+                className={`ed-navbal${balanceLoading ? " ed-navbal--loading" : ""}`}
+                onClick={() => setTab("home")}
+                title="KIS 계좌 전체 잔고"
+              >
+                <small>계정 전체 잔고</small>
+                <b>
+                  {balanceLoading
+                    ? "불러오는 중..."
+                    : balance?.summary?.totalEvalAmount != null
+                      ? formatPrice(balance.summary.totalEvalAmount)
+                      : "-"}
+                </b>
+              </button>
+            ) : null}
             <button
               type="button"
               className={`ed-statuschip${autoTradeEnabled ? " ed-statuschip--on" : ""}`}
@@ -723,6 +756,7 @@ export default function DashboardPage() {
           <AssetsTab
             preference={preference}
             user={user}
+            balance={balance}
             totalAssetsText={totalAssetsText}
             monthlyInvestmentText={monthlyInvestmentText}
             onGoKis={() => router.push("/settings/kis")}
@@ -1111,6 +1145,7 @@ function extractOrders(data: Record<string, unknown> | null): Array<{
 function AssetsTab({
   preference,
   user,
+  balance,
   totalAssetsText,
   monthlyInvestmentText,
   onGoKis,
@@ -1118,11 +1153,18 @@ function AssetsTab({
 }: {
   preference: UserPreference | null;
   user: AuthUser | null;
+  balance: Balance | null;
   totalAssetsText: string;
   monthlyInvestmentText: string;
   onGoKis: () => void;
   onGoPreference: () => void;
 }) {
+  // KIS 계좌가 연결되어 실잔고가 있으면 설문 입력값(totalAssets) 대신 실평가금액을
+  // 계정 전체 잔고로 사용한다.
+  const summary = balance?.summary;
+  const kisLinked = !!user?.kisConfigured && summary?.totalEvalAmount != null;
+  const totalAssetDisplay = kisLinked ? formatPrice(summary!.totalEvalAmount) : totalAssetsText;
+
   return (
     <>
       <div className="ed-app-head">
@@ -1134,13 +1176,26 @@ function AssetsTab({
 
       <div className="ed-figrow" style={{ marginTop: 8 }}>
         <div className="ed-fig ed-fig--xl">
-          <small>보유 자산</small>
-          <b>{totalAssetsText}</b>
+          <small>{kisLinked ? "계정 전체 잔고 (KIS 실계좌)" : "보유 자산"}</small>
+          <b>{totalAssetDisplay}</b>
         </div>
-        <div className="ed-fig ed-fig--md">
-          <small>월 투자 금액</small>
-          <b>{monthlyInvestmentText}</b>
-        </div>
+        {kisLinked ? (
+          <>
+            <div className="ed-fig ed-fig--md">
+              <small>예수금</small>
+              <b>{summary?.deposit != null ? formatPrice(summary.deposit) : "-"}</b>
+            </div>
+            <div className="ed-fig ed-fig--md">
+              <small>주식 평가</small>
+              <b>{summary?.stockEvalAmount != null ? formatPrice(summary.stockEvalAmount) : "-"}</b>
+            </div>
+          </>
+        ) : (
+          <div className="ed-fig ed-fig--md">
+            <small>월 투자 금액</small>
+            <b>{monthlyInvestmentText}</b>
+          </div>
+        )}
       </div>
 
       <section className="ed-sec">
@@ -1166,7 +1221,9 @@ function AssetsTab({
           </div>
         </div>
         <p className="ed-fine" style={{ marginTop: 12 }}>
-          더 정확한 평가 자산은 KIS 계좌를 연결한 뒤 확인할 수 있어요.
+          {kisLinked
+            ? "KIS 실계좌 잔고를 실시간으로 불러와 계정 전체 잔고로 표시하고 있어요."
+            : "더 정확한 평가 자산은 KIS 계좌를 연결한 뒤 확인할 수 있어요."}
         </p>
       </section>
 

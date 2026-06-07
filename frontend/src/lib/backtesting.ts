@@ -1,7 +1,12 @@
-import type { BacktestComparison, BacktestComparisonBundle } from "@/types/backtesting";
+import type {
+  AgentArchitectureComparison,
+  BacktestComparison,
+  BacktestComparisonBundle
+} from "@/types/backtesting";
 
 const AI_COMPARISON_JSON = "/backtesting/ai-strategy-comparison.json";
 const AI_COMPARISON_REPORT = "/backtesting/ai-strategy-comparison-report.md";
+const AGENT_ARCHITECTURE_JSON = "/backtesting/agent-architecture-comparison.json";
 
 async function readStaticAsset<T>(path: string, parse: (response: Response) => Promise<T>): Promise<T> {
   const response = await fetch(path, { cache: "no-store" });
@@ -21,4 +26,11 @@ export async function loadAiBacktestComparison(): Promise<BacktestComparisonBund
     ...comparison,
     reportMarkdown
   };
+}
+
+export async function loadAgentArchitectureComparison(): Promise<AgentArchitectureComparison> {
+  return readStaticAsset<AgentArchitectureComparison>(
+    AGENT_ARCHITECTURE_JSON,
+    (response) => response.json()
+  );
 }

@@ -81,3 +81,25 @@ export type BacktestComparison = {
 export type BacktestComparisonBundle = BacktestComparison & {
   reportMarkdown: string;
 };
+
+export type AgentArchitectureRow = {
+  name: string;
+  label: string;
+  note: string;
+  total_return_pct: number;
+  benchmark_return_pct: number;
+  excess_return_pct: number;
+  mdd_pct: number;
+  is_representative: boolean;
+};
+
+export type AgentArchitectureComparison = {
+  generated_at: string;
+  theme: string;
+  period: string;
+  period_note: string;
+  representative_strategy: string;
+  representative_label: string;
+  source: string;
+  horizons: Record<BacktestHorizon, AgentArchitectureRow[]>;
+};
