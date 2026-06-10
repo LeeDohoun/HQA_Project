@@ -1,0 +1,64 @@
+{
+  "theme": "화장품",
+  "window": {
+    "start": "2026-05-10",
+    "end": "2026-06-10"
+  },
+  "files": {
+    "raw_news": {
+      "rows": 32,
+      "codes": 21,
+      "min_date": "2026-05-14",
+      "max_date": "2026-06-09",
+      "skipped_missing_date": 0,
+      "skipped_future": 0,
+      "path": "화장품/raw/news.jsonl"
+    },
+    "raw_dart": {
+      "rows": 75,
+      "codes": 49,
+      "min_date": "2026-05-11",
+      "max_date": "2026-06-09",
+      "skipped_missing_date": 0,
+      "skipped_future": 0,
+      "path": "화장품/raw/dart.jsonl"
+    },
+    "raw_forum": {
+      "rows": 9738,
+      "codes": 50,
+      "min_date": "2026-05-10",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 0,
+      "skipped_future": 0,
+      "path": "화장품/raw/forum.jsonl"
+    },
+    "raw_chart": {
+      "rows": 2091,
+      "codes": 50,
+      "min_date": "2026-05-11",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 0,
+      "skipped_future": 0,
+      "path": "화장품/raw/chart.jsonl"
+    },
+    "corpus_combined": {
+      "rows": 9563,
+      "codes": 50,
+      "min_date": "2026-05-10",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 50,
+      "skipped_future": 0,
+      "path": "화장품/processed/corpus_combined.jsonl"
+    },
+    "market_combined": {
+      "rows": 1050,
+      "codes": 50,
+      "min_date": "2026-05-11",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 0,
+      "skipped_future": 0,
+      "path": "화장품/processed/market_combined.jsonl"
+    }
+  },
+  "target_count": 50
+}

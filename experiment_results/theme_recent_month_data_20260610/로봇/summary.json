@@ -1,0 +1,64 @@
+{
+  "theme": "로봇",
+  "window": {
+    "start": "2026-05-10",
+    "end": "2026-06-10"
+  },
+  "files": {
+    "raw_news": {
+      "rows": 137,
+      "codes": 14,
+      "min_date": "2026-05-14",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 0,
+      "skipped_future": 0,
+      "path": "로봇/raw/news.jsonl"
+    },
+    "raw_dart": {
+      "rows": 71,
+      "codes": 50,
+      "min_date": "2026-05-13",
+      "max_date": "2026-06-09",
+      "skipped_missing_date": 0,
+      "skipped_future": 0,
+      "path": "로봇/raw/dart.jsonl"
+    },
+    "raw_forum": {
+      "rows": 18974,
+      "codes": 50,
+      "min_date": "2026-05-10",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 0,
+      "skipped_future": 0,
+      "path": "로봇/raw/forum.jsonl"
+    },
+    "raw_chart": {
+      "rows": 2100,
+      "codes": 50,
+      "min_date": "2026-05-11",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 0,
+      "skipped_future": 0,
+      "path": "로봇/raw/chart.jsonl"
+    },
+    "corpus_combined": {
+      "rows": 18561,
+      "codes": 50,
+      "min_date": "2026-05-10",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 50,
+      "skipped_future": 0,
+      "path": "로봇/processed/corpus_combined.jsonl"
+    },
+    "market_combined": {
+      "rows": 1050,
+      "codes": 50,
+      "min_date": "2026-05-11",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 0,
+      "skipped_future": 0,
+      "path": "로봇/processed/market_combined.jsonl"
+    }
+  },
+  "target_count": 50
+}

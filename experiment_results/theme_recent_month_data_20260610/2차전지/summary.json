@@ -1,0 +1,64 @@
+{
+  "theme": "2차전지",
+  "window": {
+    "start": "2026-05-10",
+    "end": "2026-06-10"
+  },
+  "files": {
+    "raw_news": {
+      "rows": 135,
+      "codes": 18,
+      "min_date": "2026-05-14",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 0,
+      "skipped_future": 0,
+      "path": "2차전지/raw/news.jsonl"
+    },
+    "raw_dart": {
+      "rows": 85,
+      "codes": 49,
+      "min_date": "2026-05-12",
+      "max_date": "2026-06-09",
+      "skipped_missing_date": 0,
+      "skipped_future": 0,
+      "path": "2차전지/raw/dart.jsonl"
+    },
+    "raw_forum": {
+      "rows": 13012,
+      "codes": 50,
+      "min_date": "2026-05-10",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 0,
+      "skipped_future": 0,
+      "path": "2차전지/raw/forum.jsonl"
+    },
+    "raw_chart": {
+      "rows": 2100,
+      "codes": 50,
+      "min_date": "2026-05-11",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 0,
+      "skipped_future": 0,
+      "path": "2차전지/raw/chart.jsonl"
+    },
+    "corpus_combined": {
+      "rows": 12879,
+      "codes": 50,
+      "min_date": "2026-05-10",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 50,
+      "skipped_future": 0,
+      "path": "2차전지/processed/corpus_combined.jsonl"
+    },
+    "market_combined": {
+      "rows": 1050,
+      "codes": 50,
+      "min_date": "2026-05-11",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 0,
+      "skipped_future": 0,
+      "path": "2차전지/processed/market_combined.jsonl"
+    }
+  },
+  "target_count": 50
+}

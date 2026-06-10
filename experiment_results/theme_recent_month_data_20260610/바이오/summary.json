@@ -1,0 +1,64 @@
+{
+  "theme": "바이오",
+  "window": {
+    "start": "2026-05-10",
+    "end": "2026-06-10"
+  },
+  "files": {
+    "raw_news": {
+      "rows": 102,
+      "codes": 14,
+      "min_date": "2026-05-14",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 0,
+      "skipped_future": 0,
+      "path": "바이오/raw/news.jsonl"
+    },
+    "raw_dart": {
+      "rows": 41,
+      "codes": 24,
+      "min_date": "2026-05-11",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 0,
+      "skipped_future": 0,
+      "path": "바이오/raw/dart.jsonl"
+    },
+    "raw_forum": {
+      "rows": 9067,
+      "codes": 24,
+      "min_date": "2026-05-10",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 0,
+      "skipped_future": 0,
+      "path": "바이오/raw/forum.jsonl"
+    },
+    "raw_chart": {
+      "rows": 1008,
+      "codes": 24,
+      "min_date": "2026-05-11",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 0,
+      "skipped_future": 0,
+      "path": "바이오/raw/chart.jsonl"
+    },
+    "corpus_combined": {
+      "rows": 8748,
+      "codes": 24,
+      "min_date": "2026-05-10",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 24,
+      "skipped_future": 0,
+      "path": "바이오/processed/corpus_combined.jsonl"
+    },
+    "market_combined": {
+      "rows": 504,
+      "codes": 24,
+      "min_date": "2026-05-11",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 0,
+      "skipped_future": 0,
+      "path": "바이오/processed/market_combined.jsonl"
+    }
+  },
+  "target_count": 24
+}

@@ -1,0 +1,64 @@
+{
+  "theme": "조선",
+  "window": {
+    "start": "2026-05-10",
+    "end": "2026-06-10"
+  },
+  "files": {
+    "raw_news": {
+      "rows": 63,
+      "codes": 11,
+      "min_date": "2026-05-14",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 0,
+      "skipped_future": 0,
+      "path": "조선/raw/news.jsonl"
+    },
+    "raw_dart": {
+      "rows": 78,
+      "codes": 40,
+      "min_date": "2026-05-11",
+      "max_date": "2026-06-08",
+      "skipped_missing_date": 0,
+      "skipped_future": 0,
+      "path": "조선/raw/dart.jsonl"
+    },
+    "raw_forum": {
+      "rows": 10908,
+      "codes": 41,
+      "min_date": "2026-05-10",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 0,
+      "skipped_future": 0,
+      "path": "조선/raw/forum.jsonl"
+    },
+    "raw_chart": {
+      "rows": 1722,
+      "codes": 41,
+      "min_date": "2026-05-11",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 0,
+      "skipped_future": 0,
+      "path": "조선/raw/chart.jsonl"
+    },
+    "corpus_combined": {
+      "rows": 10647,
+      "codes": 41,
+      "min_date": "2026-05-10",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 41,
+      "skipped_future": 0,
+      "path": "조선/processed/corpus_combined.jsonl"
+    },
+    "market_combined": {
+      "rows": 861,
+      "codes": 41,
+      "min_date": "2026-05-11",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 0,
+      "skipped_future": 0,
+      "path": "조선/processed/market_combined.jsonl"
+    }
+  },
+  "target_count": 41
+}

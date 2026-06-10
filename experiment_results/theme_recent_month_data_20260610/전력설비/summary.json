@@ -1,0 +1,64 @@
+{
+  "theme": "전력설비",
+  "window": {
+    "start": "2026-05-10",
+    "end": "2026-06-10"
+  },
+  "files": {
+    "raw_news": {
+      "rows": 50,
+      "codes": 8,
+      "min_date": "2026-05-13",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 0,
+      "skipped_future": 0,
+      "path": "전력설비/raw/news.jsonl"
+    },
+    "raw_dart": {
+      "rows": 58,
+      "codes": 33,
+      "min_date": "2026-05-11",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 0,
+      "skipped_future": 0,
+      "path": "전력설비/raw/dart.jsonl"
+    },
+    "raw_forum": {
+      "rows": 4658,
+      "codes": 34,
+      "min_date": "2026-05-10",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 0,
+      "skipped_future": 0,
+      "path": "전력설비/raw/forum.jsonl"
+    },
+    "raw_chart": {
+      "rows": 1428,
+      "codes": 34,
+      "min_date": "2026-05-11",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 0,
+      "skipped_future": 0,
+      "path": "전력설비/raw/chart.jsonl"
+    },
+    "corpus_combined": {
+      "rows": 4752,
+      "codes": 34,
+      "min_date": "2026-05-10",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 34,
+      "skipped_future": 0,
+      "path": "전력설비/processed/corpus_combined.jsonl"
+    },
+    "market_combined": {
+      "rows": 714,
+      "codes": 34,
+      "min_date": "2026-05-11",
+      "max_date": "2026-06-10",
+      "skipped_missing_date": 0,
+      "skipped_future": 0,
+      "path": "전력설비/processed/market_combined.jsonl"
+    }
+  },
+  "target_count": 34
+}

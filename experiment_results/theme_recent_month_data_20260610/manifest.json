@@ -1,0 +1,521 @@
+{
+  "generated_at": "2026-06-10",
+  "window": {
+    "start": "2026-05-10",
+    "end": "2026-06-10"
+  },
+  "themes": {
+    "ai": {
+      "theme": "ai",
+      "window": {
+        "start": "2026-05-10",
+        "end": "2026-06-10"
+      },
+      "files": {
+        "raw_news": {
+          "rows": 154,
+          "codes": 18,
+          "min_date": "2026-05-10",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "ai/raw/news.jsonl"
+        },
+        "raw_dart": {
+          "rows": 81,
+          "codes": 50,
+          "min_date": "2026-05-13",
+          "max_date": "2026-06-09",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "ai/raw/dart.jsonl"
+        },
+        "raw_forum": {
+          "rows": 6707,
+          "codes": 50,
+          "min_date": "2026-05-10",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "ai/raw/forum.jsonl"
+        },
+        "raw_chart": {
+          "rows": 2100,
+          "codes": 50,
+          "min_date": "2026-05-11",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "ai/raw/chart.jsonl"
+        },
+        "corpus_combined": {
+          "rows": 6998,
+          "codes": 50,
+          "min_date": "2026-05-10",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 50,
+          "skipped_future": 0,
+          "path": "ai/processed/corpus_combined.jsonl"
+        },
+        "market_combined": {
+          "rows": 1050,
+          "codes": 50,
+          "min_date": "2026-05-11",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "ai/processed/market_combined.jsonl"
+        }
+      },
+      "target_count": 50
+    },
+    "반도체": {
+      "theme": "반도체",
+      "window": {
+        "start": "2026-05-10",
+        "end": "2026-06-10"
+      },
+      "files": {
+        "raw_news": {
+          "rows": 148,
+          "codes": 10,
+          "min_date": "2026-05-14",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "반도체/raw/news.jsonl"
+        },
+        "raw_dart": {
+          "rows": 69,
+          "codes": 50,
+          "min_date": "2026-05-11",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "반도체/raw/dart.jsonl"
+        },
+        "raw_forum": {
+          "rows": 15670,
+          "codes": 50,
+          "min_date": "2026-05-10",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "반도체/raw/forum.jsonl"
+        },
+        "raw_chart": {
+          "rows": 2100,
+          "codes": 50,
+          "min_date": "2026-05-11",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "반도체/raw/chart.jsonl"
+        },
+        "corpus_combined": {
+          "rows": 15341,
+          "codes": 50,
+          "min_date": "2026-05-10",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 50,
+          "skipped_future": 0,
+          "path": "반도체/processed/corpus_combined.jsonl"
+        },
+        "market_combined": {
+          "rows": 1050,
+          "codes": 50,
+          "min_date": "2026-05-11",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "반도체/processed/market_combined.jsonl"
+        }
+      },
+      "target_count": 50
+    },
+    "전력설비": {
+      "theme": "전력설비",
+      "window": {
+        "start": "2026-05-10",
+        "end": "2026-06-10"
+      },
+      "files": {
+        "raw_news": {
+          "rows": 50,
+          "codes": 8,
+          "min_date": "2026-05-13",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "전력설비/raw/news.jsonl"
+        },
+        "raw_dart": {
+          "rows": 58,
+          "codes": 33,
+          "min_date": "2026-05-11",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "전력설비/raw/dart.jsonl"
+        },
+        "raw_forum": {
+          "rows": 4658,
+          "codes": 34,
+          "min_date": "2026-05-10",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "전력설비/raw/forum.jsonl"
+        },
+        "raw_chart": {
+          "rows": 1428,
+          "codes": 34,
+          "min_date": "2026-05-11",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "전력설비/raw/chart.jsonl"
+        },
+        "corpus_combined": {
+          "rows": 4752,
+          "codes": 34,
+          "min_date": "2026-05-10",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 34,
+          "skipped_future": 0,
+          "path": "전력설비/processed/corpus_combined.jsonl"
+        },
+        "market_combined": {
+          "rows": 714,
+          "codes": 34,
+          "min_date": "2026-05-11",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "전력설비/processed/market_combined.jsonl"
+        }
+      },
+      "target_count": 34
+    },
+    "2차전지": {
+      "theme": "2차전지",
+      "window": {
+        "start": "2026-05-10",
+        "end": "2026-06-10"
+      },
+      "files": {
+        "raw_news": {
+          "rows": 135,
+          "codes": 18,
+          "min_date": "2026-05-14",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "2차전지/raw/news.jsonl"
+        },
+        "raw_dart": {
+          "rows": 85,
+          "codes": 49,
+          "min_date": "2026-05-12",
+          "max_date": "2026-06-09",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "2차전지/raw/dart.jsonl"
+        },
+        "raw_forum": {
+          "rows": 13012,
+          "codes": 50,
+          "min_date": "2026-05-10",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "2차전지/raw/forum.jsonl"
+        },
+        "raw_chart": {
+          "rows": 2100,
+          "codes": 50,
+          "min_date": "2026-05-11",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "2차전지/raw/chart.jsonl"
+        },
+        "corpus_combined": {
+          "rows": 12879,
+          "codes": 50,
+          "min_date": "2026-05-10",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 50,
+          "skipped_future": 0,
+          "path": "2차전지/processed/corpus_combined.jsonl"
+        },
+        "market_combined": {
+          "rows": 1050,
+          "codes": 50,
+          "min_date": "2026-05-11",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "2차전지/processed/market_combined.jsonl"
+        }
+      },
+      "target_count": 50
+    },
+    "로봇": {
+      "theme": "로봇",
+      "window": {
+        "start": "2026-05-10",
+        "end": "2026-06-10"
+      },
+      "files": {
+        "raw_news": {
+          "rows": 137,
+          "codes": 14,
+          "min_date": "2026-05-14",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "로봇/raw/news.jsonl"
+        },
+        "raw_dart": {
+          "rows": 71,
+          "codes": 50,
+          "min_date": "2026-05-13",
+          "max_date": "2026-06-09",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "로봇/raw/dart.jsonl"
+        },
+        "raw_forum": {
+          "rows": 18974,
+          "codes": 50,
+          "min_date": "2026-05-10",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "로봇/raw/forum.jsonl"
+        },
+        "raw_chart": {
+          "rows": 2100,
+          "codes": 50,
+          "min_date": "2026-05-11",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "로봇/raw/chart.jsonl"
+        },
+        "corpus_combined": {
+          "rows": 18561,
+          "codes": 50,
+          "min_date": "2026-05-10",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 50,
+          "skipped_future": 0,
+          "path": "로봇/processed/corpus_combined.jsonl"
+        },
+        "market_combined": {
+          "rows": 1050,
+          "codes": 50,
+          "min_date": "2026-05-11",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "로봇/processed/market_combined.jsonl"
+        }
+      },
+      "target_count": 50
+    },
+    "화장품": {
+      "theme": "화장품",
+      "window": {
+        "start": "2026-05-10",
+        "end": "2026-06-10"
+      },
+      "files": {
+        "raw_news": {
+          "rows": 32,
+          "codes": 21,
+          "min_date": "2026-05-14",
+          "max_date": "2026-06-09",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "화장품/raw/news.jsonl"
+        },
+        "raw_dart": {
+          "rows": 75,
+          "codes": 49,
+          "min_date": "2026-05-11",
+          "max_date": "2026-06-09",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "화장품/raw/dart.jsonl"
+        },
+        "raw_forum": {
+          "rows": 9738,
+          "codes": 50,
+          "min_date": "2026-05-10",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "화장품/raw/forum.jsonl"
+        },
+        "raw_chart": {
+          "rows": 2091,
+          "codes": 50,
+          "min_date": "2026-05-11",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "화장품/raw/chart.jsonl"
+        },
+        "corpus_combined": {
+          "rows": 9563,
+          "codes": 50,
+          "min_date": "2026-05-10",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 50,
+          "skipped_future": 0,
+          "path": "화장품/processed/corpus_combined.jsonl"
+        },
+        "market_combined": {
+          "rows": 1050,
+          "codes": 50,
+          "min_date": "2026-05-11",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "화장품/processed/market_combined.jsonl"
+        }
+      },
+      "target_count": 50
+    },
+    "조선": {
+      "theme": "조선",
+      "window": {
+        "start": "2026-05-10",
+        "end": "2026-06-10"
+      },
+      "files": {
+        "raw_news": {
+          "rows": 63,
+          "codes": 11,
+          "min_date": "2026-05-14",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "조선/raw/news.jsonl"
+        },
+        "raw_dart": {
+          "rows": 78,
+          "codes": 40,
+          "min_date": "2026-05-11",
+          "max_date": "2026-06-08",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "조선/raw/dart.jsonl"
+        },
+        "raw_forum": {
+          "rows": 10908,
+          "codes": 41,
+          "min_date": "2026-05-10",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "조선/raw/forum.jsonl"
+        },
+        "raw_chart": {
+          "rows": 1722,
+          "codes": 41,
+          "min_date": "2026-05-11",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "조선/raw/chart.jsonl"
+        },
+        "corpus_combined": {
+          "rows": 10647,
+          "codes": 41,
+          "min_date": "2026-05-10",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 41,
+          "skipped_future": 0,
+          "path": "조선/processed/corpus_combined.jsonl"
+        },
+        "market_combined": {
+          "rows": 861,
+          "codes": 41,
+          "min_date": "2026-05-11",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "조선/processed/market_combined.jsonl"
+        }
+      },
+      "target_count": 41
+    },
+    "바이오": {
+      "theme": "바이오",
+      "window": {
+        "start": "2026-05-10",
+        "end": "2026-06-10"
+      },
+      "files": {
+        "raw_news": {
+          "rows": 102,
+          "codes": 14,
+          "min_date": "2026-05-14",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "바이오/raw/news.jsonl"
+        },
+        "raw_dart": {
+          "rows": 41,
+          "codes": 24,
+          "min_date": "2026-05-11",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "바이오/raw/dart.jsonl"
+        },
+        "raw_forum": {
+          "rows": 9067,
+          "codes": 24,
+          "min_date": "2026-05-10",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "바이오/raw/forum.jsonl"
+        },
+        "raw_chart": {
+          "rows": 1008,
+          "codes": 24,
+          "min_date": "2026-05-11",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "바이오/raw/chart.jsonl"
+        },
+        "corpus_combined": {
+          "rows": 8748,
+          "codes": 24,
+          "min_date": "2026-05-10",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 24,
+          "skipped_future": 0,
+          "path": "바이오/processed/corpus_combined.jsonl"
+        },
+        "market_combined": {
+          "rows": 504,
+          "codes": 24,
+          "min_date": "2026-05-11",
+          "max_date": "2026-06-10",
+          "skipped_missing_date": 0,
+          "skipped_future": 0,
+          "path": "바이오/processed/market_combined.jsonl"
+        }
+      },
+      "target_count": 24
+    }
+  }
+}
