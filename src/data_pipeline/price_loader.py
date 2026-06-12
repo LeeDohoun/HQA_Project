@@ -10,12 +10,14 @@ Reads JSONL files produced under:
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 import pandas as pd
 
 from src.config.settings import get_data_dir
+from src.ingestion.krx_chart import KrxChartCollector
 
 
 class PriceLoader:
@@ -26,7 +28,9 @@ class PriceLoader:
         self.theme_key = theme_key
 
     def get_stock_data(self, stock_code: str, days: int = 300) -> pd.DataFrame:
-        rows = self._load_market_rows(stock_code)
+        rows = self._load_krx_rows(stock_code, days)
+        if not rows:
+            rows = self._load_market_rows(stock_code)
         if not rows:
             raise FileNotFoundError(
                 f"주가 데이터를 찾을 수 없습니다: stock_code={stock_code} "
@@ -60,6 +64,19 @@ class PriceLoader:
         df["Volume"] = df["Volume"].fillna(0)
 
         return df.tail(days)
+
+    def _load_krx_rows(self, stock_code: str, days: int) -> List[Dict]:
+        if not (os.getenv("KRX_OPEN_API_KEY") or os.getenv("KRX_API_KEY")):
+            return []
+        try:
+            records = KrxChartCollector().collect_recent_daily(
+                stock_name="",
+                stock_code=stock_code,
+                days=days,
+            )
+        except Exception:
+            return []
+        return [record.__dict__ for record in records if record.stock_code == stock_code]
 
     def _load_market_rows(self, stock_code: str) -> List[Dict]:
         matched: List[Dict] = []

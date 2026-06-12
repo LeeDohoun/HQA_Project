@@ -11,6 +11,7 @@ import com.hqa.backend.exception.ApiException;
 import com.hqa.backend.service.AiServerClient;
 import com.hqa.backend.service.AuthService;
 import com.hqa.backend.service.AutoTradeService;
+import com.hqa.backend.service.HistoricalTradingSnapshotService;
 import com.hqa.backend.service.KisClient;
 import com.hqa.backend.service.TradeSignalService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -37,15 +38,18 @@ public class TradingController {
     private final AuthService authService;
     private final KisClient kisClient;
     private final TradeSignalService tradeSignalService;
+    private final HistoricalTradingSnapshotService historicalTradingSnapshotService;
 
     public TradingController(AiServerClient aiServerClient, AutoTradeService autoTradeService,
                              AuthService authService, KisClient kisClient,
-                             TradeSignalService tradeSignalService) {
+                             TradeSignalService tradeSignalService,
+                             HistoricalTradingSnapshotService historicalTradingSnapshotService) {
         this.aiServerClient = aiServerClient;
         this.autoTradeService = autoTradeService;
         this.authService = authService;
         this.kisClient = kisClient;
         this.tradeSignalService = tradeSignalService;
+        this.historicalTradingSnapshotService = historicalTradingSnapshotService;
     }
 
     @Operation(summary = "자동매매 상태 조회", description = "사용자의 자동매매 활성 여부와 AI 서버 매매 상태를 조회한다.")
@@ -66,13 +70,11 @@ public class TradingController {
     public AutoTradeStatusResponse toggleAuto(@Valid @RequestBody AutoTradeToggleRequest request,
                                               HttpSession session) {
         User user = authService.requireUser(session);
-        boolean enabled = autoTradeService.setEnabled(user, Boolean.TRUE.equals(request.getEnabled()));
-        Map<String, Object> aiStatus;
-        try {
-            aiStatus = aiServerClient.getTradingStatus();
-        } catch (Exception ignored) {
-            aiStatus = Map.of();
-        }
+        boolean requestedEnabled = Boolean.TRUE.equals(request.getEnabled());
+        Map<String, Object> aiStatus = requestedEnabled
+                ? aiServerClient.startPaperTradingLoop(user.getUserId())
+                : aiServerClient.stopPaperTradingLoop();
+        boolean enabled = autoTradeService.setEnabled(user, requestedEnabled);
         return new AutoTradeStatusResponse(enabled, aiStatus);
     }
 
@@ -97,8 +99,9 @@ public class TradingController {
     public Map<String, Object> orders(@RequestParam(required = false) String date,
                                       @RequestParam(defaultValue = "50") int limit,
                                       HttpSession session) {
-        authService.requireUser(session);
-        return aiServerClient.getTradingOrders(date, Math.max(1, Math.min(500, limit)));
+        User user = authService.requireUser(session);
+        int boundedLimit = Math.max(1, Math.min(500, limit));
+        return historicalTradingSnapshotService.orders(user.getUserId(), date, boundedLimit);
     }
 
     @Operation(summary = "매매 시그널 조회", description = "사용자에게 생성된 최근 매매 시그널 목록을 조회한다.")
@@ -106,6 +109,15 @@ public class TradingController {
     public Map<String, Object> signals(HttpSession session) {
         User user = authService.requireUser(session);
         return Map.of("items", tradeSignalService.recentForUser(user.getUserId()));
+    }
+
+    @Operation(summary = "AI 자동매매 근거 조회", description = "최근 자동매매 신호의 최종 판단, 에이전트별 근거, 주문 결과를 조회한다.")
+    @GetMapping("/explanations")
+    public Map<String, Object> explanations(@RequestParam(defaultValue = "10") int limit,
+                                            HttpSession session) {
+        User user = authService.requireUser(session);
+        int boundedLimit = Math.max(1, Math.min(50, limit));
+        return Map.of("items", tradeSignalService.recentExplanationsForUser(user.getUserId(), boundedLimit));
     }
 
     @Operation(summary = "계좌 잔고 조회",
@@ -116,15 +128,25 @@ public class TradingController {
         UserSecret secret = user.getSecret();
         if (secret == null || isBlank(secret.getKisAppKey()) || isBlank(secret.getKisAppSecret())
                 || isBlank(secret.getKisAccountNo())) {
-            throw new ApiException(ErrorCode.KIS_SECRET_NOT_CONFIGURED, 400,
-                    "KIS API 키가 설정되어 있지 않습니다", null);
+            return historicalTradingSnapshotService.balance(user.getUserId());
         }
         String token = kisClient.fetchAccessToken(user.getUserId(), secret);
         if (token == null) {
-            throw new ApiException(ErrorCode.SERVICE_UNAVAILABLE, 503,
-                    "KIS 토큰 발급 실패", null);
+            return historicalTradingSnapshotService.balance(user.getUserId());
         }
-        return kisClient.inquireBalance(user.getUserId(), secret, token);
+        try {
+            return kisClient.inquireBalance(user.getUserId(), secret, token);
+        } catch (RuntimeException ignored) {
+            return historicalTradingSnapshotService.balance(user.getUserId());
+        }
+    }
+
+    @Operation(summary = "AI 운용 요약", description = "최근 multi-theme 주도주 선별과 에이전트 판단 요약을 조회한다.")
+    @GetMapping("/ai-activity")
+    public Map<String, Object> aiActivity(@RequestParam(defaultValue = "6") int limit,
+                                          HttpSession session) {
+        authService.requireUser(session);
+        return historicalTradingSnapshotService.aiActivity(Math.max(1, Math.min(20, limit)));
     }
 
     @Operation(summary = "직접 매수 주문", description = "KIS로 직접 매수 주문을 낸다. limit_price=0이면 시장가 주문.")

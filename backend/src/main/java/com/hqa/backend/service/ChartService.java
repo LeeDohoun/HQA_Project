@@ -49,10 +49,12 @@ public class ChartService {
 
     private final AuthService authService;
     private final KisClient kisClient;
+    private final LocalChartDataService localChartDataService;
 
-    public ChartService(AuthService authService, KisClient kisClient) {
+    public ChartService(AuthService authService, KisClient kisClient, LocalChartDataService localChartDataService) {
         this.authService = authService;
         this.kisClient = kisClient;
+        this.localChartDataService = localChartDataService;
     }
 
     public CandleHistoryResponse getHistoricalCandles(String stockCode, String timeframe,
@@ -83,11 +85,19 @@ public class ChartService {
                             + "(rate limit, invalid credentials, or network).", null);
         }
 
-        List<CandleData> candles = DAILY_PERIOD_CODES.containsKey(timeframe)
-                ? fetchDailySeries(userId, secret, token, stockCode, timeframe, count, before)
-                : fetchMinuteSeries(userId, secret, token, stockCode, timeframe, count, before);
+        if (DAILY_PERIOD_CODES.containsKey(timeframe)) {
+            List<CandleData> candles = fetchDailySeries(userId, secret, token, stockCode, timeframe, count, before);
+            return new CandleHistoryResponse(stockCode, timeframe, candles, candles.size() >= count);
+        }
+
+        List<CandleData> candles = fetchMinuteSeries(userId, secret, token, stockCode, timeframe, count, before);
 
         return new CandleHistoryResponse(stockCode, timeframe, candles, candles.size() >= count);
+    }
+
+    private List<CandleData> fetchLocalDailySeries(String stockCode, String timeframe, int count, Long before) {
+        if (!DAILY_PERIOD_CODES.containsKey(timeframe)) return List.of();
+        return localChartDataService.fetchDailyCandles(stockCode, timeframe, count, before);
     }
 
     /**
@@ -153,37 +163,30 @@ public class ChartService {
      * before는 이 시각 *이전*의 봉만 원한다는 의미.
      */
     private List<CandleData> fetchDailySeries(String userId, UserSecret secret, String token,
-                                              String stockCode, String timeframe,
-                                              int count, Long before) {
-        String periodCode = DAILY_PERIOD_CODES.get(timeframe);
-        LocalDate toCursor = before != null
-                ? LocalDateTime.ofInstant(Instant.ofEpochSecond(before), KIS_ZONE).toLocalDate().minusDays(1)
+                                              String stockCode, String timeframe, int count, Long before) {
+        LocalDate toDate = before != null
+                ? LocalDateTime.ofInstant(Instant.ofEpochSecond(Math.max(0L, before - 1)), KIS_ZONE).toLocalDate()
                 : LocalDate.now(KIS_ZONE);
+        LocalDate fromDate = toDate.minusDays(lookbackDays(timeframe, count));
 
-        List<CandleData> collected = new ArrayList<>();
-        for (int page = 0; page < 10 && collected.size() < count; page++) {
-            // 100개 윈도우는 캘린더 일수가 아니라 거래일이므로 넉넉히 200일을 뒤로 잡는다.
-            LocalDate fromCursor = toCursor.minusDays(200L);
-            List<CandleData> chunk = kisClient.fetchDailyCandles(
-                    userId, secret, token, stockCode, periodCode, fromCursor, toCursor);
-            if (chunk.isEmpty()) break;
-            collected.addAll(0, chunk);
-            CandleData oldest = chunk.get(0);
-            LocalDate oldestDate = LocalDateTime.ofInstant(
-                    Instant.ofEpochSecond(oldest.time()), KIS_ZONE).toLocalDate();
-            LocalDate next = oldestDate.minusDays(1);
-            if (!next.isBefore(toCursor)) break;
-            toCursor = next;
-            if (chunk.size() < 100) break;
+        List<CandleData> kisCandles = kisClient.fetchDailyCandles(
+                userId, secret, token, stockCode, DAILY_PERIOD_CODES.get(timeframe), fromDate, toDate);
+        List<CandleData> candles = kisCandles.isEmpty()
+                ? fetchLocalDailySeries(stockCode, timeframe, count, before)
+                : kisCandles;
+        if (candles.size() > count) {
+            return new ArrayList<>(candles.subList(candles.size() - count, candles.size()));
         }
+        return candles;
+    }
 
-        if (collected.isEmpty()) return List.of();
-        collected.sort((a, b) -> Long.compare(a.time(), b.time()));
-        collected = dedupeByTime(collected);
-        if (collected.size() > count) {
-            return new ArrayList<>(collected.subList(collected.size() - count, collected.size()));
-        }
-        return collected;
+    private static long lookbackDays(String timeframe, int count) {
+        return switch (timeframe) {
+            case "1w" -> count * 8L + 14L;
+            case "1M" -> count * 35L + 45L;
+            case "1y" -> count * 370L + 30L;
+            default -> count * 2L + 30L;
+        };
     }
 
     private static List<CandleData> dedupeByTime(List<CandleData> sorted) {

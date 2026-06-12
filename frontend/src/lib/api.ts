@@ -1,9 +1,14 @@
 import type {
+  AnalysisAgentResultEvent,
+  AnalysisHistoryItem,
   AnalysisHistoryResponse,
+  AnalysisProgressPollResponse,
   AnalysisRequest,
   AnalysisResult,
   AnalysisTaskResponse,
   AnalysisProgressEvent,
+  AiActivityResponse,
+  AutoTradeExplanationResponse,
   ApiError,
   AuthResponse,
   AuthUser,
@@ -25,8 +30,9 @@ import type {
 } from "@/types/api";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+const isLocalApiBase = API_BASE.startsWith("http://localhost") || API_BASE.startsWith("http://127.0.0.1");
 
-if (process.env.NODE_ENV === "production" && API_BASE.startsWith("http://")) {
+if (process.env.NODE_ENV === "production" && API_BASE.startsWith("http://") && !isLocalApiBase) {
   throw new Error(
     "NEXT_PUBLIC_API_BASE must use https:// in production — refusing to send credentials over plain HTTP"
   );
@@ -176,6 +182,31 @@ type AnalysisResultWire = {
   errors: Record<string, string>;
 };
 
+type AnalysisProgressPollWire = {
+  task_id?: string;
+  taskId?: string;
+  status: AnalysisProgressPollResponse["status"];
+  events?: { type: string; data: Record<string, unknown> }[];
+};
+
+type AnalysisHistoryItemWire = {
+  task_id: string;
+  stock: StockInfo;
+  mode: AnalysisHistoryItem["mode"];
+  status: AnalysisHistoryItem["status"];
+  total_score: number | null;
+  action: string | null;
+  created_at: string;
+  completed_at: string | null;
+};
+
+type AnalysisHistoryResponseWire = {
+  items: AnalysisHistoryItemWire[];
+  total: number;
+  page: number;
+  page_size: number;
+};
+
 type RealtimePriceWire = {
   stock: StockInfo;
   current_price: number;
@@ -304,6 +335,28 @@ function mapResult(response: AnalysisResultWire): AnalysisResult {
   };
 }
 
+function mapHistoryItem(item: AnalysisHistoryItemWire): AnalysisHistoryItem {
+  return {
+    taskId: item.task_id,
+    stock: item.stock,
+    mode: item.mode,
+    status: item.status,
+    totalScore: item.total_score,
+    action: item.action,
+    createdAt: item.created_at,
+    completedAt: item.completed_at
+  };
+}
+
+function mapHistory(response: AnalysisHistoryResponseWire): AnalysisHistoryResponse {
+  return {
+    items: response.items.map(mapHistoryItem),
+    total: response.total,
+    page: response.page,
+    pageSize: response.page_size
+  };
+}
+
 function mapRealtimePrice(response: RealtimePriceWire): RealtimePrice {
   return {
     stock: response.stock,
@@ -339,6 +392,40 @@ export function parseProgressEvent(data: string): AnalysisProgressEvent {
     timestamp: string;
   };
   return parsed;
+}
+
+function mapProgressPoll(wire: AnalysisProgressPollWire): AnalysisProgressPollResponse {
+  return {
+    taskId: wire.taskId ?? wire.task_id ?? "",
+    status: wire.status,
+    events: wire.events ?? []
+  };
+}
+
+export function parseAgentResultEvent(data: string): AnalysisAgentResultEvent {
+  const parsed = JSON.parse(data) as {
+    agent: string;
+    label?: string;
+    status: string;
+    message: string;
+    total_score?: number | null;
+    totalScore?: number | null;
+    grade?: string | null;
+    opinion?: string | null;
+    details?: Record<string, unknown>;
+    timestamp: string;
+  };
+  return {
+    agent: parsed.agent,
+    label: parsed.label ?? parsed.agent,
+    status: parsed.status,
+    message: parsed.message,
+    totalScore: parsed.totalScore ?? parsed.total_score ?? null,
+    grade: parsed.grade ?? null,
+    opinion: parsed.opinion ?? null,
+    details: parsed.details ?? {},
+    timestamp: parsed.timestamp
+  };
 }
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -424,6 +511,58 @@ export const stockApi = {
   indices: () => api<MarketIndexResponse>("/api/v1/stocks/indices")
 };
 
+type WatchlistItemWire = {
+  id: string;
+  stock_name?: string;
+  stockName?: string;
+  stock_code?: string;
+  stockCode?: string;
+  market: string;
+  created_at?: string;
+  createdAt?: string;
+  updated_at?: string;
+  updatedAt?: string;
+};
+
+type WatchlistWire = {
+  items: WatchlistItemWire[];
+  total: number;
+};
+
+function mapWatchlistItem(wire: WatchlistItemWire) {
+  return {
+    id: wire.id,
+    name: wire.stockName ?? wire.stock_name ?? "",
+    code: wire.stockCode ?? wire.stock_code ?? "",
+    market: wire.market,
+    createdAt: wire.createdAt ?? wire.created_at,
+    updatedAt: wire.updatedAt ?? wire.updated_at
+  };
+}
+
+export const watchlistApi = {
+  list: async () => {
+    const wire = await api<WatchlistWire>("/api/v1/watchlist");
+    return {
+      total: wire.total,
+      items: wire.items.map(mapWatchlistItem)
+    };
+  },
+  add: async (stock: { name: string; code: string; market: string }) =>
+    mapWatchlistItem(await api<WatchlistItemWire>("/api/v1/watchlist", {
+      method: "POST",
+      body: JSON.stringify({
+        stock_name: stock.name,
+        stock_code: stock.code,
+        market: stock.market
+      })
+    })),
+  remove: (stockCode: string) =>
+    api<void>(`/api/v1/watchlist/${encodeURIComponent(stockCode)}`, {
+      method: "DELETE"
+    })
+};
+
 export const chartApi = {
   history: async (stockCode: string, timeframe: string, count = 120, before?: number) => {
     const params = new URLSearchParams({ timeframe, count: String(count) });
@@ -496,8 +635,10 @@ export const analysisApi = {
     )),
   result: async (taskId: string) =>
     mapResult(await api<AnalysisResultWire>(`/api/v1/analysis/${taskId}`)),
-  history: (page = 1, pageSize = 10) =>
-    api<AnalysisHistoryResponse>(`/api/v1/analysis/history/list?page=${page}&pageSize=${pageSize}`)
+  progress: async (taskId: string) =>
+    mapProgressPoll(await api<AnalysisProgressPollWire>(`/api/v1/analysis/${taskId}/progress`)),
+  history: async (page = 1, pageSize = 10) =>
+    mapHistory(await api<AnalysisHistoryResponseWire>(`/api/v1/analysis/history/list?page=${page}&pageSize=${pageSize}`))
 };
 
 export type AutoTradeStatus = {
@@ -565,7 +706,9 @@ export const tradingApi = {
     const qs = search.toString();
     return api<Record<string, unknown>>(`/api/v1/trading/orders${qs ? `?${qs}` : ""}`);
   },
-  balance: () => api<Balance>("/api/v1/trading/balance")
+  balance: () => api<Balance>("/api/v1/trading/balance"),
+  aiActivity: (limit = 6) => api<AiActivityResponse>(`/api/v1/trading/ai-activity?limit=${limit}`),
+  explanations: (limit = 6) => api<AutoTradeExplanationResponse>(`/api/v1/trading/explanations?limit=${limit}`)
 };
 
 export const chatApi = {

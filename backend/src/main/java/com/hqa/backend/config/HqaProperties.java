@@ -19,6 +19,7 @@ public class HqaProperties {
     private String kisAppSecret = "";
     private String kisAccountNo = "";
     private String kisEncKey = "";
+    private String historicalDataDir = "";
 
     public String getEnv() {
         return env;
@@ -114,6 +115,14 @@ public class HqaProperties {
 
     public void setKisEncKey(String kisEncKey) {
         this.kisEncKey = kisEncKey;
+    }
+
+    public String getHistoricalDataDir() {
+        return historicalDataDir;
+    }
+
+    public void setHistoricalDataDir(String historicalDataDir) {
+        this.historicalDataDir = historicalDataDir;
     }
 
 }

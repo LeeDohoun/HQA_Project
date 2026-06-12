@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # ==========================================
-# HQA — start backend, frontend, ai-server together.
+# HQA — start backend, frontend, ai-server, and local Ollama when configured.
 #
 # Usage:  ./scripts/dev.sh
-# Stop:   Ctrl-C (kills all three children)
+# Stop:   Ctrl-C (kills all managed children)
 #
-# Logs are prefixed [ai] [be] [fe] and streamed to stdout.
-# Per-service log files: logs/dev/{ai,be,fe}.log
+# Logs are prefixed [ollama] [ai] [be] [fe] and streamed to stdout.
+# Per-service log files: logs/dev/{ollama,ai,be,fe}.log
 # ==========================================
 
 set -uo pipefail
@@ -24,6 +24,24 @@ VENV="${HQA_VENV:-$ROOT/venv}"
 LOG_DIR="$ROOT/logs/dev"
 mkdir -p "$LOG_DIR"
 
+# Load the project .env so backend JVM properties and the AI process see the
+# same local API keys when the stack is started through this script.
+if [[ -f "$ROOT/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$ROOT/.env"
+  set +a
+fi
+
+OLLAMA_LOCAL_BIN="$ROOT/.local/ollama-new/bin/ollama"
+OLLAMA_MANAGED_HOST=""
+OLLAMA_MANAGED_PORT=""
+if [[ "${OLLAMA_BASE_URL:-}" =~ ^https?://(localhost|127\.0\.0\.1):([0-9]+)$ ]]; then
+  OLLAMA_MANAGED_HOST="${BASH_REMATCH[1]}"
+  OLLAMA_MANAGED_PORT="${BASH_REMATCH[2]}"
+  [[ "$OLLAMA_MANAGED_HOST" == "localhost" ]] && OLLAMA_MANAGED_HOST="127.0.0.1"
+fi
+
 # Backend env (Spring needs JDBC URL, not asyncpg). Pulled from .env-be when
 # present, with sane fallbacks for local Postgres/Redis.
 if [[ -f "$ROOT/.env-be" ]]; then
@@ -39,6 +57,12 @@ export REDIS_HOST="${REDIS_HOST:-localhost}"
 export REDIS_PORT="${REDIS_PORT:-6379}"
 export AI_SERVER_URL="${AI_SERVER_URL:-http://localhost:$AI_PORT}"
 export ENV="${ENV:-local}"
+if [[ "${NEXT_PUBLIC_API_BASE+x}" == "x" ]]; then
+  FRONTEND_API_BASE="$NEXT_PUBLIC_API_BASE"
+else
+  FRONTEND_API_BASE="http://localhost:$BE_PORT"
+fi
+export BACKEND_PROXY_TARGET="${BACKEND_PROXY_TARGET:-http://localhost:$BE_PORT}"
 
 # ── Pre-flight ────────────────────────────────────────────────────────────
 fail() { printf '\033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
@@ -89,10 +113,42 @@ launch() {
   PIDS+=($!)
 }
 
-info "starting all 3 servers (Ctrl-C to stop)"
+ensure_local_ollama() {
+  [[ -n "$OLLAMA_MANAGED_PORT" ]] || return 0
+
+  if lsof -iTCP:"$OLLAMA_MANAGED_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+    info "ollama → ${OLLAMA_BASE_URL}      already running"
+    return 0
+  fi
+
+  [[ -x "$OLLAMA_LOCAL_BIN" ]] || fail "OLLAMA_BASE_URL points to local port $OLLAMA_MANAGED_PORT but $OLLAMA_LOCAL_BIN is missing"
+
+  info "ollama → ${OLLAMA_BASE_URL}      log: $LOG_DIR/ollama.log"
+  launch ollama 34 "$LOG_DIR/ollama.log" \
+    env OLLAMA_HOST="${OLLAMA_MANAGED_HOST}:${OLLAMA_MANAGED_PORT}" \
+      OLLAMA_MODELS="${OLLAMA_MODELS:-$HOME/.ollama/models}" \
+      "$OLLAMA_LOCAL_BIN" serve
+
+  for _ in {1..30}; do
+    if command -v curl >/dev/null && curl -fsS "$OLLAMA_BASE_URL/api/version" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  fail "ollama did not become healthy at $OLLAMA_BASE_URL"
+}
+
+ensure_local_ollama
+
+info "starting dev stack (Ctrl-C to stop)"
 info "  ai → http://localhost:$AI_PORT      log: $LOG_DIR/ai.log"
 info "  be → http://localhost:$BE_PORT      log: $LOG_DIR/be.log"
 info "  fe → http://localhost:$FE_PORT      log: $LOG_DIR/fe.log"
+info "  fe api → ${FRONTEND_API_BASE}"
+info "  fe proxy → ${BACKEND_PROXY_TARGET}"
+[[ -n "${CORS_ORIGINS:-}" ]] && info "  cors → ${CORS_ORIGINS}"
+[[ -n "${SESSION_COOKIE_SAME_SITE:-}" ]] && info "  session same-site → ${SESSION_COOKIE_SAME_SITE}"
+[[ -n "${SESSION_COOKIE_SECURE:-}" ]] && info "  session secure → ${SESSION_COOKIE_SECURE}"
 echo
 
 # AI server (FastAPI / uvicorn from sibling venv)
@@ -109,16 +165,19 @@ BE_JVM_ARGS="-DHQA_KIS_ENC_KEY=${HQA_KIS_ENC_KEY:-} \
 -DREDIS_HOST=${REDIS_HOST} \
 -DREDIS_PORT=${REDIS_PORT} \
 -DAI_SERVER_URL=${AI_SERVER_URL} \
+-DCORS_ORIGINS=${CORS_ORIGINS:-http://localhost:$FE_PORT,http://localhost:8501} \
+-DSESSION_COOKIE_SAME_SITE=${SESSION_COOKIE_SAME_SITE:-lax} \
+-DSESSION_COOKIE_SECURE=${SESSION_COOKIE_SECURE:-false} \
 -DENV=${ENV} \
 -DKIS_APP_KEY=${KIS_APP_KEY:-} \
 -DKIS_APP_SECRET=${KIS_APP_SECRET:-} \
 -DKIS_ACCOUNT_NO=${KIS_ACCOUNT_NO:-}"
 launch be 33 "$LOG_DIR/be.log" \
-  bash -c "cd '$ROOT/backend' && PORT=$BE_PORT mvn -B -q spring-boot:run -Dspring-boot.run.jvmArguments='$BE_JVM_ARGS'"
+  bash -c 'cd "$1" && PORT="$2" mvn -B -q spring-boot:run -Dspring-boot.run.jvmArguments="$3"' _ "$ROOT/backend" "$BE_PORT" "$BE_JVM_ARGS"
 
 # Frontend (Next.js dev)
 launch fe 35 "$LOG_DIR/fe.log" \
-  bash -c "cd '$ROOT/frontend' && PORT=$FE_PORT npm run dev"
+  bash -c 'cd "$1" && PORT="$2" NEXT_PUBLIC_API_BASE="$3" BACKEND_PROXY_TARGET="$4" npm run dev' _ "$ROOT/frontend" "$FE_PORT" "$FRONTEND_API_BASE" "$BACKEND_PROXY_TARGET"
 
 # Wait until any child exits, then trigger cleanup. Portable across
 # macOS bash 3.2 (no `wait -n`).

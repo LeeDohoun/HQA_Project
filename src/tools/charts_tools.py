@@ -170,6 +170,8 @@ class TechnicalIndicators:
 
 class TechnicalAnalyzer:
     """기술적 지표 계산기"""
+
+    MIN_REQUIRED_ROWS = 50
     
     def __init__(self, data_dir: Optional[str] = None, theme_key: Optional[str] = None):
         self.price_loader = PriceLoader(data_dir=data_dir, theme_key=theme_key)
@@ -189,8 +191,8 @@ class TechnicalAnalyzer:
         # 주가 데이터 로드
         df = self.price_loader.get_stock_data(stock_code, days=days)
         
-        if len(df) < 150:
-            raise ValueError(f"데이터 부족: {len(df)}일 (최소 150일 필요)")
+        if len(df) < self.MIN_REQUIRED_ROWS:
+            raise ValueError(f"데이터 부족: {len(df)}일 (최소 {self.MIN_REQUIRED_ROWS}일 필요)")
         
         # 기술적 지표 계산
         df = self._calculate_all_indicators(df)
@@ -203,7 +205,14 @@ class TechnicalAnalyzer:
         price_change = ((latest['Close'] - prev['Close']) / prev['Close']) * 100
         
         # 추세 판단
-        above_ma150 = latest['Close'] > latest['MA150']
+        trend_ma = latest['MA150'] if pd.notna(latest['MA150']) else latest['MA120']
+        if pd.isna(trend_ma):
+            trend_ma = latest['MA60']
+        if pd.isna(trend_ma):
+            trend_ma = latest['MA20']
+        if pd.isna(trend_ma):
+            trend_ma = latest['Close']
+        above_ma150 = latest['Close'] > trend_ma
         golden_cross = (prev['MA5'] <= prev['MA20']) and (latest['MA5'] > latest['MA20'])
         death_cross = (prev['MA5'] >= prev['MA20']) and (latest['MA5'] < latest['MA20'])
         
@@ -236,7 +245,7 @@ class TechnicalAnalyzer:
             ma20=latest['MA20'],
             ma60=latest['MA60'],
             ma120=latest['MA120'],
-            ma150=latest['MA150'],
+            ma150=trend_ma,
             above_ma150=above_ma150,
             golden_cross=golden_cross,
             death_cross=death_cross,
@@ -271,6 +280,11 @@ class TechnicalAnalyzer:
         df['MA60'] = df['Close'].rolling(window=60).mean()
         df['MA120'] = df['Close'].rolling(window=120).mean()
         df['MA150'] = df['Close'].rolling(window=150).mean()
+        df['MA5'] = df['MA5'].fillna(df['Close'].expanding().mean())
+        df['MA20'] = df['MA20'].fillna(df['Close'].expanding().mean())
+        df['MA60'] = df['MA60'].fillna(df['Close'].expanding().mean())
+        df['MA120'] = df['MA120'].fillna(df['Close'].expanding().mean())
+        df['MA150'] = df['MA150'].fillna(df['Close'].expanding().mean())
         
         # RSI
         df['RSI'] = self._calculate_rsi(df['Close'], period=14)

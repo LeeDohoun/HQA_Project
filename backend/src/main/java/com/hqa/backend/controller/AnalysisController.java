@@ -5,6 +5,7 @@ import com.hqa.backend.service.AnalysisService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.validation.annotation.Validated;
@@ -48,7 +49,7 @@ public class AnalysisController {
                         return row;
                     })
                     .toList();
-            return analysisService.submitBulkFromItems(items, AnalysisMode.quick, Math.max(0, Math.min(3, maxRetries)));
+            return analysisService.submitBulkFromItems(items, mode, Math.max(0, Math.min(3, maxRetries)));
         }
         return analysisService.submitBulkFromWatchlist(mode, Math.max(0, Math.min(3, maxRetries)));
     }
@@ -58,6 +59,13 @@ public class AnalysisController {
     @GetMapping("/{taskId}")
     public AnalysisResultResponse getResult(@PathVariable String taskId) {
         return analysisService.getResult(taskId);
+    }
+
+    @Operation(summary = "분석 진행 상황 조회",
+            description = "SSE가 불안정한 네트워크에서도 사용할 수 있도록 저장된 진행 이벤트를 조회한다.")
+    @GetMapping("/{taskId}/progress")
+    public Map<String, Object> getProgress(@PathVariable String taskId) {
+        return analysisService.getProgress(taskId);
     }
 
     @Operation(summary = "분석 진행 상황 SSE 스트림",

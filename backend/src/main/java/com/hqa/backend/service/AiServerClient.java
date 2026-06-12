@@ -91,6 +91,42 @@ public class AiServerClient {
         return postForMap("/runtime/multi-theme-trade", payload, "AI 서버가 주도주 신호 생성을 처리하지 못했습니다");
     }
 
+    public Map<String, Object> startPaperTradingLoop(String userId) {
+        Map<String, Object> payload = Map.ofEntries(
+                Map.entry("user_id", userId),
+                Map.entry("candidate_limit", 5),
+                Map.entry("per_theme_top_n", 3),
+                Map.entry("top_n", 1),
+                Map.entry("execute", true),
+                Map.entry("preview", false),
+                Map.entry("paper", true),
+                Map.entry("dry_run", false),
+                Map.entry("dry_run_override", false),
+                Map.entry("trading_enabled_override", true),
+                Map.entry("account_type_override", "paper"),
+                Map.entry("buy_only", true),
+                Map.entry("config_path", "config/watchlist.yaml"),
+                Map.entry("save_report", true),
+                Map.entry("trade_interval_minutes", 30),
+                Map.entry("market_hours_only", true),
+                Map.entry("poll_seconds", 30)
+        );
+        return postForMapAllowConflict(
+                "/runtime/multi-theme-trade/loop/start",
+                payload,
+                "AI 서버가 자동매매 루프를 시작하지 못했습니다",
+                "running"
+        );
+    }
+
+    public Map<String, Object> stopPaperTradingLoop() {
+        return postForMap(
+                "/runtime/multi-theme-trade/loop/stop",
+                Map.of(),
+                "AI 서버가 자동매매 루프를 중지하지 못했습니다"
+        );
+    }
+
     private void postBodiless(String path, Object payload, String failureMessage) {
         byte[] body = serialize(payload);
         log.info("[AiServerClient] POST {} bytes={} payload={}", path, body.length, payload);
@@ -101,6 +137,21 @@ public class AiServerClient {
     private Map<String, Object> postForMap(String path, Object payload, String failureMessage) {
         byte[] body = serialize(payload);
         HttpResponse<String> response = send(buildPost(path, body));
+        ensureSuccess(path, response, failureMessage);
+        return parseMap(response.body());
+    }
+
+    private Map<String, Object> postForMapAllowConflict(
+            String path,
+            Object payload,
+            String failureMessage,
+            String conflictStatus
+    ) {
+        byte[] body = serialize(payload);
+        HttpResponse<String> response = send(buildPost(path, body));
+        if (response.statusCode() == 409) {
+            return Map.of("status", conflictStatus, "detail", response.body());
+        }
         ensureSuccess(path, response, failureMessage);
         return parseMap(response.body());
     }
