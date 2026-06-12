@@ -1,6 +1,11 @@
 server:
   port: ${PORT:8000}
   forward-headers-strategy: framework
+  servlet:
+    session:
+      cookie:
+        same-site: ${SESSION_COOKIE_SAME_SITE:lax}
+        secure: ${SESSION_COOKIE_SECURE:false}
 
 spring:
   application:
@@ -64,3 +69,4 @@ hqa:
   kis-app-secret: ${KIS_APP_SECRET:}
   kis-account-no: ${KIS_ACCOUNT_NO:}
   kis-enc-key: ${HQA_KIS_ENC_KEY:}
+  historical-data-dir: ${HQA_HISTORICAL_DATA_DIR:}

@@ -508,9 +508,27 @@ def _execute_quick(task_id: str, stock_name: str, stock_code: str) -> dict:
     quant = QuantAgent()
     chartist = ChartistAgent()
 
+    def run_quant():
+        try:
+            score = quant.full_analysis(stock_name, stock_code)
+            _publish_progress(task_id, "quant", "completed", f"재무: {score.grade}", 1.0)
+            return score
+        except Exception as exc:
+            _publish_progress(task_id, "quant", "failed", f"오류: {str(exc)[:200]}", 1.0)
+            raise
+
+    def run_chartist():
+        try:
+            score = chartist.full_analysis(stock_name, stock_code)
+            _publish_progress(task_id, "chartist", "completed", f"기술: {score.signal}", 1.0)
+            return score
+        except Exception as exc:
+            _publish_progress(task_id, "chartist", "failed", f"오류: {str(exc)[:200]}", 1.0)
+            raise
+
     parallel_results = run_agents_parallel({
-        "quant": (quant.full_analysis, (stock_name, stock_code)),
-        "chartist": (chartist.full_analysis, (stock_name, stock_code)),
+        "quant": (run_quant, ()),
+        "chartist": (run_chartist, ()),
     })
 
     quant_score = parallel_results["quant"]
@@ -521,8 +539,6 @@ def _execute_quick(task_id: str, stock_name: str, stock_code: str) -> dict:
     if is_error(chartist_score):
         chartist_score = chartist._default_score(stock_code, str(chartist_score))
 
-    _publish_progress(task_id, "quant", "completed", f"재무: {quant_score.grade}", 1.0)
-    _publish_progress(task_id, "chartist", "completed", f"기술: {chartist_score.signal}", 1.0)
     _publish_progress(task_id, "quick_decision", "started", "빠른 판단 중...", 0.8)
 
     risk_manager = RiskManagerAgent()
@@ -558,6 +574,13 @@ def _execute_full(task_id: str, stock_name: str, stock_code: str, max_retries: i
     """전체 분석 (LangGraph 워크플로우)"""
     from src.agents.graph import run_stock_analysis
 
+    graph_completed_agents = set()
+
+    def publish_graph_progress(agent: str, status: str, message: str, progress: float):
+        _publish_progress(task_id, agent, status, message, progress)
+        if status in {"completed", "failed", "error"}:
+            graph_completed_agents.add(agent)
+
     _publish_progress(task_id, "analyst", "started", "헤게모니 분석 중...", 0.1)
     _publish_progress(task_id, "quant", "started", "재무 분석 중...", 0.1)
     _publish_progress(task_id, "chartist", "started", "기술적 분석 중...", 0.1)
@@ -566,6 +589,7 @@ def _execute_full(task_id: str, stock_name: str, stock_code: str, max_retries: i
         stock_name=stock_name,
         stock_code=stock_code,
         max_retries=max_retries,
+        progress_callback=publish_graph_progress,
     )
 
     scores = result.get("scores", {})
@@ -574,14 +598,14 @@ def _execute_full(task_id: str, stock_name: str, stock_code: str, max_retries: i
     chartist_score = scores.get("chartist")
     final_decision = result.get("final_decision")
 
-    if analyst_score:
+    if analyst_score and "analyst" not in graph_completed_agents:
         _publish_progress(task_id, "analyst", "completed",
                           f"헤게모니: {getattr(analyst_score, 'hegemony_grade', '?')}", 1.0)
-    if quant_score:
+    if quant_score and "quant" not in graph_completed_agents:
         _publish_progress(task_id, "quant", "completed", f"재무: {quant_score.grade}", 1.0)
-    if chartist_score:
+    if chartist_score and "chartist" not in graph_completed_agents:
         _publish_progress(task_id, "chartist", "completed", f"기술: {chartist_score.signal}", 1.0)
-    if final_decision:
+    if final_decision and "risk_manager" not in graph_completed_agents:
         _publish_progress(task_id, "risk_manager", "completed",
                           f"판단: {final_decision.action.value}", 1.0)
 

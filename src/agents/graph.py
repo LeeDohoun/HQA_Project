@@ -47,7 +47,7 @@ LangGraph 기반 분석 워크플로우
 
 import logging
 import time
-from typing import Dict, Any, Optional, List, TypedDict, Annotated
+from typing import Callable, Dict, Any, Optional, List, TypedDict, Annotated
 from dataclasses import asdict
 
 from src.tracing.agent_tracer import AgentTracer
@@ -102,9 +102,27 @@ class AnalysisState(TypedDict, total=False):
     
     # ── 트레이싱 ──
     tracer: Any               # AgentTracer 인스턴스
+    progress_callback: Callable[[str, str, str, float], None]
     
     # ── 메타 ──
     status: str               # "running" | "completed" | "error"
+
+
+def _emit_progress(
+    state: AnalysisState,
+    agent: str,
+    status: str,
+    message: str,
+    progress: float,
+) -> None:
+    """Notify the caller about real LangGraph node progress when configured."""
+    callback = state.get("progress_callback")
+    if not callback:
+        return
+    try:
+        callback(agent, status, message, progress)
+    except Exception:
+        logger.exception("progress callback failed: %s %s", agent, status)
 
 
 # ──────────────────────────────────────────────
@@ -123,6 +141,7 @@ def _analyst_node(state: AnalysisState) -> dict:
     tracer: Optional[AgentTracer] = state.get("tracer")
     
     print(f"🔍 [LangGraph:Analyst] {stock_name} 분석 시작...")
+    _emit_progress(state, "analyst", "started", "헤게모니 분석 중...", 0.1)
     
     try:
         from src.agents.analyst import AnalystAgent, AnalystScore
@@ -190,6 +209,8 @@ def _analyst_node(state: AnalysisState) -> dict:
                 detailed_reasoning=hegemony.detailed_reasoning,
             )
             print(f"   ✅ Analyst 완료: {hegemony.hegemony_grade}등급 ({hegemony.total_score}/70)")
+
+        _emit_progress(state, "analyst", "completed", f"헤게모니: {hegemony.hegemony_grade}", 1.0)
         
         return {
             "analyst_score": analyst_score,
@@ -201,6 +222,7 @@ def _analyst_node(state: AnalysisState) -> dict:
     except Exception as e:
         logger.exception(f"Analyst 노드 오류: {e}")
         print(f"   ⚠️ Analyst 오류: {e}")
+        _emit_progress(state, "analyst", "failed", f"오류: {str(e)[:200]}", 1.0)
         
         if tracer:
             with tracer.trace_agent("analyst", f"{stock_name}({stock_code}) [에러복구]") as span:
@@ -228,6 +250,7 @@ def _quant_node(state: AnalysisState) -> dict:
     tracer: Optional[AgentTracer] = state.get("tracer")
     
     print(f"📈 [LangGraph:Quant] {stock_name} 재무 분석 시작...")
+    _emit_progress(state, "quant", "started", "재무 분석 중...", 0.1)
     
     try:
         from src.agents.quant import QuantAgent
@@ -244,6 +267,7 @@ def _quant_node(state: AnalysisState) -> dict:
             quant_score = agent.full_analysis(stock_name, stock_code)
         
         print(f"   ✅ Quant 완료: {quant_score.grade} ({quant_score.total_score}/100)")
+        _emit_progress(state, "quant", "completed", f"재무: {quant_score.grade}", 1.0)
         return {
             "quant_score": quant_score,
             "quant_context": getattr(quant_score, "analysis_packet", {}) or {},
@@ -252,6 +276,7 @@ def _quant_node(state: AnalysisState) -> dict:
     except Exception as e:
         logger.exception(f"Quant 노드 오류: {e}")
         print(f"   ⚠️ Quant 오류: {e}")
+        _emit_progress(state, "quant", "failed", f"오류: {str(e)[:200]}", 1.0)
         
         if tracer:
             with tracer.trace_agent("quant", f"{stock_name}({stock_code}) [에러복구]") as span:
@@ -273,6 +298,7 @@ def _chartist_node(state: AnalysisState) -> dict:
     tracer: Optional[AgentTracer] = state.get("tracer")
     
     print(f"📊 [LangGraph:Chartist] {stock_name} 기술적 분석 시작...")
+    _emit_progress(state, "chartist", "started", "기술적 분석 중...", 0.1)
     
     try:
         from src.agents.chartist import ChartistAgent
@@ -292,6 +318,7 @@ def _chartist_node(state: AnalysisState) -> dict:
             chartist_score = agent.full_analysis(stock_name, stock_code)
         
         print(f"   ✅ Chartist 완료: {chartist_score.signal} ({chartist_score.total_score}/100)")
+        _emit_progress(state, "chartist", "completed", f"기술: {chartist_score.signal}", 1.0)
         return {
             "chartist_score": chartist_score,
             "chartist_context": getattr(chartist_score, "analysis_packet", {}) or {},
@@ -300,6 +327,7 @@ def _chartist_node(state: AnalysisState) -> dict:
     except Exception as e:
         logger.exception(f"Chartist 노드 오류: {e}")
         print(f"   ⚠️ Chartist 오류: {e}")
+        _emit_progress(state, "chartist", "failed", f"오류: {str(e)[:200]}", 1.0)
         
         if tracer:
             with tracer.trace_agent("chartist", f"{stock_name}({stock_code}) [에러복구]") as span:
@@ -327,6 +355,7 @@ def _quality_gate(state: AnalysisState) -> dict:
     tracer: Optional[AgentTracer] = state.get("tracer")
     
     print(f"🔍 [LangGraph:QualityGate] 품질 검증: {quality}등급 (재시도: {retry_count}/{max_retries})")
+    _emit_progress(state, "quality_gate", "started", "리서치 품질 검증 중...", 0.65)
     
     # 이벤트 기록
     if tracer:
@@ -343,6 +372,7 @@ def _quality_gate(state: AnalysisState) -> dict:
                 "quality_gate",
             )
     
+    _emit_progress(state, "quality_gate", "completed", f"품질: {quality}등급", 1.0)
     return {"status": "quality_checked"}
 
 
@@ -368,6 +398,7 @@ def _retry_research(state: AnalysisState) -> dict:
     print(f"🔄 [LangGraph:Retry] {stock_name} 리서치 재시도 ({retry_count}회차)...")
     print(f"   📎 이전 품질: {state.get('research_quality', '?')}등급")
     print(f"   📎 이전 경고: {state.get('quality_warnings', [])}")
+    _emit_progress(state, "analyst_retry", "started", f"리서치 재시도 {retry_count}회차", 0.35)
     
     if tracer:
         tracer.add_event(
@@ -436,6 +467,7 @@ def _retry_research(state: AnalysisState) -> dict:
             )
         
         print(f"   📊 재시도 리서치 품질: {new_quality}등급 ({research_result.quality_score}/100)")
+        _emit_progress(state, "analyst_retry", "completed", f"재시도 품질: {new_quality}등급", 1.0)
         
         return {
             "analyst_score": analyst_score,
@@ -448,6 +480,7 @@ def _retry_research(state: AnalysisState) -> dict:
     except Exception as e:
         logger.exception(f"리서치 재시도 오류: {e}")
         print(f"   ⚠️ 재시도 오류: {e}")
+        _emit_progress(state, "analyst_retry", "failed", f"오류: {str(e)[:200]}", 1.0)
         
         if tracer:
             with tracer.trace_agent("analyst_retry", f"{stock_name}({stock_code}) 재시도{retry_count} [에러]") as span:
@@ -475,6 +508,7 @@ def _risk_manager_node(state: AnalysisState) -> dict:
     chartist_score = state.get("chartist_score")
     
     print(f"🎯 [LangGraph:RiskManager] {stock_name} 최종 판단...")
+    _emit_progress(state, "risk_manager", "started", "최종 판단 중...", 0.8)
     
     try:
         from src.agents import AgentScores, RiskManagerAgent
@@ -525,6 +559,7 @@ def _risk_manager_node(state: AnalysisState) -> dict:
         
         print(f"   ✅ 최종 판단: {final_decision.action.value} "
               f"(종합 {final_decision.total_score}/100점)")
+        _emit_progress(state, "risk_manager", "completed", f"판단: {final_decision.action.value}", 1.0)
         
         return {
             "agent_scores": agent_scores,
@@ -535,6 +570,7 @@ def _risk_manager_node(state: AnalysisState) -> dict:
     except Exception as e:
         logger.exception(f"Risk Manager 노드 오류: {e}")
         print(f"   ⚠️ Risk Manager 오류: {e}")
+        _emit_progress(state, "risk_manager", "failed", f"오류: {str(e)[:200]}", 1.0)
         
         if tracer:
             with tracer.trace_agent("risk_manager", f"{stock_name} [에러]") as span:
@@ -650,6 +686,7 @@ def run_stock_analysis(
     query: str = "",
     max_retries: int = 1,
     debug_trace: bool = False,
+    progress_callback: Optional[Callable[[str, str, str, float], None]] = None,
 ) -> Dict[str, Any]:
     """
     LangGraph 워크플로우로 종목 분석 실행
@@ -697,6 +734,7 @@ def run_stock_analysis(
         "quant_context": {},
         "chartist_context": {},
         "tracer": tracer,
+        "progress_callback": progress_callback,
     }
     
     try:

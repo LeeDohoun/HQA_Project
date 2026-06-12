@@ -6,15 +6,18 @@
    ============================================================ */
 
 import { useRouter } from "next/navigation";
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Dispatch, FormEvent, SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentDetailSections, AnalysisSummaryCard } from "@/components/common/analysis-report";
-import { analysisApi, authApi, eventStreamUrl, stockApi, tradingApi } from "@/lib/api";
+import { analysisApi, authApi, eventStreamUrl, parseAgentResultEvent, parseProgressEvent, stockApi, tradingApi, watchlistApi } from "@/lib/api";
 import type {
+  AnalysisAgentResultEvent,
   AnalysisHistoryItem,
   AnalysisMode,
   AnalysisProgressEvent,
   AnalysisResult,
   AnalysisTaskResponse,
+  AiActivityResponse,
+  AutoTradeExplanation,
   AuthUser,
   Balance,
   MarketIndex,
@@ -95,6 +98,7 @@ const CSS = `
   font-size:.79rem; font-weight:800; color:var(--ink-2);
 }
 .ed-statuschip:hover{border-color:var(--ink-3);}
+.ed-statuschip:disabled{opacity:.55; cursor:not-allowed;}
 .ed-statuschip--on{border-color:var(--moss); color:var(--moss);}
 .ed-navbal{
   display:inline-flex; flex-direction:column; align-items:flex-end; justify-content:center;
@@ -195,6 +199,99 @@ const CSS = `
 .ed-progress > span{display:block; height:100%; background:var(--moss); transition:width .35s var(--ease);}
 .ed-msg{margin-top:16px; padding:12px 14px; border-left:3px solid var(--moss); background:var(--card); font-size:.9rem; color:var(--ink-2);}
 
+/* 확인 모달 */
+.ed-modal-backdrop{
+  position:fixed; inset:0; z-index:80; display:flex; align-items:center; justify-content:center;
+  padding:20px; background:rgba(7,7,5,.68); backdrop-filter:blur(10px);
+}
+.ed-modal{
+  width:min(480px,100%); border:1px solid rgba(236,230,211,.16); background:linear-gradient(180deg,#211f15,#17160f);
+  box-shadow:0 24px 80px rgba(0,0,0,.42); padding:20px;
+}
+.ed-modal-kicker{display:flex; align-items:center; gap:8px; color:var(--moss); font-size:.78rem; font-weight:900; letter-spacing:.08em;}
+.ed-modal-title{margin:12px 0 0; font-size:1.28rem; line-height:1.3; font-weight:900; letter-spacing:-.02em;}
+.ed-modal-copy{margin:9px 0 0; color:var(--ink-2); font-size:.92rem; line-height:1.65;}
+.ed-modal-list{display:grid; gap:7px; margin:15px 0 0; padding:0; list-style:none;}
+.ed-modal-list li{display:flex; align-items:flex-start; gap:9px; color:var(--ink-2); font-size:.84rem;}
+.ed-modal-list li::before{content:""; width:6px; height:6px; margin-top:8px; border-radius:50%; background:var(--spark); flex:0 0 auto;}
+.ed-modal-actions{display:flex; justify-content:flex-end; gap:8px; margin-top:20px; flex-wrap:wrap;}
+
+/* AI 분석 콘솔 */
+.ed-console-hero{
+  display:grid; grid-template-columns:minmax(0,1.45fr) minmax(280px,.75fr); gap:14px;
+  margin-top:18px; align-items:stretch;
+}
+.ed-console-card{
+  border:1px solid var(--rule); background:linear-gradient(180deg,rgba(31,28,18,.96),rgba(26,24,16,.96));
+  padding:18px; min-width:0;
+}
+.ed-console-card--primary{border-color:rgba(54,176,121,.22); box-shadow:inset 0 1px 0 rgba(236,230,211,.04);}
+.ed-console-title{font-size:1.05rem; font-weight:800; letter-spacing:-.01em; margin:0;}
+.ed-console-sub{margin:5px 0 0; color:var(--ink-3); font-size:.88rem; line-height:1.55;}
+.ed-console-actions{display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin-top:16px;}
+.ed-console-stats{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1px; background:var(--rule); border:1px solid var(--rule); margin-top:16px;}
+.ed-console-stat{background:rgba(20,19,13,.88); padding:12px;}
+.ed-console-stat small{display:block; color:var(--ink-3); font-size:.7rem; font-weight:800; letter-spacing:.04em;}
+.ed-console-stat b{display:block; margin-top:4px; font-family:var(--serif); font-size:1.15rem; font-weight:700;}
+.ed-pillbar{display:flex; flex-wrap:wrap; gap:7px; margin-top:12px;}
+.ed-pill{display:inline-flex; align-items:center; gap:7px; border:1px solid var(--rule); padding:6px 9px; color:var(--ink-2); font-size:.77rem; font-weight:800;}
+.ed-pill--live{border-color:rgba(54,176,121,.38); color:var(--moss); background:rgba(54,176,121,.08);}
+.ed-confirm-panel{
+  margin-top:14px; border:1px solid rgba(224,163,65,.34); background:rgba(224,163,65,.08);
+  padding:14px; display:grid; gap:12px;
+}
+.ed-confirm-title{font-weight:800; letter-spacing:-.01em;}
+.ed-confirm-copy{margin:3px 0 0; color:var(--ink-2); font-size:.86rem; line-height:1.55;}
+.ed-confirm-actions{display:flex; gap:8px; flex-wrap:wrap;}
+.ed-console-grid{display:grid; grid-template-columns:minmax(280px,.9fr) minmax(0,1.45fr); gap:18px; margin-top:18px; align-items:start;}
+.ed-console-col{min-width:0;}
+.ed-console-panel{border:1px solid var(--rule); background:rgba(31,28,18,.62); padding:16px;}
+.ed-panel-head{display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding-bottom:12px; border-bottom:1px solid var(--rule);}
+.ed-panel-title{font-weight:800; letter-spacing:-.01em;}
+.ed-panel-meta{font-size:.78rem; color:var(--ink-3); font-weight:800;}
+.ed-watch-tools{display:flex; gap:8px; margin:12px 0; flex-wrap:wrap;}
+.ed-stock-grid{display:grid; grid-template-columns:1fr; gap:7px; margin-top:10px; max-height:430px; overflow:auto; padding-right:3px;}
+.ed-stock-pick{
+  display:flex; align-items:center; gap:11px; width:100%; border:1px solid var(--rule); background:rgba(20,19,13,.62);
+  color:inherit; font:inherit; padding:10px; text-align:left; cursor:pointer; transition:border-color .14s,background .14s;
+}
+.ed-stock-pick:hover{border-color:var(--ink-3); background:rgba(236,230,211,.035);}
+.ed-stock-pick--on{border-color:rgba(54,176,121,.45); background:rgba(54,176,121,.08);}
+.ed-check{
+  width:20px; height:20px; flex:0 0 20px; display:inline-flex; align-items:center; justify-content:center;
+  border:1px solid var(--rule); color:transparent; font-size:.78rem; font-weight:900;
+}
+.ed-stock-pick--on .ed-check{border-color:var(--moss); background:var(--moss); color:#0b2417;}
+.ed-workbench{display:grid; gap:14px;}
+.ed-live-head{display:flex; align-items:flex-start; justify-content:space-between; gap:14px;}
+.ed-live-name{font-weight:800; font-size:1.05rem; margin:0;}
+.ed-live-id{color:var(--ink-3); font-size:.78rem; font-weight:800; margin-top:3px; font-variant-numeric:tabular-nums;}
+.ed-live-progress{margin-top:14px; display:grid; gap:8px;}
+.ed-agent-timeline{display:grid; gap:8px; margin-top:12px;}
+.ed-agent-step{
+  display:grid; grid-template-columns:32px minmax(0,1fr) auto; gap:11px; align-items:center;
+  border:1px solid var(--rule); background:rgba(20,19,13,.55); padding:10px;
+}
+.ed-agent-step-mark{
+  width:32px; height:32px; display:inline-flex; align-items:center; justify-content:center;
+  border:1px solid var(--rule); color:var(--ink-3); font-size:.68rem; font-weight:900;
+}
+.ed-agent-step--running{border-color:rgba(224,163,65,.35);}
+.ed-agent-step--running .ed-agent-step-mark{border-color:rgba(224,163,65,.5); color:var(--spark); background:rgba(224,163,65,.08);}
+.ed-agent-step--done{border-color:rgba(54,176,121,.35);}
+.ed-agent-step--done .ed-agent-step-mark{border-color:rgba(54,176,121,.45); color:var(--moss); background:rgba(54,176,121,.08);}
+.ed-agent-name{display:block; font-weight:800; font-size:.9rem;}
+.ed-agent-msg{display:block; color:var(--ink-3); font-size:.78rem; line-height:1.45; margin-top:1px;}
+.ed-task-list{display:grid; gap:7px; margin-top:12px; max-height:360px; overflow:auto; padding-right:3px;}
+.ed-task-item{
+  display:grid; grid-template-columns:34px minmax(0,1fr) auto; align-items:center; gap:10px; width:100%;
+  border:1px solid var(--rule); background:rgba(20,19,13,.52); color:inherit; font:inherit; padding:10px; text-align:left; cursor:pointer;
+}
+.ed-task-item:hover{border-color:var(--ink-3);}
+.ed-task-item--on{border-color:rgba(54,176,121,.45); background:rgba(54,176,121,.08);}
+.ed-task-badge{width:34px; height:34px; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--rule); font-size:.68rem; font-weight:900; color:var(--ink-2);}
+.ed-empty-panel{border:1px dashed var(--rule); padding:18px; color:var(--ink-3); font-size:.88rem; line-height:1.6;}
+
 /* 카드 그리드 (점수 등) */
 .ed-cardgrid{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px;}
 .ed-scard{border:1px solid var(--rule); background:var(--card); padding:15px;}
@@ -214,6 +311,9 @@ const CSS = `
   .ed-nav-in{height:auto; padding-top:10px; padding-bottom:10px; flex-wrap:wrap;}
   .ed-nav-links{margin-left:0; width:100%; order:3;}
   .ed-quotegrid{grid-template-columns:repeat(2,1fr);}
+  .ed-console-hero,.ed-console-grid{grid-template-columns:1fr;}
+  .ed-console-stats{grid-template-columns:1fr;}
+  .ed-live-head{display:grid;}
 }
 @media (prefers-reduced-motion:reduce){
   .ed *{animation-duration:.001ms !important; transition-duration:.001ms !important;}
@@ -325,6 +425,9 @@ export default function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<StockSearchResult[]>([]);
   const [recent, setRecent] = useState<StockSearchResult[]>([]);
+  const [watchlist, setWatchlist] = useState<StockSearchResult[]>([]);
+  const [watchlistLoading, setWatchlistLoading] = useState(false);
+  const [selectedAnalysisCodes, setSelectedAnalysisCodes] = useState<string[]>([]);
   const [selected, setSelected] = useState<StockSearchResult | null>(null);
   const [mode, setMode] = useState<AnalysisMode>("full");
   const [tab, setTab] = useState<WorkspaceTab>("home");
@@ -333,6 +436,10 @@ export default function DashboardPage() {
   const [balanceError, setBalanceError] = useState("");
   const [recentAnalyses, setRecentAnalyses] = useState<AnalysisHistoryItem[]>([]);
   const [recentAnalysesLoading, setRecentAnalysesLoading] = useState(false);
+  const [aiActivity, setAiActivity] = useState<AiActivityResponse | null>(null);
+  const [aiActivityLoading, setAiActivityLoading] = useState(false);
+  const [autoTradeExplanations, setAutoTradeExplanations] = useState<AutoTradeExplanation[]>([]);
+  const [autoTradeExplanationsLoading, setAutoTradeExplanationsLoading] = useState(false);
   const [indices, setIndices] = useState<MarketIndex[]>([]);
   const [ordersData, setOrdersData] = useState<Record<string, unknown> | null>(null);
   const [ordersLoading, setOrdersLoading] = useState(false);
@@ -340,14 +447,20 @@ export default function DashboardPage() {
   const [message, setMessage] = useState("");
   const [loadingUser, setLoadingUser] = useState(true);
   const [searching, setSearching] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
   const [task, setTask] = useState<AnalysisTaskResponse | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgressEvent | null>(null);
+  const [analysisAgentEvents, setAnalysisAgentEvents] = useState<AnalysisAgentResultEvent[]>([]);
   const [analysisError, setAnalysisError] = useState("");
+  const [bulkTasks, setBulkTasks] = useState<AnalysisTaskResponse[]>([]);
   const analysisStreamRef = useRef<EventSource | null>(null);
+  const analysisProgressPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const analysisProgressCursorRef = useRef<{ taskId: string; count: number }>({ taskId: "", count: 0 });
   const [autoTradeEnabled, setAutoTradeEnabled] = useState(false);
+  const [autoTradeConfirmOpen, setAutoTradeConfirmOpen] = useState(false);
+  const [autoTradeSaving, setAutoTradeSaving] = useState(false);
   const [bulkAnalyzing, setBulkAnalyzing] = useState(false);
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
 
   useEffect(() => {
     setRecent(loadRecent());
@@ -367,6 +480,26 @@ export default function DashboardPage() {
     }
   }, []);
 
+  const loadWatchlist = useCallback(async () => {
+    setWatchlistLoading(true);
+    try {
+      const response = await watchlistApi.list();
+      const items = response.items.map((item) => ({
+        name: item.name,
+        code: item.code,
+        market: item.market
+      }));
+      setWatchlist(items);
+      setSelectedAnalysisCodes((prev) => prev.filter((code) => items.some((item) => item.code === code)));
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "워치리스트를 불러오지 못했습니다.");
+      setWatchlist([]);
+      setSelectedAnalysisCodes([]);
+    } finally {
+      setWatchlistLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     let active = true;
 
@@ -375,6 +508,7 @@ export default function DashboardPage() {
       .then(async (responseUser) => {
         if (!active) return;
         setUser(responseUser);
+        void loadWatchlist();
 
         if (!responseUser.surveyCompleted) {
           router.replace("/onboarding/preference");
@@ -406,15 +540,15 @@ export default function DashboardPage() {
       .catch(() => { /* 무시: 자동매매 상태는 fail-safe로 OFF 유지 */ });
 
     return () => { active = false; };
-  }, [router, loadBalance]);
+  }, [router, loadBalance, loadWatchlist]);
 
   // 종목 클릭 → 상세 페이지로 이동.
-  // selected는 AI 분석 탭에서 "직전에 본 종목을 분석" 흐름에 사용됨.
   function pickStock(stock: StockSearchResult) {
     if (selected?.code !== stock.code) {
       closeAnalysisStream();
       setAnalysisResult(null);
       setAnalysisProgress(null);
+      setAnalysisAgentEvents([]);
       setAnalysisError("");
       setTask(null);
     }
@@ -446,13 +580,97 @@ export default function DashboardPage() {
     }
   }
 
+  async function addToWatchlist(stock: StockSearchResult) {
+    setMessage("");
+    try {
+      const saved = await watchlistApi.add(stock);
+      setWatchlist((prev) => {
+        const nextStock = { name: saved.name, code: saved.code, market: saved.market };
+        const withoutDuplicate = prev.filter((item) => item.code !== saved.code);
+        return [nextStock, ...withoutDuplicate];
+      });
+      setMessage(`${saved.name}을(를) 워치리스트에 추가했습니다.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "워치리스트 추가에 실패했습니다.");
+    }
+  }
+
+  async function removeFromWatchlist(stockCode: string) {
+    setMessage("");
+    try {
+      await watchlistApi.remove(stockCode);
+      setWatchlist((prev) => prev.filter((item) => item.code !== stockCode));
+      setSelectedAnalysisCodes((prev) => prev.filter((code) => code !== stockCode));
+      setMessage("워치리스트에서 삭제했습니다.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "워치리스트 삭제에 실패했습니다.");
+    }
+  }
+
   const closeAnalysisStream = useCallback(() => {
     analysisStreamRef.current?.close();
     analysisStreamRef.current = null;
   }, []);
 
+  const closeAnalysisProgressPoll = useCallback(() => {
+    if (analysisProgressPollRef.current) {
+      clearInterval(analysisProgressPollRef.current);
+      analysisProgressPollRef.current = null;
+    }
+  }, []);
+
+  const applyAnalysisProgressEvent = useCallback((type: string, data: Record<string, unknown>) => {
+    try {
+      if (type === "progress") {
+        setAnalysisProgress(parseProgressEvent(JSON.stringify(data)));
+        return;
+      }
+      if (type === "agent_result") {
+        const next = parseAgentResultEvent(JSON.stringify(data));
+        setAnalysisAgentEvents((prev) => {
+          const withoutDuplicate = prev.filter((item) => item.agent !== next.agent);
+          return [...withoutDuplicate, next];
+        });
+      }
+    } catch {
+      /* ignore malformed progress payloads */
+    }
+  }, []);
+
+  const pollAnalysisProgress = useCallback(async (taskId: string) => {
+    try {
+      const snapshot = await analysisApi.progress(taskId);
+      if (analysisProgressCursorRef.current.taskId !== taskId) {
+        analysisProgressCursorRef.current = { taskId, count: 0 };
+      }
+      const cursor = analysisProgressCursorRef.current.count;
+      snapshot.events.slice(cursor).forEach((event) => applyAnalysisProgressEvent(event.type, event.data));
+      analysisProgressCursorRef.current.count = snapshot.events.length;
+
+      if (snapshot.status === "completed" || snapshot.status === "failed") {
+        try {
+          setAnalysisResult(await analysisApi.result(taskId));
+        } catch (e) {
+          setAnalysisError(e instanceof Error ? e.message : "분석 결과를 불러오지 못했습니다.");
+        } finally {
+          closeAnalysisProgressPoll();
+          closeAnalysisStream();
+        }
+      }
+    } catch {
+      /* polling is a fallback; keep trying while the task is active */
+    }
+  }, [applyAnalysisProgressEvent, closeAnalysisProgressPoll, closeAnalysisStream]);
+
   const startAnalysisStream = useCallback((taskId: string) => {
     closeAnalysisStream();
+    closeAnalysisProgressPoll();
+    analysisProgressCursorRef.current = { taskId, count: 0 };
+    void pollAnalysisProgress(taskId);
+    analysisProgressPollRef.current = setInterval(() => {
+      void pollAnalysisProgress(taskId);
+    }, 2500);
+
     const source = new EventSource(eventStreamUrl(`/api/v1/analysis/${taskId}/stream`), {
       withCredentials: true
     });
@@ -460,9 +678,21 @@ export default function DashboardPage() {
 
     source.addEventListener("progress", (event) => {
       try {
-        setAnalysisProgress(JSON.parse((event as MessageEvent<string>).data) as AnalysisProgressEvent);
+        setAnalysisProgress(parseProgressEvent((event as MessageEvent<string>).data));
       } catch {
         /* ignore malformed progress payloads */
+      }
+    });
+
+    source.addEventListener("agent_result", (event) => {
+      try {
+        const next = parseAgentResultEvent((event as MessageEvent<string>).data);
+        setAnalysisAgentEvents((prev) => {
+          const withoutDuplicate = prev.filter((item) => item.agent !== next.agent);
+          return [...withoutDuplicate, next];
+        });
+      } catch {
+        /* ignore malformed agent payloads */
       }
     });
 
@@ -473,6 +703,7 @@ export default function DashboardPage() {
       } catch (e) {
         setAnalysisError(e instanceof Error ? e.message : "분석 결과를 불러오지 못했습니다.");
       } finally {
+        closeAnalysisProgressPoll();
         closeAnalysisStream();
       }
     });
@@ -482,15 +713,19 @@ export default function DashboardPage() {
         const latest = await analysisApi.result(taskId);
         setAnalysisResult(latest);
         if (latest.status === "completed" || latest.status === "failed") {
+          closeAnalysisProgressPoll();
           closeAnalysisStream();
         }
       } catch {
         /* keep the connection open for retries unless the result is final */
       }
     };
-  }, [closeAnalysisStream]);
+  }, [closeAnalysisProgressPoll, closeAnalysisStream, pollAnalysisProgress]);
 
-  useEffect(() => closeAnalysisStream, [closeAnalysisStream]);
+  useEffect(() => () => {
+    closeAnalysisProgressPoll();
+    closeAnalysisStream();
+  }, [closeAnalysisProgressPoll, closeAnalysisStream]);
 
   const loadOrders = useCallback(async () => {
     setOrdersLoading(true);
@@ -517,6 +752,30 @@ export default function DashboardPage() {
     }
   }, []);
 
+  const loadAiActivity = useCallback(async () => {
+    setAiActivityLoading(true);
+    try {
+      const res = await tradingApi.aiActivity(6);
+      setAiActivity(res);
+    } catch {
+      setAiActivity(null);
+    } finally {
+      setAiActivityLoading(false);
+    }
+  }, []);
+
+  const loadAutoTradeExplanations = useCallback(async () => {
+    setAutoTradeExplanationsLoading(true);
+    try {
+      const res = await tradingApi.explanations(6);
+      setAutoTradeExplanations(res.items ?? []);
+    } catch {
+      setAutoTradeExplanations([]);
+    } finally {
+      setAutoTradeExplanationsLoading(false);
+    }
+  }, []);
+
   const loadIndices = useCallback(async () => {
     try {
       const res = await stockApi.indices();
@@ -529,82 +788,95 @@ export default function DashboardPage() {
   useEffect(() => {
     if (tab === "history") {
       void loadOrders();
+      void loadAutoTradeExplanations();
     }
     if (tab === "home") {
       void loadBalance();
       void loadOrders();
       void loadRecentAnalyses();
+      void loadAiActivity();
+      void loadAutoTradeExplanations();
       void loadIndices();
     }
-  }, [tab, loadOrders, loadBalance, loadRecentAnalyses, loadIndices]);
+  }, [tab, loadOrders, loadBalance, loadRecentAnalyses, loadAiActivity, loadAutoTradeExplanations, loadIndices]);
 
-  async function submitAnalysis() {
-    if (!selected) {
-      setMessage("종목을 먼저 선택해주세요.");
+  function requestBulkAnalyze() {
+    if (bulkAnalyzing) return;
+    const selectedStocks = watchlist.filter((stock) => selectedAnalysisCodes.includes(stock.code));
+    if (selectedStocks.length === 0) {
+      setMessage("AI 분석할 워치리스트 종목을 선택해주세요.");
       return;
     }
-
-    setSubmitting(true);
     setMessage("");
-    setAnalysisError("");
-    setAnalysisResult(null);
-    setAnalysisProgress(null);
-
-    try {
-      const response = await analysisApi.submit({
-        stockName: selected.name,
-        stockCode: selected.code,
-        mode,
-        maxRetries: mode === "full" ? 1 : 0
-      });
-      setTask(response);
-      startAnalysisStream(response.taskId);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "분석 요청에 실패했습니다.");
-    } finally {
-      setSubmitting(false);
-    }
+    setBulkConfirmOpen(true);
   }
 
   async function handleBulkAnalyze() {
     if (bulkAnalyzing) return;
-    if (recent.length === 0) {
-      setMessage("분석할 워치리스트 종목이 없습니다.");
+    const selectedStocks = watchlist.filter((stock) => selectedAnalysisCodes.includes(stock.code));
+    if (selectedStocks.length === 0) {
+      setMessage("AI 분석할 워치리스트 종목을 선택해주세요.");
+      setBulkConfirmOpen(false);
       return;
     }
-    const confirmed = window.confirm("워치리스트의 모든 종목을 분석할까요?");
-    if (!confirmed) return;
+    setBulkConfirmOpen(false);
     setBulkAnalyzing(true);
     setMessage("");
     try {
       const result = await analysisApi.bulk(
-        "quick",
-        0,
-        recent.map((stock) => ({ stockName: stock.name, stockCode: stock.code }))
+        mode,
+        mode === "full" ? 1 : 0,
+        selectedStocks.map((stock) => ({ stockName: stock.name, stockCode: stock.code }))
       );
       if (result.submitted === 0) {
         setMessage("분석할 종목이 없습니다. (워치리스트 비어 있음)");
+        setBulkTasks([]);
       } else {
         const failedNote = result.failed > 0 ? ` (실패 ${result.failed}건)` : "";
-        setMessage(`${result.submitted}개 종목 분석을 시작했습니다${failedNote}. 분석 내역에서 확인하세요.`);
+        const firstTask = result.tasks[0] ?? null;
+        setTask(firstTask);
+        setAnalysisResult(null);
+        setAnalysisProgress(null);
+        setAnalysisAgentEvents([]);
+        setAnalysisError("");
+        setBulkTasks(result.tasks);
+        if (firstTask) {
+          startAnalysisStream(firstTask.taskId);
+        }
+        setMessage(`${result.submitted}개 종목 분석을 시작했습니다${failedNote}. 첫 번째 종목의 진행 로그를 바로 표시합니다.`);
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "전체 분석 요청에 실패했습니다.");
+      setMessage(error instanceof Error ? error.message : "분석 요청에 실패했습니다.");
     } finally {
       setBulkAnalyzing(false);
     }
   }
 
+  function trackAnalysisTask(nextTask: AnalysisTaskResponse) {
+    setTask(nextTask);
+    setAnalysisResult(null);
+    setAnalysisProgress(null);
+    setAnalysisAgentEvents([]);
+    setAnalysisError("");
+    startAnalysisStream(nextTask.taskId);
+  }
+
   async function handleAutoTrade() {
+    setAutoTradeConfirmOpen(true);
+  }
+
+  async function confirmAutoTradeToggle() {
     const next = !autoTradeEnabled;
-    const confirmed = window.confirm(next ? "자동매매를 켤까요?" : "자동매매를 끌까요?");
-    if (!confirmed) return;
+    setAutoTradeSaving(true);
     try {
       const status = await tradingApi.setAuto(next);
       setAutoTradeEnabled(status.enabled);
+      setAutoTradeConfirmOpen(false);
       setMessage(status.enabled ? "자동매매를 켰습니다." : "자동매매를 껐습니다.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "자동매매 토글에 실패했습니다.");
+    } finally {
+      setAutoTradeSaving(false);
     }
   }
 
@@ -679,9 +951,10 @@ export default function DashboardPage() {
               type="button"
               className={`ed-statuschip${autoTradeEnabled ? " ed-statuschip--on" : ""}`}
               onClick={handleAutoTrade}
+              disabled={autoTradeSaving}
             >
               <span className={`ed-dot${autoTradeEnabled ? " ed-dot--live" : ""}`} />
-              자동매매 {autoTradeEnabled ? "ON" : "OFF"}
+              {autoTradeSaving ? "변경 중..." : `자동매매 ${autoTradeEnabled ? "ON" : "OFF"}`}
             </button>
             <button type="button" className="ed-tlink" style={{ fontSize: ".84rem" }} onClick={logout}>
               로그아웃
@@ -689,6 +962,53 @@ export default function DashboardPage() {
           </div>
         </div>
       </nav>
+
+      {autoTradeConfirmOpen ? (
+        <div className="ed-modal-backdrop" role="presentation" onMouseDown={() => !autoTradeSaving && setAutoTradeConfirmOpen(false)}>
+          <section
+            className="ed-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="auto-trade-confirm-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="ed-modal-kicker">
+              <span className={`ed-dot${autoTradeEnabled ? " ed-dot--live" : ""}`} />
+              AUTO TRADING
+            </div>
+            <h2 id="auto-trade-confirm-title" className="ed-modal-title">
+              자동매매를 {autoTradeEnabled ? "중지할까요?" : "시작할까요?"}
+            </h2>
+            <p className="ed-modal-copy">
+              {autoTradeEnabled
+                ? "OFF로 전환하면 AI 자동매매 루프를 중지하고, 이후 대기 신호도 집행하지 않습니다."
+                : "ON으로 전환하면 모의투자 자동매매 루프가 시작되고, 백엔드 스케줄러도 이 계정을 자동매매 대상으로 처리합니다."}
+            </p>
+            <ul className="ed-modal-list">
+              <li>모의투자 KIS 계정 기준으로 주문 흐름을 실행합니다.</li>
+              <li>생성된 매매 판단과 거절 사유는 거래 내역의 AI 매매근거에서 확인할 수 있습니다.</li>
+            </ul>
+            <div className="ed-modal-actions">
+              <button
+                type="button"
+                className="ed-btn ed-btn--line"
+                onClick={() => setAutoTradeConfirmOpen(false)}
+                disabled={autoTradeSaving}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                className={autoTradeEnabled ? "ed-btn ed-btn--ink" : "ed-btn ed-btn--moss"}
+                onClick={confirmAutoTradeToggle}
+                disabled={autoTradeSaving}
+              >
+                {autoTradeSaving ? "처리 중..." : autoTradeEnabled ? "자동매매 끄기" : "자동매매 켜기"}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       <main className="ed-app">
        <div className="ed-wrap ed-fade" key={tab}>
@@ -704,8 +1024,12 @@ export default function DashboardPage() {
             autoTradeEnabled={autoTradeEnabled}
             recentAnalyses={recentAnalyses}
             recentAnalysesLoading={recentAnalysesLoading}
+            aiActivity={aiActivity}
+            aiActivityLoading={aiActivityLoading}
+            autoTradeExplanations={autoTradeExplanations}
+            autoTradeExplanationsLoading={autoTradeExplanationsLoading}
             indices={indices}
-            onRefresh={() => { void loadBalance(); void loadOrders(); void loadRecentAnalyses(); void loadIndices(); }}
+            onRefresh={() => { void loadBalance(); void loadOrders(); void loadRecentAnalyses(); void loadAiActivity(); void loadAutoTradeExplanations(); void loadIndices(); }}
             onGoTab={setTab}
             onGoKis={() => router.push("/settings/kis")}
             onGoBacktest={() => router.push("/backtesting/ai")}
@@ -721,24 +1045,35 @@ export default function DashboardPage() {
             searching={searching}
             onSearch={onSearch}
             searchResults={searchResults}
+            watchlist={watchlist}
+            watchlistLoading={watchlistLoading}
             recent={recent}
             pickStock={pickStock}
+            addToWatchlist={addToWatchlist}
+            removeFromWatchlist={removeFromWatchlist}
           />
         )}
 
         {tab === "analysis" && (
           <AnalysisTab
-            selected={selected}
+            watchlist={watchlist}
+            watchlistLoading={watchlistLoading}
+            selectedAnalysisCodes={selectedAnalysisCodes}
+            setSelectedAnalysisCodes={setSelectedAnalysisCodes}
             mode={mode}
             setMode={setMode}
-            submitting={submitting}
-            submitAnalysis={submitAnalysis}
             bulkAnalyzing={bulkAnalyzing}
-            handleBulkAnalyze={handleBulkAnalyze}
+            bulkConfirmOpen={bulkConfirmOpen}
+            requestBulkAnalyze={requestBulkAnalyze}
+            confirmBulkAnalyze={handleBulkAnalyze}
+            cancelBulkAnalyze={() => setBulkConfirmOpen(false)}
             autoTradeEnabled={autoTradeEnabled}
             task={task}
+            bulkTasks={bulkTasks}
+            onTrackTask={trackAnalysisTask}
             result={analysisResult}
             progress={analysisProgress}
+            agentEvents={analysisAgentEvents}
             error={analysisError}
           />
         )}
@@ -748,7 +1083,10 @@ export default function DashboardPage() {
             loading={ordersLoading}
             error={ordersError}
             data={ordersData}
-            onRefresh={loadOrders}
+            explanations={autoTradeExplanations}
+            explanationsLoading={autoTradeExplanationsLoading}
+            onRefresh={() => { void loadOrders(); void loadAutoTradeExplanations(); }}
+            onSelectStock={(code) => router.push(`/stocks/${code}`)}
           />
         )}
 
@@ -781,12 +1119,18 @@ function WatchlistTab(props: {
   searching: boolean;
   onSearch: (e: FormEvent<HTMLFormElement>) => void;
   searchResults: StockSearchResult[];
+  watchlist: StockSearchResult[];
+  watchlistLoading: boolean;
   recent: StockSearchResult[];
   pickStock: (s: StockSearchResult) => void;
+  addToWatchlist: (s: StockSearchResult) => void;
+  removeFromWatchlist: (stockCode: string) => void;
 }) {
   const {
-    user, searchQuery, setSearchQuery, searching, onSearch, searchResults, recent, pickStock
+    user, searchQuery, setSearchQuery, searching, onSearch, searchResults,
+    watchlist, watchlistLoading, recent, pickStock, addToWatchlist, removeFromWatchlist
   } = props;
+  const watchlistCodes = new Set(watchlist.map((item) => item.code));
 
   return (
     <>
@@ -817,23 +1161,68 @@ function WatchlistTab(props: {
           </div>
           <div className="ed-list">
             {searchResults.map((item) => (
-              <button
+              <div
                 key={`s-${item.code}-${item.market}`}
-                type="button"
-                className="ed-row"
-                onClick={() => pickStock(item)}
+                className="ed-row ed-row--static"
               >
                 <span className="ed-row-mk">{item.name.slice(0, 1)}</span>
                 <span className="ed-row-main">
                   <span className="ed-row-name">{item.name}</span>
                   <span className="ed-row-meta">{item.code} · {item.market}</span>
                 </span>
-                <span className="ed-row-num"><span className="ed-row-val" style={{ fontSize: ".95rem", color: "var(--ink-3)" }}>→</span></span>
-              </button>
+                <span className="ed-row-num" style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                  <button type="button" className="ed-btn ed-btn--line ed-btn--sm" onClick={() => pickStock(item)}>
+                    보기
+                  </button>
+                  <button
+                    type="button"
+                    className="ed-btn ed-btn--moss ed-btn--sm"
+                    disabled={watchlistCodes.has(item.code)}
+                    onClick={() => addToWatchlist(item)}
+                  >
+                    {watchlistCodes.has(item.code) ? "등록됨" : "추가"}
+                  </button>
+                </span>
+              </div>
             ))}
           </div>
         </section>
       ) : null}
+
+      <section className="ed-sec">
+        <div className="ed-sec-head">
+          <span className="ed-sec-title">등록한 관심 종목</span>
+          <span className="ed-sec-meta">{watchlistLoading ? "불러오는 중" : `${watchlist.length}종목`}</span>
+        </div>
+        {watchlist.length === 0 ? (
+          <p className="ed-hint" style={{ padding: "16px 4px" }}>
+            종목을 검색한 뒤 추가 버튼으로 워치리스트에 등록하세요.
+          </p>
+        ) : (
+          <div className="ed-list">
+            {watchlist.map((item) => (
+              <div
+                key={`w-${item.code}`}
+                className="ed-row ed-row--static"
+              >
+                <span className="ed-row-mk">{item.name.slice(0, 1)}</span>
+                <span className="ed-row-main">
+                  <span className="ed-row-name">{item.name}</span>
+                  <span className="ed-row-meta">{item.code} · {item.market}</span>
+                </span>
+                <span className="ed-row-num" style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                  <button type="button" className="ed-btn ed-btn--line ed-btn--sm" onClick={() => pickStock(item)}>
+                    보기
+                  </button>
+                  <button type="button" className="ed-btn ed-btn--line ed-btn--sm" onClick={() => removeFromWatchlist(item.code)}>
+                    삭제
+                  </button>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       <section className="ed-sec">
         <div className="ed-sec-head">
@@ -842,7 +1231,7 @@ function WatchlistTab(props: {
         </div>
         {recent.length === 0 ? (
           <p className="ed-hint" style={{ padding: "16px 4px" }}>
-            위에서 종목을 검색하면 여기에 워치리스트가 쌓입니다.
+            종목 상세 화면을 열면 최근 본 종목이 여기에 표시됩니다.
           </p>
         ) : (
           <div className="ed-list">
@@ -876,127 +1265,363 @@ function WatchlistTab(props: {
    AI 분석 탭
    ============================================================ */
 function AnalysisTab(props: {
-  selected: StockSearchResult | null;
+  watchlist: StockSearchResult[];
+  watchlistLoading: boolean;
+  selectedAnalysisCodes: string[];
+  setSelectedAnalysisCodes: Dispatch<SetStateAction<string[]>>;
   mode: AnalysisMode;
   setMode: (m: AnalysisMode) => void;
-  submitting: boolean;
-  submitAnalysis: () => void;
   bulkAnalyzing: boolean;
-  handleBulkAnalyze: () => void;
+  bulkConfirmOpen: boolean;
+  requestBulkAnalyze: () => void;
+  confirmBulkAnalyze: () => void;
+  cancelBulkAnalyze: () => void;
   autoTradeEnabled: boolean;
   task: AnalysisTaskResponse | null;
+  bulkTasks: AnalysisTaskResponse[];
+  onTrackTask: (task: AnalysisTaskResponse) => void;
   result: AnalysisResult | null;
   progress: AnalysisProgressEvent | null;
+  agentEvents: AnalysisAgentResultEvent[];
   error: string;
 }) {
-  const { selected, mode, setMode, submitting, submitAnalysis, bulkAnalyzing, handleBulkAnalyze, autoTradeEnabled, task, result, progress, error } = props;
+  const {
+    watchlist, watchlistLoading, selectedAnalysisCodes, setSelectedAnalysisCodes,
+    mode, setMode, bulkAnalyzing, bulkConfirmOpen,
+    requestBulkAnalyze, confirmBulkAnalyze, cancelBulkAnalyze,
+    autoTradeEnabled, task, bulkTasks, onTrackTask, result, progress, agentEvents, error
+  } = props;
+  const selectedSet = new Set(selectedAnalysisCodes);
+  const selectedCount = watchlist.filter((stock) => selectedSet.has(stock.code)).length;
+  const toggleAnalysisStock = (code: string) => {
+    setSelectedAnalysisCodes((prev) =>
+      prev.includes(code) ? prev.filter((item) => item !== code) : [...prev, code]
+    );
+  };
+  const currentTaskLabel = task?.message.replace(/\s*analysis queued\s*$/i, "");
+  const modeEstimate = mode === "full" ? "약 3-6분" : "약 1분";
+
   return (
     <>
       <div className="ed-app-head">
         <div className="ed-kicker">AI 분석</div>
-        <h1 className="ed-app-h">종목을 AI가 진단합니다</h1>
+        <h1 className="ed-app-h">분석 작업 콘솔</h1>
       </div>
 
-      <p className="ed-hint">
-        {selected
-          ? `워치리스트에서 선택한 ${selected.name}을(를) 분석합니다.`
-          : "워치리스트 탭에서 종목을 먼저 선택해주세요."}
-      </p>
+      <div className="ed-console-hero">
+        <div className="ed-console-card ed-console-card--primary">
+          <div className="ed-eyebrow">
+            <span className={`ed-dot${task && !result ? " ed-dot--live" : ""}`} />
+            {task ? "작업 추적 중" : "새 분석 준비"}
+          </div>
+          <h2 className="ed-console-title" style={{ marginTop: 10 }}>
+            {currentTaskLabel ?? "워치리스트에서 분석 대상을 선택하세요"}
+          </h2>
+          <p className="ed-console-sub">
+            {task
+              ? `${task.taskId.slice(0, 8)} 작업의 에이전트 진행상황을 실시간으로 표시합니다.`
+              : selectedCount > 0
+                ? `${selectedCount}개 종목이 선택됐습니다. ${mode === "full" ? "전체 분석" : "빠른 분석"}으로 실행할 수 있습니다.`
+                : "워치리스트에서 분석할 종목을 체크한 뒤 선택 종목 실행을 누르세요."}
+          </p>
+
+          <div className="ed-console-actions">
+            <div className="ed-seg">
+              <button
+                type="button"
+                className={`ed-seg-btn${mode === "full" ? " ed-seg-btn--on" : ""}`}
+                onClick={() => setMode("full")}
+              >
+                전체 분석
+              </button>
+              <button
+                type="button"
+                className={`ed-seg-btn${mode === "quick" ? " ed-seg-btn--on" : ""}`}
+                onClick={() => setMode("quick")}
+              >
+                빠른 분석
+              </button>
+            </div>
+            <button
+              type="button"
+              className="ed-btn ed-btn--moss"
+              disabled={bulkAnalyzing || selectedCount === 0}
+              onClick={requestBulkAnalyze}
+            >
+              {bulkAnalyzing ? "요청 중..." : `선택 종목 실행${selectedCount ? ` (${selectedCount})` : ""}`}
+            </button>
+          </div>
+
+          {bulkConfirmOpen ? (
+            <div className="ed-confirm-panel">
+              <div>
+                <div className="ed-confirm-title">
+                  {selectedCount}개 종목을 {mode === "full" ? "전체 분석" : "빠른 분석"}으로 실행합니다
+                </div>
+                <p className="ed-confirm-copy">
+                  {mode === "full"
+                    ? "전체 분석은 종목당 수 분이 걸릴 수 있고, 첫 번째 작업의 진행 로그가 즉시 표시됩니다."
+                    : "빠른 분석은 Quant와 Chartist 중심으로 먼저 판단합니다."}
+                </p>
+              </div>
+              <div className="ed-confirm-actions">
+                <button
+                  type="button"
+                  className="ed-btn ed-btn--moss ed-btn--sm"
+                  onClick={confirmBulkAnalyze}
+                  disabled={bulkAnalyzing}
+                >
+                  실행
+                </button>
+                <button
+                  type="button"
+                  className="ed-btn ed-btn--line ed-btn--sm"
+                  onClick={cancelBulkAnalyze}
+                  disabled={bulkAnalyzing}
+                >
+                  취소
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="ed-pillbar">
+            <span className="ed-pill ed-pill--live">모드 {mode === "full" ? "전체" : "빠른"}</span>
+            <span className="ed-pill">예상 {modeEstimate}</span>
+            <span className="ed-pill">선택 {selectedCount}종목</span>
+            {autoTradeEnabled ? <span className="ed-pill ed-pill--live">자동매매 ON</span> : null}
+          </div>
+        </div>
+
+        <div className="ed-console-card">
+          <div className="ed-console-title">실행 요약</div>
+          <div className="ed-console-stats">
+            <div className="ed-console-stat">
+              <small>WATCHLIST</small>
+              <b>{watchlistLoading ? "-" : watchlist.length}</b>
+            </div>
+            <div className="ed-console-stat">
+              <small>SELECTED</small>
+              <b>{selectedCount}</b>
+            </div>
+            <div className="ed-console-stat">
+              <small>QUEUE</small>
+              <b>{bulkTasks.length}</b>
+            </div>
+          </div>
+          <p className="ed-console-sub" style={{ marginTop: 12 }}>
+            전체 분석은 Analyst, Quant, Chartist, Risk Manager를 순차적으로 확인하므로 완료까지 시간이 걸릴 수 있습니다.
+          </p>
+        </div>
+      </div>
+
       {autoTradeEnabled ? (
-        <p className="ed-msg" style={{ marginTop: 12 }}>
+        <p className="ed-msg" style={{ marginTop: 14 }}>
           자동매매가 켜져 있어 분석 작업은 GPU 큐에서 대기할 수 있습니다.
         </p>
       ) : null}
 
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center", marginTop: 18 }}>
-        <div className="ed-seg">
-          <button
-            type="button"
-            className={`ed-seg-btn${mode === "full" ? " ed-seg-btn--on" : ""}`}
-            onClick={() => setMode("full")}
-          >
-            전체 분석
-          </button>
-          <button
-            type="button"
-            className={`ed-seg-btn${mode === "quick" ? " ed-seg-btn--on" : ""}`}
-            onClick={() => setMode("quick")}
-          >
-            빠른 분석
-          </button>
-        </div>
-        <button
-          type="button"
-          className="ed-btn ed-btn--moss"
-          disabled={!selected || submitting}
-          onClick={submitAnalysis}
-        >
-          {submitting ? "요청 중..." : "분석 시작"}
-        </button>
-        <button
-          type="button"
-          className="ed-btn ed-btn--line"
-          disabled={bulkAnalyzing}
-          onClick={handleBulkAnalyze}
-        >
-          {bulkAnalyzing ? "요청 중..." : "워치리스트 전체 분석"}
-        </button>
-      </div>
+      <div className="ed-console-grid">
+        <div className="ed-console-col">
+          <section className="ed-console-panel">
+            <div className="ed-panel-head">
+              <div>
+                <div className="ed-panel-title">분석 대상</div>
+                <div className="ed-panel-meta">
+                  {watchlistLoading ? "불러오는 중" : `${selectedCount}/${watchlist.length} 선택`}
+                </div>
+              </div>
+              <span className="ed-tag ed-tag--neutral">WATCHLIST</span>
+            </div>
 
-      {(task || result || progress || error) ? (
-        <AnalysisPanel task={task} result={result} progress={progress} error={error} />
-      ) : null}
+            {watchlist.length === 0 ? (
+              <div className="ed-empty-panel" style={{ marginTop: 12 }}>
+                워치리스트 탭에서 관심 종목을 먼저 등록하세요.
+              </div>
+            ) : (
+              <>
+                <div className="ed-watch-tools">
+                  <button
+                    type="button"
+                    className="ed-btn ed-btn--line ed-btn--sm"
+                    onClick={() => setSelectedAnalysisCodes(watchlist.map((stock) => stock.code))}
+                  >
+                    전체 선택
+                  </button>
+                  <button
+                    type="button"
+                    className="ed-btn ed-btn--line ed-btn--sm"
+                    onClick={() => setSelectedAnalysisCodes([])}
+                  >
+                    선택 해제
+                  </button>
+                </div>
+                <div className="ed-stock-grid">
+                  {watchlist.map((stock) => {
+                    const checked = selectedSet.has(stock.code);
+                    return (
+                      <button
+                        type="button"
+                        className={`ed-stock-pick${checked ? " ed-stock-pick--on" : ""}`}
+                        key={`analysis-${stock.code}`}
+                        onClick={() => toggleAnalysisStock(stock.code)}
+                      >
+                        <span className="ed-check">{checked ? "✓" : ""}</span>
+                        <span className="ed-row-main">
+                          <span className="ed-row-name">{stock.name}</span>
+                          <span className="ed-row-meta">{stock.code} · {stock.market}</span>
+                        </span>
+                        <span className={`ed-tag ed-tag--${checked ? "good" : "neutral"}`}>
+                          {checked ? "선택" : "대기"}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </section>
+
+          {bulkTasks.length > 0 ? (
+            <BulkAnalysisPanel tasks={bulkTasks} activeTaskId={task?.taskId ?? null} onTrackTask={onTrackTask} />
+          ) : null}
+        </div>
+
+        <div className="ed-console-col">
+          {(task || result || progress || agentEvents.length > 0 || error) ? (
+            <AnalysisPanel task={task} result={result} progress={progress} agentEvents={agentEvents} error={error} />
+          ) : (
+            <section className="ed-console-panel">
+              <div className="ed-panel-head">
+                <div>
+                  <div className="ed-panel-title">라이브 분석</div>
+                  <div className="ed-panel-meta">대기 중</div>
+                </div>
+                <span className="ed-tag ed-tag--neutral">IDLE</span>
+              </div>
+              <div className="ed-empty-panel" style={{ marginTop: 14 }}>
+                분석을 실행하면 이 영역에 에이전트 진행 로그, 진행률, 최종 판단이 표시됩니다.
+              </div>
+            </section>
+          )}
+        </div>
+      </div>
     </>
+  );
+}
+
+function BulkAnalysisPanel({
+  tasks,
+  activeTaskId,
+  onTrackTask
+}: {
+  tasks: AnalysisTaskResponse[];
+  activeTaskId: string | null;
+  onTrackTask: (task: AnalysisTaskResponse) => void;
+}) {
+  return (
+    <section className="ed-console-panel" style={{ marginTop: 14 }}>
+      <div className="ed-panel-head">
+        <div>
+          <div className="ed-panel-title">작업 큐</div>
+          <div className="ed-panel-meta">{tasks.length}건 접수</div>
+        </div>
+        <span className="ed-tag ed-tag--warn">QUEUE</span>
+      </div>
+      <p className="ed-hint" style={{ marginTop: 12 }}>
+        항목을 선택하면 위 분석 결과 영역에서 해당 종목의 진행 로그와 결과를 확인할 수 있습니다.
+      </p>
+      <div className="ed-task-list">
+        {tasks.map((item) => {
+          const stockLabel = item.message.replace(/\s*analysis queued\s*$/i, "");
+          const active = activeTaskId === item.taskId;
+          return (
+            <button
+              type="button"
+              className={`ed-task-item${active ? " ed-task-item--on" : ""}`}
+              key={item.taskId}
+              onClick={() => onTrackTask(item)}
+            >
+              <span className="ed-task-badge">
+                {active ? "LIVE" : "AI"}
+              </span>
+              <span className="ed-row-main">
+                <span className="ed-row-name">{stockLabel}</span>
+                <span className="ed-row-meta">
+                  {item.taskId.slice(0, 8)} · 예상 {Math.ceil(item.estimatedTimeSeconds / 60)}분
+                </span>
+              </span>
+              <span className={`ed-tag ed-tag--${active ? "good" : analysisStatusTone(item.status)}`}>
+                {active ? "추적 중" : translateAnalysisStatus(item.status)}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
 function translateAnalysisStatus(status?: string | null) {
   switch (status) {
     case "pending": return "대기 중";
+    case "started": return "진행 중";
     case "running": return "진행 중";
     case "completed": return "완료";
     case "failed": return "실패";
+    case "error": return "실패";
     default: return status ?? "-";
   }
 }
 
 function analysisStatusTone(status?: string | null): "good" | "warn" | "bad" {
   if (status === "completed") return "good";
-  if (status === "failed") return "bad";
+  if (status === "failed" || status === "error") return "bad";
   return "warn";
+}
+
+function agentStepClass(status?: string | null) {
+  if (status === "completed") return "ed-agent-step ed-agent-step--done";
+  if (status === "failed" || status === "error") return "ed-agent-step ed-agent-step--running";
+  return "ed-agent-step ed-agent-step--running";
 }
 
 function AnalysisPanel({
   task,
   result,
   progress,
+  agentEvents,
   error
 }: {
   task: AnalysisTaskResponse | null;
   result: AnalysisResult | null;
   progress: AnalysisProgressEvent | null;
+  agentEvents: AnalysisAgentResultEvent[];
   error: string;
 }) {
   const status = result?.status ?? task?.status ?? "pending";
   const isFinished = status === "completed" || status === "failed";
   const percent = progress ? Math.round(progress.progress * 100) : null;
+  const taskLabel = task?.message.replace(/\s*analysis queued\s*$/i, "");
+  const modeLabel = result?.mode === "quick" ? "빠른 분석" : result?.mode === "full" ? "전체 분석" : "진행 중";
 
   return (
-    <section className="ed-sec">
-      <div className="ed-sec-head">
-        <span className="ed-sec-title">분석 결과</span>
+    <section className="ed-console-panel">
+      <div className="ed-live-head">
+        <div>
+          <p className="ed-live-name">{taskLabel ?? result?.stock.name ?? "분석 결과"}</p>
+          <p className="ed-live-id">
+            {modeLabel}
+            {task?.taskId ? ` · ${task.taskId.slice(0, 8)}` : ""}
+          </p>
+        </div>
         <span className={`ed-tag ed-tag--${analysisStatusTone(status)}`}>
           {translateAnalysisStatus(status)}
         </span>
       </div>
 
-      <p className="ed-hint" style={{ marginTop: 12 }}>
-        {result?.mode === "quick" ? "빠른 분석" : result?.mode === "full" ? "전체 분석" : "진행 중"}
-        {task?.taskId ? ` · ${task.taskId.slice(0, 8)}` : ""}
-      </p>
-
       {!isFinished && progress ? (
-        <div style={{ marginTop: 14, display: "grid", gap: 7 }}>
+        <div className="ed-live-progress">
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".84rem" }}>
             <span style={{ color: "var(--ink-2)" }}>{progress.message}</span>
             {percent != null ? <span style={{ color: "var(--moss)", fontWeight: 800 }}>{percent}%</span> : null}
@@ -1008,6 +1633,33 @@ function AnalysisPanel({
       ) : null}
 
       {error ? <p className="ed-msg" style={{ borderLeftColor: "var(--up)" }}>{error}</p> : null}
+
+      {agentEvents.length > 0 ? (
+        <div style={{ marginTop: 18 }}>
+          <p className="ed-label" style={{ marginBottom: 8 }}>에이전트 진행 로그</p>
+          <div className="ed-agent-timeline">
+            {agentEvents.map((event) => (
+              <div className={agentStepClass(event.status)} key={event.agent}>
+                <span className="ed-agent-step-mark">
+                  {event.label.slice(0, 2).toUpperCase()}
+                </span>
+                <span>
+                  <span className="ed-agent-name">{event.label}</span>
+                  <span className="ed-agent-msg">{event.message}</span>
+                  {event.opinion ? (
+                    <span className="ed-agent-msg" style={{ color: "var(--ink-2)" }}>{event.opinion}</span>
+                  ) : null}
+                </span>
+                <span className={`ed-tag ed-tag--${analysisStatusTone(event.status)}`}>
+                  {typeof event.totalScore === "number" && event.totalScore > 0
+                    ? `${Math.round(event.totalScore)}점`
+                    : event.grade ?? translateAnalysisStatus(event.status)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {result ? <AnalysisSummaryCard result={result} /> : null}
       {result?.scores?.length ? <AgentDetailSections scores={result.scores} /> : null}
@@ -1032,7 +1684,7 @@ function AnalysisPanel({
         </div>
       ) : null}
 
-      {isFinished && !result?.scores?.length && !result?.errors && !error ? (
+      {status === "failed" && !result?.scores?.length && !result?.errors && !error ? (
         <p className="ed-hint" style={{ marginTop: 14 }}>표시할 결과가 없습니다.</p>
       ) : null}
     </section>
@@ -1046,67 +1698,104 @@ function HistoryTab({
   loading,
   error,
   data,
-  onRefresh
+  explanations,
+  explanationsLoading,
+  onRefresh,
+  onSelectStock
 }: {
   loading: boolean;
   error: string;
   data: Record<string, unknown> | null;
+  explanations: AutoTradeExplanation[];
+  explanationsLoading: boolean;
   onRefresh: () => void;
+  onSelectStock: (code: string) => void;
 }) {
   const orders = extractOrders(data);
+  const [view, setView] = useState<"rationale" | "orders">("rationale");
   return (
     <>
       <div className="ed-app-head">
         <div className="ed-kicker">거래 내역</div>
-        <h1 className="ed-app-h">최근 주문 기록</h1>
+        <h1 className="ed-app-h">거래와 AI 판단</h1>
       </div>
 
       <div className="ed-sec-head">
-        <span className="ed-sec-title">주문 내역</span>
+        <div className="ed-seg">
+          <button
+            type="button"
+            className={`ed-seg-btn${view === "rationale" ? " ed-seg-btn--on" : ""}`}
+            onClick={() => setView("rationale")}
+          >
+            AI 매매근거
+          </button>
+          <button
+            type="button"
+            className={`ed-seg-btn${view === "orders" ? " ed-seg-btn--on" : ""}`}
+            onClick={() => setView("orders")}
+          >
+            주문 내역
+          </button>
+        </div>
         <button type="button" className="ed-btn ed-btn--line ed-btn--sm" onClick={onRefresh} disabled={loading}>
           {loading ? "불러오는 중..." : "새로고침"}
         </button>
       </div>
 
-      {error ? <p className="ed-msg" style={{ borderLeftColor: "var(--up)" }}>{error}</p> : null}
+      {view === "rationale" ? (
+        <AutoTradeExplanationSection
+          items={explanations}
+          loading={explanationsLoading}
+          onSelectStock={onSelectStock}
+        />
+      ) : (
+        <section className="ed-sec">
+          <div className="ed-sec-head">
+            <span className="ed-sec-title">주문 내역</span>
+            <span className="ed-sec-meta">{loading ? "불러오는 중" : `${orders.length}건`}</span>
+          </div>
 
-      {!loading && orders.length === 0 && !error ? (
-        <p className="ed-hint" style={{ padding: "20px 4px" }}>아직 주문 내역이 없어요.</p>
-      ) : null}
+          {error ? <p className="ed-msg" style={{ borderLeftColor: "var(--up)" }}>{error}</p> : null}
 
-      {orders.length > 0 ? (
-        <div className="ed-list">
-          {orders.map((o, i) => (
-            <div className="ed-row ed-row--static" key={(o.id ?? `${o.code}-${i}`).toString()}>
-              <span
-                className="ed-row-mk"
-                style={{
-                  fontFamily: "var(--sans)",
-                  fontSize: ".74rem",
-                  fontWeight: 800,
-                  color: o.side === "buy" ? "var(--up)" : "var(--down)"
-                }}
-              >
-                {o.side === "buy" ? "매수" : o.side === "sell" ? "매도" : "—"}
-              </span>
-              <span className="ed-row-main">
-                <span className="ed-row-name">{o.name ?? o.code ?? "-"}</span>
-                <span className="ed-row-meta">
-                  {o.code ?? ""}
-                  {o.quantity != null ? ` · ${o.quantity}주` : ""}
-                  {o.price != null ? ` · ${new Intl.NumberFormat("ko-KR").format(Number(o.price))}원` : ""}
-                </span>
-              </span>
-              <span className="ed-row-num">
-                <span className="ed-row-val" style={{ fontSize: ".9rem" }}>{o.status ?? "-"}</span>
-                <span className="ed-row-pl" style={{ color: "var(--ink-3)", fontWeight: 700 }}>
-                  {o.createdAt ?? ""}
-                </span>
-              </span>
+          {!loading && orders.length === 0 && !error ? (
+            <p className="ed-hint" style={{ padding: "20px 4px" }}>아직 주문 내역이 없어요.</p>
+          ) : null}
+
+          {orders.length > 0 ? (
+            <div className="ed-list">
+              {orders.map((o, i) => (
+                <div className="ed-row ed-row--static" key={(o.id ?? `${o.code}-${i}`).toString()}>
+                  <span
+                    className="ed-row-mk"
+                    style={{
+                      fontFamily: "var(--sans)",
+                      fontSize: ".74rem",
+                      fontWeight: 800,
+                      color: o.side === "buy" ? "var(--up)" : "var(--down)"
+                    }}
+                  >
+                    {o.side === "buy" ? "매수" : o.side === "sell" ? "매도" : "—"}
+                  </span>
+                  <span className="ed-row-main">
+                    <span className="ed-row-name">{o.name ?? o.code ?? "-"}</span>
+                    <span className="ed-row-meta">
+                      {o.code ?? ""}
+                      {o.quantity != null ? ` · ${o.quantity}주` : ""}
+                      {o.price != null ? ` · ${new Intl.NumberFormat("ko-KR").format(Number(o.price))}원` : ""}
+                    </span>
+                  </span>
+                  <span className="ed-row-num">
+                    <span className="ed-row-val" style={{ fontSize: ".9rem" }}>{o.status ?? "-"}</span>
+                    <span className="ed-row-pl" style={{ color: "var(--ink-3)", fontWeight: 700 }}>
+                      {o.createdAt ?? ""}
+                    </span>
+                  </span>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      ) : null}
+          ) : null}
+        </section>
+      )}
     </>
   );
 }
@@ -1269,6 +1958,10 @@ function HomeTab(props: {
   autoTradeEnabled: boolean;
   recentAnalyses: AnalysisHistoryItem[];
   recentAnalysesLoading: boolean;
+  aiActivity: AiActivityResponse | null;
+  aiActivityLoading: boolean;
+  autoTradeExplanations: AutoTradeExplanation[];
+  autoTradeExplanationsLoading: boolean;
   indices: MarketIndex[];
   onRefresh: () => void;
   onGoTab: (t: WorkspaceTab) => void;
@@ -1278,11 +1971,13 @@ function HomeTab(props: {
 }) {
   const {
     user, preference, balance, balanceLoading, balanceError,
-    ordersData, autoTradeEnabled, recentAnalyses, recentAnalysesLoading, indices,
+    ordersData, autoTradeEnabled, recentAnalyses, recentAnalysesLoading, aiActivity, aiActivityLoading,
+    autoTradeExplanations, autoTradeExplanationsLoading, indices,
     onRefresh, onGoTab, onGoKis, onGoBacktest, onSelectStock
   } = props;
 
-  const kisConfigured = !!user?.kisConfigured;
+  const hasSnapshotBalance = balance?.source === "historical_runtime_snapshot" || balance?.source === "database_trade_signals";
+  const kisConfigured = !!user?.kisConfigured || hasSnapshotBalance;
   const summary = balance?.summary;
   const holdings = balance?.holdings ?? [];
   const topHoldings = useMemo(
@@ -1404,6 +2099,84 @@ function HomeTab(props: {
               <b>{summary?.stockEvalAmount != null ? formatPrice(summary.stockEvalAmount) : "-"}</b>
             </div>
           </div>
+        )}
+      </section>
+
+      {/* AI 운용 요약 — multi-theme 주도주 선별 */}
+      <section className="ed-sec">
+        <div className="ed-sec-head">
+          <span className="ed-sec-title">AI 운용 요약</span>
+          <span className="ed-sec-meta">
+            {aiActivity?.executedAt ? aiActivity.executedAt : aiActivityLoading ? "불러오는 중" : aiActivity?.bestTheme ?? ""}
+          </span>
+        </div>
+        {aiActivityLoading && !aiActivity ? (
+          <p className="ed-hint" style={{ padding: "16px 4px" }}>AI 운용 데이터를 불러오는 중...</p>
+        ) : !aiActivity?.leaders?.length ? (
+          <p className="ed-hint" style={{ padding: "16px 4px" }}>
+            아직 표시할 AI 운용 결과가 없습니다.
+          </p>
+        ) : (
+          <>
+            <div className="ed-figrow" style={{ marginTop: 14 }}>
+              <div className="ed-fig ed-fig--md">
+                <small>최우선 테마</small>
+                <b>{aiActivity.bestTheme || "-"}</b>
+              </div>
+              <div className="ed-fig ed-fig--md">
+                <small>분석 테마</small>
+                <b>{aiActivity.themeCount ?? "-"}개</b>
+              </div>
+              <div className="ed-fig ed-fig--md">
+                <small>선별 종목</small>
+                <b>{aiActivity.leaderCount ?? aiActivity.leaders.length}개</b>
+              </div>
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+                gap: 10,
+                marginTop: 16
+              }}
+            >
+              {aiActivity.leaders.slice(0, 6).map((leader) => {
+                const actionTone = actionToneOf(leader.action);
+                const returnPct = typeof leader.returnPct === "number" ? leader.returnPct : null;
+                return (
+                  <button
+                    type="button"
+                    className="ed-scard"
+                    key={`${leader.stockCode}-${leader.rank}`}
+                    style={{ textAlign: "left", cursor: "pointer" }}
+                    onClick={() => onSelectStock(leader.stockCode)}
+                  >
+                    <div className="ed-scard-head">
+                      <span className="ed-scard-name">{leader.stockName}</span>
+                      <span className="ed-tag" style={{ background: actionTone.bg, color: actionTone.fg }}>
+                        {leader.action || "-"}
+                      </span>
+                    </div>
+                    <p className="ed-scard-score" style={{ color: "var(--moss)", fontWeight: 800 }}>
+                      {leader.score}점 · 신뢰도 {leader.confidence}%
+                      {returnPct != null ? ` · 수익률 ${formatSignedRate(returnPct)}` : ""}
+                    </p>
+                    <p className="ed-scard-text">
+                      {leader.theme} · {leader.stockCode} · 위험 {leader.riskLevel || "-"}
+                    </p>
+                    <p className="ed-scard-text" style={{ marginTop: 8 }}>
+                      {leader.summary || leader.analystSummary || "요약 없음"}
+                    </p>
+                    {leader.catalysts?.length ? (
+                      <p className="ed-scard-text" style={{ marginTop: 8, color: "var(--ink-2)" }}>
+                        촉매: {leader.catalysts.slice(0, 2).join(" · ")}
+                      </p>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          </>
         )}
       </section>
 
@@ -1652,4 +2425,165 @@ function HomeTab(props: {
       </section>
     </>
   );
+}
+
+function AutoTradeExplanationSection({
+  items,
+  loading,
+  onSelectStock
+}: {
+  items: AutoTradeExplanation[];
+  loading: boolean;
+  onSelectStock: (code: string) => void;
+}) {
+  return (
+    <section className="ed-sec">
+      <div className="ed-sec-head">
+        <span className="ed-sec-title">AI 매매 근거</span>
+        <span className="ed-sec-meta">{loading ? "불러오는 중" : `${items.length}건`}</span>
+      </div>
+      {loading && items.length === 0 ? (
+        <p className="ed-hint" style={{ padding: "16px 4px" }}>최근 자동매매 판단 근거를 불러오는 중...</p>
+      ) : items.length === 0 ? (
+        <p className="ed-hint" style={{ padding: "16px 4px" }}>
+          아직 표시할 자동매매 판단 근거가 없습니다. 자동매매 신호가 생성되면 여기에 판단 이유와 주문 결과가 표시됩니다.
+        </p>
+      ) : (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
+            gap: 12,
+            marginTop: 14
+          }}
+        >
+          {items.slice(0, 3).map((item) => {
+            const actionTone = actionToneOf(item.action);
+            const status = item.executionStatus ?? item.status;
+            const blockedReason = item.executionRejectReason ?? item.rejectReason;
+            return (
+              <article
+                className="ed-scard"
+                key={item.signalId}
+                style={{ textAlign: "left", borderLeft: `3px solid ${actionTone.fg}` }}
+              >
+                <div className="ed-scard-head">
+                  <span className="ed-scard-name">{item.stockName}</span>
+                  <span className="ed-tag" style={{ background: actionTone.bg, color: actionTone.fg }}>
+                    {item.action || "-"}
+                  </span>
+                </div>
+                <p className="ed-scard-score" style={{ color: "var(--moss)", fontWeight: 800 }}>
+                  신뢰도 {item.confidence}% · 리스크 {item.riskLevel || "-"}
+                  {item.positionSize ? ` · 비중 ${item.positionSize}` : ""}
+                </p>
+                <p className="ed-scard-text" style={{ marginTop: 8 }}>
+                  {item.explanationSummary || item.reason || "최종 판단 근거가 아직 저장되지 않았습니다."}
+                </p>
+
+                <div className="ed-pillbar" style={{ marginTop: 12 }}>
+                  <span className={`ed-pill${status === "EXECUTED" ? " ed-pill--live" : ""}`}>
+                    주문 {translateTradeStatus(status)}
+                  </span>
+                  {item.signalPrice != null ? <span className="ed-pill">판단가 {formatPrice(item.signalPrice)}</span> : null}
+                  {item.currentPrice != null ? <span className="ed-pill">현재가 {formatPrice(item.currentPrice)}</span> : null}
+                  {item.priceDriftPct != null ? <span className="ed-pill">괴리 {item.priceDriftPct.toFixed(2)}%</span> : null}
+                </div>
+
+                {blockedReason ? (
+                  <p className="ed-msg" style={{ marginTop: 12, borderLeftColor: "var(--spark)" }}>
+                    주문 제한 사유: {translateRejectReason(blockedReason)}
+                  </p>
+                ) : null}
+
+                {item.catalysts.length || item.risks.length ? (
+                  <div style={{ display: "grid", gap: 6, marginTop: 12 }}>
+                    {item.catalysts.length ? (
+                      <p className="ed-scard-text" style={{ color: "var(--ink-2)" }}>
+                        긍정 근거: {item.catalysts.slice(0, 2).join(" · ")}
+                      </p>
+                    ) : null}
+                    {item.risks.length ? (
+                      <p className="ed-scard-text" style={{ color: "var(--ink-2)" }}>
+                        주의 근거: {item.risks.slice(0, 2).join(" · ")}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {item.agentReasons.length ? (
+                  <div style={{ marginTop: 14, display: "grid", gap: 7 }}>
+                    {item.agentReasons.slice(0, 4).map((reason) => (
+                      <div
+                        key={`${item.signalId}-${reason.agent}`}
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "86px minmax(0, 1fr)",
+                          gap: 9,
+                          paddingTop: 8,
+                          borderTop: "1px solid var(--rule)"
+                        }}
+                      >
+                        <span style={{ color: "var(--ink-2)", fontSize: ".76rem", fontWeight: 800 }}>
+                          {reason.label}
+                        </span>
+                        <span style={{ minWidth: 0 }}>
+                          <span className="ed-scard-text" style={{ display: "block" }}>
+                            {reason.verdict ? `${reason.verdict} · ` : ""}
+                            {reason.score != null ? `${reason.score}점 · ` : ""}
+                            {reason.summary || "요약 없음"}
+                          </span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    className="ed-btn ed-btn--line ed-btn--sm"
+                    onClick={() => onSelectStock(item.stockCode)}
+                  >
+                    종목 보기
+                  </button>
+                  <span className="ed-hint" style={{ alignSelf: "center", fontSize: ".76rem" }}>
+                    {formatTimeAgo(item.executedAt ?? item.updatedAt ?? item.createdAt)}
+                  </span>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function translateTradeStatus(status?: string | null) {
+  switch (status) {
+    case "PENDING": return "대기";
+    case "EXECUTED": return "실행됨";
+    case "REJECTED": return "보류";
+    case "FAILED": return "실패";
+    case "EXPIRED": return "만료";
+    default: return status ?? "-";
+  }
+}
+
+function translateRejectReason(reason?: string | null) {
+  switch (reason) {
+    case "AUTO_TRADE_DISABLED": return "자동매매가 꺼져 있어 주문하지 않았습니다.";
+    case "KIS_SECRET_MISSING": return "KIS API 키 또는 계좌 정보가 없어 주문하지 않았습니다.";
+    case "KIS_TOKEN_UNAVAILABLE": return "KIS 토큰 발급에 실패했습니다.";
+    case "KIS_BALANCE_UNAVAILABLE": return "계좌 잔고를 확인하지 못했습니다.";
+    case "CURRENT_PRICE_UNAVAILABLE": return "현재가를 확인하지 못했습니다.";
+    case "PRICE_DRIFT_EXCEEDED": return "AI 판단 시점 가격과 주문 시점 가격 차이가 안전 기준을 넘었습니다.";
+    case "INVALID_ORDER_QUANTITY": return "주문 가능 수량이 0이라 주문하지 않았습니다.";
+    case "NO_SELLABLE_HOLDING": return "매도 가능한 보유 수량이 없습니다.";
+    case "INSUFFICIENT_CASH": return "주문 가능 현금이 부족합니다.";
+    case "KIS_ORDER_FAILED": return "KIS 주문 요청이 실패했습니다.";
+    case "SIGNAL_EXPIRED": return "매매 신호 유효 시간이 지나 주문하지 않았습니다.";
+    default: return reason ?? "-";
+  }
 }

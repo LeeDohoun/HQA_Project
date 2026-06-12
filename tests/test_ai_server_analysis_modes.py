@@ -59,6 +59,57 @@ def test_execute_quick_returns_quick_decision_and_final_decision(monkeypatch):
     assert result["final_decision"]["total_score"] == 70
 
 
+def test_execute_quick_publishes_agent_completion_when_each_parallel_agent_finishes(monkeypatch):
+    import ai_server.app as app_module
+    import src.agents as agents
+    import src.utils.parallel as parallel
+
+    published = []
+
+    class FakeQuantAgent:
+        def full_analysis(self, stock_name: str, stock_code: str):
+            return SimpleNamespace(total_score=80, grade="A", opinion="재무 우수")
+
+        def _default_score(self, stock_name: str, reason: str):
+            raise AssertionError(reason)
+
+    class FakeChartistAgent:
+        def full_analysis(self, stock_name: str, stock_code: str):
+            return SimpleNamespace(
+                total_score=60,
+                signal="매수",
+                trend_score=20,
+                momentum_score=18,
+                volatility_score=12,
+                volume_score=10,
+            )
+
+        def _default_score(self, stock_code: str, reason: str):
+            raise AssertionError(reason)
+
+    class FakeRiskManagerAgent:
+        def quick_decision(self, analyst_total: int, quant_total: int, chartist_total: int) -> str:
+            return "📈 매수 (점수: 70)"
+
+    def fake_publish_progress(task_id: str, agent: str, status: str, message: str, progress: float):
+        published.append((task_id, agent, status, message, progress))
+
+    def fake_run_agents_parallel(tasks):
+        quant_result = tasks["quant"][0](*tasks["quant"][1])
+        assert ("task-quick", "quant", "completed", "재무: A", 1.0) in published
+        chartist_result = tasks["chartist"][0](*tasks["chartist"][1])
+        assert ("task-quick", "chartist", "completed", "기술: 매수", 1.0) in published
+        return {"quant": quant_result, "chartist": chartist_result}
+
+    monkeypatch.setattr(agents, "QuantAgent", FakeQuantAgent)
+    monkeypatch.setattr(agents, "ChartistAgent", FakeChartistAgent)
+    monkeypatch.setattr(agents, "RiskManagerAgent", FakeRiskManagerAgent)
+    monkeypatch.setattr(app_module, "_publish_progress", fake_publish_progress)
+    monkeypatch.setattr(parallel, "run_agents_parallel", fake_run_agents_parallel)
+
+    app_module._execute_quick("task-quick", "삼성전자", "005930")
+
+
 def test_execute_full_exposes_risk_manager_score(monkeypatch):
     import ai_server.app as app_module
     import src.agents.graph as graph
@@ -76,10 +127,17 @@ def test_execute_full_exposes_risk_manager_score(monkeypatch):
         detailed_reasoning="Analyst, Quant, Chartist 결과를 종합했습니다.",
     )
 
-    def fake_run_stock_analysis(stock_name: str, stock_code: str, max_retries: int):
+    published = []
+
+    def fake_publish_progress(task_id: str, agent: str, status: str, message: str, progress: float):
+        published.append((task_id, agent, status, message, progress))
+
+    def fake_run_stock_analysis(stock_name: str, stock_code: str, max_retries: int, progress_callback=None):
         assert stock_name == "삼성전자"
         assert stock_code == "005930"
         assert max_retries == 1
+        assert progress_callback is not None
+        progress_callback("quant", "completed", "재무: B", 1.0)
         return {
             "scores": {
                 "analyst": SimpleNamespace(
@@ -96,6 +154,7 @@ def test_execute_full_exposes_risk_manager_score(monkeypatch):
         }
 
     monkeypatch.setattr(graph, "run_stock_analysis", fake_run_stock_analysis)
+    monkeypatch.setattr(app_module, "_publish_progress", fake_publish_progress)
 
     result = app_module._execute_full("task-full", "삼성전자", "005930", 1)
 
@@ -104,3 +163,4 @@ def test_execute_full_exposes_risk_manager_score(monkeypatch):
     assert result["scores"]["risk_manager"]["total_score"] == 82
     assert result["scores"]["risk_manager"]["action"] == "매수"
     assert result["final_decision"]["summary"] == "네 에이전트 의견이 매수 쪽으로 정렬되었습니다."
+    assert ("task-full", "quant", "completed", "재무: B", 1.0) in published

@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hqa.backend.dto.CandleData;
 import com.hqa.backend.dto.KisVerificationResult;
 import com.hqa.backend.entity.UserSecret;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -12,6 +14,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -80,30 +83,15 @@ public class KisClient {
     public KisVerificationResult verifyCredentials(String userId, String appKey, String appSecret,
                                                    String accountNo, String acntPrdtCd, boolean isReal) {
         // ── 1) 토큰 발급
-        String baseUrl = isReal ? KIS_BASE_URL_REAL : KIS_BASE_URL_SANDBOX;
         String token;
         try {
-            String response = webClient.post()
-                    .uri(baseUrl + TOKEN_PATH)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(Map.of(
-                            "grant_type", "client_credentials",
-                            "appkey", appKey,
-                            "appsecret", appSecret
-                    ))
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .block();
-            Map<String, Object> body = objectMapper.readValue(response, new TypeReference<>() {});
-            token = (String) body.get("access_token");
-            if (token == null || token.isBlank()) {
-                String desc = String.valueOf(body.getOrDefault("error_description", body.get("error")));
-                return new KisVerificationResult(false, false, false, "token",
-                        "App Key / App Secret이 올바르지 않은 것 같아요. (" + desc + ")");
-            }
+            token = fetchTokenForCredentials(userId, appKey, appSecret, isReal);
         } catch (Exception e) {
             errorLogger.log("KisClient", userId, null, "verify token failed", e.getMessage());
-            String hint = e.getMessage() != null && e.getMessage().contains("403")
+            String message = e.getMessage() == null ? "" : e.getMessage();
+            String hint = message.contains("KIS token missing")
+                    ? "App Key / App Secret이 올바르지 않은 것 같아요. (" + message + ")"
+                    : message.contains("403")
                     ? "App Key / App Secret이 올바르지 않거나 호출 권한이 없어요."
                     : "KIS 서버 연결에 실패했어요. 잠시 후 다시 시도해주세요.";
             return new KisVerificationResult(false, false, false, "token", hint);
@@ -612,7 +600,17 @@ public class KisClient {
             return null;
         }
         boolean isReal = secret.isKisIsReal();
-        String cacheKey = appKey + ":" + (isReal ? "R" : "S");
+        try {
+            return fetchTokenForCredentials(userId, appKey, appSecret, isReal);
+        } catch (Exception e) {
+            errorLogger.log("KisClient", userId, null, "Token fetch failed", e.getMessage());
+            return null;
+        }
+    }
+
+    private synchronized String fetchTokenForCredentials(String userId, String appKey, String appSecret, boolean isReal)
+            throws Exception {
+        String cacheKey = tokenCacheKey(appKey, appSecret, isReal);
         long now = java.time.Instant.now().getEpochSecond();
 
         CachedToken cached = tokenCache.get(cacheKey);
@@ -620,36 +618,42 @@ public class KisClient {
             return cached.value();
         }
 
+        String baseUrl = isReal ? KIS_BASE_URL_REAL : KIS_BASE_URL_SANDBOX;
+        String response = webClient.post()
+                .uri(baseUrl + TOKEN_PATH)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of(
+                        "grant_type", "client_credentials",
+                        "appkey", appKey,
+                        "appsecret", appSecret
+                ))
+                .retrieve()
+                .onStatus(s -> s.isError(), r -> r.bodyToMono(String.class)
+                        .defaultIfEmpty("")
+                        .map(b -> new IllegalStateException("KIS token HTTP " + r.statusCode().value() + ": " + b)))
+                .bodyToMono(String.class)
+                .block();
+        Map<String, Object> body = objectMapper.readValue(response, new TypeReference<>() {});
+        String token = (String) body.get("access_token");
+        if (token == null || token.isBlank()) {
+            errorLogger.log("KisClient", userId, null,
+                    "Token fetch succeeded but access_token was null", response);
+            String desc = String.valueOf(body.getOrDefault("error_description", body.get("error")));
+            throw new IllegalStateException("KIS token missing: " + desc);
+        }
+        long expiresInSec = parseLong(body.get("expires_in"));
+        if (expiresInSec <= 0) expiresInSec = 86_400L; // KIS 토큰 기본 24h
+        tokenCache.put(cacheKey, new CachedToken(token, now + expiresInSec));
+        return token;
+    }
+
+    private static String tokenCacheKey(String appKey, String appSecret, boolean isReal) {
         try {
-            String baseUrl = isReal ? KIS_BASE_URL_REAL : KIS_BASE_URL_SANDBOX;
-            String response = webClient.post()
-                    .uri(baseUrl + TOKEN_PATH)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(Map.of(
-                            "grant_type", "client_credentials",
-                            "appkey", appKey,
-                            "appsecret", appSecret
-                    ))
-                    .retrieve()
-                    .onStatus(s -> s.isError(), r -> r.bodyToMono(String.class)
-                            .defaultIfEmpty("")
-                            .map(b -> new IllegalStateException("KIS token HTTP " + r.statusCode().value() + ": " + b)))
-                    .bodyToMono(String.class)
-                    .block();
-            Map<String, Object> body = objectMapper.readValue(response, new TypeReference<>() {});
-            String token = (String) body.get("access_token");
-            if (token == null || token.isBlank()) {
-                errorLogger.log("KisClient", userId, null,
-                        "Token fetch succeeded but access_token was null", response);
-                return null;
-            }
-            long expiresInSec = parseLong(body.get("expires_in"));
-            if (expiresInSec <= 0) expiresInSec = 86_400L; // KIS 토큰 기본 24h
-            tokenCache.put(cacheKey, new CachedToken(token, now + expiresInSec));
-            return token;
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest((appKey + "\n" + appSecret).getBytes(StandardCharsets.UTF_8));
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(hash) + ":" + (isReal ? "R" : "S");
         } catch (Exception e) {
-            errorLogger.log("KisClient", userId, null, "Token fetch failed", e.getMessage());
-            return null;
+            return appKey + ":" + appSecret.hashCode() + ":" + (isReal ? "R" : "S");
         }
     }
 

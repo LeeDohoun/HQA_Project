@@ -85,6 +85,17 @@ export type StockSearchResponse = {
   total: number;
 };
 
+export type WatchlistItem = StockSearchResult & {
+  id: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type WatchlistResponse = {
+  items: WatchlistItem[];
+  total: number;
+};
+
 export type RealtimePrice = {
   stock: StockInfo;
   currentPrice: number;
@@ -125,7 +136,84 @@ export type Balance = {
   success: boolean;
   holdings: Holding[];
   summary: BalanceSummary;
+  source?: string;
   error?: string;
+};
+
+export type AiActivityLeader = {
+  rank: number;
+  theme: string;
+  themeKey: string;
+  stockName: string;
+  stockCode: string;
+  action: string;
+  actionCode: string;
+  confidence: number;
+  score: number;
+  riskLevel: string;
+  summary: string;
+  analystSummary: string;
+  quantScore: number;
+  chartSignal: string;
+  catalysts: string[];
+  returnPct?: number;
+};
+
+export type AiActivityResponse = {
+  status: string;
+  source?: string;
+  sourceReport?: string;
+  mode?: string;
+  executedAt?: string;
+  bestTheme?: string;
+  themeCount?: number;
+  leaderCount?: number;
+  leaders: AiActivityLeader[];
+  message?: string;
+};
+
+export type AutoTradeAgentReason = {
+  agent: string;
+  label: string;
+  summary: string;
+  verdict: string;
+  score: number | null;
+};
+
+export type AutoTradeExplanation = {
+  signalId: string;
+  source: string;
+  strategyProfile: string;
+  themeName: string | null;
+  stockCode: string;
+  stockName: string;
+  action: string;
+  leaderScore: number;
+  confidence: number;
+  riskLevel: string;
+  positionSize: string;
+  signalPrice: number | null;
+  stopLoss: string;
+  reason: string;
+  status: string;
+  rejectReason: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  executedAt: string | null;
+  executionStatus: string | null;
+  executionRejectReason: string | null;
+  quantity: number | null;
+  orderPrice: number | null;
+  currentPrice: number | null;
+  priceDriftPct: number | null;
+  explanationSummary: string;
+  catalysts: string[];
+  risks: string[];
+  agentReasons: AutoTradeAgentReason[];
+};
+
+export type AutoTradeExplanationResponse = {
+  items: AutoTradeExplanation[];
 };
 
 export type NewsItem = {
@@ -252,4 +340,27 @@ export type AnalysisProgressEvent = {
   message: string;
   progress: number;
   timestamp: string;
+};
+
+export type AnalysisAgentResultEvent = {
+  agent: string;
+  label: string;
+  status: string;
+  message: string;
+  totalScore: number | null;
+  grade: string | null;
+  opinion: string | null;
+  details: Record<string, unknown>;
+  timestamp: string;
+};
+
+export type AnalysisProgressStoredEvent = {
+  type: "progress" | "agent_result" | string;
+  data: Record<string, unknown>;
+};
+
+export type AnalysisProgressPollResponse = {
+  taskId: string;
+  status: AnalysisStatus;
+  events: AnalysisProgressStoredEvent[];
 };

@@ -9,11 +9,22 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.connection.Message;
+import org.springframework.data.redis.connection.MessageListener;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.listener.ChannelTopic;
+import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -22,12 +33,22 @@ public class AnalysisService {
 
     private final AiServerClient aiServerClient;
     private final StockCatalogService stockCatalogService;
+    private final StringRedisTemplate redisTemplate;
     private final Map<String, TaskMeta> tasks = new LinkedHashMap<>();
     private final Map<String, List<SseEmitter>> emitters = new ConcurrentHashMap<>();
+    private final Map<String, List<Map<String, Object>>> progressEvents = new ConcurrentHashMap<>();
+    private final Map<String, RedisMessageListenerContainer> progressCaptureContainers = new ConcurrentHashMap<>();
 
     public AnalysisService(AiServerClient aiServerClient, StockCatalogService stockCatalogService) {
+        this(aiServerClient, stockCatalogService, null);
+    }
+
+    @Autowired
+    public AnalysisService(AiServerClient aiServerClient, StockCatalogService stockCatalogService,
+                           StringRedisTemplate redisTemplate) {
         this.aiServerClient = aiServerClient;
         this.stockCatalogService = stockCatalogService;
+        this.redisTemplate = redisTemplate;
     }
 
     public BulkAnalysisResponse submitBulkFromWatchlist(AnalysisMode mode, int maxRetries) {
@@ -118,6 +139,7 @@ public class AnalysisService {
         String taskId = UUID.randomUUID().toString();
         TaskMeta meta = new TaskMeta(taskId, request.getStockName(), request.getStockCode(), request.getMode(), request.getMaxRetries());
         tasks.put(taskId, meta);
+        startProgressCapture(taskId);
         aiServerClient.submitAnalysis(new AiAnalyzeRequest(
                 taskId,
                 request.getStockName(),
@@ -131,6 +153,39 @@ public class AnalysisService {
                 request.getMode() == AnalysisMode.full ? 180 : 60);
     }
 
+    public Map<String, Object> getProgress(String taskId) {
+        TaskMeta meta = tasks.get(taskId);
+        if (meta == null) {
+            throw new ApiException(ErrorCode.ANALYSIS_NOT_FOUND, 404, "Analysis not found", taskId);
+        }
+
+        try {
+            Map<String, Object> aiData = aiServerClient.getAnalysis(taskId);
+            String status = String.valueOf(aiData.getOrDefault("status", meta.status.name()));
+            if ("completed".equalsIgnoreCase(status)) {
+                meta.status = AnalysisStatus.completed;
+                stopProgressCapture(taskId);
+            } else if ("failed".equalsIgnoreCase(status)) {
+                meta.status = AnalysisStatus.failed;
+                stopProgressCapture(taskId);
+            }
+            updateMetaFromAiData(meta, aiData);
+        } catch (Exception ignored) {
+            // Running AI tasks may not have a final result yet. Cached progress remains useful.
+        }
+
+        List<Map<String, Object>> storedEvents = progressEvents.getOrDefault(taskId, List.of());
+        List<Map<String, Object>> events;
+        synchronized (storedEvents) {
+            events = List.copyOf(storedEvents);
+        }
+        return Map.of(
+                "task_id", taskId,
+                "status", meta.status.name(),
+                "events", events
+        );
+    }
+
     public AnalysisResultResponse getResult(String taskId) {
         TaskMeta meta = tasks.get(taskId);
         if (meta == null) {
@@ -140,8 +195,10 @@ public class AnalysisService {
         String status = String.valueOf(aiData.getOrDefault("status", meta.status.name()));
         if ("completed".equalsIgnoreCase(status)) {
             meta.status = AnalysisStatus.completed;
+            stopProgressCapture(taskId);
         } else if ("failed".equalsIgnoreCase(status)) {
             meta.status = AnalysisStatus.failed;
+            stopProgressCapture(taskId);
         }
         updateMetaFromAiData(meta, aiData);
         return toResult(meta, aiData);
@@ -153,35 +210,392 @@ public class AnalysisService {
         }
         SseEmitter emitter = new SseEmitter(600_000L);
         emitters.computeIfAbsent(taskId, ignored -> new ArrayList<>()).add(emitter);
+        AtomicBoolean done = new AtomicBoolean(false);
+        AtomicReference<RedisMessageListenerContainer> progressContainer = new AtomicReference<>();
+        Runnable cleanup = () -> {
+            done.set(true);
+            stopRedis(progressContainer);
+            List<SseEmitter> taskEmitters = emitters.get(taskId);
+            if (taskEmitters != null) {
+                taskEmitters.remove(emitter);
+            }
+        };
+        emitter.onCompletion(cleanup);
+        emitter.onTimeout(cleanup);
+        emitter.onError(ignored -> cleanup.run());
+
+        Thread progressWorker = new Thread(() -> subscribeProgress(taskId, emitter, done, progressContainer));
+        progressWorker.setDaemon(true);
+        progressWorker.start();
 
         Thread worker = new Thread(() -> {
             try {
+                TaskMeta meta = tasks.get(taskId);
+                Set<String> emittedAgents = new LinkedHashSet<>();
+                Set<String> emittedStartedAgents = new LinkedHashSet<>();
                 while (true) {
                     Map<String, Object> data = aiServerClient.getAnalysis(taskId);
                     String status = String.valueOf(data.getOrDefault("status", "running"));
+                    for (Map<String, Object> event : collectAgentResultEvents(data, emittedAgents)) {
+                        emitter.send(SseEmitter.event().name("agent_result").data(event));
+                    }
+                    String nextAgent = nextAgentKey(data, status, meta.mode);
+                    if (!"system".equals(nextAgent) && emittedStartedAgents.add(nextAgent)) {
+                        emitter.send(SseEmitter.event().name("agent_result").data(agentProgressEvent(
+                                nextAgent,
+                                "running",
+                                agentLabel(nextAgent) + " 단계 진행 중",
+                                OffsetDateTime.now(ZoneOffset.UTC).toString()
+                        )));
+                    }
                     emitter.send(SseEmitter.event()
                             .name("progress")
                             .data(Map.of(
-                                    "agent", "system",
+                                    "agent", agentLabel(nextAgent),
                                     "status", status,
-                                    "message", "Analysis in progress",
-                                    "progress", "completed".equals(status) ? 1.0 : 0.5,
+                                    "message", progressMessage(data, status, meta.mode),
+                                    "progress", progressValue(data, status, meta.mode),
                                     "timestamp", OffsetDateTime.now(ZoneOffset.UTC).toString()
                             )));
                     if ("completed".equals(status) || "failed".equals(status)) {
                         emitter.send(SseEmitter.event().name("completed").data(Map.of("task_id", taskId, "status", status)));
                         emitter.complete();
+                        cleanup.run();
                         break;
                     }
                     Thread.sleep(2000L);
                 }
             } catch (Exception exception) {
-                emitter.completeWithError(exception);
+                cleanup.run();
+                try {
+                    emitter.complete();
+                } catch (Exception ignored) {
+                    // Client disconnects should not keep the worker or Redis listener alive.
+                }
             }
         });
         worker.setDaemon(true);
         worker.start();
         return emitter;
+    }
+
+    private void subscribeProgress(String taskId, SseEmitter emitter, AtomicBoolean done,
+                                   AtomicReference<RedisMessageListenerContainer> progressContainer) {
+        if (redisTemplate == null || redisTemplate.getConnectionFactory() == null) {
+            return;
+        }
+        RedisConnectionFactory factory = redisTemplate.getConnectionFactory();
+        RedisMessageListenerContainer container = new RedisMessageListenerContainer();
+        try {
+            container.setConnectionFactory(factory);
+            MessageListener listener = (Message message, byte[] pattern) -> {
+                if (done.get()) return;
+                try {
+                    Map<String, Object> event = parseProgressMessage(message);
+                    if (event.isEmpty()) return;
+                    Map<String, Object> normalized = normalizeProgressEvent(taskId, event);
+                    recordProgressEvent(taskId, "progress", normalized);
+                    emitter.send(SseEmitter.event().name("progress").data(normalized));
+                    Map<String, Object> agentResult = agentResultFromProgress(normalized);
+                    if (!agentResult.isEmpty()) {
+                        recordProgressEvent(taskId, "agent_result", agentResult);
+                        emitter.send(SseEmitter.event().name("agent_result").data(agentResult));
+                    }
+                } catch (Exception ignored) {
+                    // The polling worker still owns final completion/error handling.
+                }
+            };
+            container.addMessageListener(listener, new ChannelTopic("hqa:progress:" + taskId));
+            container.afterPropertiesSet();
+            container.start();
+            progressContainer.set(container);
+        } catch (Exception ignored) {
+            stopRedis(progressContainer);
+            // Redis progress is optional. Polling still returns final results.
+        }
+    }
+
+    private Map<String, Object> parseProgressMessage(Message message) {
+        try {
+            String body = new String(message.getBody(), java.nio.charset.StandardCharsets.UTF_8);
+            return new com.fasterxml.jackson.databind.ObjectMapper().readValue(body, new com.fasterxml.jackson.core.type.TypeReference<>() {});
+        } catch (Exception e) {
+            return Map.of();
+        }
+    }
+
+    private void stopRedis(AtomicReference<RedisMessageListenerContainer> containerRef) {
+        RedisMessageListenerContainer container = containerRef.getAndSet(null);
+        if (container != null) {
+            try {
+                container.stop();
+                container.destroy();
+            } catch (Exception ignored) {
+                // best effort
+            }
+        }
+    }
+
+    private void startProgressCapture(String taskId) {
+        if (redisTemplate == null || redisTemplate.getConnectionFactory() == null) {
+            return;
+        }
+        progressCaptureContainers.computeIfAbsent(taskId, ignored -> {
+            RedisMessageListenerContainer container = new RedisMessageListenerContainer();
+            container.setConnectionFactory(redisTemplate.getConnectionFactory());
+            MessageListener listener = (message, pattern) -> {
+                Map<String, Object> event = parseProgressMessage(message);
+                if (event.isEmpty()) return;
+                Map<String, Object> normalized = normalizeProgressEvent(taskId, event);
+                recordProgressEvent(taskId, "progress", normalized);
+                Map<String, Object> agentResult = agentResultFromProgress(normalized);
+                if (!agentResult.isEmpty()) {
+                    recordProgressEvent(taskId, "agent_result", agentResult);
+                }
+            };
+            container.addMessageListener(listener, new ChannelTopic("hqa:progress:" + taskId));
+            container.afterPropertiesSet();
+            container.start();
+            return container;
+        });
+    }
+
+    private void stopProgressCapture(String taskId) {
+        RedisMessageListenerContainer container = progressCaptureContainers.remove(taskId);
+        if (container == null) return;
+        try {
+            container.stop();
+            container.destroy();
+        } catch (Exception ignored) {
+            // best effort
+        }
+    }
+
+    void recordProgressEvent(String taskId, String type, Map<String, Object> data) {
+        Map<String, Object> event = new LinkedHashMap<>();
+        event.put("type", type);
+        event.put("data", "progress".equals(type) ? normalizeProgressEvent(taskId, data) : data);
+        List<Map<String, Object>> events = progressEvents.computeIfAbsent(
+                taskId,
+                ignored -> java.util.Collections.synchronizedList(new ArrayList<>())
+        );
+        synchronized (events) {
+            if (!events.isEmpty() && events.get(events.size() - 1).equals(event)) {
+                return;
+            }
+            events.add(event);
+            if (events.size() > 120) {
+                events.remove(0);
+            }
+        }
+    }
+
+    private Map<String, Object> normalizeProgressEvent(String taskId, Map<String, Object> data) {
+        TaskMeta meta = tasks.get(taskId);
+        if (meta == null) {
+            return data;
+        }
+
+        String agent = stringOrNull(data.get("agent"));
+        String status = stringOrNull(data.get("status"));
+        if (agent == null || status == null) {
+            return data;
+        }
+
+        double normalized = overallProgress(agent, status, meta.mode);
+        double previous = latestProgress(taskId);
+        Map<String, Object> next = new LinkedHashMap<>(data);
+        next.put("progress", Math.max(previous, normalized));
+        return next;
+    }
+
+    private double latestProgress(String taskId) {
+        List<Map<String, Object>> events = progressEvents.get(taskId);
+        if (events == null) {
+            return 0.0;
+        }
+        synchronized (events) {
+            for (int index = events.size() - 1; index >= 0; index--) {
+                Map<String, Object> event = events.get(index);
+                if (!"progress".equals(event.get("type"))) continue;
+                Map<String, Object> data = castMap(event.get("data"));
+                Object progress = data.get("progress");
+                if (progress instanceof Number number) {
+                    return number.doubleValue();
+                }
+            }
+        }
+        return 0.0;
+    }
+
+    private double overallProgress(String agent, String status, AnalysisMode mode) {
+        if ("system".equals(agent) && "completed".equalsIgnoreCase(status)) {
+            return 1.0;
+        }
+        if ("failed".equalsIgnoreCase(status) || "error".equalsIgnoreCase(status)) {
+            return 0.95;
+        }
+        if (mode == AnalysisMode.quick) {
+            return quickOverallProgress(agent, status);
+        }
+        return fullOverallProgress(agent, status);
+    }
+
+    private double quickOverallProgress(String agent, String status) {
+        boolean completed = "completed".equalsIgnoreCase(status);
+        return switch (agent) {
+            case "system" -> 0.02;
+            case "quant", "chartist" -> completed ? 0.45 : 0.12;
+            case "quick_decision" -> completed ? 0.95 : 0.8;
+            default -> completed ? 0.75 : 0.1;
+        };
+    }
+
+    private double fullOverallProgress(String agent, String status) {
+        boolean completed = "completed".equalsIgnoreCase(status);
+        return switch (agent) {
+            case "system" -> 0.02;
+            case "analyst" -> completed ? 0.65 : 0.1;
+            case "quant" -> completed ? 0.25 : 0.1;
+            case "chartist" -> completed ? 0.5 : 0.1;
+            case "quality_gate" -> completed ? 0.72 : 0.65;
+            case "analyst_retry" -> completed ? 0.78 : 0.7;
+            case "risk_manager" -> completed ? 0.95 : 0.82;
+            default -> completed ? 0.75 : 0.1;
+        };
+    }
+
+    List<Map<String, Object>> collectAgentResultEvents(Map<String, Object> aiData, Set<String> emittedAgents) {
+        Map<String, Object> scores = castMap(aiData.get("scores"));
+        if (scores.isEmpty()) return List.of();
+
+        List<Map<String, Object>> events = new ArrayList<>();
+        for (String agent : agentOrder()) {
+            Map<String, Object> details = castMap(scores.get(agent));
+            if (details.isEmpty() || emittedAgents.contains(agent)) continue;
+            emittedAgents.add(agent);
+
+            Map<String, Object> event = new LinkedHashMap<>();
+            event.put("agent", agent);
+            event.put("label", agentLabel(agent));
+            event.put("status", "completed");
+            event.put("message", agentSummary(agent, details));
+            event.put("total_score", number(details.get("total_score")));
+            event.put("grade", firstString(details, "grade", "signal", "action", "hegemony_grade"));
+            event.put("opinion", firstString(details, "opinion", "summary", "final_opinion"));
+            event.put("details", details);
+            event.put("timestamp", OffsetDateTime.now(ZoneOffset.UTC).toString());
+            events.add(event);
+        }
+        return events;
+    }
+
+    Map<String, Object> agentResultFromProgress(Map<String, Object> progress) {
+        String agent = stringOrNull(progress.get("agent"));
+        String status = stringOrNull(progress.get("status"));
+        if (agent == null || agent.isBlank() || "system".equals(agent) || status == null || status.isBlank()) {
+            return Map.of();
+        }
+        String message = stringOrNull(progress.get("message"));
+        return agentProgressEvent(agent, status, message, String.valueOf(progress.getOrDefault(
+                "timestamp", OffsetDateTime.now(ZoneOffset.UTC).toString())), progress);
+    }
+
+    private Map<String, Object> agentProgressEvent(String agent, String status, String message, String timestamp) {
+        return agentProgressEvent(agent, status, message, timestamp, Map.of());
+    }
+
+    private Map<String, Object> agentProgressEvent(String agent, String status, String message, String timestamp,
+                                                  Map<String, Object> details) {
+        boolean completed = "completed".equalsIgnoreCase(status);
+        Map<String, Object> event = new LinkedHashMap<>();
+        event.put("agent", agent);
+        event.put("label", agentLabel(agent));
+        event.put("status", status);
+        event.put("message", agentLabel(agent) + " " + progressStatusLabel(status)
+                + (message == null || message.isBlank() ? "" : ": " + message));
+        event.put("total_score", completed ? 0.0 : null);
+        event.put("grade", null);
+        event.put("opinion", message);
+        event.put("details", details);
+        event.put("timestamp", timestamp);
+        return event;
+    }
+
+    private String progressStatusLabel(String status) {
+        if ("completed".equalsIgnoreCase(status)) return "완료";
+        if ("failed".equalsIgnoreCase(status) || "error".equalsIgnoreCase(status)) return "실패";
+        if ("started".equalsIgnoreCase(status) || "running".equalsIgnoreCase(status)) return "진행 중";
+        return status;
+    }
+
+    private double progressValue(Map<String, Object> aiData, String status, AnalysisMode mode) {
+        if ("completed".equalsIgnoreCase(status) || "failed".equalsIgnoreCase(status)) {
+            return 1.0;
+        }
+        Map<String, Object> scores = castMap(aiData.get("scores"));
+        int completed = 0;
+        for (String agent : agentOrder(mode)) {
+            if (!castMap(scores.get(agent)).isEmpty()) completed++;
+        }
+        return Math.max(0.08, Math.min(0.95, completed / (double) agentOrder(mode).size()));
+    }
+
+    private String progressMessage(Map<String, Object> aiData, String status, AnalysisMode mode) {
+        if ("completed".equalsIgnoreCase(status)) return "분석이 완료되었습니다.";
+        if ("failed".equalsIgnoreCase(status)) return "분석이 실패했습니다.";
+        return agentLabel(nextAgentKey(aiData, status, mode)) + " 단계 진행 중";
+    }
+
+    private String nextAgentKey(Map<String, Object> aiData, String status, AnalysisMode mode) {
+        if ("completed".equalsIgnoreCase(status) || "failed".equalsIgnoreCase(status)) {
+            return "system";
+        }
+        Map<String, Object> scores = castMap(aiData.get("scores"));
+        for (String agent : agentOrder(mode)) {
+            if (castMap(scores.get(agent)).isEmpty()) {
+                return agent;
+            }
+        }
+        return mode == AnalysisMode.quick ? "quick_decision" : "risk_manager";
+    }
+
+    private List<String> agentOrder() {
+        return List.of("analyst", "quant", "chartist", "risk_manager", "quick_decision");
+    }
+
+    private List<String> agentOrder(AnalysisMode mode) {
+        if (mode == AnalysisMode.quick) {
+            return List.of("quant", "chartist", "quick_decision");
+        }
+        return List.of("analyst", "quant", "chartist", "risk_manager");
+    }
+
+    private String agentLabel(String agent) {
+        return switch (agent) {
+            case "analyst" -> "Analyst";
+            case "quant" -> "Quant";
+            case "chartist" -> "Chartist";
+            case "quality_gate" -> "Quality Gate";
+            case "analyst_retry" -> "Analyst Retry";
+            case "risk_manager" -> "Risk Manager";
+            case "quick_decision" -> "Quick Decision";
+            default -> agent;
+        };
+    }
+
+    private String agentSummary(String agent, Map<String, Object> details) {
+        String label = agentLabel(agent);
+        double score = number(details.get("total_score"));
+        String grade = firstString(details, "grade", "signal", "action", "hegemony_grade");
+        String opinion = firstString(details, "opinion", "summary", "final_opinion");
+        List<String> parts = new ArrayList<>();
+        if (score > 0) parts.add("점수 " + Math.round(score));
+        if (grade != null) parts.add(grade);
+        if (opinion != null) parts.add(opinion);
+        return parts.isEmpty()
+                ? label + " 결과가 도착했습니다."
+                : label + " 완료: " + String.join(" · ", parts);
     }
 
     public QuerySuggestionResponse suggest(QuerySuggestionRequest request) {
