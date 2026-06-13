@@ -15,8 +15,12 @@
 import re
 import requests
 from bs4 import BeautifulSoup
-from typing import Dict, Optional, Tuple
+import json
+from pathlib import Path
+from typing import ClassVar, Dict, Iterable, Optional, Tuple
 from dataclasses import dataclass
+
+from src.config.settings import get_data_dir
 
 # yfinance 제거됨 - 한국 주식은 네이버 금융 사용
 # 해외 주식 필요 시 별도 모듈에서 처리
@@ -209,47 +213,107 @@ class NaverFinanceCrawler:
         try:
             # 기업실적분석 테이블 찾기
             tables = soup.select("table.tb_type1")
+            primary_tables = [table for table in tables if self._is_primary_financial_table(table)]
+            candidate_tables = primary_tables or [
+                table for table in tables if self._is_fallback_financial_table(table)
+            ]
             
-            for table in tables:
-                caption = table.select_one("caption")
-                if not caption:
-                    continue
-                
-                # 수익성 지표
-                if "수익성" in caption.text or "기업개요" in caption.text:
-                    rows = table.select("tr")
-                    for row in rows:
-                        th = row.select_one("th")
-                        tds = row.select("td")
-                        
-                        if not th or not tds:
-                            continue
-                        
-                        label = th.text.strip()
-                        # 가장 최근 연도 값 사용
-                        value = self._parse_number(tds[-1].text) if tds else None
-                        
-                        if "ROE" in label:
-                            result["roe"] = value
-                        elif "ROA" in label:
-                            result["roa"] = value
-                        elif "부채비율" in label:
-                            result["debt_ratio"] = value
-                        elif "영업이익률" in label:
-                            result["operating_margin"] = value
-                        elif "순이익률" in label:
-                            result["net_margin"] = value
-                        elif "매출액" in label:
-                            result["revenue"] = value
-                        elif "영업이익" in label and "률" not in label:
-                            result["operating_profit"] = value
-                        elif "당기순이익" in label:
-                            result["net_income"] = value
+            for table in candidate_tables:
+                rows = table.select("tr")
+                for row in rows:
+                    th = row.select_one("th")
+                    tds = row.select("td")
+
+                    if not th or not tds:
+                        continue
+
+                    label = th.get_text(" ", strip=True)
+                    value = self._preferred_financial_number(table, tds)
+
+                    if "ROE" in label:
+                        result["roe"] = value
+                    elif "ROA" in label:
+                        result["roa"] = value
+                    elif "부채비율" in label:
+                        result["debt_ratio"] = value
+                    elif "영업이익률" in label:
+                        result["operating_margin"] = value
+                    elif "순이익률" in label:
+                        result["net_margin"] = value
+                    elif "매출액" in label:
+                        result["revenue"] = value
+                    elif "영업이익" in label and "률" not in label:
+                        result["operating_profit"] = value
+                    elif "당기순이익" in label:
+                        result["net_income"] = value
             
         except Exception as e:
             print(f"⚠️ 재무데이터 파싱 오류: {e}")
         
         return result
+
+    def _is_primary_financial_table(self, table) -> bool:
+        caption = table.select_one("caption")
+        caption_text = caption.get_text(" ", strip=True) if caption else ""
+        classes = set(table.get("class") or [])
+        return (
+            "기업실적분석" in caption_text
+            or "tb_type1_ifrs" in classes
+            or "수익성" in caption_text
+            or "기업개요" in caption_text
+        )
+
+    def _is_fallback_financial_table(self, table) -> bool:
+        table_text = table.get_text(" ", strip=True)
+        return (
+            "ROE" in table_text
+            and "부채비율" in table_text
+            and ("영업이익률" in table_text or "순이익률" in table_text)
+        )
+
+    def _latest_number(self, cells) -> Optional[float]:
+        """오른쪽에서부터 비어 있지 않은 최신 숫자를 선택한다."""
+        for cell in reversed(cells):
+            value = self._parse_number(cell.get_text(" ", strip=True))
+            if value is not None:
+                return value
+        return None
+
+    def _preferred_financial_number(self, table, cells) -> Optional[float]:
+        """네이버 기업실적 표에서 최신 연간 실제값을 우선 선택한다."""
+        annual_indices = self._annual_actual_indices(table)
+        for index in reversed(annual_indices):
+            if index >= len(cells):
+                continue
+            value = self._parse_number(cells[index].get_text(" ", strip=True))
+            if value is not None:
+                return value
+        return self._latest_number(cells)
+
+    def _annual_actual_indices(self, table) -> list[int]:
+        header_rows = table.select("tr")
+        annual_count = 0
+        date_labels: list[str] = []
+
+        for row in header_rows[:3]:
+            headers = row.select("th")
+            for header in headers:
+                text = header.get_text(" ", strip=True)
+                if "최근 연간 실적" in text:
+                    annual_count = int(header.get("colspan") or 0)
+            labels = [header.get_text(" ", strip=True) for header in headers]
+            if labels and any(re.search(r"\d{4}\.\d{2}", label) for label in labels):
+                date_labels = labels
+
+        if annual_count <= 0:
+            return []
+
+        indices = []
+        for index in range(min(annual_count, len(date_labels) or annual_count)):
+            label = date_labels[index] if index < len(date_labels) else ""
+            if "(E)" not in label and "E)" not in label:
+                indices.append(index)
+        return indices
     
     def _parse_number(self, text: str) -> Optional[float]:
         """텍스트에서 숫자 추출"""
@@ -301,6 +365,23 @@ class QuantitativeAnalysis:
     growth_score: int = 0         # 성장성 점수 (25점)
     stability_score: int = 0      # 안정성 점수 (25점)
     total_score: int = 0          # 총점 (100점)
+    financial_source: str = "naver_finance"
+
+    CORE_FINANCIAL_METRICS: ClassVar[Tuple[str, ...]] = ("roe", "operating_margin", "debt_ratio")
+
+    def missing_core_metrics(self) -> list[str]:
+        """퀀트 점수 신뢰도에 필요한 핵심 재무 지표 누락 목록."""
+        return [
+            field_name
+            for field_name in self.CORE_FINANCIAL_METRICS
+            if getattr(self, field_name) is None
+        ]
+
+    def has_sufficient_financial_data(self) -> bool:
+        """핵심 수익성/안정성 지표와 최소 밸류에이션 지표가 있는지 확인."""
+        core_present = len(self.CORE_FINANCIAL_METRICS) - len(self.missing_core_metrics())
+        valuation_present = self.per is not None or self.pbr is not None
+        return valuation_present and core_present >= 2
     
     def calculate_scores(self):
         """점수 계산"""
@@ -570,8 +651,9 @@ class QuantitativeAnalysis:
 class QuantitativeAnalyzer:
     """정량적 분석기"""
     
-    def __init__(self):
+    def __init__(self, data_dir: Optional[str] = None):
         self.naver_crawler = NaverFinanceCrawler()
+        self.data_dir = Path(data_dir) if data_dir else get_data_dir()
     
     def analyze(self, stock_code: str) -> QuantitativeAnalysis:
         """
@@ -585,7 +667,9 @@ class QuantitativeAnalyzer:
         """
         # 네이버 금융에서 데이터 수집
         stock_info = self.naver_crawler.get_stock_info(stock_code)
-        financial_data = self.naver_crawler.get_financial_summary(stock_code)
+        financial_data = self._load_financial_snapshot(stock_code)
+        if not financial_data:
+            financial_data = self.naver_crawler.get_financial_summary(stock_code)
         
         # 분석 결과 생성
         analysis = QuantitativeAnalysis(
@@ -603,12 +687,67 @@ class QuantitativeAnalyzer:
             net_margin=financial_data.get("net_margin"),
             debt_ratio=financial_data.get("debt_ratio"),
             dividend_yield=stock_info.get("dividend_yield"),
+            financial_source=financial_data.get("source", "naver_finance"),
         )
         
         # 점수 계산
         analysis.calculate_scores()
         
         return analysis
+
+    def _load_financial_snapshot(self, stock_code: str) -> Dict:
+        candidates = list(self._financial_snapshot_paths())
+        snapshots = []
+        for path in candidates:
+            for row in self._iter_jsonl(path):
+                if str(row.get("stock_code", "")).strip() == stock_code:
+                    snapshots.append(row)
+        if not snapshots:
+            return {}
+
+        snapshots.sort(
+            key=lambda row: (
+                str(row.get("fiscal_year", "")),
+                str(row.get("as_of", "")),
+            ),
+            reverse=True,
+        )
+        latest = snapshots[0]
+        return {
+            "revenue": latest.get("revenue"),
+            "operating_profit": latest.get("operating_profit"),
+            "net_income": latest.get("net_income"),
+            "roe": latest.get("roe"),
+            "roa": latest.get("roa"),
+            "debt_ratio": latest.get("debt_ratio"),
+            "operating_margin": latest.get("operating_margin"),
+            "net_margin": latest.get("net_margin"),
+            "source": "dart_financial_snapshot",
+        }
+
+    def _financial_snapshot_paths(self) -> Iterable[Path]:
+        raw_root = self.data_dir / "raw" / "financials"
+        if raw_root.exists():
+            yield from sorted(raw_root.glob("*.jsonl"))
+
+        market_root = self.data_dir / "market_data"
+        if market_root.exists():
+            for path in sorted(market_root.glob("*/financials.jsonl")):
+                yield path
+
+    @staticmethod
+    def _iter_jsonl(path: Path) -> Iterable[Dict]:
+        with path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(row, dict):
+                    yield row
 
 
 # ============================================================

@@ -6,17 +6,18 @@ from __future__ import annotations
 
 import inspect
 import json
-import os
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List
 
 from .dart import DartDisclosureCollector
+from .dart_financials import DartFinancialStatementCollector
 from .kis_chart import KISChartCollector
-from .naver_forum import NaverStockChartCollector, NaverStockForumCollector
+from .krx_chart import KrxChartCollector
+from .naver_forum import NaverStockForumCollector
 from .naver_news import NaverNewsCollector
-from .types import CollectRequest, DocumentRecord, MarketRecord
+from .types import CollectRequest, DocumentRecord, FinancialSnapshot, MarketRecord
 
 
 @dataclass
@@ -34,12 +35,20 @@ class IngestionRunReport:
 class CollectResult:
     documents: List[DocumentRecord] = field(default_factory=list)
     market_records: List[MarketRecord] = field(default_factory=list)
+    financial_snapshots: List[FinancialSnapshot] = field(default_factory=list)
     report: IngestionRunReport | None = None
 
 
 class IngestionService:
-    def __init__(self, kis_chart_collector: KISChartCollector | None = None):
+    def __init__(
+        self,
+        kis_chart_collector: KISChartCollector | None = None,
+        krx_chart_collector: KrxChartCollector | None = None,
+        financial_collector: DartFinancialStatementCollector | None = None,
+    ):
         self.kis_chart_collector = kis_chart_collector or KISChartCollector()
+        self.krx_chart_collector = krx_chart_collector or KrxChartCollector()
+        self.financial_collector = financial_collector
 
     # Public entry used by the CLI when collecting one stock target.
     def collect_target_documents(self, request: CollectRequest) -> CollectResult:
@@ -55,17 +64,25 @@ class IngestionService:
 
         docs: List[DocumentRecord] = []
         market_records: List[MarketRecord] = []
+        financial_snapshots: List[FinancialSnapshot] = []
 
         if "news" in request.enabled_sources:
             self._safe_collect_news(request, docs, report)
         if "dart" in request.enabled_sources:
             self._safe_collect_dart(request, docs, report)
+        if "financials" in request.enabled_sources:
+            self._safe_collect_financials(request, financial_snapshots, report)
         if "forum" in request.enabled_sources:
             self._safe_collect_forum(request, docs, report)
         if "chart" in request.enabled_sources:
             self._safe_collect_chart(request, docs, market_records, report)
 
-        return CollectResult(documents=docs, market_records=market_records, report=report)
+        return CollectResult(
+            documents=docs,
+            market_records=market_records,
+            financial_snapshots=financial_snapshots,
+            report=report,
+        )
 
     def collect_general_news(
         self,
@@ -94,7 +111,7 @@ class IngestionService:
                     row.metadata = row.metadata or {}
                     row.metadata["general_keyword"] = keyword
                     row.metadata["theme_key"] = theme_key
-                    row.metadata["collected_at"] = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
+                    row.metadata["collected_at"] = self._utc_timestamp()
                 docs.extend(rows)
                 self._save_raw_documents(rows, raw_output_dir, "news", theme_key)
             except Exception as e:
@@ -156,6 +173,57 @@ class IngestionService:
             report.failures["dart"] = str(e)
             print(f"[WARN][{request.target.stock_name}] dart collect failed: {e}")
 
+    def _safe_collect_financials(
+        self,
+        request: CollectRequest,
+        snapshots: List[FinancialSnapshot],
+        report: IngestionRunReport,
+    ) -> None:
+        if not request.target.corp_code:
+            report.source_success["financials"] = False
+            report.failures["financials"] = "corp_code 없음"
+            print(f"[WARN][DART FINANCIALS] corp_code 없음: {request.target.stock_name}({request.target.stock_code})")
+            return
+        if not request.dart_api_key:
+            report.source_success["financials"] = False
+            report.failures["financials"] = "DART_API_KEY 없음"
+            print("[WARN][DART FINANCIALS] DART_API_KEY 없음")
+            return
+
+        try:
+            collector = self.financial_collector or DartFinancialStatementCollector(api_key=request.dart_api_key)
+            snapshot = collector.collect_latest_annual(
+                stock_name=request.target.stock_name,
+                stock_code=request.target.stock_code,
+                corp_code=request.target.corp_code,
+                from_date=request.from_date,
+                to_date=request.to_date,
+            )
+            if snapshot is None:
+                report.source_success["financials"] = False
+                report.failures["financials"] = "재무제표 없음"
+                return
+            snapshot.metadata = snapshot.metadata or {}
+            snapshot.metadata["theme_key"] = request.theme_key
+            snapshot.metadata["collected_at"] = self._utc_timestamp()
+            snapshots.append(snapshot)
+            report.source_success["financials"] = True
+            report.source_counts["financials"] = 1
+            report.raw_saved_counts["financials"] = self._save_raw_financial_snapshots(
+                [snapshot],
+                request.raw_output_dir,
+                request.theme_key,
+            )
+            self._save_market_financial_snapshots(
+                [snapshot],
+                request.raw_output_dir,
+                request.theme_key,
+            )
+        except Exception as e:
+            report.source_success["financials"] = False
+            report.failures["financials"] = str(e)
+            print(f"[WARN][{request.target.stock_name}] financials collect failed: {e}")
+
     def _safe_collect_forum(self, request: CollectRequest, docs: List[DocumentRecord], report: IngestionRunReport) -> None:
         try:
             rows = NaverStockForumCollector().collect(
@@ -182,51 +250,22 @@ class IngestionService:
         report: IngestionRunReport,
     ) -> None:
         try:
-            rows = NaverStockChartCollector().collect(
+            rows = self.krx_chart_collector.collect_daily(
+                stock_name=request.target.stock_name,
                 stock_code=request.target.stock_code,
-                pages=request.chart_pages,
                 from_date=request.from_date,
                 to_date=request.to_date,
             )
-            rows = self._attach_stock_info(rows, request.target.stock_name, request.target.stock_code, request.theme_key)
-            docs.extend(rows)
-
-            naver_market_rows = [
-                MarketRecord(
-                    source_type="chart",
-                    stock_name=request.target.stock_name,
-                    stock_code=request.target.stock_code,
-                    timestamp=r.published_at or "",
-                    open=r.metadata.get("open", ""),
-                    high=r.metadata.get("high", ""),
-                    low=r.metadata.get("low", ""),
-                    close=r.metadata.get("close", ""),
-                    volume=r.metadata.get("volume", ""),
-                    metadata={"source": "naver"},
-                )
-                for r in rows
-            ]
-
-            current_market_rows = list(naver_market_rows)
-            market_records.extend(naver_market_rows)
-
-            if os.getenv("KIS_APP_KEY") and os.getenv("KIS_APP_SECRET"):
-                try:
-                    kis_rows = self.kis_chart_collector.collect_daily(
-                        stock_name=request.target.stock_name,
-                        stock_code=request.target.stock_code,
-                        from_date=request.from_date,
-                        to_date=request.to_date,
-                    )
-                    current_market_rows.extend(kis_rows)
-                    market_records.extend(kis_rows)
-                except Exception as e:
-                    print(f"[WARN][{request.target.stock_name}] KIS chart collect skipped: {e}")
-
+            for row in rows:
+                row.metadata = row.metadata or {}
+                row.metadata.setdefault("source", "krx")
+                row.metadata["theme_key"] = request.theme_key
+                row.metadata["collected_at"] = self._utc_timestamp()
+            market_records.extend(rows)
             report.source_success["chart"] = True
             report.source_counts["chart"] = len(rows)
             report.raw_saved_counts["chart"] = self._save_raw_market_records(
-                current_market_rows,
+                rows,
                 request.raw_output_dir,
                 request.theme_key,
             )
@@ -242,7 +281,7 @@ class IngestionService:
         stock_code: str,
         theme_key: str,
     ) -> List[DocumentRecord]:
-        collected_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
+        collected_at = IngestionService._utc_timestamp()
 
         for doc in docs:
             if not doc.stock_name:
@@ -286,3 +325,58 @@ class IngestionService:
             for row in rows:
                 f.write(json.dumps(asdict(row), ensure_ascii=False) + "\n")
         return len(rows)
+
+    def _save_raw_financial_snapshots(
+        self,
+        rows: List[FinancialSnapshot],
+        raw_output_dir: str,
+        theme_key: str,
+    ) -> int:
+        if not rows:
+            return 0
+        raw_dir = Path(raw_output_dir) / "financials"
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        output_path = raw_dir / f"{theme_key}.jsonl"
+
+        with output_path.open("a", encoding="utf-8") as f:
+            for row in rows:
+                f.write(json.dumps(asdict(row), ensure_ascii=False) + "\n")
+        return len(rows)
+
+    def _save_market_financial_snapshots(
+        self,
+        rows: List[FinancialSnapshot],
+        raw_output_dir: str,
+        theme_key: str,
+    ) -> int:
+        if not rows:
+            return 0
+        data_dir = Path(raw_output_dir).parent
+        market_dir = data_dir / "market_data" / theme_key
+        market_dir.mkdir(parents=True, exist_ok=True)
+        output_path = market_dir / "financials.jsonl"
+
+        existing = []
+        if output_path.exists():
+            with output_path.open("r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        row = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if str(row.get("stock_code", "")) not in {item.stock_code for item in rows}:
+                        existing.append(row)
+
+        with output_path.open("w", encoding="utf-8") as f:
+            for row in existing:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+            for row in rows:
+                f.write(json.dumps(asdict(row), ensure_ascii=False) + "\n")
+        return len(rows)
+
+    @staticmethod
+    def _utc_timestamp() -> str:
+        return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")

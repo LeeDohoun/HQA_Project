@@ -158,7 +158,7 @@ def _step_collect(args, theme_key: str) -> dict:
 
     ingestion_service = IngestionService()
     dart_api_key = os.getenv("DART_API_KEY", "")
-    collect_stats = {"docs": 0, "market": 0}
+    collect_stats = {"docs": 0, "market": 0, "financials": 0}
 
     for target in targets:
         try:
@@ -178,9 +178,11 @@ def _step_collect(args, theme_key: str) -> dict:
             )
             collect_stats["docs"] += len(result.documents)
             collect_stats["market"] += len(result.market_records)
+            collect_stats["financials"] += len(result.financial_snapshots)
             print(
                 f"  [COLLECT] {target.stock_name}({target.stock_code}) "
-                f"docs={len(result.documents)} market={len(result.market_records)}"
+                f"docs={len(result.documents)} market={len(result.market_records)} "
+                f"financials={len(result.financial_snapshots)}"
             )
         except Exception as e:
             print(f"  [ERROR] {target.stock_name}: {e}")
@@ -291,7 +293,7 @@ def main():
     parser.add_argument("--chart-pages", type=int, default=5)
     parser.add_argument("--from-date", default="20250101")
     parser.add_argument("--to-date", default="20261231")
-    parser.add_argument("--enabled-sources", default="news,dart,forum")
+    parser.add_argument("--enabled-sources", default="news,dart,financials,forum")
     parser.add_argument("--corp-codes-csv", default="./corp_codes.csv",
                         help="stock_code→corp_code CSV (DART 수집에 필요)")
     parser.add_argument("--theme-max-stocks", type=int, default=30,

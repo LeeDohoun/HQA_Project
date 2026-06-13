@@ -79,7 +79,7 @@ class CollectRequest:
     to_date: str
     dart_api_key: str
     theme_key: str
-    enabled_sources: List[str] = field(default_factory=lambda: ["news", "dart", "forum"])
+    enabled_sources: List[str] = field(default_factory=lambda: ["news", "dart", "financials", "forum"])
     general_news_keywords: Optional[List[str]] = None
     max_general_news: int = 20
     raw_output_dir: str = field(default_factory=lambda: str(get_data_dir() / "raw"))
@@ -96,4 +96,28 @@ class MarketRecord:
     low: str
     close: str
     volume: str
+    metadata: Dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class FinancialSnapshot:
+    source_type: str
+    stock_name: str
+    stock_code: str
+    corp_code: str
+    fiscal_year: str
+    report_code: str
+    report_name: str
+    revenue: Optional[float]
+    operating_profit: Optional[float]
+    net_income: Optional[float]
+    assets: Optional[float]
+    liabilities: Optional[float]
+    equity: Optional[float]
+    roe: Optional[float]
+    operating_margin: Optional[float]
+    net_margin: Optional[float]
+    debt_ratio: Optional[float]
+    currency: str = "KRW"
+    as_of: Optional[str] = None
     metadata: Dict[str, str] = field(default_factory=dict)
