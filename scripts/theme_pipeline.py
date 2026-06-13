@@ -6,6 +6,7 @@ import csv
 import json
 import os
 import sys
+import time
 from dataclasses import asdict
 from pathlib import Path
 from typing import Dict, List
@@ -31,7 +32,49 @@ from src.ingestion import (
 from src.rag.raw_layer2_builder import RawLayer2Builder
 
 
-SUPPORTED_ENABLED_SOURCES = ("news", "dart", "forum", "chart")
+SUPPORTED_ENABLED_SOURCES = ("news", "dart", "financials", "forum", "chart")
+SECONDS_PER_DAY = 24 * 60 * 60
+
+
+def _refresh_corp_codes_csv(csv_path: str) -> None:
+    from scripts.download_dart_corp_codes import _write_csv, download_corp_codes
+
+    api_key = (os.getenv("DART_API_KEY") or "").strip()
+    if not api_key:
+        raise ValueError("DART_API_KEY가 없어 corp_codes.csv를 갱신할 수 없습니다.")
+
+    rows = download_corp_codes(api_key)
+    _write_csv(rows, Path(csv_path))
+
+
+def _ensure_fresh_corp_codes_csv(csv_path: str, *, max_age_days: int = 7) -> bool:
+    if not csv_path:
+        return False
+
+    path = Path(csv_path)
+    exists = path.exists()
+    age_seconds = time.time() - path.stat().st_mtime if exists else None
+    stale = age_seconds is not None and age_seconds > max_age_days * SECONDS_PER_DAY
+
+    if exists and not stale:
+        return False
+
+    reason = "없음" if not exists else f"{max_age_days}일 초과"
+    if not (os.getenv("DART_API_KEY") or "").strip():
+        print(f"[WARN][DART] corp_codes.csv {reason}, DART_API_KEY 없음 → 자동 갱신 건너뜀")
+        return False
+
+    try:
+        _refresh_corp_codes_csv(str(path))
+    except Exception as exc:
+        if exists:
+            print(f"[WARN][DART] corp_codes.csv 자동 갱신 실패, 기존 파일 유지: {exc}")
+        else:
+            print(f"[WARN][DART] corp_codes.csv 자동 생성 실패: {exc}")
+        return False
+
+    print(f"[DART] corp_codes.csv 자동 갱신 완료: {path}")
+    return True
 
 
 def _load_corp_code_map(csv_path: str) -> Dict[str, str]:
@@ -68,7 +111,7 @@ def _parse_enabled_sources(raw: str) -> List[str]:
 
 
 def _reset_theme_raw_files(data_dir: Path, theme_key: str) -> None:
-    for source in ("news", "dart", "forum", "chart"):
+    for source in ("news", "dart", "financials", "forum", "chart"):
         path = data_dir / "raw" / source / f"{theme_key}.jsonl"
         if path.exists():
             path.unlink()
@@ -139,6 +182,12 @@ def main() -> None:
         help="theme_targets 저장만 수행하고 실제 수집은 건너뜀",
     )
     parser.add_argument("--corp-codes-csv", default="./corp_codes.csv")
+    parser.add_argument(
+        "--corp-codes-max-age-days",
+        type=int,
+        default=7,
+        help="corp_codes.csv 자동 갱신 기준 일수. 기본값: 7",
+    )
     parser.add_argument("--from-date", default="20250101")
     parser.add_argument("--to-date", default="20251231")
     parser.add_argument("--max-news", type=int, default=20)
@@ -147,8 +196,8 @@ def main() -> None:
     parser.add_argument("--chart-pages", type=int, default=5)
     parser.add_argument(
         "--enabled-sources",
-        default="news,dart,forum",
-        help="수집 소스 목록(쉼표 구분): news,dart,forum,chart",
+        default="news,dart,financials,forum",
+        help="수집 소스 목록(쉼표 구분): news,dart,financials,forum,chart. chart는 KRX OHLCV를 수집합니다.",
     )
     parser.add_argument("--general-news-keywords", default="")
     parser.add_argument(
@@ -162,6 +211,11 @@ def main() -> None:
     theme_key = args.theme_key or make_theme_key(args.theme, args.theme)
     data_dir = Path(args.data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
+
+    _ensure_fresh_corp_codes_csv(
+        args.corp_codes_csv,
+        max_age_days=args.corp_codes_max_age_days,
+    )
 
     targets = _resolve_targets(args, theme_key)
     store = ThemeTargetStore(data_dir=args.data_dir)
@@ -202,7 +256,8 @@ def main() -> None:
             run_reports.append(asdict(result.report))
         print(
             f"[COLLECT] {target.stock_name}({target.stock_code}) "
-            f"docs={len(result.documents)} market={len(result.market_records)}"
+            f"docs={len(result.documents)} market={len(result.market_records)} "
+            f"financials={len(result.financial_snapshots)}"
         )
 
     general_news_keywords = [

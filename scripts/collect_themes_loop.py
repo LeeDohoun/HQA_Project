@@ -67,8 +67,8 @@ def main() -> int:
     parser.add_argument(
         "--enabled-sources",
         type=str,
-        default="news,dart,forum,chart",
-        help="Comma-separated sources passed to run_pipeline.py",
+        default="news,dart,financials,forum,chart",
+        help="Comma-separated sources passed to run_pipeline.py. chart=KRX OHLCV, financials=DART statements.",
     )
     args = parser.parse_args()
 

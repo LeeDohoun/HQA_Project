@@ -102,6 +102,24 @@ class QuantAgent:
         try:
             analysis: QuantitativeAnalysis = self.analyzer.analyze(stock_code)
             metrics = self._metrics_from_analysis(analysis)
+
+            if not analysis.has_sufficient_financial_data():
+                missing = analysis.missing_core_metrics()
+                reason = (
+                    "네이버 금융 핵심 재무 지표 부족: "
+                    + ", ".join(missing)
+                )
+                print(f"   ⚠️ {reason}")
+                fallback_score = self._web_search_fallback(stock_name, stock_code)
+                fallback_score.quality_flags.update(
+                    {
+                        "data_quality": "insufficient",
+                        "source": getattr(analysis, "financial_source", "naver_finance"),
+                        "fallback_used": fallback_score.grade != "F" or fallback_score.total_score != analysis.total_score,
+                        "missing_core_metrics": missing,
+                    }
+                )
+                return fallback_score
             
             return QuantScore(
                 valuation_score=analysis.valuation_score,
@@ -120,6 +138,11 @@ class QuantAgent:
                 opinion=self._analysis_opinion(analysis),
                 grade=self._calculate_grade(analysis.total_score),
                 analysis_packet=self._build_packet_from_analysis(stock_name, stock_code, analysis).to_dict(),
+                quality_flags={
+                    "data_quality": "sufficient",
+                    "source": getattr(analysis, "financial_source", "naver_finance"),
+                    "missing_core_metrics": analysis.missing_core_metrics(),
+                },
             )
             
         except Exception as e:
@@ -246,6 +269,11 @@ JSON만 출력하세요.
                 opinion=data.get("opinion", "웹 검색 기반 분석") + disclaimer,
                 grade=self._calculate_grade(total),
                 analysis_packet=self._build_packet_from_web(stock_name, stock_code, data, combined_text, total).to_dict(),
+                quality_flags={
+                    "data_quality": "fallback",
+                    "source": "web_search",
+                    "fallback_used": True,
+                },
             )
             
             print(f"   ✅ 웹 검색 폴백 성공: {total}/100점 (등급 {score.grade})")
@@ -270,6 +298,12 @@ JSON만 출력하세요.
             opinion="데이터 부족으로 중립 의견",
             grade="C",
             analysis_packet=self._build_packet_from_error(stock_name, error).to_dict(),
+            quality_flags={
+                "data_quality": "insufficient",
+                "source": "default_score",
+                "fallback_used": True,
+                "reason": error,
+            },
         )
     
     def generate_report(self, score: QuantScore, stock_name: str) -> str:
