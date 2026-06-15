@@ -88,15 +88,6 @@ def build_final_decision_from_payload(
         contrarian_view=str(data.get("contrarian_view") or ""),
         summary=str(data.get("summary") or ""),
         detailed_reasoning=str(data.get("detailed_reasoning") or ""),
-        validation_status=str(data.get("validation_status") or "disabled"),
-        validation_summary=str(data.get("validation_summary") or ""),
-        validator_model=str(data.get("validator_model") or ""),
-        primary_model=str(data.get("primary_model") or ""),
-        validator_action=str(data.get("validator_action") or ""),
-        validator_confidence=_bounded_int(
-            data.get("validator_confidence"),
-            default=0,
-        ),
     )
 
 
@@ -119,11 +110,5 @@ def final_decision_to_payload(decision: FinalDecision) -> Dict[str, Any]:
         "contrarian_view": decision.contrarian_view,
         "summary": decision.summary,
         "detailed_reasoning": decision.detailed_reasoning,
-        "validation_status": decision.validation_status,
-        "validation_summary": decision.validation_summary,
-        "validator_model": decision.validator_model,
-        "primary_model": decision.primary_model,
-        "validator_action": decision.validator_action,
-        "validator_confidence": decision.validator_confidence,
         "timestamp": decision.timestamp,
     }

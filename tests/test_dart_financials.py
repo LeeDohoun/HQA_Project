@@ -33,6 +33,8 @@ def test_dart_financial_statement_collector_builds_snapshot_from_major_accounts(
             {"fs_div": "CFS", "account_nm": "자산총계", "thstrm_amount": "550,000,000,000,000"},
             {"fs_div": "CFS", "account_nm": "부채총계", "thstrm_amount": "124,000,000,000,000"},
             {"fs_div": "CFS", "account_nm": "자본총계", "thstrm_amount": "416,000,000,000,000"},
+            {"fs_div": "CFS", "account_nm": "유동자산", "thstrm_amount": "220,000,000,000,000"},
+            {"fs_div": "CFS", "account_nm": "유동부채", "thstrm_amount": "110,000,000,000,000"},
         ],
     }
     session = _Session(payload)
@@ -49,6 +51,8 @@ def test_dart_financial_statement_collector_builds_snapshot_from_major_accounts(
     assert snapshot.net_margin == 13.55
     assert snapshot.debt_ratio == 29.81
     assert snapshot.roe == 10.87
+    assert snapshot.roa == 8.22
+    assert snapshot.current_ratio == 200.0
     assert snapshot.metadata["quality_status"] == "complete"
     assert session.requested[1]["params"]["corp_code"] == "00126380"
     assert session.requested[1]["params"]["reprt_code"] == "11011"

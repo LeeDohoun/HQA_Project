@@ -330,7 +330,7 @@ public class TradeSignalService {
                 List.of("signal"),
                 List.of("total_score"));
         addAgentReason(reasons, "risk_manager", "Risk Manager", finalDecision,
-                List.of("summary", "detailed_reasoning", "validation_summary"),
+                List.of("summary", "detailed_reasoning"),
                 List.of("action_code", "action"),
                 List.of("total_score", "confidence"));
         return reasons;

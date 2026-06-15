@@ -26,6 +26,8 @@ class DartFinancialStatementCollector(BaseCollector):
         "assets": ("자산총계", "자산 총계"),
         "liabilities": ("부채총계", "부채 총계"),
         "equity": ("자본총계", "자본 총계"),
+        "current_assets": ("유동자산", "유동 자산"),
+        "current_liabilities": ("유동부채", "유동 부채"),
     }
 
     def __init__(self, api_key: str | None = None, timeout: int = 20):
@@ -77,6 +79,8 @@ class DartFinancialStatementCollector(BaseCollector):
         assets = account_values.get("assets")
         liabilities = account_values.get("liabilities")
         equity = account_values.get("equity")
+        current_assets = account_values.get("current_assets")
+        current_liabilities = account_values.get("current_liabilities")
 
         return FinancialSnapshot(
             source_type="financials",
@@ -93,9 +97,13 @@ class DartFinancialStatementCollector(BaseCollector):
             liabilities=liabilities,
             equity=equity,
             roe=self._ratio(net_income, equity),
+            roa=self._ratio(net_income, assets),
             operating_margin=self._ratio(operating_profit, revenue),
             net_margin=self._ratio(net_income, revenue),
             debt_ratio=self._ratio(liabilities, equity),
+            current_assets=current_assets,
+            current_liabilities=current_liabilities,
+            current_ratio=self._ratio(current_assets, current_liabilities),
             currency=self._currency(rows),
             as_of=self._as_of(rows),
             metadata={

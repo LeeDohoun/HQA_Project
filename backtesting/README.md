@@ -148,8 +148,8 @@ LLM 평가는 `--llm-horizon auto|short|long`으로 단타/장타 프로필을 �
 넓은 후보군을 대상으로 qwen3/gpt-oss 조합을 시험하려면 환경변수로 역할별 모델을 지정할 수 있습니다.
 
 ```bash
-OLLAMA_INSTRUCT_MODEL=qwen3:14b \
-OLLAMA_THINKING_MODEL=gpt-oss:20b \
+OLLAMA_ANALYST_MODEL=qwen3:14b \
+OLLAMA_RISK_MANAGER_MODEL=gpt-oss:20b \
 .venv/bin/python backtesting/leader_backtest.py \
   --theme AI \
   --theme-key ai \
@@ -224,8 +224,8 @@ LLM 평가는 `data/backtest_results/llm_cache/<theme_key>/`에 캐시됩니다.
 실제 모델로 검증 자료를 만들 때는 `qwen3:14b`와 `gpt-oss:20b`를 역할별로 지정하고 `--preset proof`를 사용합니다.
 
 ```bash
-OLLAMA_INSTRUCT_MODEL=qwen3:14b \
-OLLAMA_THINKING_MODEL=gpt-oss:20b \
+OLLAMA_ANALYST_MODEL=qwen3:14b \
+OLLAMA_RISK_MANAGER_MODEL=gpt-oss:20b \
 .venv/bin/python backtesting/proof_validation.py \
   --preset proof \
   --short-top-k 10 \

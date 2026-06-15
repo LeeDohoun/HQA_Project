@@ -8,7 +8,6 @@ HQA AI Server - AI 에이전트 & RAG 전용 서버
 from __future__ import annotations
 
 import asyncio
-import re
 import json
 import logging
 import os
@@ -191,12 +190,6 @@ class TradeDecisionPayload(BaseModel):
     stop_loss: str = ""
     signal_alignment: str = ""
     contrarian_view: str = ""
-    validation_status: str = "disabled"
-    validation_summary: str = ""
-    validator_model: str = ""
-    primary_model: str = ""
-    validator_action: str = ""
-    validator_confidence: int = 0
 
 
 class TradeDecisionRequest(BaseModel):
@@ -499,7 +492,7 @@ async def _run_theme_analysis_background(
 
 def _execute_quick(task_id: str, stock_name: str, stock_code: str) -> dict:
     """빠른 분석 (Quant + Chartist 병렬)"""
-    from src.agents import QuantAgent, ChartistAgent, RiskManagerAgent
+    from src.agents import QuantAgent, ChartistAgent, RiskManagerAgent, AgentScores
     from src.utils.parallel import run_agents_parallel, is_error
 
     _publish_progress(task_id, "quant", "started", "재무 분석 중...", 0.2)
@@ -539,22 +532,22 @@ def _execute_quick(task_id: str, stock_name: str, stock_code: str) -> dict:
     if is_error(chartist_score):
         chartist_score = chartist._default_score(stock_code, str(chartist_score))
 
-    _publish_progress(task_id, "quick_decision", "started", "빠른 판단 중...", 0.8)
+    _publish_progress(task_id, "risk_manager", "started", "최종 판단 중...", 0.8)
 
     risk_manager = RiskManagerAgent()
-    quick_opinion = risk_manager.quick_decision(
-        analyst_total=35,
-        quant_total=int(getattr(quant_score, "total_score", 0)),
-        chartist_total=int(getattr(chartist_score, "total_score", 0)),
-    )
-    quick_decision = _quick_decision_to_dict(
+    decision = risk_manager.make_decision(
         stock_name,
         stock_code,
-        quick_opinion,
-        int(getattr(quant_score, "total_score", 0)),
-        int(getattr(chartist_score, "total_score", 0)),
+        AgentScores(
+            quant_result=quant_score,
+            chartist_result=chartist_score,
+            analyst_total=50,
+            analyst_grade="C",
+            analyst_opinion="빠른 분석 모드에서는 Analyst 정성 리서치를 생략했습니다.",
+        ),
     )
-    _publish_progress(task_id, "quick_decision", "completed", f"판단: {quick_decision['action']}", 1.0)
+    decision_dict = _decision_to_dict(decision)
+    _publish_progress(task_id, "risk_manager", "completed", f"판단: {decision_dict['action']}", 1.0)
 
     return {
         "task_id": task_id,
@@ -563,9 +556,9 @@ def _execute_quick(task_id: str, stock_name: str, stock_code: str) -> dict:
         "scores": {
             "quant": _score_to_dict(quant_score),
             "chartist": _score_to_dict(chartist_score),
-            "quick_decision": _quick_score_to_dict(quick_decision, quick_opinion),
+            "risk_manager": _risk_manager_score_to_dict(decision),
         },
-        "final_decision": quick_decision,
+        "final_decision": decision_dict,
         "completed_at": datetime.now().isoformat(),
     }
 
@@ -722,62 +715,6 @@ def _decision_to_dict(decision) -> dict:
     }
 
 
-def _quick_decision_to_dict(
-    stock_name: str,
-    stock_code: str,
-    quick_opinion: str,
-    quant_total: int,
-    chartist_total: int,
-) -> Dict[str, Any]:
-    score_match = re.search(r"점수:\s*(\d+)", quick_opinion)
-    total_score = int(score_match.group(1)) if score_match else int(round((quant_total * 0.55) + (chartist_total * 0.45)))
-    if "적극 매수" in quick_opinion:
-        action = "적극 매수"
-        action_code = "STRONG_BUY"
-    elif "매수" in quick_opinion:
-        action = "매수"
-        action_code = "BUY"
-    elif "매도" in quick_opinion:
-        action = "매도"
-        action_code = "SELL"
-    elif "축소" in quick_opinion:
-        action = "비중 축소"
-        action_code = "REDUCE"
-    else:
-        action = "보유/관망"
-        action_code = "HOLD"
-
-    risk_level = "낮음" if total_score >= 70 else "보통" if total_score >= 45 else "높음"
-    risk_code = "LOW" if total_score >= 70 else "MEDIUM" if total_score >= 45 else "HIGH"
-    return {
-        "stock_name": stock_name,
-        "stock_code": stock_code,
-        "total_score": total_score,
-        "action": action,
-        "action_code": action_code,
-        "confidence": min(95, max(35, total_score)),
-        "risk_level": risk_level,
-        "risk_level_code": risk_code,
-        "summary": quick_opinion,
-        "key_catalysts": [
-            f"재무 점수 {quant_total}/100",
-            f"기술 점수 {chartist_total}/100",
-        ],
-        "risk_factors": ["빠른 분석은 Analyst 정성 리서치를 생략합니다."],
-        "detailed_reasoning": "Quant와 Chartist 점수를 기반으로 빠른 판단을 생성했습니다.",
-    }
-
-
-def _quick_score_to_dict(decision: Dict[str, Any], opinion: str) -> Dict[str, Any]:
-    return {
-        "total_score": decision.get("total_score", 0),
-        "grade": decision.get("action", ""),
-        "opinion": opinion,
-        "confidence": decision.get("confidence", 0),
-        "risk_level": decision.get("risk_level", ""),
-    }
-
-
 def _risk_manager_score_to_dict(decision) -> Dict[str, Any]:
     payload = _decision_to_dict(decision)
     return {
@@ -872,12 +809,6 @@ def _build_final_decision(stock_name: str, stock_code: str, payload: TradeDecisi
         contrarian_view=payload.contrarian_view,
         summary=payload.summary,
         detailed_reasoning=payload.detailed_reasoning,
-        validation_status=payload.validation_status,
-        validation_summary=payload.validation_summary,
-        validator_model=payload.validator_model,
-        primary_model=payload.primary_model,
-        validator_action=payload.validator_action,
-        validator_confidence=max(0, min(100, int(payload.validator_confidence))),
     )
 
 
@@ -1524,8 +1455,8 @@ async def suggest(request: SuggestRequest):
     loop = asyncio.get_event_loop()
 
     def _run():
-        from src.agents.llm_config import get_instruct_llm
-        llm = get_instruct_llm()
+        from src.agents.llm_config import get_chartist_llm
+        llm = get_chartist_llm()
         prompt = f"""당신은 주식 분석 AI 시스템의 쿼리 검증 모듈입니다.
 
 사용자의 질문이 다음 기능 범위 내에 있는지 판단하세요:

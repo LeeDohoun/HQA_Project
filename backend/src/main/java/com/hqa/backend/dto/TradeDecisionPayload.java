@@ -21,12 +21,6 @@ public class TradeDecisionPayload {
     private String stopLoss = "";
     private String signalAlignment = "";
     private String contrarianView = "";
-    private String validationStatus = "disabled";
-    private String validationSummary = "";
-    private String validatorModel = "";
-    private String primaryModel = "";
-    private String validatorAction = "";
-    private int validatorConfidence;
 
     public int getTotalScore() { return totalScore; }
     public void setTotalScore(int totalScore) { this.totalScore = totalScore; }
@@ -60,16 +54,4 @@ public class TradeDecisionPayload {
     public void setSignalAlignment(String signalAlignment) { this.signalAlignment = signalAlignment; }
     public String getContrarianView() { return contrarianView; }
     public void setContrarianView(String contrarianView) { this.contrarianView = contrarianView; }
-    public String getValidationStatus() { return validationStatus; }
-    public void setValidationStatus(String validationStatus) { this.validationStatus = validationStatus; }
-    public String getValidationSummary() { return validationSummary; }
-    public void setValidationSummary(String validationSummary) { this.validationSummary = validationSummary; }
-    public String getValidatorModel() { return validatorModel; }
-    public void setValidatorModel(String validatorModel) { this.validatorModel = validatorModel; }
-    public String getPrimaryModel() { return primaryModel; }
-    public void setPrimaryModel(String primaryModel) { this.primaryModel = primaryModel; }
-    public String getValidatorAction() { return validatorAction; }
-    public void setValidatorAction(String validatorAction) { this.validatorAction = validatorAction; }
-    public int getValidatorConfidence() { return validatorConfidence; }
-    public void setValidatorConfidence(int validatorConfidence) { this.validatorConfidence = validatorConfidence; }
 }

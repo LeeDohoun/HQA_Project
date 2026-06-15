@@ -8,7 +8,7 @@ Supervisor Agent (수퍼바이저 에이전트)
 - 적절한 에이전트/도구 조합 선택
 - 결과 통합 및 응답 생성
 
-모델: Instruct (빠른 처리, 복잡한 추론 불필요)
+모델: Chartist 역할 모델 기반 빠른 처리
 """
 
 import json
@@ -17,7 +17,7 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 from enum import Enum
 
-from src.agents.llm_config import get_instruct_llm
+from src.agents.llm_config import get_chartist_llm
 from src.utils.stock_mapper import StockMapper, get_mapper
 from src.utils.memory import ConversationMemory
 from src.utils.parallel import run_agents_parallel, is_error
@@ -81,7 +81,7 @@ class SupervisorAgent:
     """
     
     def __init__(self, memory: Optional[ConversationMemory] = None):
-        self.llm = get_instruct_llm()
+        self.llm = get_chartist_llm()
         self.stock_mapper = get_mapper()  # 분리된 StockMapper 사용
         self.memory = memory or ConversationMemory(max_turns=10)
         
@@ -169,8 +169,8 @@ class SupervisorAgent:
             if analysis.stocks:
                 if any(kw in query for kw in ["빠르게", "간단히", "요약"]):
                     analysis.intent = Intent.QUICK_ANALYSIS
-                    analysis.required_agents = ["quant", "chartist"]
-                    analysis.execution_plan = ["quant", "chartist", "quick_decision"]
+                    analysis.required_agents = ["quant", "chartist", "risk_manager"]
+                    analysis.execution_plan = ["quant", "chartist", "risk_manager"]
                     analysis.confidence = 0.85
                 else:
                     analysis.intent = Intent.STOCK_ANALYSIS
@@ -240,7 +240,7 @@ class SupervisorAgent:
                 if any(kw in query for kw in ["산업", "업종", "섹터", "동향", "전망"]):
                     analysis.intent = Intent.INDUSTRY_ANALYSIS
                     analysis.industry = industry
-                    analysis.required_agents = ["analyst"]  # Researcher + Strategist
+                    analysis.required_agents = ["analyst"]
                     analysis.required_tools = ["web_search"]
                     analysis.execution_plan = ["research_industry", "analyze_industry"]
                     analysis.confidence = 0.85
@@ -382,7 +382,7 @@ JSON만 응답하세요.
         if analysis.intent == Intent.STOCK_ANALYSIS:
             analysis.required_agents = ["analyst", "quant", "chartist", "risk_manager"]
             analysis.execution_plan = [
-                "1. Analyst: 헤게모니 분석 (Researcher → Strategist)",
+                "1. Analyst: 헤게모니 분석",
                 "2. Quant: 재무 분석",
                 "3. Chartist: 기술적 분석",
                 "4. Risk Manager: 최종 판단",
@@ -393,23 +393,23 @@ JSON만 응답하세요.
             analysis.execution_plan = [
                 "1. Quant: 재무 분석",
                 "2. Chartist: 기술적 분석",
-                "3. Risk Manager: 빠른 판단",
+                "3. Risk Manager: 최종 판단",
             ]
             
         elif analysis.intent == Intent.INDUSTRY_ANALYSIS:
             analysis.required_agents = ["analyst"]
             analysis.required_tools = ["web_search"]
             analysis.execution_plan = [
-                "1. Researcher: 산업 뉴스/정책 검색",
-                "2. Strategist: 산업 구조 분석",
+                "1. Analyst: 산업 관련 뉴스/포럼 확인",
+                "2. Analyst: 산업 영향 분석",
             ]
             
         elif analysis.intent == Intent.ISSUE_ANALYSIS:
             analysis.required_agents = ["analyst"]
             analysis.required_tools = ["web_search"]
             analysis.execution_plan = [
-                "1. Researcher: 이슈 관련 정보 검색",
-                "2. Strategist: 영향도 분석",
+                "1. Analyst: 이슈 관련 뉴스/포럼 확인",
+                "2. Analyst: 영향도 분석",
             ]
             
         elif analysis.intent == Intent.REALTIME_PRICE:
@@ -532,7 +532,7 @@ JSON만 응답하세요.
         chartist_score = scores.get("chartist")
         
         if analyst_score:
-            print(f"   → Analyst  헤게모니: {analyst_score.hegemony_grade} ({analyst_score.total_score}/70점)")
+            print(f"   → Analyst  헤게모니: {analyst_score.hegemony_grade} ({analyst_score.total_score}/100점)")
         if quant_score:
             print(f"   → Quant    재무등급: {quant_score.grade} ({quant_score.total_score}/100점)")
         if chartist_score:
@@ -575,13 +575,21 @@ JSON만 응답하세요.
         chartist_score = self.agents["chartist"].full_analysis(stock_name, stock_code)
         results["scores"]["chartist"] = chartist_score
         
-        # Quick Decision
-        quick_opinion = self.agents["risk_manager"].quick_decision(
-            analyst_total=35,  # 기본값
-            quant_total=quant_score.total_score,
-            chartist_total=chartist_score.total_score,
+        from src.agents import AgentScores
+
+        decision = self.agents["risk_manager"].make_decision(
+            stock_name,
+            stock_code,
+            AgentScores(
+                quant_result=quant_score,
+                chartist_result=chartist_score,
+                analyst_total=50,
+                analyst_grade="C",
+                analyst_opinion="빠른 분석 모드에서는 Analyst 정성 리서치를 생략했습니다.",
+            ),
         )
-        results["quick_opinion"] = quick_opinion
+        results["scores"]["risk_manager"] = decision
+        results["final_decision"] = decision
         
         return results
     
@@ -612,26 +620,17 @@ JSON만 응답하세요.
         
         print(f"\n🏭 {industry} 산업 분석 시작...")
         
-        # 통합 AnalystAgent로 산업 분석
         from src.agents.analyst import AnalystAgent
         analyst = AnalystAgent()
         
         # 산업 관련 정보 수집
         news = analyst._search_news(industry)
-        policy = analyst._search_policy(industry)
-        industry_info = analyst._search_industry(industry)
-        
+
         analysis_prompt = f"""
 {industry} 산업에 대해 분석하세요:
 
-[뉴스]
+[뉴스/포럼]
 {news}
-
-[정책]
-{policy}
-
-[산업 동향]
-{industry_info}
 
 다음을 포함해서 분석해주세요:
 1. 산업 현황 요약
@@ -640,14 +639,13 @@ JSON만 응답하세요.
 4. 투자 시사점
 5. 관련 종목 추천
 """
-        
-        response = analyst.llm.invoke(analysis_prompt)
+
+        response = analyst.thinking_llm.invoke(analysis_prompt)
         
         return {
             "status": "success",
             "industry": industry,
             "news": news,
-            "policy": policy,
             "analysis": response.content,
         }
     
@@ -678,7 +676,7 @@ JSON만 응답하세요.
 5. 투자 전략 제안
 """
         
-        response = analyst.llm.invoke(analysis_prompt)
+        response = analyst.thinking_llm.invoke(analysis_prompt)
         
         return {
             "status": "success",
@@ -816,7 +814,7 @@ JSON만 응답하세요.
 📊 {stock_name} 종합 분석 결과
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🎯 최종 판단: {decision.action.value}
-📈 종합 점수: {decision.total_score}/270점
+📈 종합 점수: {decision.total_score}/100점
 ⚠️ 리스크 레벨: {decision.risk_level.value}
 💰 목표가: {decision.target_price or 'N/A'}
 🛑 손절가: {decision.stop_loss or 'N/A'}

@@ -12,7 +12,7 @@ from typing import Any, Dict, Iterable, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from backtesting.temporal_rag import TemporalRAG
-from src.agents.llm_config import get_instruct_llm, get_llm_info, get_thinking_llm
+from src.agents.llm_config import get_analyst_llm, get_llm_info, get_risk_manager_llm
 from src.config.settings import get_data_dir
 
 logger = logging.getLogger(__name__)
@@ -112,16 +112,17 @@ class TemporalLLMStockScorer:
         self.rag = TemporalRAG(data_dir=str(self.data_dir), theme_key=theme_key)
         self.llm_info = get_llm_info()
         self.provider = str(self.llm_info.get("provider") or "")
+        agent_models = self.llm_info.get("agent_models") or {}
         self.model_name = str(
-            self.llm_info.get("instruct_model")
-            or self.llm_info.get("thinking_model")
+            agent_models.get("analyst")
+            or agent_models.get("risk_manager")
             or self.provider
             or "unknown"
         )
         self.cache_path = Path(cache_path) if cache_path else self._default_cache_path()
         self.cache: Dict[str, Dict[str, Any]] = {}
         self._load_cache()
-        self.llm = get_instruct_llm()
+        self.llm = get_analyst_llm()
         self.structured_llm = self._build_structured_llm(self.llm)
 
     def metadata(self) -> Dict[str, Any]:
@@ -362,18 +363,19 @@ class TemporalMultiAgentStockScorer:
         self.rag = TemporalRAG(data_dir=str(self.data_dir), theme_key=theme_key)
         self.llm_info = get_llm_info()
         self.provider = str(self.llm_info.get("provider") or "")
+        agent_models = self.llm_info.get("agent_models") or {}
         self.model_name = str(
-            self.llm_info.get("instruct_model")
-            or self.llm_info.get("thinking_model")
+            agent_models.get("analyst")
+            or agent_models.get("risk_manager")
             or self.provider
             or "unknown"
         )
-        self.thinking_model_name = str(self.llm_info.get("thinking_model") or self.model_name)
+        self.thinking_model_name = str(agent_models.get("risk_manager") or self.model_name)
         self.cache_path = Path(cache_path) if cache_path else self._default_cache_path()
         self.cache: Dict[str, Dict[str, Any]] = {}
         self._load_cache()
-        self.instruct_llm = get_instruct_llm()
-        self.thinking_llm = get_thinking_llm()
+        self.instruct_llm = get_analyst_llm()
+        self.thinking_llm = get_risk_manager_llm()
 
     def metadata(self) -> Dict[str, Any]:
         payload = asdict(

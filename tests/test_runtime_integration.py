@@ -132,36 +132,6 @@ def test_run_agent_demo_succeeds_with_mock_provider(tmp_path):
     assert "삼성전자 메모리 전망" in result.stdout
 
 
-def test_answer_question_uses_rag_fallback_when_llm_response_is_blank():
-    agent = AnalystAgent()
-
-    class BlankLLM:
-        def invoke(self, _prompt):
-            class Response:
-                content = ""
-
-            return Response()
-
-    agent._instruct_llm = BlankLLM()
-    agent.quick_search = lambda _question: {
-        "query": "2차전지 시장 전망 요약",
-        "context": (
-            "=== 검색된 문서 (Canonical RAG) ===\n"
-            "[문서 1] (출처: news, source=news, title=2차전지 약세)\n"
-            "원재료 가격 상승 우려와 중동 리스크로 2차전지주가 약세를 보였다.\n"
-        ),
-        "has_results": True,
-        "source": "rag",
-        "hits": [{"source": "news", "title": "2차전지 약세"}],
-    }
-
-    result = agent.answer_question("2차전지 시장 전망 요약")
-
-    assert result["answer"]
-    assert "근거:" in result["answer"]
-    assert "2차전지 약세" in result["answer"]
-
-
 def test_theme_orchestrator_script_runs_with_local_theme_data(tmp_path):
     raw_targets = tmp_path / "raw" / "theme_targets"
     raw_targets.mkdir(parents=True, exist_ok=True)

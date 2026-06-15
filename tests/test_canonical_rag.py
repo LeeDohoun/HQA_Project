@@ -216,19 +216,20 @@ class TestAnalystSourceFilter:
         from src.agents.analyst import AnalystAgent
 
         agent = AnalystAgent()
-        assert hasattr(agent, "rag_tool_reports")
+        assert hasattr(agent, "rag_tool_evidence")
         assert hasattr(agent, "rag_tool_news")
-        assert hasattr(agent, "rag_tool_policy")
-        assert hasattr(agent, "rag_tool_industry")
+        assert not hasattr(agent, "rag_tool_reports")
+        assert not hasattr(agent, "rag_tool_policy")
+        assert not hasattr(agent, "rag_tool_industry")
 
-    def test_report_tool_filters_sources(self):
+    def test_evidence_tool_filters_sources(self):
         pytest.importorskip("langchain_core")
         from src.agents.analyst import AnalystAgent
 
         agent = AnalystAgent()
-        tool = agent.rag_tool_reports
-        assert tool.source_types is not None
-        assert "report" in tool.source_types
+        tool = agent.rag_tool_evidence
+        assert tool.source_types == ["dart", "news"]
+        assert "report" not in tool.source_types
         assert "forum" not in tool.source_types
 
     def test_news_tool_includes_forum(self):
@@ -237,8 +238,58 @@ class TestAnalystSourceFilter:
 
         agent = AnalystAgent()
         tool = agent.rag_tool_news
-        assert "forum" in tool.source_types
-        assert "news" in tool.source_types
+        assert tool.source_types == ["news", "forum"]
+        assert "general_news" not in tool.source_types
+
+    def test_full_analysis_returns_analyst_score_directly(self):
+        pytest.importorskip("langchain_core")
+        from src.agents.analyst import AnalystAgent, AnalystScore
+
+        class FakeResponse:
+            content = json.dumps(
+                {
+                    "moat_score": 31,
+                    "moat_reason": "DART와 뉴스에서 주도권 근거가 확인됨",
+                    "growth_score": 22,
+                    "growth_reason": "성장 촉매가 일부 확인됨",
+                    "competitive_advantage": "기술력",
+                    "risk_factors": "수요 둔화",
+                    "hegemony_grade": "B",
+                    "final_opinion": "주도 후보",
+                    "detailed_reasoning": "근거 기반 판단",
+                },
+                ensure_ascii=False,
+            )
+
+        class FakeLLM:
+            def invoke(self, prompt):
+                return FakeResponse()
+
+        agent = AnalystAgent()
+        agent._thinking_llm = FakeLLM()
+        agent._search_evidence = lambda stock_name: ("DART 투자 근거", ["dart"])
+        agent._search_news = lambda stock_name: "뉴스 심리"
+
+        result = agent.full_analysis("삼성전자", "005930")
+
+        assert isinstance(result, AnalystScore)
+        assert result.moat_score == 31
+        assert result.moat_reason == "DART와 뉴스에서 주도권 근거가 확인됨"
+        assert result.growth_reason == "성장 촉매가 일부 확인됨"
+
+    def test_analyst_summary_path_uses_summary_llm(self, monkeypatch):
+        pytest.importorskip("langchain_core")
+        import src.agents.analyst as analyst_module
+
+        summary_llm = object()
+        analyst_llm = object()
+        monkeypatch.setattr(analyst_module, "get_summary_llm", lambda: summary_llm, raising=False)
+        monkeypatch.setattr(analyst_module, "get_analyst_llm", lambda: analyst_llm)
+
+        agent = analyst_module.AnalystAgent()
+
+        assert agent.instruct_llm is summary_llm
+        assert agent.thinking_llm is analyst_llm
 
     def test_intent_source_map_coverage(self):
         from src.rag.source_weighting import INTENT_SOURCE_MAP

@@ -217,7 +217,7 @@ class AutonomousRunner:
         decision = result.get("final_decision")
 
         if analyst:
-            print(f"   → Analyst:  {analyst.hegemony_grade}등급 ({analyst.total_score}/70)")
+            print(f"   → Analyst:  {analyst.hegemony_grade}등급 ({analyst.total_score}/100)")
         if quant:
             print(f"   → Quant:    {quant.grade} ({quant.total_score}/100)")
         if chartist:

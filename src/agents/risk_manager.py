@@ -15,16 +15,15 @@ import json
 import logging
 import re
 from typing import Any, Dict, List, Optional
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import datetime
 from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.agents.llm_config import get_llm_info, get_thinking_llm, get_thinking_validator_llm
-from src.agents.context import AgentContextPacket
+from src.agents.llm_config import get_risk_manager_llm
 from src.utils.portfolio_context import prompt_block_for_portfolio_context
-from src.utils.prompt_loader import load_prompt_optional
+from src.utils.prompt_loader import load_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -51,10 +50,15 @@ class RiskLevel(Enum):
 @dataclass
 class AgentScores:
     """에이전트별 점수 입력"""
+    # 원본 에이전트 결과
+    analyst_result: Any = None
+    quant_result: Any = None
+    chartist_result: Any = None
+
     # Analyst (Strategist) - 헤게모니 분석
-    analyst_moat_score: int = 0  # 독점력 (0-40)
-    analyst_growth_score: int = 0  # 성장성 (0-30)
-    analyst_total: int = 0  # 총점 (0-70)
+    analyst_moat_score: int = 0  # 독점력 (0-50)
+    analyst_growth_score: int = 0  # 성장성 (0-50)
+    analyst_total: int = 0  # 총점 (0-100)
     analyst_grade: str = "C"  # A/B/C/D/F
     analyst_opinion: str = ""
     
@@ -74,10 +78,43 @@ class AgentScores:
     chartist_total: int = 0  # 총점 (0-100)
     chartist_signal: str = ""  # 매수/중립/매도
 
-    # 구조화된 중간 컨텍스트
-    analyst_context: Dict[str, Any] = field(default_factory=dict)
-    quant_context: Dict[str, Any] = field(default_factory=dict)
-    chartist_context: Dict[str, Any] = field(default_factory=dict)
+    def __post_init__(self) -> None:
+        """원본 결과 객체가 있으면 기존 점수 필드를 자동 채운다."""
+        if self.analyst_result is not None:
+            self.analyst_moat_score = self._get_int(self.analyst_result, "moat_score")
+            self.analyst_growth_score = self._get_int(self.analyst_result, "growth_score")
+            self.analyst_total = self._get_int(self.analyst_result, "total_score")
+            self.analyst_grade = str(self._get(self.analyst_result, "hegemony_grade", self.analyst_grade) or "")
+            self.analyst_opinion = str(self._get(self.analyst_result, "final_opinion", self.analyst_opinion) or "")
+
+        if self.quant_result is not None:
+            self.quant_valuation_score = self._get_int(self.quant_result, "valuation_score")
+            self.quant_profitability_score = self._get_int(self.quant_result, "profitability_score")
+            self.quant_growth_score = self._get_int(self.quant_result, "growth_score")
+            self.quant_stability_score = self._get_int(self.quant_result, "stability_score")
+            self.quant_total = self._get_int(self.quant_result, "total_score")
+            self.quant_opinion = str(self._get(self.quant_result, "opinion", self.quant_opinion) or "")
+
+        if self.chartist_result is not None:
+            self.chartist_trend_score = self._get_int(self.chartist_result, "trend_score")
+            self.chartist_momentum_score = self._get_int(self.chartist_result, "momentum_score")
+            self.chartist_volatility_score = self._get_int(self.chartist_result, "volatility_score")
+            self.chartist_volume_score = self._get_int(self.chartist_result, "volume_score")
+            self.chartist_total = self._get_int(self.chartist_result, "total_score")
+            self.chartist_signal = str(self._get(self.chartist_result, "signal", self.chartist_signal) or "")
+
+    @staticmethod
+    def _get(obj: Any, name: str, default: Any = None) -> Any:
+        if isinstance(obj, dict):
+            return obj.get(name, default)
+        return getattr(obj, name, default)
+
+    @classmethod
+    def _get_int(cls, obj: Any, name: str) -> int:
+        try:
+            return int(cls._get(obj, name, 0) or 0)
+        except (TypeError, ValueError):
+            return 0
 
 
 @dataclass
@@ -112,14 +149,6 @@ class FinalDecision:
     summary: str  # 한 줄 요약
     detailed_reasoning: str  # 상세 추론 과정
 
-    # 교차 검증 메타데이터
-    validation_status: str = "disabled"  # disabled | passed | warning | unavailable
-    validation_summary: str = ""
-    validator_model: str = ""
-    primary_model: str = ""
-    validator_action: str = ""
-    validator_confidence: int = 0
-    
     # 메타데이터
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
 
@@ -151,11 +180,7 @@ class RiskManagerAgent:
     """
     
     def __init__(self):
-        self.llm = get_thinking_llm()
-        self.validator_llm = get_thinking_validator_llm()
-        llm_info = get_llm_info()
-        self.primary_model_name = llm_info.get("thinking_model", "")
-        self.validator_model_name = llm_info.get("thinking_validator_model", "")
+        self.llm = get_risk_manager_llm()
     
     def make_decision(
         self,
@@ -187,41 +212,12 @@ class RiskManagerAgent:
             investor_profile=investor_profile,
         )
         
-        try:
-            primary_decision = self._invoke_decision_llm(
-                self.llm,
-                stock_name,
-                stock_code,
-                prompt,
-            )
-
-            if not self.validator_llm:
-                primary_decision.validation_status = "disabled"
-                primary_decision.validation_summary = "보조 최종판단 모델이 설정되지 않아 단일 모델로 결정했습니다."
-                primary_decision.primary_model = self.primary_model_name
-                return primary_decision
-
-            try:
-                validator_decision = self._invoke_decision_llm(
-                    self.validator_llm,
-                    stock_name,
-                    stock_code,
-                    prompt,
-                )
-            except Exception as validator_error:
-                primary_decision.validation_status = "unavailable"
-                primary_decision.validation_summary = (
-                    f"보조 모델 검증 실패: {str(validator_error)[:160]}"
-                )
-                primary_decision.primary_model = self.primary_model_name
-                primary_decision.validator_model = self.validator_model_name
-                return primary_decision
-
-            return self._reconcile_decisions(primary_decision, validator_decision)
-
-        except Exception as e:
-            print(f"❌ 판단 오류: {e}")
-            return self._default_decision(stock_name, stock_code, scores)
+        return self._invoke_decision_llm(
+            self.llm,
+            stock_name,
+            stock_code,
+            prompt,
+        )
 
     def _invoke_decision_llm(
         self,
@@ -315,25 +311,24 @@ class RiskManagerAgent:
         investor_profile: Optional[Dict[str, Any]] = None,
     ) -> str:
         """결정 프롬프트 구성"""
-        analyst_context = self._format_context_packet(scores.analyst_context, "analyst")
-        quant_context = self._format_context_packet(scores.quant_context, "quant")
-        chartist_context = self._format_context_packet(scores.chartist_context, "chartist")
+        analyst_result = self._format_analyst_result(scores)
+        quant_result = self._format_quant_result(scores)
+        chartist_result = self._format_chartist_result(scores)
         portfolio_context_block = prompt_block_for_portfolio_context(portfolio_context)
         investor_profile_block = self._format_investor_profile(investor_profile)
 
-        return load_prompt_optional(
+        return load_prompt(
             "risk_manager",
-            "decision",
-            fallback=self._decision_fallback_prompt(),
+            "risk_manager",
             stock_name=stock_name,
             stock_code=stock_code,
             analyst_total=scores.analyst_total,
             analyst_grade=scores.analyst_grade,
             quant_total=scores.quant_total,
             chartist_total=scores.chartist_total,
-            analyst_context=analyst_context,
-            quant_context=quant_context,
-            chartist_context=chartist_context,
+            analyst_result=analyst_result,
+            quant_result=quant_result,
+            chartist_result=chartist_result,
             portfolio_context=portfolio_context_block,
             investor_profile=investor_profile_block,
         )
@@ -418,367 +413,142 @@ class RiskManagerAgent:
             detailed_reasoning=result.get("detailed_reasoning", ""),
         )
 
-    def _reconcile_decisions(
-        self,
-        primary: FinalDecision,
-        validator: FinalDecision,
-    ) -> FinalDecision:
-        """주 모델과 검증 모델의 최종 판단을 병합"""
-        primary_rank = self._action_rank(primary.action)
-        validator_rank = self._action_rank(validator.action)
-        disagreement = abs(primary_rank - validator_rank)
+    def _format_analyst_result(self, scores: AgentScores) -> str:
+        result = self._result_dict(scores.analyst_result)
+        if not result:
+            result = {
+                "moat_score": scores.analyst_moat_score,
+                "growth_score": scores.analyst_growth_score,
+                "total_score": scores.analyst_total,
+                "hegemony_grade": scores.analyst_grade,
+                "final_opinion": scores.analyst_opinion,
+            }
 
-        merged = FinalDecision(
-            stock_name=primary.stock_name,
-            stock_code=primary.stock_code,
-            total_score=round((primary.total_score + validator.total_score) / 2),
-            action=primary.action,
-            confidence=round((primary.confidence + validator.confidence) / 2),
-            risk_level=self._max_risk_level(primary.risk_level, validator.risk_level),
-            risk_factors=self._merge_unique(primary.risk_factors, validator.risk_factors, limit=5),
-            position_size=self._more_conservative_position(primary.position_size, validator.position_size),
-            entry_strategy=primary.entry_strategy,
-            exit_strategy=primary.exit_strategy,
-            stop_loss=primary.stop_loss or validator.stop_loss,
-            signal_alignment=primary.signal_alignment,
-            key_catalysts=self._merge_unique(primary.key_catalysts, validator.key_catalysts, limit=5),
-            contrarian_view=self._merge_text(primary.contrarian_view, validator.contrarian_view),
-            summary=primary.summary,
-            detailed_reasoning=primary.detailed_reasoning,
-            validation_status="passed",
-            validation_summary="주 모델과 보조 모델의 최종 판단이 대체로 일치했습니다.",
-            validator_model=self.validator_model_name,
-            primary_model=self.primary_model_name,
-            validator_action=validator.action.value,
-            validator_confidence=validator.confidence,
+        return "\n".join(
+            [
+                "## Analyst Result",
+                f"- 헤게모니 총점: {result.get('total_score', scores.analyst_total)} / 100",
+                f"- 등급: {result.get('hegemony_grade', scores.analyst_grade)}",
+                f"- 독점력 점수: {result.get('moat_score', scores.analyst_moat_score)} / 50",
+                f"- 성장성 점수: {result.get('growth_score', scores.analyst_growth_score)} / 50",
+                f"- 최종 의견: {self._fmt(result.get('final_opinion', scores.analyst_opinion))}",
+                f"- 독점력 판단: {self._fmt(result.get('moat_reason'))}",
+                f"- 성장성 판단: {self._fmt(result.get('growth_reason'))}",
+                f"- 경쟁 우위: {self._fmt(result.get('competitive_advantage'))}",
+                f"- 우려 요인: {self._fmt(result.get('risk_factors'))}",
+                f"- 근거 요약: {self._fmt(result.get('evidence_summary'))}",
+                f"- 상세 판단: {self._fmt(result.get('detailed_reasoning'))}",
+            ]
         )
 
-        if disagreement == 0:
-            return merged
+    def _format_quant_result(self, scores: AgentScores) -> str:
+        result = self._result_dict(scores.quant_result)
+        if not result:
+            result = {
+                "valuation_score": scores.quant_valuation_score,
+                "profitability_score": scores.quant_profitability_score,
+                "growth_score": scores.quant_growth_score,
+                "stability_score": scores.quant_stability_score,
+                "total_score": scores.quant_total,
+                "opinion": scores.quant_opinion,
+            }
 
-        if disagreement == 1:
-            merged.validation_status = "warning"
-            merged.confidence = max(20, merged.confidence - 10)
-            merged.summary = (
-                f"{primary.summary} [검증 보류: 보조 모델은 {validator.action.value} 의견]"
-            ).strip()
-            merged.validation_summary = (
-                f"주 모델은 {primary.action.value}, 보조 모델은 {validator.action.value}로 "
-                "인접 단계에서 엇갈렸습니다. 주 판단을 유지하되 확신도를 낮췄습니다."
-            )
-            return merged
+        return "\n".join(
+            [
+                "## Quant Result",
+                f"- 총점: {result.get('total_score', scores.quant_total)} / 100",
+                f"- 등급: {self._fmt(result.get('grade'))}",
+                f"- 최종 의견: {self._fmt(result.get('opinion', scores.quant_opinion))}",
+                f"- 밸류에이션 점수: {result.get('valuation_score', scores.quant_valuation_score)} / 25",
+                f"- 수익성 점수: {result.get('profitability_score', scores.quant_profitability_score)} / 25",
+                f"- 성장성 점수: {result.get('growth_score', scores.quant_growth_score)} / 25",
+                f"- 안정성 점수: {result.get('stability_score', scores.quant_stability_score)} / 25",
+                f"- PER: {self._fmt(result.get('per'))}",
+                f"- PBR: {self._fmt(result.get('pbr'))}",
+                f"- EPS: {self._fmt(result.get('eps'))}",
+                f"- BPS: {self._fmt(result.get('bps'))}",
+                f"- ROE: {self._fmt(result.get('roe'))}",
+                f"- ROA: {self._fmt(result.get('roa'))}",
+                f"- 영업이익률: {self._fmt(result.get('operating_margin'))}",
+                f"- 순이익률: {self._fmt(result.get('net_margin'))}",
+                f"- 부채비율: {self._fmt(result.get('debt_ratio'))}",
+                f"- 유동비율: {self._fmt(result.get('current_ratio'))}",
+                f"- 밸류에이션 판단: {self._fmt(result.get('valuation_analysis'))}",
+                f"- 수익성 판단: {self._fmt(result.get('profitability_analysis'))}",
+                f"- 성장성 판단: {self._fmt(result.get('growth_analysis'))}",
+                f"- 안정성 판단: {self._fmt(result.get('stability_analysis'))}",
+                f"- 데이터 품질: {self._fmt(result.get('quality_flags'))}",
+            ]
+        )
 
-        conservative = validator if validator_rank < primary_rank else primary
-        merged.action = conservative.action
-        merged.total_score = min(primary.total_score, validator.total_score)
-        merged.confidence = max(15, min(primary.confidence, validator.confidence) - 15)
-        merged.position_size = self._more_conservative_position(
-            primary.position_size,
-            validator.position_size,
-        )
-        merged.entry_strategy = conservative.entry_strategy or merged.entry_strategy
-        merged.exit_strategy = conservative.exit_strategy or merged.exit_strategy
-        merged.stop_loss = conservative.stop_loss or merged.stop_loss
-        merged.summary = (
-            f"{primary.summary} [교차 검증 충돌: 보수적 결론 {conservative.action.value} 채택]"
-        ).strip()
-        merged.contrarian_view = self._merge_text(
-            primary.contrarian_view,
-            validator.contrarian_view,
-        )
-        merged.validation_status = "warning"
-        merged.validation_summary = (
-            f"주 모델은 {primary.action.value}, 보조 모델은 {validator.action.value}로 "
-            "의견 차이가 커서 더 보수적인 결론을 채택했습니다."
-        )
-        return merged
+    def _format_chartist_result(self, scores: AgentScores) -> str:
+        result = self._result_dict(scores.chartist_result)
+        if not result:
+            result = {
+                "trend_score": scores.chartist_trend_score,
+                "momentum_score": scores.chartist_momentum_score,
+                "volatility_score": scores.chartist_volatility_score,
+                "volume_score": scores.chartist_volume_score,
+                "total_score": scores.chartist_total,
+                "signal": scores.chartist_signal,
+            }
 
-    def _action_rank(self, action: InvestmentAction) -> int:
-        ranks = {
-            InvestmentAction.STRONG_SELL: 0,
-            InvestmentAction.SELL: 1,
-            InvestmentAction.REDUCE: 2,
-            InvestmentAction.HOLD: 3,
-            InvestmentAction.BUY: 4,
-            InvestmentAction.STRONG_BUY: 5,
+        return "\n".join(
+            [
+                "## Chartist Result",
+                f"- 총점: {result.get('total_score', scores.chartist_total)} / 100",
+                f"- 신호: {result.get('signal', scores.chartist_signal)}",
+                f"- 추세 점수: {result.get('trend_score', scores.chartist_trend_score)} / 30",
+                f"- 모멘텀 점수: {result.get('momentum_score', scores.chartist_momentum_score)} / 30",
+                f"- 변동성 점수: {result.get('volatility_score', scores.chartist_volatility_score)} / 20",
+                f"- 거래량 점수: {result.get('volume_score', scores.chartist_volume_score)} / 20",
+                f"- 추세 판단: {self._fmt(result.get('trend_analysis'))}",
+                f"- 모멘텀 판단: {self._fmt(result.get('momentum_analysis'))}",
+                f"- 변동성 판단: {self._fmt(result.get('volatility_analysis'))}",
+                f"- 거래량 판단: {self._fmt(result.get('volume_analysis'))}",
+                f"- RSI: {self._fmt(result.get('rsi'))}",
+                f"- MACD histogram: {self._fmt(result.get('macd_histogram'))}",
+                f"- 거래량 비율: {self._fmt(result.get('volume_ratio'))}",
+                f"- 진입 타이밍: {self._fmt(result.get('entry_timing'))}",
+                f"- 과열 위험: {self._fmt(result.get('overheat_risk'))}",
+                f"- 손절가: {self._fmt(result.get('stop_loss'))}",
+                f"- 목표가: {self._fmt(result.get('target_price'))}",
+                f"- 단기 의견: {self._fmt(result.get('short_term_opinion'))}",
+                f"- 중기 의견: {self._fmt(result.get('mid_term_opinion'))}",
+                f"- 현재가 스냅샷: {self._format_price_snapshot(result)}",
+            ]
+        )
+
+    @staticmethod
+    def _result_dict(result: Any) -> Dict[str, Any]:
+        if result is None:
+            return {}
+        if isinstance(result, dict):
+            return dict(result)
+        if is_dataclass(result):
+            return asdict(result)
+        if hasattr(result, "__dict__"):
+            return dict(vars(result))
+        return {}
+
+    @staticmethod
+    def _fmt(value: Any) -> str:
+        if value in (None, "", [], {}):
+            return "N/A"
+        if isinstance(value, (dict, list)):
+            return json.dumps(value, ensure_ascii=False)
+        return str(value)
+
+    def _format_price_snapshot(self, result: Dict[str, Any]) -> str:
+        snapshot_fields = {
+            "live_current_price": result.get("live_current_price"),
+            "price_snapshot_source": result.get("price_snapshot_source"),
+            "price_snapshot_at": result.get("price_snapshot_at"),
+            "live_vs_daily_close_pct": result.get("live_vs_daily_close_pct"),
         }
-        return ranks[action]
-
-    def _risk_rank(self, risk_level: RiskLevel) -> int:
-        ranks = {
-            RiskLevel.VERY_LOW: 0,
-            RiskLevel.LOW: 1,
-            RiskLevel.MEDIUM: 2,
-            RiskLevel.HIGH: 3,
-            RiskLevel.VERY_HIGH: 4,
-        }
-        return ranks[risk_level]
-
-    def _max_risk_level(self, left: RiskLevel, right: RiskLevel) -> RiskLevel:
-        return left if self._risk_rank(left) >= self._risk_rank(right) else right
-
-    def _more_conservative_position(self, left: str, right: str) -> str:
-        def _parse(value: str) -> int:
-            try:
-                return int(value.replace("%", "").strip())
-            except Exception:
-                return 25
-
-        return f"{min(_parse(left), _parse(right))}%"
-
-    def _merge_unique(self, left: List[str], right: List[str], limit: int = 5) -> List[str]:
-        merged: List[str] = []
-        for item in left + right:
-            normalized = item.strip()
-            if normalized and normalized not in merged:
-                merged.append(normalized)
-            if len(merged) >= limit:
-                break
-        return merged
-
-    def _merge_text(self, left: str, right: str) -> str:
-        texts = [text.strip() for text in [left, right] if text and text.strip()]
-        if not texts:
-            return ""
-        if len(texts) == 1 or texts[0] == texts[1]:
-            return texts[0]
-        return f"{texts[0]}\n\n[검증 보조 의견] {texts[1]}"
-
-    def _format_context_packet(self, packet: Dict[str, Any], fallback_name: str) -> str:
-        if not packet:
-            return f"- {fallback_name}: 없음"
-
-        try:
-            ctx = AgentContextPacket(**packet)
-            return ctx.to_prompt_block()
-        except Exception:
-            return f"- {fallback_name}: {packet}"
-
-    def _decision_fallback_prompt(self) -> str:
-        """기본 결정 프롬프트"""
-        return """
-당신은 20년 경력의 헤지펀드 포트폴리오 매니저입니다.
-아래의 구조화된 컨텍스트와 점수를 함께 검토하여, 종목 '{stock_name}'({stock_code})에 대한 최종 투자 결정을 내려주세요.
-
----
-
-## 1. 요약 점수
-- Analyst 총점: {analyst_total} / 70점
-- Analyst 등급: {analyst_grade}
-- Quant 총점: {quant_total} / 100점
-- Chartist 총점: {chartist_total} / 100점
-
-## 2. 구조화된 중간 컨텍스트
-
-### Analyst Packet
-{analyst_context}
-
-### Quant Packet
-{quant_context}
-
-### Chartist Packet
-{chartist_context}
-
-## 3. 현재 포트폴리오 컨텍스트
-{portfolio_context}
-
-판단 시 현재 보유 여부, 손익률, 주문가능수량, 현금 여력, 중복 노출을 반드시 함께 고려하세요.
-이미 보유 중인 종목이면 신규 매수 관점뿐 아니라 보유, 비중 축소, 매도, 손절/회복 조건을 명확히 구분하세요.
-손익률이 크게 악화된 포지션은 물타기 전제가 아니라 리스크 관리 대상으로 우선 검토하세요.
-
-{investor_profile}
-
----
-
-다음 JSON 형식으로만 응답하세요.
-`total_score`는 Analyst(70점)를 100점으로 환산한 값, Quant(100점), Chartist(100점)를 종합한 최종 100점 만점 점수입니다.
-{
-  "total_score": 0,
-  "action": "STRONG_BUY",
-  "confidence": 0,
-  "risk_level": "MEDIUM",
-  "risk_factors": ["", "", ""],
-  "position_size": "25%",
-  "entry_strategy": "",
-  "exit_strategy": "",
-  "stop_loss": "",
-  "signal_alignment": "",
-  "key_catalysts": ["", ""],
-  "contrarian_view": "",
-  "summary": "",
-  "detailed_reasoning": ""
-}
-
-JSON만 출력하세요.
-"""
-    
-    def _default_decision(
-        self,
-        stock_name: str,
-        stock_code: str,
-        scores: AgentScores
-    ) -> FinalDecision:
-        """오류 시 기본 결정 반환"""
-        # 단순 평균으로 기본 점수 계산
-        analyst_normalized = (scores.analyst_total / 70) * 100
-        quant_normalized = scores.quant_total
-        chartist_normalized = scores.chartist_total
-        
-        avg_score = int((analyst_normalized + quant_normalized + chartist_normalized) / 3)
-        
-        return FinalDecision(
-            stock_name=stock_name,
-            stock_code=stock_code,
-            total_score=avg_score,
-            action=InvestmentAction.HOLD,
-            confidence=30,
-            risk_level=RiskLevel.MEDIUM,
-            risk_factors=["분석 오류로 보수적 판단"],
-            position_size="25%",
-            entry_strategy="분할 매수 권장",
-            exit_strategy="목표가 도달 시 분할 매도",
-            stop_loss="-10% 손절",
-            signal_alignment="분석 오류로 판단 불가",
-            key_catalysts=["추가 분석 필요"],
-            contrarian_view="데이터 부족으로 보수적 접근 권장",
-            summary="분석 오류 - 관망 권고",
-            detailed_reasoning="분석 과정에서 오류가 발생하여 보수적으로 관망 의견을 제시합니다.",
-            validation_status="unavailable",
-            validation_summary="주 모델 판단 자체가 실패하여 교차 검증을 수행하지 못했습니다.",
-            validator_model=self.validator_model_name,
-            primary_model=self.primary_model_name,
-        )
-    
-    def generate_report(self, decision: FinalDecision) -> str:
-        """
-        최종 결정을 보고서 형식으로 출력
-        
-        Args:
-            decision: FinalDecision
-            
-        Returns:
-            마크다운 형식 보고서
-        """
-        # Action 이모지 매핑
-        action_emoji = {
-            InvestmentAction.STRONG_BUY: "🚀",
-            InvestmentAction.BUY: "📈",
-            InvestmentAction.HOLD: "⏸️",
-            InvestmentAction.REDUCE: "📉",
-            InvestmentAction.SELL: "🔻",
-            InvestmentAction.STRONG_SELL: "⛔",
-        }
-        
-        # Risk 색상
-        risk_emoji = {
-            RiskLevel.VERY_LOW: "🟢",
-            RiskLevel.LOW: "🟢",
-            RiskLevel.MEDIUM: "🟡",
-            RiskLevel.HIGH: "🟠",
-            RiskLevel.VERY_HIGH: "🔴",
-        }
-        
-        risk_factors_str = "\n".join([f"   - {r}" for r in decision.risk_factors]) if decision.risk_factors else "   - 없음"
-        catalysts_str = "\n".join([f"   - {c}" for c in decision.key_catalysts]) if decision.key_catalysts else "   - 없음"
-        
-        return f"""
-# {decision.stock_name} ({decision.stock_code}) 최종 투자 판단
-
-## {action_emoji.get(decision.action, "📊")} 투자 의견: {decision.action.value}
-
-| 항목 | 값 |
-|------|-----|
-| **종합 점수** | {decision.total_score} / 100 |
-| **확신도** | {decision.confidence}% |
-| **리스크 수준** | {risk_emoji.get(decision.risk_level, "🟡")} {decision.risk_level.value} |
-| **권장 비중** | {decision.position_size} |
-| **교차 검증** | {decision.validation_status} |
-
----
-
-## 💡 핵심 요약
-> {decision.summary}
-
----
-
-## 📊 신호 분석
-{decision.signal_alignment}
-
-## 🎯 핵심 촉매
-{catalysts_str}
-
-## ⚠️ 리스크 요인
-{risk_factors_str}
-
-## 🔄 반대 의견
-{decision.contrarian_view}
-
-## 🧪 교차 검증
-- 주 모델: {decision.primary_model or "미설정"}
-- 보조 모델: {decision.validator_model or "미설정"}
-- 보조 모델 의견: {decision.validator_action or "없음"} / 확신도 {decision.validator_confidence}%
-- 검증 요약: {decision.validation_summary or "없음"}
-
----
-
-## 📈 매매 전략
-
-### 진입 전략
-{decision.entry_strategy}
-
-### 청산 전략
-{decision.exit_strategy}
-
-### 손절 기준
-{decision.stop_loss}
-
----
-
-## 📝 상세 추론 과정
-{decision.detailed_reasoning}
-
----
-*분석 시점: {decision.timestamp}*
-"""
-    
-    def quick_decision(
-        self,
-        analyst_total: int,
-        quant_total: int,
-        chartist_total: int
-    ) -> str:
-        """
-        빠른 판단 (점수만으로)
-        
-        Args:
-            analyst_total: Analyst 총점 (0-70)
-            quant_total: Quant 총점 (0-100)
-            chartist_total: Chartist 총점 (0-100)
-            
-        Returns:
-            간단한 투자 의견
-        """
-        # 정규화
-        analyst_norm = (analyst_total / 70) * 100
-        
-        # 가중 평균 (Analyst 40%, Quant 35%, Chartist 25%)
-        weighted_score = (
-            analyst_norm * 0.40 +
-            quant_total * 0.35 +
-            chartist_total * 0.25
-        )
-        
-        if weighted_score >= 80:
-            return f"📈 적극 매수 (점수: {weighted_score:.0f})"
-        elif weighted_score >= 65:
-            return f"📈 매수 (점수: {weighted_score:.0f})"
-        elif weighted_score >= 45:
-            return f"⏸️ 관망 (점수: {weighted_score:.0f})"
-        elif weighted_score >= 30:
-            return f"📉 비중 축소 (점수: {weighted_score:.0f})"
-        else:
-            return f"🔻 매도 (점수: {weighted_score:.0f})"
-
+        if any(value not in (None, "", 0) for value in snapshot_fields.values()):
+            return self._fmt(snapshot_fields)
+        return "N/A"
 
 # 사용 예시
 if __name__ == "__main__":
@@ -787,9 +557,9 @@ if __name__ == "__main__":
     # 테스트 점수
     scores = AgentScores(
         # Analyst
-        analyst_moat_score=32,
-        analyst_growth_score=24,
-        analyst_total=56,
+        analyst_moat_score=40,
+        analyst_growth_score=34,
+        analyst_total=74,
         analyst_grade="B",
         analyst_opinion="반도체 업황 회복 기대, HBM 경쟁력 우위",
         
@@ -816,7 +586,8 @@ if __name__ == "__main__":
     
     # 최종 결정
     decision = manager.make_decision("삼성전자", "005930", scores)
-    
-    # 보고서 출력
-    report = manager.generate_report(decision)
-    print(report)
+    print(f"action={decision.action.value}")
+    print(f"total_score={decision.total_score}")
+    print(f"confidence={decision.confidence}")
+    print(f"risk_level={decision.risk_level.value}")
+    print(f"summary={decision.summary}")

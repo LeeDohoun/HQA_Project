@@ -45,9 +45,9 @@ class LLMThemeDecisionEngine:
     def _invoke(self, prompt: str) -> Any:
         client = self._llm_client
         if client is None:
-            from src.agents.llm_config import get_instruct_llm
+            from src.agents.llm_config import get_risk_manager_llm
 
-            client = get_instruct_llm()
+            client = get_risk_manager_llm()
             self._llm_client = client
 
         if callable(client) and not hasattr(client, "invoke"):

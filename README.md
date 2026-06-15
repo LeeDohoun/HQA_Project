@@ -140,6 +140,12 @@ AI 서버는 RAG, 에이전트 분석, 주도주 선별, 신호 생성을 담당
 
 새 자동매매 흐름에서는 AI 서버가 직접 주문하지 않습니다. `user_id`, `investor_profile`, `strategy_profile`을 받아 최종 신호를 만들고, 백엔드 내부 API로 제출합니다.
 
+### SupervisorAgent 보류 상태
+
+`src/agents/supervisor.py`는 자연어 질문을 분석해 종목 분석, 빠른 분석, 시세 조회, 비교, 테마 탐색으로 라우팅하기 위한 대화형 오케스트레이터입니다. 현재 백엔드 `/api/v1/chat`와 AI 서버 `POST /chat` 경로는 남아 있지만, 프론트엔드에는 챗봇/자연어 질의 화면이 없고 자동매매, 테마 주도주 선별, 단일 종목 분석의 핵심 실행 경로에서는 사용하지 않습니다.
+
+따라서 `SupervisorAgent`는 삭제하지 않고 보류 상태로 유지합니다. 향후 챗봇 UI나 자연어 기반 분석 라우팅을 다시 제공할 때 재활성화할 수 있으며, 그 전까지 운영 판단은 `theme_orchestrator.py`, `graph.py`, `runner/` 계층을 기준으로 봅니다.
+
 ## 에이전트와 의사결정
 
 `src/agents/theme_orchestrator.py`가 테마 후보를 평가하고 에이전트 결과를 결합합니다.
@@ -151,7 +157,6 @@ AI 서버는 RAG, 에이전트 분석, 주도주 선별, 신호 생성을 담당
 - `Quant`는 가격, 수급, 재무/정량 지표를 평가합니다.
 - `Chartist`는 차트와 가격 스냅샷을 평가합니다.
 - `RiskManager`만 사용자 투자 프로필을 반영해 최종 `action`, `confidence`, `risk_level`, `position_size`, `stop_loss`, `risk_factors`를 조정합니다.
-- 선택적으로 thinking validator 모델을 사용해 최종 판단을 교차검증할 수 있습니다.
 
 ## 자동매매와 안전장치
 
@@ -316,28 +321,21 @@ npm run dev
 ```env
 LLM_PROVIDER=ollama
 HQA_DATA_DIR=./data
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_INSTRUCT_MODEL=qwen3.5:9b
-OLLAMA_THINKING_MODEL=gemma4:e4b
-OLLAMA_THINKING_VALIDATOR_MODEL=
+OLLAMA_BASE_URL=http://localhost:11435
+OLLAMA_ANALYST_MODEL=gemma4:12b
+OLLAMA_SUMMARY_MODEL=gemma4:e4b
+OLLAMA_QUANT_MODEL=gemma4:12b
+OLLAMA_CHARTIST_MODEL=qwen3.5:9b
+OLLAMA_RISK_MANAGER_MODEL=gemma4:12b
 ```
 
 Ollama 사용:
 
 ```bash
-ollama serve
+OLLAMA_HOST=127.0.0.1:11435 ollama serve
 ollama pull qwen3.5:9b
+ollama pull gemma4:12b
 ollama pull gemma4:e4b
-```
-
-Gemini 사용:
-
-```env
-LLM_PROVIDER=gemini
-GOOGLE_API_KEY=your_google_api_key_here
-GEMINI_INSTRUCT_MODEL=gemini-2.5-flash-lite
-GEMINI_THINKING_MODEL=gemini-2.5-pro
-GEMINI_THINKING_VALIDATOR_MODEL=gemini-2.5-flash
 ```
 
 외부 LLM 없이 스모크 테스트만 할 때:

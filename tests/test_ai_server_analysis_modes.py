@@ -9,7 +9,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 
-def test_execute_quick_returns_quick_decision_and_final_decision(monkeypatch):
+def test_execute_quick_uses_risk_manager_make_decision(monkeypatch):
     import ai_server.app as app_module
     import src.agents as agents
 
@@ -39,11 +39,22 @@ def test_execute_quick_returns_quick_decision_and_final_decision(monkeypatch):
             raise AssertionError(reason)
 
     class FakeRiskManagerAgent:
-        def quick_decision(self, analyst_total: int, quant_total: int, chartist_total: int) -> str:
-            assert analyst_total == 35
-            assert quant_total == 80
-            assert chartist_total == 60
-            return "📈 매수 (점수: 70)"
+        def make_decision(self, stock_name: str, stock_code: str, scores):
+            assert stock_name == "삼성전자"
+            assert stock_code == "005930"
+            assert scores.analyst_total == 50
+            assert scores.quant_total == 80
+            assert scores.chartist_total == 60
+            return SimpleNamespace(
+                action=SimpleNamespace(value="매수", name="BUY"),
+                risk_level=SimpleNamespace(value="낮음", name="LOW"),
+                total_score=70,
+                confidence=70,
+                summary="빠른 분석 기준 매수",
+                key_catalysts=["재무 점수 80/100", "기술 점수 60/100"],
+                risk_factors=["Analyst 정성 리서치 생략"],
+                detailed_reasoning="Quant와 Chartist 결과를 Risk Manager가 종합했습니다.",
+            )
 
     monkeypatch.setattr(agents, "QuantAgent", FakeQuantAgent)
     monkeypatch.setattr(agents, "ChartistAgent", FakeChartistAgent)
@@ -52,9 +63,9 @@ def test_execute_quick_returns_quick_decision_and_final_decision(monkeypatch):
     result = app_module._execute_quick("task-quick", "삼성전자", "005930")
 
     assert result["mode"] == "quick"
-    assert set(result["scores"]) == {"quant", "chartist", "quick_decision"}
-    assert result["scores"]["quick_decision"]["total_score"] == 70
-    assert result["scores"]["quick_decision"]["grade"] == "매수"
+    assert set(result["scores"]) == {"quant", "chartist", "risk_manager"}
+    assert result["scores"]["risk_manager"]["total_score"] == 70
+    assert result["scores"]["risk_manager"]["grade"] == "매수"
     assert result["final_decision"]["action"] == "매수"
     assert result["final_decision"]["total_score"] == 70
 
@@ -88,8 +99,17 @@ def test_execute_quick_publishes_agent_completion_when_each_parallel_agent_finis
             raise AssertionError(reason)
 
     class FakeRiskManagerAgent:
-        def quick_decision(self, analyst_total: int, quant_total: int, chartist_total: int) -> str:
-            return "📈 매수 (점수: 70)"
+        def make_decision(self, stock_name: str, stock_code: str, scores):
+            return SimpleNamespace(
+                action=SimpleNamespace(value="매수", name="BUY"),
+                risk_level=SimpleNamespace(value="낮음", name="LOW"),
+                total_score=70,
+                confidence=70,
+                summary="빠른 분석 기준 매수",
+                key_catalysts=[],
+                risk_factors=[],
+                detailed_reasoning="",
+            )
 
     def fake_publish_progress(task_id: str, agent: str, status: str, message: str, progress: float):
         published.append((task_id, agent, status, message, progress))

@@ -139,7 +139,6 @@ def run_stock_analysis(stock_input: str, quick: bool = False):
 def _run_full_analysis(stock_code: str, stock_name: str):
     """전체 분석 (LangGraph 워크플로우 우선, 폴백: 병렬 실행)"""
     from src.agents.graph import run_stock_analysis, is_langgraph_available
-    from src.agents import RiskManagerAgent
     
     if is_langgraph_available():
         print(f"\n⚡ LangGraph 워크플로우로 분석 실행")
@@ -166,14 +165,16 @@ def _run_full_analysis(stock_code: str, stock_name: str):
     if chartist_score:
         print(f"   → Chartist 기술신호: {chartist_score.signal} ({chartist_score.total_score}/100점)")
     
-    # 최종 보고서
+    # 최종 판단
     if final_decision:
         print("\n" + "=" * 60)
         print("📜 [최종 투자 판단]")
         print("=" * 60)
-        risk_manager = RiskManagerAgent()
-        report = risk_manager.generate_report(final_decision)
-        print(report)
+        print(f"   → 투자 의견: {final_decision.action.value}")
+        print(f"   → 종합 점수: {final_decision.total_score}/100점")
+        print(f"   → 확신도: {final_decision.confidence}%")
+        print(f"   → 리스크: {final_decision.risk_level.value}")
+        print(f"   → 요약: {final_decision.summary}")
     
     return final_decision
 

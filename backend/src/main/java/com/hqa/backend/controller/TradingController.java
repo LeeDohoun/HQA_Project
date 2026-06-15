@@ -208,12 +208,6 @@ public class TradingController {
         decision.put("stop_loss", d.getStopLoss());
         decision.put("signal_alignment", d.getSignalAlignment());
         decision.put("contrarian_view", d.getContrarianView());
-        decision.put("validation_status", d.getValidationStatus());
-        decision.put("validation_summary", d.getValidationSummary());
-        decision.put("validator_model", d.getValidatorModel());
-        decision.put("primary_model", d.getPrimaryModel());
-        decision.put("validator_action", d.getValidatorAction());
-        decision.put("validator_confidence", d.getValidatorConfidence());
 
         Map<String, Object> payload = new HashMap<>();
         payload.put("stock_name", request.getStockName());

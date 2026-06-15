@@ -16,8 +16,8 @@ from src.rag.canonical_retriever import CanonicalRetriever
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run a retrieval-grounded agent demo")
-    parser.add_argument("--query", required=True, help="Question to ask the agent")
+    parser = argparse.ArgumentParser(description="Inspect retrieval results for a query")
+    parser.add_argument("--query", required=True, help="Query to search in canonical retrieval assets")
     parser.add_argument("--data-dir", default=str(get_data_dir()))
     args = parser.parse_args()
 
@@ -43,19 +43,13 @@ def main() -> int:
         return 1
 
     try:
-        from src.tools.rag_tool import reset_retriever_cache
-        from src.agents.analyst import AnalystAgent
-
-        reset_retriever_cache(str(data_dir))
-        agent = AnalystAgent()
-        search = agent.quick_search(args.query)
-        if not search["has_results"] or search["source"] != "rag":
+        results = retriever.search(args.query, top_k=5)
+        if not results:
             print(
                 json.dumps(
                     {
                         "status": "error",
-                        "message": "RAG retrieval 결과가 1건 이상 필요합니다.",
-                        "search": search,
+                        "message": "retrieval 결과가 1건 이상 필요합니다.",
                         "state": state,
                     },
                     ensure_ascii=False,
@@ -64,14 +58,19 @@ def main() -> int:
             )
             return 1
 
-        answer = agent.answer_question(args.query)
         payload = {
             "status": "ok",
             "query": args.query,
             "data_dir": str(data_dir),
-            "retrieved_hits": answer["retrieved_hits"],
-            "context_excerpt": answer["context_excerpt"],
-            "answer": answer["answer"],
+            "retrieved_hits": [
+                {
+                    "source": row.get("source_type"),
+                    "title": (row.get("metadata") or {}).get("title", ""),
+                    "score": row.get("weighted_score", row.get("score")),
+                }
+                for row in results
+            ],
+            "context_excerpt": retriever.search_for_context(args.query, top_k=3),
         }
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
@@ -94,7 +93,7 @@ def main() -> int:
             json.dumps(
                 {
                     "status": "error",
-                    "message": "에이전트 답변 생성에 실패했습니다.",
+                    "message": "retrieval 점검에 실패했습니다.",
                     "error": str(exc),
                     "state": state,
                 },
