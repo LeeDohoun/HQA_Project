@@ -56,3 +56,37 @@ def test_dart_financial_statement_collector_builds_snapshot_from_major_accounts(
     assert snapshot.metadata["quality_status"] == "complete"
     assert session.requested[1]["params"]["corp_code"] == "00126380"
     assert session.requested[1]["params"]["reprt_code"] == "11011"
+
+
+def test_dart_financial_statement_collector_collects_recent_annual_series():
+    collector = DartFinancialStatementCollector(api_key="dart-key")
+    calls = []
+
+    def fake_collect_annual(stock_name, stock_code, corp_code, fiscal_year):
+        calls.append(fiscal_year)
+        if fiscal_year == "2024":
+            return None
+        return type(
+            "Snapshot",
+            (),
+            {
+                "stock_name": stock_name,
+                "stock_code": stock_code,
+                "corp_code": corp_code,
+                "fiscal_year": fiscal_year,
+            },
+        )()
+
+    collector.collect_annual = fake_collect_annual
+
+    snapshots = collector.collect_annual_series(
+        stock_name="삼성전자",
+        stock_code="005930",
+        corp_code="00126380",
+        from_date="20220101",
+        to_date="20251231",
+        years=3,
+    )
+
+    assert [snapshot.fiscal_year for snapshot in snapshots] == ["2025", "2023", "2022"]
+    assert calls == ["2025", "2024", "2023", "2022"]

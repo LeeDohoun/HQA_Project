@@ -18,7 +18,7 @@ from bs4 import BeautifulSoup
 import json
 from pathlib import Path
 from typing import Any, ClassVar, Dict, Iterable, Optional, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from src.config.settings import get_data_dir
 
@@ -363,6 +363,13 @@ class QuantitativeAnalysis:
     revenue: Optional[float] = None
     operating_profit: Optional[float] = None
     net_income: Optional[float] = None
+    revenue_yoy_change: Optional[float] = None
+    operating_profit_yoy_change: Optional[float] = None
+    revenue_growth_3y: Optional[float] = None
+    operating_profit_growth_3y: Optional[float] = None
+    operating_margin_trend: Optional[float] = None
+    net_margin_trend: Optional[float] = None
+    financial_history_years: list[str] = field(default_factory=list)
     
     # 배당
     dividend_yield: Optional[float] = None
@@ -399,7 +406,7 @@ class QuantitativeAnalysis:
         # 2. 수익성 점수 (25점)
         self.profitability_score = self._calc_profitability_score()
         
-        # 3. 성장성 점수 (25점) - 현재는 ROE 기반 추정
+        # 3. 성장성 점수 (25점)
         self.growth_score = self._calc_growth_score()
         
         # 4. 안정성 점수 (25점)
@@ -495,8 +502,55 @@ class QuantitativeAnalysis:
         return min(score, 25)
     
     def _calc_growth_score(self) -> int:
-        """성장성 점수 계산 (ROE 기반 추정)"""
+        """성장성 점수 계산."""
         score = 0
+
+        has_growth_data = (
+            self.revenue_growth_3y is not None
+            or self.operating_profit_growth_3y is not None
+            or self.revenue_yoy_change is not None
+            or self.operating_profit_yoy_change is not None
+        )
+
+        if has_growth_data:
+            if self.revenue_growth_3y is not None:
+                if self.revenue_growth_3y >= 20:
+                    score += 8
+                elif self.revenue_growth_3y >= 10:
+                    score += 6
+                elif self.revenue_growth_3y >= 3:
+                    score += 4
+                elif self.revenue_growth_3y > 0:
+                    score += 2
+
+            if self.operating_profit_growth_3y is not None:
+                if self.operating_profit_growth_3y >= 25:
+                    score += 8
+                elif self.operating_profit_growth_3y >= 12:
+                    score += 6
+                elif self.operating_profit_growth_3y >= 3:
+                    score += 4
+                elif self.operating_profit_growth_3y > 0:
+                    score += 2
+
+            if self.revenue_yoy_change is not None:
+                if self.revenue_yoy_change >= 15:
+                    score += 4
+                elif self.revenue_yoy_change >= 5:
+                    score += 3
+                elif self.revenue_yoy_change > 0:
+                    score += 1
+
+            if self.operating_margin_trend is not None:
+                if self.operating_margin_trend >= 3:
+                    score += 3
+                elif self.operating_margin_trend > 0:
+                    score += 2
+
+            if self.dividend_yield is not None and self.dividend_yield < 2:
+                score += 2
+
+            return min(score, 25)
         
         # ROE가 높으면 재투자 수익률이 높아 성장 가능성 높음
         if self.roe is not None:
@@ -716,6 +770,13 @@ class QuantitativeAnalyzer:
             revenue=financial_data.get("revenue"),
             operating_profit=financial_data.get("operating_profit"),
             net_income=financial_data.get("net_income"),
+            revenue_yoy_change=financial_data.get("revenue_yoy_change"),
+            operating_profit_yoy_change=financial_data.get("operating_profit_yoy_change"),
+            revenue_growth_3y=financial_data.get("revenue_growth_3y"),
+            operating_profit_growth_3y=financial_data.get("operating_profit_growth_3y"),
+            operating_margin_trend=financial_data.get("operating_margin_trend"),
+            net_margin_trend=financial_data.get("net_margin_trend"),
+            financial_history_years=financial_data.get("financial_history_years") or [],
             dividend_yield=self._first_number(
                 krx_fundamental.get("dividend_yield"),
                 stock_info.get("dividend_yield"),
@@ -746,6 +807,8 @@ class QuantitativeAnalyzer:
             reverse=True,
         )
         latest = snapshots[0]
+        annual_history = snapshots[:3]
+        trend_metrics = self._financial_trend_metrics(annual_history)
         return {
             "revenue": latest.get("revenue"),
             "operating_profit": latest.get("operating_profit"),
@@ -762,7 +825,69 @@ class QuantitativeAnalyzer:
             "operating_margin": latest.get("operating_margin"),
             "net_margin": latest.get("net_margin"),
             "source": "dart_financial_snapshot",
+            **trend_metrics,
         }
+
+    def _financial_trend_metrics(self, rows: list[Dict[str, Any]]) -> Dict[str, Any]:
+        if not rows:
+            return {}
+        latest_first = sorted(
+            rows,
+            key=lambda row: (str(row.get("fiscal_year", "")), str(row.get("as_of", ""))),
+            reverse=True,
+        )
+        chronological = list(reversed(latest_first))
+        latest = latest_first[0]
+        previous = latest_first[1] if len(latest_first) >= 2 else {}
+        oldest = chronological[0]
+
+        return {
+            "revenue_yoy_change": self._pct_change(latest.get("revenue"), previous.get("revenue")),
+            "operating_profit_yoy_change": self._pct_change(
+                latest.get("operating_profit"),
+                previous.get("operating_profit"),
+            ),
+            "revenue_growth_3y": self._cagr(
+                oldest.get("revenue"),
+                latest.get("revenue"),
+                len(chronological) - 1,
+            ),
+            "operating_profit_growth_3y": self._cagr(
+                oldest.get("operating_profit"),
+                latest.get("operating_profit"),
+                len(chronological) - 1,
+            ),
+            "operating_margin_trend": self._point_change(
+                oldest.get("operating_margin"),
+                latest.get("operating_margin"),
+            ),
+            "net_margin_trend": self._point_change(oldest.get("net_margin"), latest.get("net_margin")),
+            "financial_history_years": [str(row.get("fiscal_year", "")) for row in latest_first if row.get("fiscal_year")],
+        }
+
+    @staticmethod
+    def _pct_change(current: Any, previous: Any) -> Optional[float]:
+        current_number = QuantitativeAnalyzer._first_number(current)
+        previous_number = QuantitativeAnalyzer._first_number(previous)
+        if current_number is None or previous_number in (None, 0):
+            return None
+        return round(((current_number - previous_number) / previous_number) * 100, 2)
+
+    @staticmethod
+    def _cagr(start: Any, end: Any, periods: int) -> Optional[float]:
+        start_number = QuantitativeAnalyzer._first_number(start)
+        end_number = QuantitativeAnalyzer._first_number(end)
+        if periods <= 0 or start_number is None or end_number is None or start_number <= 0 or end_number <= 0:
+            return None
+        return round(((end_number / start_number) ** (1 / periods) - 1) * 100, 2)
+
+    @staticmethod
+    def _point_change(start: Any, end: Any) -> Optional[float]:
+        start_number = QuantitativeAnalyzer._first_number(start)
+        end_number = QuantitativeAnalyzer._first_number(end)
+        if start_number is None or end_number is None:
+            return None
+        return round(end_number - start_number, 2)
 
     def _load_krx_fundamental(self, stock_code: str) -> Dict[str, Any]:
         for path in self._krx_fundamental_paths():

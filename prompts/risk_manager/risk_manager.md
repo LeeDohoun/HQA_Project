@@ -121,6 +121,9 @@
 
 다음 JSON 형식으로만 응답하세요.
 total_score는 단순 평균이 아니라 투자 논리의 강도, 재무 검증, 진입 타이밍, 손익비, 무효화 조건, 포트폴리오 리스크를 종합한 최종 100점 만점 확신도 점수입니다.
+entry_strategy, exit_strategy, stop_loss는 사람이 읽는 설명입니다.
+trade_plan과 *_conditions는 SignalMonitor가 해석할 기계 판독용 JSON입니다. 조건은 자연어 파싱에 의존하지 않도록 field/operator/value를 반드시 포함하세요.
+허용 operator는 ">", ">=", "<", "<=", "==", "!=" 입니다. v1에서 field는 current_price, pnl_rate, holding_quantity, market_time 중 필요한 값만 사용하세요.
 
 {{
   "total_score": 0,
@@ -132,6 +135,24 @@ total_score는 단순 평균이 아니라 투자 논리의 강도, 재무 검증
   "entry_strategy": "",
   "exit_strategy": "",
   "stop_loss": "",
+  "trade_plan": {{
+    "strategy": "",
+    "max_position_pct": 10,
+    "time_horizon": "",
+    "order_style": "conditional"
+  }},
+  "entry_conditions": [
+    {{"field": "current_price", "operator": ">=", "value": 0, "description": ""}}
+  ],
+  "exit_conditions": [
+    {{"field": "current_price", "operator": ">=", "value": 0, "description": ""}}
+  ],
+  "reduce_conditions": [
+    {{"field": "current_price", "operator": "<=", "value": 0, "description": ""}}
+  ],
+  "invalidation_conditions": [
+    {{"field": "current_price", "operator": "<=", "value": 0, "description": ""}}
+  ],
   "signal_alignment": "",
   "key_catalysts": ["", ""],
   "contrarian_view": "",

@@ -150,6 +150,11 @@ class FinalDecision:
     detailed_reasoning: str  # 상세 추론 과정
 
     # 메타데이터
+    trade_plan: Dict[str, Any] = field(default_factory=dict)
+    entry_conditions: List[Dict[str, Any]] = field(default_factory=list)
+    exit_conditions: List[Dict[str, Any]] = field(default_factory=list)
+    reduce_conditions: List[Dict[str, Any]] = field(default_factory=list)
+    invalidation_conditions: List[Dict[str, Any]] = field(default_factory=list)
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
 
 
@@ -165,6 +170,11 @@ class FinalDecisionPayload(BaseModel):
     entry_strategy: str = ""
     exit_strategy: str = ""
     stop_loss: str = ""
+    trade_plan: Dict[str, Any] = Field(default_factory=dict)
+    entry_conditions: List[Dict[str, Any]] = Field(default_factory=list)
+    exit_conditions: List[Dict[str, Any]] = Field(default_factory=list)
+    reduce_conditions: List[Dict[str, Any]] = Field(default_factory=list)
+    invalidation_conditions: List[Dict[str, Any]] = Field(default_factory=list)
     signal_alignment: str = ""
     key_catalysts: List[str] = Field(default_factory=list)
     contrarian_view: str = ""
@@ -406,12 +416,23 @@ class RiskManagerAgent:
             entry_strategy=result.get("entry_strategy", ""),
             exit_strategy=result.get("exit_strategy", ""),
             stop_loss=result.get("stop_loss", ""),
+            trade_plan=result.get("trade_plan") if isinstance(result.get("trade_plan"), dict) else {},
+            entry_conditions=self._condition_list(result.get("entry_conditions")),
+            exit_conditions=self._condition_list(result.get("exit_conditions")),
+            reduce_conditions=self._condition_list(result.get("reduce_conditions")),
+            invalidation_conditions=self._condition_list(result.get("invalidation_conditions")),
             signal_alignment=result.get("signal_alignment", ""),
             key_catalysts=result.get("key_catalysts", [])[:5],
             contrarian_view=result.get("contrarian_view", ""),
             summary=result.get("summary", ""),
             detailed_reasoning=result.get("detailed_reasoning", ""),
         )
+
+    @staticmethod
+    def _condition_list(value: Any) -> List[Dict[str, Any]]:
+        if not isinstance(value, list):
+            return []
+        return [item for item in value if isinstance(item, dict)]
 
     def _format_analyst_result(self, scores: AgentScores) -> str:
         result = self._result_dict(scores.analyst_result)

@@ -12,7 +12,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.config.settings import get_data_dir, load_project_env, reset_settings_cache
-from src.rag.canonical_retriever import CanonicalRetriever
+from src.evidence.retriever import EvidenceRetriever
 
 
 def main() -> int:
@@ -31,7 +31,7 @@ def main() -> int:
     os.environ["HQA_DATA_DIR"] = str(data_dir)
     reset_settings_cache()
 
-    retriever = CanonicalRetriever(data_dir=str(data_dir))
+    retriever = EvidenceRetriever(data_dir=str(data_dir))
     state = retriever.describe_data_state()
 
     if not state["retrieval_assets_available"]:
@@ -41,7 +41,7 @@ def main() -> int:
                     "status": "error",
                     "message": f"테마 오케스트레이션에 필요한 retrieval 자산이 없습니다: {data_dir}",
                     "state": state,
-                    "next_action": "python3 scripts/build_rag.py --theme-key <theme> --data-dir ./data",
+                    "next_action": "python3 scripts/build_evidence_index.py --theme-key <theme> --data-dir ./data",
                 },
                 ensure_ascii=False,
                 indent=2,

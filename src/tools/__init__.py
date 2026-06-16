@@ -2,9 +2,8 @@
 """
 HQA public tool surface.
 
-External callers should use only the five grouped tool namespaces:
-- rag
-- web_search
+External callers should use only the grouped tool namespaces:
+- evidence
 - finance
 - chart
 - realtime
@@ -20,23 +19,13 @@ def _missing_dependency(feature: str, exc: Exception):
     return _raiser
 
 
-from . import web_search_tool as _web_search_tool_module
-
-SearchResult = _web_search_tool_module.SearchResult
-search_web = _web_search_tool_module.search_web
-search_news = _web_search_tool_module.search_news
-search_stock_news = _web_search_tool_module.search_stock_news
-WebSearchTool = getattr(_web_search_tool_module, "WebSearchTool", None)
-NewsSearchTool = getattr(_web_search_tool_module, "NewsSearchTool", None)
-StockNewsSearchTool = getattr(_web_search_tool_module, "StockNewsSearchTool", None)
-
 try:
-    from .rag_tool import RAGSearchTool, get_retriever, search_documents, search_reports
+    from .evidence_tool import EvidenceSearchTool, get_retriever, search_documents, search_reports
 except ImportError as exc:
-    RAGSearchTool = None
-    get_retriever = _missing_dependency("rag", exc)
-    search_documents = _missing_dependency("rag", exc)
-    search_reports = _missing_dependency("rag", exc)
+    EvidenceSearchTool = None
+    get_retriever = _missing_dependency("evidence", exc)
+    search_documents = _missing_dependency("evidence", exc)
+    search_reports = _missing_dependency("evidence", exc)
 
 try:
     from .finance_tool import (
@@ -82,8 +71,8 @@ except ImportError:
     _HAS_REALTIME = False
 
 
-class _RagTools:
-    SearchTool = RAGSearchTool
+class _EvidenceTools:
+    SearchTool = EvidenceSearchTool
 
     @staticmethod
     def get_retriever():
@@ -96,25 +85,6 @@ class _RagTools:
     @staticmethod
     def search_reports(query: str, k: int = 3) -> str:
         return search_reports(query, k=k)
-
-
-class _WebSearchTools:
-    SearchTool = WebSearchTool
-    NewsTool = NewsSearchTool
-    StockNewsTool = StockNewsSearchTool
-    Result = SearchResult
-
-    @staticmethod
-    def search(query: str, max_results: int = 5):
-        return search_web(query, max_results=max_results)
-
-    @staticmethod
-    def news(query: str, max_results: int = 5):
-        return search_news(query, max_results=max_results)
-
-    @staticmethod
-    def stock_news(company: str, max_results: int = 5):
-        return search_stock_news(company, max_results=max_results)
 
 
 class _FinanceTools:
@@ -171,18 +141,14 @@ class _RealtimeTools:
         return create_realtime_tools()
 
 
-rag = _RagTools()
-web_search = _WebSearchTools()
+evidence = _EvidenceTools()
 finance = _FinanceTools()
 chart = _ChartTools()
 realtime = _RealtimeTools()
 
 
 # Compatibility aliases for existing direct imports inside the project.
-RAGSearchTool = RAGSearchTool
-WebSearchTool = WebSearchTool
-NewsSearchTool = NewsSearchTool
-StockNewsSearchTool = StockNewsSearchTool
+EvidenceSearchTool = EvidenceSearchTool
 QuantitativeAnalyzer = QuantitativeAnalyzer
 QuantitativeAnalysis = QuantitativeAnalysis
 TechnicalAnalyzer = TechnicalAnalyzer
@@ -190,8 +156,7 @@ TechnicalIndicators = TechnicalIndicators
 KISRealtimeTool = KISRealtimeTool
 
 __all__ = [
-    "rag",
-    "web_search",
+    "evidence",
     "finance",
     "chart",
     "realtime",

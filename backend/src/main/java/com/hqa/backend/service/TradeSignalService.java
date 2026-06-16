@@ -10,7 +10,9 @@ import com.hqa.backend.entity.UserSecret;
 import com.hqa.backend.repository.TradeSignalExecutionRepository;
 import com.hqa.backend.repository.TradeSignalRepository;
 import com.hqa.backend.repository.UserRepository;
+import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -24,6 +26,10 @@ import org.springframework.transaction.annotation.Transactional;
 public class TradeSignalService {
 
     private static final double MAX_PRICE_DRIFT_PCT = 3.0;
+    private static final int DAILY_ORDER_LIMIT = 20;
+    private static final double DAILY_LOSS_LIMIT_PCT = -5.0;
+    private static final double MAX_POSITION_PCT = 20.0;
+    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
     private final TradeSignalRepository signalRepository;
     private final TradeSignalExecutionRepository executionRepository;
@@ -31,6 +37,7 @@ public class TradeSignalService {
     private final KisClient kisClient;
     private final ErrorLogger errorLogger;
     private final ObjectMapper objectMapper;
+    private final Clock clock;
 
     public TradeSignalService(TradeSignalRepository signalRepository,
                               TradeSignalExecutionRepository executionRepository,
@@ -38,16 +45,33 @@ public class TradeSignalService {
                               KisClient kisClient,
                               ErrorLogger errorLogger,
                               ObjectMapper objectMapper) {
+        this(signalRepository, executionRepository, userRepository, kisClient, errorLogger, objectMapper, Clock.system(KST));
+    }
+
+    public TradeSignalService(TradeSignalRepository signalRepository,
+                              TradeSignalExecutionRepository executionRepository,
+                              UserRepository userRepository,
+                              KisClient kisClient,
+                              ErrorLogger errorLogger,
+                              ObjectMapper objectMapper,
+                              Clock clock) {
         this.signalRepository = signalRepository;
         this.executionRepository = executionRepository;
         this.userRepository = userRepository;
         this.kisClient = kisClient;
         this.errorLogger = errorLogger;
         this.objectMapper = objectMapper;
+        this.clock = clock;
     }
 
     @Transactional
     public TradeSignal saveSignal(InternalTradeSignalRequest request) {
+        if (!isBlank(request.idempotencyKey())) {
+            Optional<TradeSignal> existing = signalRepository.findByIdempotencyKey(request.idempotencyKey());
+            if (existing.isPresent()) {
+                return existing.get();
+            }
+        }
         TradeSignal signal = new TradeSignal();
         signal.setUserId(request.userId());
         signal.setSource(request.source());
@@ -65,14 +89,22 @@ public class TradeSignalService {
         signal.setStopLoss(request.stopLoss());
         signal.setReason(request.reason());
         signal.setExpiresAt(request.expiresAt());
-        signal.setStatus("PENDING");
+        signal.setStatus(initialStatus(request.action()));
         signal.setRawPayload(toJson(request.rawPayload()));
+        signal.setTradePlanJson(toJson(request.tradePlanJson()));
+        signal.setConditionPayload(toJson(request.conditionPayload()));
+        signal.setIdempotencyKey(request.idempotencyKey());
         return signalRepository.save(signal);
     }
 
     @Transactional(readOnly = true)
     public List<TradeSignal> recentForUser(String userId) {
         return signalRepository.findTop100ByUserIdOrderByCreatedAtDesc(userId);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean hasSignalWithIdempotencyKey(String idempotencyKey) {
+        return !isBlank(idempotencyKey) && signalRepository.findByIdempotencyKey(idempotencyKey).isPresent();
     }
 
     @Transactional(readOnly = true)
@@ -86,14 +118,101 @@ public class TradeSignalService {
 
     @Transactional
     public void processPendingSignals() {
-        for (TradeSignal signal : signalRepository.findTop100ByStatusOrderByCreatedAtAsc("PENDING")) {
-            processOne(signal);
+        expireSignals("WAITING_ENTRY");
+        expireSignals("WAITING_EXIT");
+        expireSignals("OPEN");
+        processSubmittedOrderExpirations();
+    }
+
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> activeSignalsForMonitor() {
+        List<TradeSignal> signals = new ArrayList<>();
+        signals.addAll(signalRepository.findTop100ByStatusOrderByCreatedAtAsc("WAITING_ENTRY"));
+        signals.addAll(signalRepository.findTop100ByStatusOrderByCreatedAtAsc("OPEN"));
+        signals.addAll(signalRepository.findTop100ByStatusOrderByCreatedAtAsc("WAITING_EXIT"));
+        return signals.stream().map(this::toMonitorSignal).toList();
+    }
+
+    @Transactional
+    public Optional<TradeSignal> triggerSignal(String signalId, Map<String, Object> triggerPayload) {
+        Optional<TradeSignal> signal = signalRepository.findById(signalId);
+        signal.ifPresent(value -> triggerSignal(value, triggerPayload));
+        return signal;
+    }
+
+    @Transactional
+    public void triggerSignal(TradeSignal signal, Map<String, Object> triggerPayload) {
+        processOne(signal, triggerPayload);
+    }
+
+    @Transactional
+    public void completeSubmittedOrder(TradeSignal signal, TradeSignalExecution execution,
+                                       int filledQuantity, long averageFillPrice) {
+        boolean fullyFilled = execution.getSubmittedQuantity() != null
+                && filledQuantity >= execution.getSubmittedQuantity();
+        String filledStatus = finalFilledStatus(signal);
+        String status = fullyFilled ? filledStatus : "PARTIALLY_FILLED";
+        OffsetDateTime now = OffsetDateTime.now(clock);
+
+        signal.setStatus(status);
+        if (fullyFilled) {
+            signal.setExecutedAt(now);
+        }
+        signalRepository.save(signal);
+
+        execution.setStatus(status);
+        execution.setFilledQuantity(filledQuantity);
+        execution.setAverageFillPrice(averageFillPrice);
+        execution.setFilledAt(now);
+        executionRepository.save(execution);
+    }
+
+    @Transactional
+    public void expireSubmittedOrder(TradeSignal signal, TradeSignalExecution execution, String reason) {
+        signal.setStatus("ORDER_EXPIRED");
+        signal.setRejectReason(reason);
+        signalRepository.save(signal);
+
+        execution.setStatus("ORDER_EXPIRED");
+        execution.setRejectReason(reason);
+        executionRepository.save(execution);
+    }
+
+    @Transactional
+    public void processSubmittedOrderExpirations() {
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        for (TradeSignalExecution execution : executionRepository
+                .findTop100ByStatusAndOrderExpiresAtBeforeOrderByOrderExpiresAtAsc("ORDER_SUBMITTED", now)) {
+            signalRepository.findById(execution.getSignalId())
+                    .ifPresent(signal -> expireSubmittedOrder(signal, execution, "ORDER_NOT_FILLED"));
         }
     }
 
-    private void processOne(TradeSignal signal) {
+    private void expireSignals(String status) {
+        for (TradeSignal signal : signalRepository.findTop100ByStatusOrderByCreatedAtAsc(status)) {
+            if (signal.getExpiresAt() != null && signal.getExpiresAt().isBefore(OffsetDateTime.now())) {
+                mark(signal, "EXPIRED", "SIGNAL_EXPIRED", null, null, null, null);
+            }
+        }
+    }
+
+    private void processOne(TradeSignal signal, Map<String, Object> triggerPayload) {
         if (signal.getExpiresAt() != null && signal.getExpiresAt().isBefore(OffsetDateTime.now())) {
             mark(signal, "EXPIRED", "SIGNAL_EXPIRED", null, null, null, null);
+            return;
+        }
+
+        boolean buy = signal.getAction() != null && signal.getAction().contains("BUY");
+        if (signal.getId() != null && executionRepository.existsBySignalIdAndStatus(signal.getId(), "ORDER_SUBMITTED")) {
+            mark(signal, "REJECTED", "DUPLICATE_ORDER", null, null, null, null, toJson(triggerPayload));
+            return;
+        }
+        if (executionRepository.countByUserIdAndExecutedAtAfter(signal.getUserId(), OffsetDateTime.now(clock).toLocalDate().atStartOfDay(KST).toOffsetDateTime()) >= DAILY_ORDER_LIMIT) {
+            mark(signal, "REJECTED", "DAILY_ORDER_LIMIT_EXCEEDED", null, null, null, null, toJson(triggerPayload));
+            return;
+        }
+        if (!marketHoursAllowed(clock)) {
+            mark(signal, "REJECTED", "MARKET_CLOSED", null, null, null, null, toJson(triggerPayload));
             return;
         }
 
@@ -122,6 +241,10 @@ public class TradeSignalService {
             mark(signal, "FAILED", "KIS_BALANCE_UNAVAILABLE", null, null, null, null, toJson(balance));
             return;
         }
+        if (dailyLossPct(balance) <= DAILY_LOSS_LIMIT_PCT) {
+            mark(signal, "REJECTED", "DAILY_LOSS_LIMIT_EXCEEDED", null, null, null, null, toJson(balance));
+            return;
+        }
 
         Long currentPrice = kisClient.inquireCurrentPrice(user.getUserId(), secret, token, signal.getStockCode());
         if (currentPrice == null || currentPrice <= 0) {
@@ -135,10 +258,13 @@ public class TradeSignalService {
             return;
         }
 
-        boolean buy = signal.getAction() != null && signal.getAction().contains("BUY");
         int quantity = buy ? 1 : holdingQuantity(balance, signal.getStockCode());
         if (quantity <= 0) {
             mark(signal, "REJECTED", buy ? "INVALID_ORDER_QUANTITY" : "NO_SELLABLE_HOLDING", null, currentPrice, currentPrice, drift);
+            return;
+        }
+        if (buy && requestedPositionPct(signal.getPositionSize()) > MAX_POSITION_PCT) {
+            mark(signal, "REJECTED", "MAX_POSITION_EXCEEDED", quantity, currentPrice, currentPrice, drift);
             return;
         }
         if (buy && availableCash(balance) < currentPrice) {
@@ -158,10 +284,14 @@ public class TradeSignalService {
         }
 
         boolean success = Boolean.TRUE.equals(result.get("success"));
+        if (success) {
+            markOrderSubmitted(signal, quantity, currentPrice, currentPrice, drift, toJson(result), orderId(result), buy);
+            return;
+        }
         mark(
                 signal,
-                success ? "EXECUTED" : "FAILED",
-                success ? null : "KIS_ORDER_FAILED",
+                "FAILED",
+                "KIS_ORDER_FAILED",
                 quantity,
                 currentPrice,
                 currentPrice,
@@ -179,7 +309,7 @@ public class TradeSignalService {
                       Long orderPrice, Long currentPrice, Double priceDriftPct, String kisResponse) {
         signal.setStatus(status);
         signal.setRejectReason(reason);
-        if ("EXECUTED".equals(status)) {
+        if ("EXECUTED".equals(status) || "OPEN".equals(status) || "CLOSED".equals(status)) {
             signal.setExecutedAt(OffsetDateTime.now());
         }
         signalRepository.save(signal);
@@ -194,6 +324,32 @@ public class TradeSignalService {
         execution.setCurrentPrice(currentPrice);
         execution.setPriceDriftPct(priceDriftPct);
         execution.setKisResponse(kisResponse);
+        executionRepository.save(execution);
+    }
+
+    private void markOrderSubmitted(TradeSignal signal, Integer quantity, Long orderPrice,
+                                    Long currentPrice, Double priceDriftPct, String kisResponse,
+                                    String orderId, boolean buy) {
+        signal.setStatus("ORDER_SUBMITTED");
+        signal.setRejectReason(null);
+        signalRepository.save(signal);
+
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        TradeSignalExecution execution = new TradeSignalExecution();
+        execution.setSignalId(signal.getId());
+        execution.setUserId(signal.getUserId());
+        execution.setStatus("ORDER_SUBMITTED");
+        execution.setOrderId(orderId);
+        execution.setOrderType(orderPrice == null || orderPrice <= 0 ? "MARKET" : "LIMIT");
+        execution.setQuantity(quantity);
+        execution.setSubmittedQuantity(quantity);
+        execution.setFilledQuantity(0);
+        execution.setOrderPrice(orderPrice);
+        execution.setCurrentPrice(currentPrice);
+        execution.setPriceDriftPct(priceDriftPct);
+        execution.setKisResponse(kisResponse);
+        execution.setSubmittedAt(now);
+        execution.setOrderExpiresAt(now.plusMinutes(buy ? 5 : 2));
         executionRepository.save(execution);
     }
 
@@ -219,6 +375,39 @@ public class TradeSignalService {
             }
         }
         return 0L;
+    }
+
+    @SuppressWarnings("unchecked")
+    private double dailyLossPct(Map<String, Object> balance) {
+        Object summary = balance.get("summary");
+        if (summary instanceof Map<?, ?> map) {
+            Map<String, Object> typed = (Map<String, Object>) map;
+            for (String key : List.of("dailyLossPct", "dayLossPct", "pnlRate")) {
+                Object value = typed.get(key);
+                if (value instanceof Number number) {
+                    return number.doubleValue();
+                }
+                try {
+                    if (value != null && !String.valueOf(value).isBlank()) {
+                        return Double.parseDouble(String.valueOf(value));
+                    }
+                } catch (NumberFormatException ignored) {
+                    return 0.0;
+                }
+            }
+        }
+        return 0.0;
+    }
+
+    private double requestedPositionPct(String positionSize) {
+        if (positionSize == null || positionSize.isBlank()) {
+            return 0.0;
+        }
+        try {
+            return Double.parseDouble(positionSize.replace("%", "").trim());
+        } catch (NumberFormatException ignored) {
+            return 0.0;
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -256,6 +445,20 @@ public class TradeSignalService {
         }
     }
 
+    private Map<String, Object> toMonitorSignal(TradeSignal signal) {
+        Map<String, Object> item = new HashMap<>();
+        item.put("signalId", signal.getId());
+        item.put("userId", signal.getUserId());
+        item.put("status", signal.getStatus());
+        item.put("stockCode", signal.getStockCode());
+        item.put("stockName", signal.getStockName());
+        item.put("action", signal.getAction());
+        item.put("signalPrice", signal.getSignalPrice());
+        item.put("tradePlanJson", parseJsonMap(signal.getTradePlanJson()));
+        item.put("conditionPayload", parseJsonMap(signal.getConditionPayload()));
+        return item;
+    }
+
     private Map<String, Object> toExplanation(TradeSignal signal) {
         JsonNode raw = parseRawPayload(signal.getRawPayload());
         JsonNode leader = raw.path("leader").isMissingNode() ? raw : raw.path("leader");
@@ -286,6 +489,9 @@ public class TradeSignalService {
         item.put("signalPrice", signal.getSignalPrice());
         item.put("stopLoss", blankToFallback(signal.getStopLoss(), text(finalDecision, "stop_loss", "")));
         item.put("reason", firstText(signal.getReason(), text(finalDecision, "summary", "")));
+        item.put("tradePlanJson", parseJsonMap(signal.getTradePlanJson()));
+        item.put("conditionPayload", parseJsonMap(signal.getConditionPayload()));
+        item.put("idempotencyKey", signal.getIdempotencyKey());
         item.put("status", signal.getStatus());
         item.put("rejectReason", signal.getRejectReason());
         item.put("createdAt", signal.getCreatedAt());
@@ -293,10 +499,18 @@ public class TradeSignalService {
         item.put("executedAt", signal.getExecutedAt());
         item.put("executionStatus", latest == null ? null : latest.getStatus());
         item.put("executionRejectReason", latest == null ? null : latest.getRejectReason());
+        item.put("orderId", latest == null ? null : latest.getOrderId());
+        item.put("orderType", latest == null ? null : latest.getOrderType());
         item.put("quantity", latest == null ? null : latest.getQuantity());
+        item.put("submittedQuantity", latest == null ? null : latest.getSubmittedQuantity());
+        item.put("filledQuantity", latest == null ? null : latest.getFilledQuantity());
         item.put("orderPrice", latest == null ? null : latest.getOrderPrice());
+        item.put("averageFillPrice", latest == null ? null : latest.getAverageFillPrice());
         item.put("currentPrice", latest == null ? null : latest.getCurrentPrice());
         item.put("priceDriftPct", latest == null ? null : latest.getPriceDriftPct());
+        item.put("submittedAt", latest == null ? null : latest.getSubmittedAt());
+        item.put("filledAt", latest == null ? null : latest.getFilledAt());
+        item.put("orderExpiresAt", latest == null ? null : latest.getOrderExpiresAt());
         item.put("explanationSummary", explanationSummary(signal, finalDecision));
         item.put("catalysts", stringList(finalDecision.path("key_catalysts")));
         item.put("risks", stringList(finalDecision.path("risk_factors")));
@@ -313,6 +527,22 @@ public class TradeSignalService {
         } catch (Exception ignored) {
             return objectMapper.createObjectNode();
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> parseJsonMap(String rawPayload) {
+        if (rawPayload == null || rawPayload.isBlank()) {
+            return Map.of();
+        }
+        try {
+            Object parsed = objectMapper.readValue(rawPayload, Object.class);
+            if (parsed instanceof Map<?, ?> map) {
+                return (Map<String, Object>) map;
+            }
+        } catch (Exception ignored) {
+            return Map.of();
+        }
+        return Map.of();
     }
 
     private List<Map<String, Object>> agentReasons(JsonNode leader, JsonNode finalDecision) {
@@ -442,6 +672,53 @@ public class TradeSignalService {
 
     private static String defaultString(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private static String initialStatus(String action) {
+        String normalized = action == null ? "" : action.toUpperCase();
+        if (normalized.contains("BUY")) {
+            return "WAITING_ENTRY";
+        }
+        return "WAITING_EXIT";
+    }
+
+    private static String finalFilledStatus(TradeSignal signal) {
+        String normalized = signal.getAction() == null ? "" : signal.getAction().toUpperCase();
+        return normalized.contains("BUY") ? "OPEN" : "CLOSED";
+    }
+
+    private static boolean marketHoursAllowed(Clock clock) {
+        java.time.ZonedDateTime now = java.time.ZonedDateTime.now(clock);
+        java.time.DayOfWeek day = now.getDayOfWeek();
+        if (day == java.time.DayOfWeek.SATURDAY || day == java.time.DayOfWeek.SUNDAY) {
+            return false;
+        }
+        java.time.LocalTime time = now.toLocalTime();
+        return !time.isBefore(java.time.LocalTime.of(9, 0)) && !time.isAfter(java.time.LocalTime.of(15, 30));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String orderId(Map<String, Object> result) {
+        Object response = result.get("response");
+        if (response instanceof Map<?, ?> responseMap) {
+            Object output = responseMap.get("output");
+            if (output instanceof Map<?, ?> outputMap) {
+                for (String key : List.of("ODNO", "odno", "orderId", "order_id")) {
+                    Object value = outputMap.get(key);
+                    if (value != null && !String.valueOf(value).isBlank()) {
+                        return String.valueOf(value);
+                    }
+                }
+            }
+            for (String key : List.of("ODNO", "odno", "orderId", "order_id")) {
+                Object value = responseMap.get(key);
+                if (value != null && !String.valueOf(value).isBlank()) {
+                    return String.valueOf(value);
+                }
+            }
+        }
+        Object direct = result.get("orderId");
+        return direct == null || String.valueOf(direct).isBlank() ? null : String.valueOf(direct);
     }
 
     private static boolean isBlank(String value) {

@@ -1,29 +1,29 @@
-# Backtesting Temporal RAG
+# Backtesting Temporal evidence
 
-이 폴더는 운영용 RAG와 분리된 백테스트 전용 도구입니다. 핵심 원칙은 `as_of_date` 기준으로 그 날짜 이전에 공개된 문서와 차트만 모델/전략에 전달하는 것입니다.
+이 폴더는 운영용 evidence와 분리된 백테스트 전용 도구입니다. 핵심 원칙은 `as_of_date` 기준으로 그 날짜 이전에 공개된 문서와 차트만 모델/전략에 전달하는 것입니다.
 
 ## 권장 구조
 
 - 원본 데이터는 기존 위치를 그대로 사용합니다.
-- 백테스트에서는 `TemporalRAG`와 `TemporalPriceLoader`를 통해 날짜 필터를 적용합니다.
-- 기간별 RAG 스냅샷은 반복 실행 속도를 위한 캐시로만 사용합니다.
+- 백테스트에서는 `TemporalEvidence`와 `TemporalPriceLoader`를 통해 날짜 필터를 적용합니다.
+- 기간별 evidence 스냅샷은 반복 실행 속도를 위한 캐시로만 사용합니다.
 
 ```text
 data/canonical_index/ai/corpus.jsonl
 data/market_data/ai/chart.jsonl
         |
         v
-backtesting.TemporalRAG(as_of_date="2025-06-30")
+backtesting.TemporalEvidence(as_of_date="2025-06-30")
 backtesting.TemporalPriceLoader(as_of_date="2025-06-30")
 ```
 
 ## 예시
 
 ```python
-from backtesting import TemporalPriceLoader, TemporalRAG
+from backtesting import TemporalPriceLoader, TemporalEvidence
 
-rag = TemporalRAG(data_dir="./data", theme_key="ai")
-context = rag.search_for_context(
+evidence = TemporalEvidence(data_dir="./data", theme_key="ai")
+context = evidence.search_for_context(
     "AI 반도체 HBM 수혜",
     as_of_date="2025-06-30",
     source_types=["news", "dart"],
@@ -41,7 +41,7 @@ prices = TemporalPriceLoader(data_dir="./data", theme_key="ai").get_stock_data(
 종토방은 모의투자에서는 유용하지만 백테스트에서는 미래 누수 위험이 큽니다. 포함하려면 반드시 `as_of_date` 필터와 짧은 lookback을 같이 사용합니다.
 
 ```python
-context = rag.search_for_context(
+context = evidence.search_for_context(
     "시장 심리",
     as_of_date="2026-04-01",
     source_types=["forum"],
@@ -52,7 +52,7 @@ context = rag.search_for_context(
 ## 기간 캐시 생성
 
 ```bash
-.venv/bin/python backtesting/build_period_rag.py \
+.venv/bin/python backtesting/build_period_evidence.py \
   --data-dir ./data \
   --theme-key ai \
   --from-date 20250101 \
@@ -69,7 +69,7 @@ context = rag.search_for_context(
 기간 캐시를 만든 뒤에는 원본을 보존하고 clean 스냅샷을 따로 만듭니다. DART chunk는 유지하고, 종토방의 짧은 링크성 글, exact 본문 중복, 뉴스/종토방의 과도한 동일 제목 chunk를 줄입니다.
 
 ```bash
-.venv/bin/python backtesting/clean_period_rag.py \
+.venv/bin/python backtesting/clean_period_evidence.py \
   --input-dir data/period_rag/ai_2026_news_dart_forum \
   --output-dir data/period_rag/ai_2026_news_dart_forum_clean
 ```
@@ -80,7 +80,7 @@ context = rag.search_for_context(
 
 `leader_backtest.py`는 AI 테마 종목군에서 과거 시점 기준 주도주를 고르고, 보유 기간 이후 수익률로 예측/선정 결과를 평가합니다.
 
-백테스트 전에 point-in-time 테마 멤버십 근거를 만들 수 있습니다. 이 파일은 기존 raw/RAG corpus를 수정하지 않고 `data/raw/theme_membership/`에 별도로 저장됩니다.
+백테스트 전에 point-in-time 테마 멤버십 근거를 만들 수 있습니다. 이 파일은 기존 raw/Evidence corpus를 수정하지 않고 `data/raw/theme_membership/`에 별도로 저장됩니다.
 
 ```bash
 .venv/bin/python backtesting/build_theme_membership.py \

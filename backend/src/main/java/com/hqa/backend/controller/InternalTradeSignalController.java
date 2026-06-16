@@ -10,7 +10,9 @@ import com.hqa.backend.service.TradeSignalService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -36,8 +38,29 @@ public class InternalTradeSignalController {
     public InternalTradeSignalResponse save(@Valid @RequestBody InternalTradeSignalRequest request,
                                             @RequestHeader(value = "X-HQA-Internal-Token", required = false) String token) {
         requireInternalToken(token);
+        boolean deduplicated = service.hasSignalWithIdempotencyKey(request.idempotencyKey());
         TradeSignal saved = service.saveSignal(request);
-        return new InternalTradeSignalResponse(saved.getId(), saved.getStatus(), false);
+        return new InternalTradeSignalResponse(saved.getId(), saved.getStatus(), deduplicated);
+    }
+
+    @Operation(summary = "모니터링 대상 매매 시그널 조회",
+            description = "SignalMonitor가 조건 평가에 필요한 대기/보유 시그널을 조회한다.")
+    @GetMapping("/active")
+    public Map<String, Object> active(@RequestHeader(value = "X-HQA-Internal-Token", required = false) String token) {
+        requireInternalToken(token);
+        return Map.of("signals", service.activeSignalsForMonitor());
+    }
+
+    @Operation(summary = "조건 충족 시그널 트리거",
+            description = "SignalMonitor가 조건 충족 사실만 전달하고, 백엔드가 최종 주문 게이트를 수행한다.")
+    @PostMapping("/{signalId}/trigger")
+    public InternalTradeSignalResponse trigger(@PathVariable String signalId,
+                                               @RequestBody(required = false) Map<String, Object> triggerPayload,
+                                               @RequestHeader(value = "X-HQA-Internal-Token", required = false) String token) {
+        requireInternalToken(token);
+        TradeSignal signal = service.triggerSignal(signalId, triggerPayload == null ? Map.of() : triggerPayload)
+                .orElseThrow(() -> new ApiException(ErrorCode.INVALID_REQUEST, 404, "Trade signal not found", null));
+        return new InternalTradeSignalResponse(signal.getId(), signal.getStatus(), false);
     }
 
     @Operation(summary = "내부 시그널 서비스 헬스", description = "내부 매매 시그널 서비스의 동작 여부를 확인한다.")

@@ -30,6 +30,20 @@ def test_build_trade_signal_payloads_includes_user_profile_decision_and_expiry()
                         "position_size": "25%",
                         "stop_loss": "-5%",
                         "summary": "조건부 매수",
+                        "trade_plan": {
+                            "strategy": "breakout",
+                            "max_position_pct": 10,
+                        },
+                        "entry_conditions": [
+                            {"field": "current_price", "operator": ">=", "value": 72000}
+                        ],
+                        "exit_conditions": [
+                            {"field": "current_price", "operator": ">=", "value": 78000}
+                        ],
+                        "reduce_conditions": [],
+                        "invalidation_conditions": [
+                            {"field": "current_price", "operator": "<=", "value": 68000}
+                        ],
                     }
                 },
             },
@@ -68,6 +82,11 @@ def test_build_trade_signal_payloads_includes_user_profile_decision_and_expiry()
     assert payload["positionSize"] == "25%"
     assert payload["stopLoss"] == "-5%"
     assert payload["expiresAt"] == "2026-06-01T10:15:00+09:00"
+    assert payload["tradePlanJson"]["strategy"] == "breakout"
+    assert "positionPolicy" not in payload
+    assert payload["conditionPayload"]["entry_conditions"][0]["operator"] == ">="
+    assert payload["conditionPayload"]["exit_conditions"][0]["value"] == 78000
+    assert payload["idempotencyKey"] == "user-1:multi_theme_leader:short:111111:BUY:2026-06-01T10:15:00+09:00"
     assert payload["rawPayload"]["leader"]["final_decision"]["summary"] == "조건부 매수"
 
 
@@ -114,3 +133,36 @@ def test_submit_trade_signals_uses_hqa_internal_token_env(monkeypatch):
 
     assert response["submitted"] == 1
     assert captured == {"token": "shared-token", "timeout": 10}
+
+
+def test_build_trade_signal_payloads_includes_reduce_action_for_existing_positions():
+    result = {
+        "strategy_profile": "short",
+        "global_ranked_leaders": [
+            {
+                "eligible": True,
+                "theme": "반도체",
+                "theme_key": "semiconductor",
+                "stock_name": "삼성전자",
+                "stock_code": "005930",
+                "leader_score": 82,
+                "leader": {
+                    "final_decision": {
+                        "action_code": "REDUCE",
+                        "confidence": 71,
+                        "risk_level_code": "MEDIUM",
+                        "position_size": "50%",
+                        "reduce_conditions": [
+                            {"field": "current_price", "operator": "<=", "value": 68000}
+                        ],
+                    }
+                },
+            }
+        ],
+    }
+
+    payloads = build_trade_signal_payloads(user_id="user-1", result=result)
+
+    assert len(payloads) == 1
+    assert payloads[0]["action"] == "REDUCE"
+    assert payloads[0]["conditionPayload"]["reduce_conditions"][0]["value"] == 68000

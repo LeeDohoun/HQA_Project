@@ -34,32 +34,56 @@ def build_trade_signal_payloads(
         leader = dict(row.get("leader") or {})
         decision = dict(leader.get("final_decision") or {})
         action = str(decision.get("action_code") or row.get("action_code") or "").strip().upper()
-        if action not in {"BUY", "STRONG_BUY", "SELL", "STRONG_SELL"}:
+        if action not in {"BUY", "STRONG_BUY", "SELL", "STRONG_SELL", "REDUCE"}:
             continue
-
-        payloads.append(
-            {
-                "userId": user_id,
-                "source": source,
-                "strategyProfile": strategy_profile,
-                "themeKey": row.get("theme_key"),
-                "themeName": row.get("theme"),
-                "stockCode": row.get("stock_code"),
-                "stockName": row.get("stock_name"),
-                "action": action,
-                "leaderScore": int(row.get("leader_score") or 0),
-                "confidence": int(decision.get("confidence") or row.get("confidence") or 0),
-                "riskLevel": str(decision.get("risk_level_code") or row.get("risk_level_code") or "MEDIUM"),
-                "positionSize": str(decision.get("position_size") or "0%"),
-                "signalPrice": _signal_price_from_leader(leader, row),
-                "stopLoss": str(decision.get("stop_loss") or ""),
-                "reason": str(decision.get("summary") or ""),
-                "expiresAt": expires_at.isoformat(),
-                "rawPayload": {"leader": leader, "rank": row},
-            }
+        stock_code = row.get("stock_code")
+        idempotency_key = ":".join(
+            [
+                user_id,
+                source,
+                strategy_profile,
+                str(stock_code or ""),
+                action,
+                expires_at.isoformat(),
+            ]
         )
 
+        payload = {
+            "userId": user_id,
+            "source": source,
+            "strategyProfile": strategy_profile,
+            "themeKey": row.get("theme_key"),
+            "themeName": row.get("theme"),
+            "stockCode": stock_code,
+            "stockName": row.get("stock_name"),
+            "action": action,
+            "leaderScore": int(row.get("leader_score") or 0),
+            "confidence": int(decision.get("confidence") or row.get("confidence") or 0),
+            "riskLevel": str(decision.get("risk_level_code") or row.get("risk_level_code") or "MEDIUM"),
+            "positionSize": str(decision.get("position_size") or "0%"),
+            "signalPrice": _signal_price_from_leader(leader, row),
+            "stopLoss": str(decision.get("stop_loss") or ""),
+            "reason": str(decision.get("summary") or ""),
+            "expiresAt": expires_at.isoformat(),
+            "tradePlanJson": dict(decision.get("trade_plan") or {}),
+            "conditionPayload": {
+                "entry_conditions": _condition_list(decision.get("entry_conditions")),
+                "exit_conditions": _condition_list(decision.get("exit_conditions")),
+                "reduce_conditions": _condition_list(decision.get("reduce_conditions")),
+                "invalidation_conditions": _condition_list(decision.get("invalidation_conditions")),
+            },
+            "idempotencyKey": idempotency_key,
+            "rawPayload": {"leader": leader, "rank": row},
+        }
+        payloads.append(payload)
+
     return payloads
+
+
+def _condition_list(value: Any) -> List[Dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [dict(item) for item in value if isinstance(item, dict)]
 
 
 def _signal_price_from_leader(leader: Dict[str, Any], row: Dict[str, Any]) -> Any:

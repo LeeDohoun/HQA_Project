@@ -2,11 +2,11 @@ from __future__ import annotations
 
 # File role:
 # - Shared dataclasses for request/response payloads across the pipeline.
-# - Canonical metadata schema for the unified RAG corpus.
+# - Canonical metadata schema for the unified evidence corpus.
 
 import hashlib
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Any, List, Optional
 
 from src.config.settings import get_data_dir
 
@@ -54,7 +54,7 @@ class DocumentRecord:
     stock_name: Optional[str] = None
     stock_code: Optional[str] = None
     published_at: Optional[str] = None
-    metadata: Dict[str, str] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def ensure_doc_id(self) -> str:
         """Auto-generate doc_id if missing."""
@@ -96,7 +96,7 @@ class MarketRecord:
     low: str
     close: str
     volume: str
-    metadata: Dict[str, str] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -124,4 +124,4 @@ class FinancialSnapshot:
     current_ratio: Optional[float] = None
     currency: str = "KRW"
     as_of: Optional[str] = None
-    metadata: Dict[str, str] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)

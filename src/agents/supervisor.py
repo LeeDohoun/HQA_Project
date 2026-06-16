@@ -118,13 +118,6 @@ class SupervisorAgent:
             except ImportError:
                 pass
             
-            # 웹 검색 (선택적)
-            try:
-                from src.tools.web_search_tool import WebSearchTool
-                self._tools["web_search"] = WebSearchTool()
-            except ImportError:
-                pass
-        
         return self._tools
     
     def analyze(self, query: str) -> QueryAnalysis:
@@ -241,7 +234,6 @@ class SupervisorAgent:
                     analysis.intent = Intent.INDUSTRY_ANALYSIS
                     analysis.industry = industry
                     analysis.required_agents = ["analyst"]
-                    analysis.required_tools = ["web_search"]
                     analysis.execution_plan = ["research_industry", "analyze_industry"]
                     analysis.confidence = 0.85
                     return analysis
@@ -269,7 +261,6 @@ class SupervisorAgent:
                 analysis.intent = Intent.ISSUE_ANALYSIS
                 analysis.issue = keyword
                 analysis.required_agents = ["analyst"]
-                analysis.required_tools = ["web_search"]
                 analysis.execution_plan = ["research_issue", "analyze_impact"]
                 analysis.confidence = 0.8
                 return analysis
@@ -398,7 +389,6 @@ JSON만 응답하세요.
             
         elif analysis.intent == Intent.INDUSTRY_ANALYSIS:
             analysis.required_agents = ["analyst"]
-            analysis.required_tools = ["web_search"]
             analysis.execution_plan = [
                 "1. Analyst: 산업 관련 뉴스/포럼 확인",
                 "2. Analyst: 산업 영향 분석",
@@ -406,7 +396,6 @@ JSON만 응답하세요.
             
         elif analysis.intent == Intent.ISSUE_ANALYSIS:
             analysis.required_agents = ["analyst"]
-            analysis.required_tools = ["web_search"]
             analysis.execution_plan = [
                 "1. Analyst: 이슈 관련 뉴스/포럼 확인",
                 "2. Analyst: 영향도 분석",

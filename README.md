@@ -1,6 +1,6 @@
 # HQA Project
 
-HQA(Hegemony Quantitative Analyst)는 한국 주식의 테마 주도주를 수집 데이터, RAG, 멀티 에이전트 분석, 사용자 투자 성향으로 평가하고, Spring 백엔드가 KIS 계좌/잔고/현재가를 검증한 뒤 매매 신호를 저장·집행하는 통합 투자 분석 프로젝트입니다.
+HQA(Hegemony Quantitative Analyst)는 한국 주식의 테마 주도주를 수집 데이터, evidence, 멀티 에이전트 분석, 사용자 투자 성향으로 평가하고, Spring 백엔드가 KIS 계좌/잔고/현재가를 검증한 뒤 매매 신호를 저장·집행하는 통합 투자 분석 프로젝트입니다.
 
 핵심 원칙은 명확합니다.
 
@@ -17,7 +17,7 @@ HQA(Hegemony Quantitative Analyst)는 한국 주식의 테마 주도주를 수�
 |---|---|---|---|
 | Frontend | `frontend/` | Next.js 사용자 화면 | `3000` |
 | Backend | `backend/` | Spring Boot 인증, 사용자 설정, KIS 연동, 주문 검증/집행 | `8000` |
-| AI Server | `ai_server/`, `src/` | FastAPI RAG, 멀티 에이전트 분석, 신호 생성 | `8001` |
+| AI Server | `ai_server/`, `src/` | FastAPI evidence, 멀티 에이전트 분석, 신호 생성 | `8001` |
 | Redis | Docker/local | 캐시와 작업 상태 보조 | `6379` |
 | PostgreSQL | Docker/local | Spring 백엔드 영속 데이터 | `5432` |
 
@@ -37,7 +37,7 @@ Spring 백엔드
   -> 사용자 투자 프로필과 함께 AI 서버에 multi-theme 주도주 분석 요청
 
 AI 서버
-  -> 테마 후보 종목 수집 데이터, RAG 문서, 시장 데이터를 결합
+  -> 테마 후보 종목 수집 데이터, evidence 문서, 시장 데이터를 결합
   -> Analyst / Quant / Chartist가 공통 시장 관점 평가
   -> RiskManager가 사용자 투자 성향을 반영해 최종 action/confidence/risk 조정
   -> 백엔드 내부 API로 매매 신호 제출
@@ -74,16 +74,16 @@ HQA_Project/
 ├── ai_server/                 # FastAPI 엔드포인트와 런타임 task 상태
 ├── src/
 │   ├── agents/                # Analyst, Quant, Chartist, RiskManager, Supervisor, Orchestrator
-│   ├── rag/                   # canonical retriever, BM25, vector store, reranker, OCR
+│   ├── evidence/              # 수집 문서 기반 evidence/context 검색 계층
 │   ├── retrieval/             # 경량 retrieval 서비스 계층
 │   ├── ingestion/             # Naver news/forum/theme, DART, KIS chart 수집
-│   ├── data_pipeline/         # raw 수집/price/RAG builder
+│   ├── data_pipeline/         # raw 수집/price/Evidence builder
 │   ├── runner/                # 자동 분석, multi-theme runner, scheduler, trade signal submitter
-│   ├── tools/                 # 에이전트용 finance/search/realtime/RAG/chart 도구
+│   ├── tools/                 # 에이전트용 finance/search/realtime/evidence/chart 도구
 │   ├── tracing/               # agent trace와 token usage 기록
 │   └── utils/                 # KIS auth, prompt loader, stock mapper, portfolio context
 ├── prompts/                   # Agent별 프롬프트 템플릿
-├── scripts/                   # 데이터 수집, RAG 빌드, 데모/헬스체크/dev 실행 스크립트
+├── scripts/                   # 데이터 수집, evidence 빌드, 데모/헬스체크/dev 실행 스크립트
 ├── backtesting/               # point-in-time 주도주 백테스트와 검증 도구
 ├── config/                    # watchlist, theme_trading 전략/스케줄/리스크 설정
 ├── data/                      # raw, corpus, index, market data, backtest 산출물
@@ -126,9 +126,9 @@ HQA_Project/
 
 ### AI 서버
 
-AI 서버는 RAG, 에이전트 분석, 주도주 선별, 신호 생성을 담당합니다.
+AI 서버는 evidence, 에이전트 분석, 주도주 선별, 신호 생성을 담당합니다.
 
-- RAG 채팅: `POST /chat`
+- evidence 채팅: `POST /chat`
 - 추천 질문: `POST /suggest`
 - 단일 종목 분석: `POST /analyze`, `GET /analyze/{task_id}`
 - 테마 주도주 분석: `POST /theme/analyze`, `GET /theme/analyze/{task_id}`
@@ -187,9 +187,9 @@ AI 서버는 RAG, 에이전트 분석, 주도주 선별, 신호 생성을 담당
 - 실전 주문은 설정에서 명시적으로 허용해야 합니다.
 - `config/watchlist.yaml`과 `config/theme_trading.yaml`에서 스케줄, universe filter, 리스크 제한, signal quality filter, order guard를 조정합니다.
 
-## 데이터와 RAG 파이프라인
+## 데이터와 evidence 파이프라인
 
-데이터 파이프라인은 테마 후보 종목을 찾고, 종목별 raw 데이터를 수집한 뒤, RAG와 백테스트에서 사용할 corpus/index/market data를 생성합니다.
+데이터 파이프라인은 테마 후보 종목을 찾고, 종목별 raw 데이터를 수집한 뒤, evidence와 백테스트에서 사용할 corpus/index/market data를 생성합니다.
 
 ```text
 테마 키워드
@@ -200,13 +200,13 @@ AI 서버는 RAG, 에이전트 분석, 주도주 선별, 신호 생성을 담당
   -> data/corpora/<theme_key>/
   -> data/market_data/<theme_key>/
   -> data/canonical_index/<theme_key>/
-  -> RAG / 에이전트 / 백테스트
+  -> evidence / 에이전트 / 백테스트
 ```
 
 주요 데이터 영역:
 
 - `data/raw/`: 수집 원천 데이터
-- `data/corpora/`: RAG용 통합 문서
+- `data/corpora/`: evidence용 통합 문서
 - `data/market_data/`: 차트/가격 기반 시장 데이터
 - `data/canonical_index/`: canonical retriever용 BM25/vector/corpus
 - `data/vector_stores/`, `data/bm25/`: legacy 또는 보조 index
@@ -214,7 +214,7 @@ AI 서버는 RAG, 에이전트 분석, 주도주 선별, 신호 생성을 담당
 - `data/reports/`: 수집 품질 리포트
 - `data/cache/`, `data/token/`, `data/orders/`: 로컬 런타임 산출물이며 커밋 대상이 아닙니다.
 
-테마 수집과 RAG 빌드:
+테마 수집과 evidence 빌드:
 
 ```bash
 python scripts/theme_pipeline.py \
@@ -226,10 +226,10 @@ python scripts/theme_pipeline.py \
   --enabled-sources news,dart,forum,chart
 ```
 
-기존 raw 데이터로 RAG 자산만 다시 빌드:
+기존 raw 데이터로 evidence 자산만 다시 빌드:
 
 ```bash
-python scripts/build_rag.py --theme AI --theme-key ai --mode append-new-stocks --stats
+python scripts/build_evidence_index.py --theme AI --theme-key ai --mode append-new-stocks --stats
 ```
 
 데이터 연결 확인:
@@ -240,7 +240,7 @@ python scripts/verify_data_connection.py
 
 ## 백테스팅과 검증
 
-`backtesting/`은 과거 시점 기준으로 테마 주도주 선별 결과를 검증합니다. point-in-time 데이터, 테마 멤버십, temporal RAG, proof validation 도구를 포함합니다.
+`backtesting/`은 과거 시점 기준으로 테마 주도주 선별 결과를 검증합니다. point-in-time 데이터, 테마 멤버십, temporal evidence, proof validation 도구를 포함합니다.
 
 단일 백테스트:
 
@@ -467,7 +467,7 @@ docker compose up --build
 | 메서드 | 경로 | 설명 |
 |---|---|---|
 | `GET` | `/health` | AI 서버 상태 |
-| `POST` | `/chat` | RAG/에이전트 채팅 |
+| `POST` | `/chat` | evidence/에이전트 채팅 |
 | `POST` | `/suggest` | 추천 질문 |
 | `POST` | `/analyze` | 단일 종목 분석 |
 | `GET` | `/analyze/{task_id}` | 단일 종목 분석 결과 |
@@ -558,8 +558,8 @@ NEXT_PUBLIC_API_BASE=https://localhost:8000 npm run build
 | `scripts/dev.sh` | AI 서버, Spring 백엔드, 프론트엔드 동시 실행 |
 | `scripts/kill-dev.sh` | dev 서버 포트 정리 |
 | `scripts/healthcheck.py` | 런타임 health check |
-| `scripts/theme_pipeline.py` | 테마 후보 수집부터 RAG 자산 생성까지 실행 |
-| `scripts/build_rag.py` | raw 데이터 기반 RAG 자산 재생성 |
+| `scripts/theme_pipeline.py` | 테마 후보 수집부터 evidence 자산 생성까지 실행 |
+| `scripts/build_evidence_index.py` | raw 데이터 기반 evidence 자산 재생성 |
 | `scripts/run_theme_orchestrator.py` | 테마 주도주 오케스트레이터 실행 |
 | `scripts/run_theme_batch.py` | 테마 batch 실행 |
 | `scripts/run_theme_paper_trading.py` | multi-theme LLM paper trading 실행 |

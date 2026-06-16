@@ -11,7 +11,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.config.settings import get_env_status, get_settings, load_project_env
-from src.rag.canonical_retriever import CanonicalRetriever
+from src.evidence.retriever import EvidenceRetriever
 
 
 def _module_status(module_name: str) -> dict:
@@ -26,7 +26,7 @@ def main() -> int:
     load_project_env()
     settings = get_settings()
     env_status = get_env_status()
-    retriever = CanonicalRetriever(data_dir=str(settings.data_dir))
+    retriever = EvidenceRetriever(data_dir=str(settings.data_dir))
 
     checks = {
         "python": sys.version.split()[0],

@@ -6,7 +6,7 @@
 
 **Architecture:** Keep the existing `AnalystAgent` public API and result objects stable, but change its internal retrieval tools and research phases to stop depending on `report`, `general_news`, web fallbacks, and internal chart placeholders. Quant, Chartist, ingestion, and market-data pipelines remain untouched.
 
-**Tech Stack:** Python, pytest, existing `RAGSearchTool`, canonical RAG index.
+**Tech Stack:** Python, pytest, existing `EvidenceSearchTool`, canonical RAG index.
 
 ---
 
@@ -18,7 +18,7 @@
 
 - [x] **Step 1: Write the failing test**
 
-Update the analyst source-filter test so `rag_tool_reports`, `rag_tool_news`, `rag_tool_policy`, and `rag_tool_industry` expose only `dart`, `news`, and `forum` in combinations relevant to each phase.
+Update the analyst source-filter test so `evidence_tool_reports`, `evidence_tool_news`, `evidence_tool_policy`, and `evidence_tool_industry` expose only `dart`, `news`, and `forum` in combinations relevant to each phase.
 
 - [x] **Step 2: Run test to verify it fails**
 
@@ -31,10 +31,10 @@ Expected: FAIL while `report` or `general_news` still appears in analyst tool so
 Change `AnalystAgent.__init__`:
 
 ```python
-self.rag_tool_reports = RAGSearchTool(top_k=5, source_types=["dart", "news"], intent="investment")
-self.rag_tool_news = RAGSearchTool(top_k=5, source_types=["news", "forum"], intent="sentiment")
-self.rag_tool_policy = RAGSearchTool(top_k=5, source_types=["dart", "news"], intent="policy")
-self.rag_tool_industry = RAGSearchTool(top_k=5, source_types=["dart", "news", "forum"], intent="industry")
+self.evidence_tool_reports = EvidenceSearchTool(top_k=5, source_types=["dart", "news"], intent="investment")
+self.evidence_tool_news = EvidenceSearchTool(top_k=5, source_types=["news", "forum"], intent="sentiment")
+self.evidence_tool_policy = EvidenceSearchTool(top_k=5, source_types=["dart", "news"], intent="policy")
+self.evidence_tool_industry = EvidenceSearchTool(top_k=5, source_types=["dart", "news", "forum"], intent="industry")
 ```
 
 - [x] **Step 4: Run test to verify it passes**
@@ -54,7 +54,7 @@ Remove `WebSearchTool`, `NewsSearchTool`, and `WEB_SEARCH_AVAILABLE` setup from 
 
 - [x] **Step 2: Make research DART/news/forum only**
 
-Remove `_analyze_charts()` from the active `research()` flow and set chart fields to empty defaults. Rewrite `_search_reports`, `_search_news`, `_search_policy`, and `_search_industry` so each uses only its configured `RAGSearchTool` and returns an explicit RAG failure string when no indexed DART/news/forum result exists.
+Remove `_analyze_charts()` from the active `research()` flow and set chart fields to empty defaults. Rewrite `_search_reports`, `_search_news`, `_search_policy`, and `_search_industry` so each uses only its configured `EvidenceSearchTool` and returns an explicit RAG failure string when no indexed DART/news/forum result exists.
 
 - [x] **Step 3: Keep output compatibility**
 

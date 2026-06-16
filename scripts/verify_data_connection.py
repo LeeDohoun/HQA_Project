@@ -11,7 +11,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.config.settings import get_data_dir, load_project_env
-from src.rag.canonical_retriever import CanonicalRetriever
+from src.evidence.retriever import EvidenceRetriever
 from src.retrieval.services import RetrievalService
 
 
@@ -29,7 +29,7 @@ def main() -> int:
 
     load_project_env()
     data_dir = Path(args.data_dir)
-    retriever = CanonicalRetriever(data_dir=str(data_dir))
+    retriever = EvidenceRetriever(data_dir=str(data_dir))
     state = retriever.describe_data_state()
 
     report = {
@@ -69,7 +69,7 @@ def main() -> int:
         report["retrieval_path"] = "missing_indexes"
         report["error"] = (
             "raw 데이터는 있지만 retrieval 인덱스가 없습니다. "
-            f"python3 scripts/build_rag.py --theme-key <theme> --data-dir {data_dir}"
+            f"python3 scripts/build_evidence_index.py --theme-key <theme> --data-dir {data_dir}"
         )
     else:
         report["retrieval_path"] = "missing_data"

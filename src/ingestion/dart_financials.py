@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional
 
 from .base import BaseCollector
@@ -42,11 +42,33 @@ class DartFinancialStatementCollector(BaseCollector):
         from_date: str,
         to_date: str,
     ) -> Optional[FinancialSnapshot]:
-        if not self.api_key or not corp_code:
-            return None
+        snapshots = self.collect_annual_series(
+            stock_name=stock_name,
+            stock_code=stock_code,
+            corp_code=corp_code,
+            from_date=from_date,
+            to_date=to_date,
+            years=1,
+        )
+        return snapshots[0] if snapshots else None
 
-        from_year = self._year(from_date, default=datetime.utcnow().year - 2)
-        to_year = self._year(to_date, default=datetime.utcnow().year)
+    def collect_annual_series(
+        self,
+        stock_name: str,
+        stock_code: str,
+        corp_code: str,
+        from_date: str,
+        to_date: str,
+        years: int = 3,
+    ) -> List[FinancialSnapshot]:
+        if not self.api_key or not corp_code:
+            return []
+
+        current_year = datetime.now(timezone.utc).year
+        from_year = self._year(from_date, default=current_year - 2)
+        to_year = self._year(to_date, default=current_year)
+        target_count = max(1, years)
+        snapshots: List[FinancialSnapshot] = []
 
         for year in range(to_year, from_year - 1, -1):
             snapshot = self.collect_annual(
@@ -56,8 +78,10 @@ class DartFinancialStatementCollector(BaseCollector):
                 fiscal_year=str(year),
             )
             if snapshot is not None:
-                return snapshot
-        return None
+                snapshots.append(snapshot)
+                if len(snapshots) >= target_count:
+                    break
+        return snapshots
 
     def collect_annual(
         self,

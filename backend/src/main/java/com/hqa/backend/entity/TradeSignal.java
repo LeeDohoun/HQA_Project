@@ -42,6 +42,12 @@ public class TradeSignal {
     private String rejectReason;
     @Column(columnDefinition = "TEXT")
     private String rawPayload;
+    @Column(columnDefinition = "TEXT")
+    private String tradePlanJson;
+    @Column(columnDefinition = "TEXT")
+    private String conditionPayload;
+    @Column(unique = true)
+    private String idempotencyKey;
     private OffsetDateTime expiresAt;
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
@@ -97,6 +103,12 @@ public class TradeSignal {
     public void setRejectReason(String rejectReason) { this.rejectReason = rejectReason; }
     public String getRawPayload() { return rawPayload; }
     public void setRawPayload(String rawPayload) { this.rawPayload = rawPayload; }
+    public String getTradePlanJson() { return tradePlanJson; }
+    public void setTradePlanJson(String tradePlanJson) { this.tradePlanJson = tradePlanJson; }
+    public String getConditionPayload() { return conditionPayload; }
+    public void setConditionPayload(String conditionPayload) { this.conditionPayload = conditionPayload; }
+    public String getIdempotencyKey() { return idempotencyKey; }
+    public void setIdempotencyKey(String idempotencyKey) { this.idempotencyKey = idempotencyKey; }
     public OffsetDateTime getExpiresAt() { return expiresAt; }
     public void setExpiresAt(OffsetDateTime expiresAt) { this.expiresAt = expiresAt; }
     public OffsetDateTime getCreatedAt() { return createdAt; }

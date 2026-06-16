@@ -267,6 +267,53 @@ def test_quantitative_analyzer_prefers_dart_financial_snapshot(tmp_path):
     assert analysis.has_sufficient_financial_data() is True
 
 
+def test_quantitative_analyzer_uses_recent_three_year_financial_trends(tmp_path):
+    financials = tmp_path / "raw" / "financials" / "semiconductor.jsonl"
+    financials.parent.mkdir(parents=True)
+    rows = [
+        {"stock_code": "005930", "fiscal_year": "2023", "revenue": 100.0, "operating_profit": 10.0, "operating_margin": 10.0, "net_margin": 7.0, "roe": 8.0, "debt_ratio": 80.0},
+        {"stock_code": "005930", "fiscal_year": "2024", "revenue": 120.0, "operating_profit": 18.0, "operating_margin": 15.0, "net_margin": 9.0, "roe": 10.0, "debt_ratio": 70.0},
+        {"stock_code": "005930", "fiscal_year": "2025", "revenue": 150.0, "operating_profit": 30.0, "operating_margin": 20.0, "net_margin": 12.0, "roe": 12.0, "debt_ratio": 60.0},
+    ]
+    financials.write_text(
+        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+
+    class FakeCrawler:
+        def get_stock_info(self, stock_code):
+            return {
+                "stock_code": stock_code,
+                "stock_name": "삼성전자",
+                "current_price": 70000,
+                "market_cap": "N/A",
+                "per": 12.0,
+                "pbr": 1.2,
+                "eps": None,
+                "bps": None,
+                "dividend_yield": 1.0,
+            }
+
+        def get_financial_summary(self, stock_code):
+            raise AssertionError("DART snapshot should be used")
+
+    analyzer = QuantitativeAnalyzer(data_dir=str(tmp_path))
+    analyzer.naver_crawler = FakeCrawler()
+
+    analysis = analyzer.analyze("005930")
+
+    assert analysis.revenue == 150.0
+    assert analysis.operating_profit == 30.0
+    assert analysis.revenue_yoy_change == 25.0
+    assert analysis.operating_profit_yoy_change == 66.67
+    assert analysis.revenue_growth_3y == 22.47
+    assert analysis.operating_profit_growth_3y == 73.21
+    assert analysis.operating_margin_trend == 10.0
+    assert analysis.net_margin_trend == 5.0
+    assert analysis.financial_history_years == ["2025", "2024", "2023"]
+    assert analysis.growth_score >= 20
+
+
 def test_quantitative_analyzer_prefers_local_krx_fundamentals(tmp_path):
     fundamentals = tmp_path / "market_data" / "semiconductor" / "fundamentals.jsonl"
     fundamentals.parent.mkdir(parents=True)
@@ -362,6 +409,13 @@ def test_quant_agent_passes_dart_and_krx_metrics_to_llm(monkeypatch):
                 revenue=333605900000000.0,
                 operating_profit=43601000000000.0,
                 net_income=45206800000000.0,
+                revenue_yoy_change=25.0,
+                operating_profit_yoy_change=66.67,
+                revenue_growth_3y=22.47,
+                operating_profit_growth_3y=73.21,
+                operating_margin_trend=10.0,
+                net_margin_trend=5.0,
+                financial_history_years=["2025", "2024", "2023"],
                 dividend_yield=1.0,
                 financial_source="dart_financial_snapshot+krx_fundamental",
             )
@@ -408,3 +462,7 @@ def test_quant_agent_passes_dart_and_krx_metrics_to_llm(monkeypatch):
     assert '"eps": 5800' in agent.llm.last_prompt
     assert '"current_ratio": 200.0' in agent.llm.last_prompt
     assert '"revenue": 333605900000000.0' in agent.llm.last_prompt
+    assert '"revenue_growth_3y": 22.47' in agent.llm.last_prompt
+    assert '"operating_profit_yoy_change": 66.67' in agent.llm.last_prompt
+    assert score.revenue_growth_3y == 22.47
+    assert score.financial_history_years == ["2025", "2024", "2023"]

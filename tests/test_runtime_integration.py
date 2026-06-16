@@ -9,7 +9,7 @@ from pathlib import Path
 
 from src.config.settings import get_settings, reset_settings_cache
 from src.agents.analyst import AnalystAgent
-from src.rag.canonical_retriever import CanonicalRetriever
+from src.evidence.retriever import EvidenceRetriever
 from src.retrieval.vector_store import SimpleVectorStore
 
 
@@ -37,7 +37,7 @@ def test_canonical_retriever_falls_back_to_pipeline_vector_store():
         )
         store.save(str(vector_dir / "report_vector_store.json"))
 
-        retriever = CanonicalRetriever(data_dir=tmpdir)
+        retriever = EvidenceRetriever(data_dir=tmpdir)
         results = retriever.search("삼성전자 실적 전망", top_k=3)
 
         assert results, "canonical index가 없어도 pipeline vector store로 폴백해야 합니다."
@@ -63,11 +63,11 @@ def test_search_for_context_explains_missing_indexes():
             encoding="utf-8",
         )
 
-        retriever = CanonicalRetriever(data_dir=tmpdir)
+        retriever = EvidenceRetriever(data_dir=tmpdir)
         context = retriever.search_for_context("삼성전자")
 
         assert "retrieval 인덱스가 없습니다" in context
-        assert "build_rag.py" in context
+        assert "build_evidence_index.py" in context
 
 
 def test_run_agent_demo_fails_fast_without_retrieval_assets(tmp_path):

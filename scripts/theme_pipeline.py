@@ -29,7 +29,7 @@ from src.ingestion import (
     ThemeTargetStore,
     make_theme_key,
 )
-from src.rag.raw_layer2_builder import RawLayer2Builder
+from src.evidence.index_builder import EvidenceIndexBuilder
 
 
 SUPPORTED_ENABLED_SOURCES = ("news", "dart", "financials", "forum", "chart")
@@ -276,7 +276,7 @@ def main() -> None:
         )
         print(f"[GENERAL NEWS] docs={len(general_news_docs)}")
 
-    layer2 = RawLayer2Builder(data_dir=str(data_dir)).rebuild_theme(
+    layer2 = EvidenceIndexBuilder(data_dir=str(data_dir)).rebuild_theme(
         theme_key=theme_key,
         update_mode=args.update_mode,
     )

@@ -191,14 +191,14 @@ def _step_collect(args, theme_key: str) -> dict:
 
 
 def _step_build(args, theme_key: str) -> dict:
-    """Step 2: Layer2 Build + Canonical RAG Sync."""
+    """Step 2: Layer2 Build + Canonical evidence Sync."""
     print("\n" + "=" * 60)
-    print("🔨 Step 2: Layer2 Build + Canonical RAG Sync")
+    print("🔨 Step 2: Layer2 Build + Canonical evidence Sync")
     print("=" * 60)
 
-    from src.rag.raw_layer2_builder import RawLayer2Builder
+    from src.evidence.index_builder import EvidenceIndexBuilder
 
-    builder = RawLayer2Builder(data_dir=args.data_dir)
+    builder = EvidenceIndexBuilder(data_dir=args.data_dir)
     result = builder.rebuild_theme(
         theme_key=theme_key,
         update_mode=args.mode,
@@ -224,9 +224,9 @@ def _step_analyze(args, theme_key: str) -> dict:
     print("=" * 60)
 
     # Check if canonical index exists
-    from src.rag.canonical_retriever import CanonicalRetriever
+    from src.evidence.retriever import EvidenceRetriever
 
-    retriever = CanonicalRetriever(data_dir=args.data_dir)
+    retriever = EvidenceRetriever(data_dir=args.data_dir)
     if not retriever.available_themes:
         print("  ⚠️ Canonical index가 없습니다. --build-and-analyze 사용 권장.")
         return {"status": "skipped", "reason": "no_canonical_index"}

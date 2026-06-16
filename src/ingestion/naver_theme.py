@@ -54,8 +54,20 @@ def _resolve_chrome_binary() -> str | None:
 def _resolve_chromedriver() -> str | None:
     return _first_existing_path(
         os.getenv("CHROMEDRIVER"),
+        _resolve_selenium_cached_chromedriver(),
         shutil.which("chromedriver"),
     )
+
+
+def _resolve_selenium_cached_chromedriver() -> str | None:
+    root = Path.home() / ".cache" / "selenium" / "chromedriver" / "linux64"
+    if not root.exists():
+        return None
+    candidates = sorted(root.glob("*/chromedriver"), key=lambda path: path.parent.name, reverse=True)
+    for candidate in candidates:
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return None
 
 
 @dataclass
@@ -63,6 +75,13 @@ class ThemeStock:
     theme_name: str
     stock_name: str
     stock_code: str
+
+
+@dataclass
+class ThemeTargets:
+    theme_name: str
+    detail_url: str
+    stocks: List[ThemeStock]
 
 
 class NaverThemeStockCollector(BaseCollector):
@@ -134,6 +153,27 @@ class NaverThemeStockCollector(BaseCollector):
         finally:
             driver.quit()
 
+    def collect_all_themes(self, max_pages: int = 10, max_stocks_per_theme: int = 200) -> List[ThemeTargets]:
+        if BeautifulSoup is None:
+            raise ImportError("beautifulsoup4가 필요합니다. pip install beautifulsoup4")
+
+        driver = self._build_driver()
+        collected: List[ThemeTargets] = []
+        try:
+            theme_links = self._find_theme_links_selenium(driver=driver, theme_keyword="", max_pages=max_pages)
+            print(f"[DEBUG][THEME ALL] theme count={len(theme_links)}")
+            for theme_name, detail_url in theme_links:
+                stocks = self._collect_theme_detail_selenium(
+                    driver=driver,
+                    theme_name=theme_name,
+                    detail_url=detail_url,
+                    max_stocks=max_stocks_per_theme,
+                )
+                collected.append(ThemeTargets(theme_name=theme_name, detail_url=detail_url, stocks=stocks))
+            return collected
+        finally:
+            driver.quit()
+
     def _find_theme_links_selenium(self, driver, theme_keyword: str, max_pages: int) -> List[Tuple[str, str]]:
         normalized_keyword = theme_keyword.strip().lower()
         links: List[Tuple[str, str]] = []
@@ -145,18 +185,12 @@ class NaverThemeStockCollector(BaseCollector):
             WebDriverWait(driver, 10).until(lambda d: "테마별 시세" in d.page_source or "type=theme" in d.page_source)
 
             soup = BeautifulSoup(driver.page_source, "html.parser")
+            page_links = self.extract_theme_links(driver.page_source, theme_keyword=theme_keyword)
             candidates = soup.select("a[href*='sise_group_detail.naver?type=theme']")
             print(f"[DEBUG][THEME] page={page} candidate count={len(candidates)}")
 
             page_matches = 0
-            for a_tag in candidates:
-                theme_name = a_tag.get_text(" ", strip=True)
-                href = (a_tag.get("href") or "").strip()
-                if not theme_name or not href:
-                    continue
-                if normalized_keyword not in theme_name.lower():
-                    continue
-                detail_url = f"https://finance.naver.com{href}" if href.startswith("/") else href
+            for theme_name, detail_url in page_links:
                 print(f"[DEBUG][THEME] matched theme: {theme_name} -> {detail_url}")
                 links.append((theme_name, detail_url))
                 page_matches += 1
@@ -165,3 +199,67 @@ class NaverThemeStockCollector(BaseCollector):
 
         dedup = {detail_url: theme_name for theme_name, detail_url in links}
         return [(name, url) for url, name in dedup.items()]
+
+    def _collect_theme_detail_selenium(
+        self,
+        *,
+        driver,
+        theme_name: str,
+        detail_url: str,
+        max_stocks: int,
+    ) -> List[ThemeStock]:
+        driver.get(detail_url)
+        from selenium.webdriver.support.ui import WebDriverWait
+
+        WebDriverWait(driver, 10).until(lambda d: "code=" in d.page_source or "item/main" in d.page_source)
+        stocks = self.extract_theme_stocks(driver.page_source, theme_name=theme_name, max_stocks=max_stocks)
+        print(f"[DEBUG][THEME DETAIL] theme={theme_name} stock count={len(stocks)}")
+        return stocks
+
+    @staticmethod
+    def extract_theme_links(html: str, theme_keyword: str = "") -> List[Tuple[str, str]]:
+        if BeautifulSoup is None:
+            raise ImportError("beautifulsoup4가 필요합니다. pip install beautifulsoup4")
+        normalized_keyword = theme_keyword.strip().lower()
+        soup = BeautifulSoup(html, "html.parser")
+        links: List[Tuple[str, str]] = []
+        for a_tag in soup.select("a[href*='sise_group_detail.naver?type=theme']"):
+            theme_name = a_tag.get_text(" ", strip=True)
+            href = (a_tag.get("href") or "").strip()
+            if not theme_name or not href:
+                continue
+            if normalized_keyword and normalized_keyword not in theme_name.lower():
+                continue
+            detail_url = f"https://finance.naver.com{href}" if href.startswith("/") else href
+            links.append((theme_name, detail_url))
+        dedup = {detail_url: theme_name for theme_name, detail_url in links}
+        return [(name, url) for url, name in dedup.items()]
+
+    @staticmethod
+    def extract_theme_stocks(html: str, theme_name: str, max_stocks: int = 200) -> List[ThemeStock]:
+        if BeautifulSoup is None:
+            raise ImportError("beautifulsoup4가 필요합니다. pip install beautifulsoup4")
+        soup = BeautifulSoup(html, "html.parser")
+        stocks: List[ThemeStock] = []
+        seen_codes = set()
+        stock_links = (
+            soup.select("a[href*='item/main.naver?code=']")
+            or soup.select("a[href*='item/main']")
+            or soup.select("a[href*='code=']")
+        )
+        for a_tag in stock_links:
+            href = a_tag.get("href", "")
+            code_match = re.search(r"code=(\d{6})", href)
+            if not code_match:
+                continue
+            stock_code = code_match.group(1)
+            if stock_code in seen_codes:
+                continue
+            stock_name = a_tag.get_text(" ", strip=True)
+            if not stock_name:
+                continue
+            seen_codes.add(stock_code)
+            stocks.append(ThemeStock(theme_name=theme_name, stock_name=stock_name, stock_code=stock_code))
+            if len(stocks) >= max_stocks:
+                break
+        return stocks

@@ -20,7 +20,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from backtesting.temporal_rag import normalize_ymd
+from backtesting.temporal_evidence import normalize_ymd
 from src.config.settings import get_data_dir
 from src.ingestion.theme_membership import ThemeMembership, ThemeMembershipStore
 from src.ingestion.theme_targets import ThemeTargetStore

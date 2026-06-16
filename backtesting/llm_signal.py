@@ -11,7 +11,7 @@ from typing import Any, Dict, Iterable, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from backtesting.temporal_rag import TemporalRAG
+from backtesting.temporal_evidence import TemporalEvidence
 from src.agents.llm_config import get_analyst_llm, get_llm_info, get_risk_manager_llm
 from src.config.settings import get_data_dir
 
@@ -109,7 +109,7 @@ class TemporalLLMStockScorer:
         self.theme_key = theme_key
         self.context_docs = max(1, int(context_docs))
         self.horizon = _normalize_llm_horizon(horizon)
-        self.rag = TemporalRAG(data_dir=str(self.data_dir), theme_key=theme_key)
+        self.evidence = TemporalEvidence(data_dir=str(self.data_dir), theme_key=theme_key)
         self.llm_info = get_llm_info()
         self.provider = str(self.llm_info.get("provider") or "")
         agent_models = self.llm_info.get("agent_models") or {}
@@ -202,7 +202,7 @@ class TemporalLLMStockScorer:
         stock_name = str(row.get("stock_name") or "")
         stock_code = str(row.get("stock_code") or "")
         query = f"{stock_name} {stock_code} {self.theme} AI 수혜 성장 실적 공시 리스크"
-        return self.rag.search_for_context(
+        return self.evidence.search_for_context(
             query=query,
             as_of_date=as_of_ymd,
             top_k=self.context_docs,
@@ -360,7 +360,7 @@ class TemporalMultiAgentStockScorer:
         self.theme_key = theme_key
         self.context_docs = max(1, int(context_docs))
         self.horizon = _normalize_llm_horizon(horizon)
-        self.rag = TemporalRAG(data_dir=str(self.data_dir), theme_key=theme_key)
+        self.evidence = TemporalEvidence(data_dir=str(self.data_dir), theme_key=theme_key)
         self.llm_info = get_llm_info()
         self.provider = str(self.llm_info.get("provider") or "")
         agent_models = self.llm_info.get("agent_models") or {}
@@ -476,7 +476,7 @@ class TemporalMultiAgentStockScorer:
         stock_name = str(row.get("stock_name") or "")
         stock_code = str(row.get("stock_code") or "")
         query = f"{stock_name} {stock_code} {self.theme} AI 테마 수혜 성장 실적 공시 리스크"
-        return self.rag.search_for_context(
+        return self.evidence.search_for_context(
             query=query,
             as_of_date=as_of_ymd,
             top_k=self.context_docs,

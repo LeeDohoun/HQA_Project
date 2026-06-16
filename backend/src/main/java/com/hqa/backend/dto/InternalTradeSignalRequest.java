@@ -22,6 +22,9 @@ public record InternalTradeSignalRequest(
         String stopLoss,
         String reason,
         @NotNull OffsetDateTime expiresAt,
-        Map<String, Object> rawPayload
+        Map<String, Object> rawPayload,
+        Map<String, Object> tradePlanJson,
+        Map<String, Object> conditionPayload,
+        String idempotencyKey
 ) {
 }

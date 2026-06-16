@@ -55,6 +55,13 @@ class QuantScore:
     revenue: Optional[float] = None
     operating_profit: Optional[float] = None
     net_income: Optional[float] = None
+    revenue_yoy_change: Optional[float] = None
+    operating_profit_yoy_change: Optional[float] = None
+    revenue_growth_3y: Optional[float] = None
+    operating_profit_growth_3y: Optional[float] = None
+    operating_margin_trend: Optional[float] = None
+    net_margin_trend: Optional[float] = None
+    financial_history_years: list[str] = field(default_factory=list)
     
     # 최종 의견
     opinion: str = ""
@@ -213,6 +220,13 @@ class QuantAgent:
             revenue=metrics.get("revenue"),
             operating_profit=metrics.get("operating_profit"),
             net_income=metrics.get("net_income"),
+            revenue_yoy_change=metrics.get("revenue_yoy_change"),
+            operating_profit_yoy_change=metrics.get("operating_profit_yoy_change"),
+            revenue_growth_3y=metrics.get("revenue_growth_3y"),
+            operating_profit_growth_3y=metrics.get("operating_profit_growth_3y"),
+            operating_margin_trend=metrics.get("operating_margin_trend"),
+            net_margin_trend=metrics.get("net_margin_trend"),
+            financial_history_years=metrics.get("financial_history_years") or [],
             opinion=str(data.get("opinion") or self._analysis_opinion(analysis)),
             grade=self._calculate_grade(total),
             quality_flags={
@@ -299,6 +313,10 @@ class QuantAgent:
 | 순이익률 | {score.net_margin if score.net_margin else 'N/A'}% |
 | 부채비율 | {score.debt_ratio if score.debt_ratio else 'N/A'}% |
 | 유동비율 | {score.current_ratio if score.current_ratio else 'N/A'}% |
+| 3년 매출 CAGR | {score.revenue_growth_3y if score.revenue_growth_3y else 'N/A'}% |
+| 3년 영업이익 CAGR | {score.operating_profit_growth_3y if score.operating_profit_growth_3y else 'N/A'}% |
+| 매출 YoY | {score.revenue_yoy_change if score.revenue_yoy_change else 'N/A'}% |
+| 영업이익 YoY | {score.operating_profit_yoy_change if score.operating_profit_yoy_change else 'N/A'}% |
 
 ## 2. 밸류에이션 분석 ({score.valuation_score}/25점)
 {score.valuation_analysis}
@@ -335,6 +353,13 @@ class QuantAgent:
             "revenue": analysis.revenue,
             "operating_profit": analysis.operating_profit,
             "net_income": analysis.net_income,
+            "revenue_yoy_change": analysis.revenue_yoy_change,
+            "operating_profit_yoy_change": analysis.operating_profit_yoy_change,
+            "revenue_growth_3y": analysis.revenue_growth_3y,
+            "operating_profit_growth_3y": analysis.operating_profit_growth_3y,
+            "operating_margin_trend": analysis.operating_margin_trend,
+            "net_margin_trend": analysis.net_margin_trend,
+            "financial_history_years": analysis.financial_history_years,
             "dividend_yield": analysis.dividend_yield,
         }
 
@@ -361,6 +386,19 @@ class QuantAgent:
         )
 
     def _growth_detail(self, analysis: QuantitativeAnalysis) -> str:
+        if (
+            analysis.revenue_growth_3y is not None
+            or analysis.operating_profit_growth_3y is not None
+            or analysis.revenue_yoy_change is not None
+        ):
+            return (
+                f"최근 {len(analysis.financial_history_years) or 3}개 연간 재무 스냅샷 기준 "
+                f"매출 3년 CAGR {self._fmt_metric(analysis.revenue_growth_3y)}%, "
+                f"영업이익 3년 CAGR {self._fmt_metric(analysis.operating_profit_growth_3y)}%, "
+                f"매출 YoY {self._fmt_metric(analysis.revenue_yoy_change)}%, "
+                f"영업이익률 변화 {self._fmt_metric(analysis.operating_margin_trend)}%p를 반영해 "
+                f"성장성 점수는 {analysis.growth_score}/25점입니다."
+            )
         return (
             f"성장성은 ROE 기반 재투자 수익률과 배당수익률 "
             f"{self._fmt_metric(analysis.dividend_yield)}%를 기준으로 추정했으며 "

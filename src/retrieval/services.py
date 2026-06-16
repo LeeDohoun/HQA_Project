@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from src.config.settings import get_data_dir
-from src.rag.dedupe import make_document_id
+from src.evidence.dedupe import make_document_id
 from src.retrieval.bm25_index import BM25IndexManager
 from src.retrieval.vector_store import SimpleVectorStore
 

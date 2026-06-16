@@ -18,8 +18,8 @@ from datetime import datetime
 from src.agents.llm_config import get_analyst_llm, get_summary_llm
 from src.utils.prompt_loader import load_prompt
 
-# RAG 검색 도구 (Canonical Retriever 통합)
-from src.tools.rag_tool import RAGSearchTool
+# evidence 검색 도구 (Canonical Retriever 통합)
+from src.tools.evidence_tool import EvidenceSearchTool
 
 logger = logging.getLogger(__name__)
 
@@ -148,12 +148,12 @@ class AnalystAgent:
         self._instruct_llm = None   # 필요 시에만 로드 (Lazy)
         self._thinking_llm = None   # 필요 시에만 로드 (Lazy)
 
-        # Source-aware RAG tools (canonical retriever 기반)
-        self.rag_tool = RAGSearchTool(top_k=5)
-        self.rag_tool_evidence = RAGSearchTool(
+        # Source-aware evidence tools (canonical retriever 기반)
+        self.evidence_tool = EvidenceSearchTool(top_k=5)
+        self.evidence_tool_evidence = EvidenceSearchTool(
             top_k=5, source_types=["dart", "news"], intent="investment"
         )
-        self.rag_tool_news = RAGSearchTool(
+        self.evidence_tool_news = EvidenceSearchTool(
             top_k=5, source_types=["news", "forum"], intent="sentiment"
         )
 
@@ -218,11 +218,11 @@ class AnalystAgent:
 
         # 1. DART/뉴스 투자 근거 검색
         print(f"📄 {stock_name} DART/뉴스 투자 근거 검색 중...")
-        result.evidence_summary, result.evidence_sources = self._search_evidence(stock_name)
+        result.evidence_summary, result.evidence_sources = self._search_evidence(stock_name, stock_code)
 
         # 2. 뉴스/포럼 검색
         print(f"📰 {stock_name} 뉴스/포럼 검색 중...")
-        result.news_summary = self._search_news(stock_name)
+        result.news_summary = self._search_news(stock_name, stock_code)
 
         # 3. 품질 평가
         result.data_sources = self._collect_data_sources()
@@ -363,23 +363,23 @@ class AnalystAgent:
             "news": self._last_news_source,
         }
 
-    def _search_evidence(self, stock_name: str) -> Tuple[str, List[str]]:
+    def _search_evidence(self, stock_name: str, stock_code: str = "") -> Tuple[str, List[str]]:
         """
         DART/뉴스 기반 투자 근거 검색 및 요약
 
-        [최적화] RAG 검색 결과를 LLM 없이 직접 반환.
+        [최적화] evidence 검색 결과를 LLM 없이 직접 반환.
         요약은 Thinking 모델이 통합 프롬프트에서 수행.
         단, 결과가 3000자 초과 시에만 Instruct LLM으로 1회 요약.
         """
         self._last_evidence_source = "none"
 
-        # RAG 검색 (source: dart, news)
+        # evidence 검색 (source: dart, news)
         try:
             query = f"{stock_name} 실적 전망 목표주가 투자의견"
-            context = self.rag_tool_evidence._run(query)
+            context = self.evidence_tool_evidence._run(query, stock_code=stock_code)
 
             if not self._is_empty_result(context):
-                self._last_evidence_source = "rag"
+                self._last_evidence_source = "evidence"
                 sources = self._extract_sources(context)
                 self._log_retrieval_debug(
                     "evidence",
@@ -393,9 +393,9 @@ class AnalystAgent:
                 summary = self._summarize_evidence(stock_name, context)
                 return summary, sources
         except Exception as e:
-            print(f"   ⚠️ DART/뉴스 투자 근거 RAG 오류: {e}")
+            print(f"   ⚠️ DART/뉴스 투자 근거 evidence 오류: {e}")
 
-        return "DART/뉴스 투자 근거를 확보하지 못했습니다. (RAG 결과 없음)", []
+        return "DART/뉴스 투자 근거를 확보하지 못했습니다. (Evidence 결과 없음)", []
 
     def _extract_sources(self, context: str) -> List[str]:
         """컨텍스트에서 출처 정보 추출 (canonical + legacy 포맷 모두 지원)"""
@@ -492,30 +492,30 @@ class AnalystAgent:
         response = self.instruct_llm.invoke(summary_prompt)
         return response.content
 
-    def _search_news(self, stock_name: str) -> str:
+    def _search_news(self, stock_name: str, stock_code: str = "") -> str:
         """
         최신 뉴스/포럼 검색
 
-        현재 파이프라인 산출물인 news/forum canonical RAG만 사용합니다.
+        현재 파이프라인 산출물인 news/forum canonical evidence만 사용합니다.
         """
         self._last_news_source = "none"
 
         try:
             rag_query = f"{stock_name} 뉴스 시장 이슈 최근 동향"
-            context = self.rag_tool_news._run(rag_query)
+            context = self.evidence_tool_news._run(rag_query, stock_code=stock_code)
 
             if not self._is_empty_result(context):
-                self._last_news_source = "rag"
+                self._last_news_source = "evidence"
                 self._log_retrieval_debug(
                     "news",
                     rag_query,
                     self._extract_retrieval_hits(context),
                 )
-                return context[:500] + "\n\n[데이터 출처: RAG 저장 문서 — 실시간 뉴스 아님]"
+                return context[:500] + "\n\n[데이터 출처: evidence 저장 문서 — 실시간 뉴스 아님]"
         except Exception as e:
-            print(f"   ⚠️ 뉴스/포럼 RAG 검색 실패: {e}")
+            print(f"   ⚠️ 뉴스/포럼 evidence 검색 실패: {e}")
 
-        return "뉴스/포럼 정보를 확보하지 못했습니다. (RAG 결과 없음)"
+        return "뉴스/포럼 정보를 확보하지 못했습니다. (Evidence 결과 없음)"
 
 # 사용 예시
 if __name__ == "__main__":

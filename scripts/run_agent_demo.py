@@ -12,7 +12,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.config.settings import get_data_dir, load_project_env, reset_settings_cache
-from src.rag.canonical_retriever import CanonicalRetriever
+from src.evidence.retriever import EvidenceRetriever
 
 
 def main() -> int:
@@ -25,7 +25,7 @@ def main() -> int:
     data_dir = Path(args.data_dir)
     os.environ["HQA_DATA_DIR"] = str(data_dir)
     reset_settings_cache()
-    retriever = CanonicalRetriever(data_dir=str(data_dir))
+    retriever = EvidenceRetriever(data_dir=str(data_dir))
     state = retriever.describe_data_state()
 
     if not state["retrieval_assets_available"]:
