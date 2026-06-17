@@ -8,7 +8,6 @@ from src.runner.multi_theme_leader_trading_runner import MultiThemeLeaderTrading
 class _FakeThemeRunner:
     def __init__(self):
         self._config = {"trading": {}}
-        self._executor = type("Executor", (), {"get_runtime_config": lambda self: {"enabled": True, "dry_run": True, "account_type": "paper"}})()
         self.received_run_once_kwargs = []
 
     def run_once(self, **kwargs):

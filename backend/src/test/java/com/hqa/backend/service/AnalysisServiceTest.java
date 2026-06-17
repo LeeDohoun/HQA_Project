@@ -1,26 +1,18 @@
 package com.hqa.backend.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
-import com.hqa.backend.dto.AiAnalyzeRequest;
-import com.hqa.backend.dto.AnalysisHistoryResponse;
 import com.hqa.backend.dto.AnalysisMode;
 import com.hqa.backend.dto.AnalysisRequest;
-import com.hqa.backend.dto.AnalysisResultResponse;
-import com.hqa.backend.dto.AnalysisTaskResponse;
 import com.hqa.backend.dto.BulkAnalysisResponse;
-import com.hqa.backend.dto.StockInfo;
-import java.time.LocalDateTime;
+import com.hqa.backend.exception.ApiException;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 
 class AnalysisServiceTest {
 
@@ -29,7 +21,18 @@ class AnalysisServiceTest {
     private final AnalysisService service = new AnalysisService(aiServerClient, stockCatalogService);
 
     @Test
-    void submitBulkFromItemsSubmitsEachUiWatchlistItemAsQuickAnalysis() {
+    void submitRejectsLegacySingleStockAnalysisFlow() {
+        AnalysisRequest request = request("삼성전자", "005930", AnalysisMode.full);
+
+        assertThatThrownBy(() -> service.submit(request))
+                .isInstanceOf(ApiException.class)
+                .hasMessageContaining("기존 단일 종목 분석 API는 제거되었습니다")
+                .extracting("status")
+                .isEqualTo(410);
+    }
+
+    @Test
+    void submitBulkFromItemsReturnsFailuresWithoutCallingLegacyAiAnalyze() {
         BulkAnalysisResponse response = service.submitBulkFromItems(
                 List.of(
                         Map.of("stockName", "삼성전자", "stockCode", "005930"),
@@ -39,88 +42,12 @@ class AnalysisServiceTest {
                 0
         );
 
-        ArgumentCaptor<AiAnalyzeRequest> captor = ArgumentCaptor.forClass(AiAnalyzeRequest.class);
-        verify(aiServerClient, org.mockito.Mockito.times(2)).submitAnalysis(captor.capture());
-
         assertThat(response.total()).isEqualTo(2);
-        assertThat(response.submitted()).isEqualTo(2);
-        assertThat(response.failed()).isZero();
-        assertThat(captor.getAllValues())
-                .extracting(AiAnalyzeRequest::stockCode, AiAnalyzeRequest::mode)
-                .containsExactly(
-                        org.assertj.core.api.Assertions.tuple("005930", "quick"),
-                        org.assertj.core.api.Assertions.tuple("000660", "quick")
-                );
-    }
-
-    @Test
-    void getResultMapsRiskManagerAndQuickDecisionScores() {
-        when(stockCatalogService.getStockInfo("005930")).thenReturn(new StockInfo("삼성전자", "005930"));
-        AnalysisTaskResponse task = service.submit(request("삼성전자", "005930", AnalysisMode.quick));
-        when(aiServerClient.getAnalysis(task.taskId())).thenReturn(Map.of(
-                "status", "completed",
-                "completed_at", "2026-06-02T01:02:03Z",
-                "scores", Map.of(
-                        "quant", Map.of("total_score", 80, "grade", "A", "opinion", "재무 우수"),
-                        "chartist", Map.of("total_score", 65, "signal", "매수"),
-                        "quick_decision", Map.of("total_score", 70, "grade", "매수", "opinion", "빠른 판단")
-                ),
-                "final_decision", Map.of("total_score", 70, "action", "매수", "summary", "빠른 판단")
-        ));
-
-        AnalysisResultResponse result = service.getResult(task.taskId());
-
-        assertThat(result.scores())
-                .extracting("agent")
-                .containsExactly("quant", "chartist", "quick_decision");
-        assertThat(result.finalDecision()).containsEntry("action", "매수");
-        assertThat(result.completedAt()).isNotNull();
-    }
-
-    @Test
-    void getHistoryIncludesLatestScoreActionAndCompletedAt() {
-        when(stockCatalogService.getStockInfo("005930")).thenReturn(new StockInfo("삼성전자", "005930"));
-        AnalysisTaskResponse task = service.submit(request("삼성전자", "005930", AnalysisMode.full));
-        when(aiServerClient.getAnalysis(task.taskId())).thenReturn(Map.of(
-                "status", "completed",
-                "completed_at", "2026-06-02T01:02:03Z",
-                "scores", Map.of(
-                        "analyst", Map.of("total_score", 60, "hegemony_grade", "A", "final_opinion", "우수"),
-                        "quant", Map.of("total_score", 80, "grade", "A", "opinion", "재무 우수"),
-                        "chartist", Map.of("total_score", 70, "signal", "매수"),
-                        "risk_manager", Map.of("total_score", 82, "grade", "매수", "opinion", "최종 매수")
-                ),
-                "final_decision", Map.of("total_score", 82, "action", "매수", "summary", "최종 매수")
-        ));
-        service.getResult(task.taskId());
-
-        AnalysisHistoryResponse history = service.getHistory(1, 10);
-
-        assertThat(history.items()).hasSize(1);
-        assertThat(history.items().get(0).totalScore()).isEqualTo(82.0);
-        assertThat(history.items().get(0).action()).isEqualTo("매수");
-        assertThat(history.items().get(0).completedAt()).isNotNull();
-    }
-
-    @Test
-    void getResultTreatsAiCompletedAtWithoutOffsetAsLocalTime() {
-        when(stockCatalogService.getStockInfo("005930")).thenReturn(new StockInfo("삼성전자", "005930"));
-        AnalysisTaskResponse task = service.submit(request("삼성전자", "005930", AnalysisMode.quick));
-        String completedAt = LocalDateTime.now().plusSeconds(5).toString();
-        when(aiServerClient.getAnalysis(task.taskId())).thenReturn(Map.of(
-                "status", "completed",
-                "completed_at", completedAt,
-                "scores", Map.of(
-                        "quant", Map.of("total_score", 80, "grade", "A", "opinion", "재무 우수"),
-                        "chartist", Map.of("total_score", 65, "signal", "매수"),
-                        "quick_decision", Map.of("total_score", 70, "grade", "매수", "opinion", "빠른 판단")
-                ),
-                "final_decision", Map.of("total_score", 70, "action", "매수", "summary", "빠른 판단")
-        ));
-
-        AnalysisResultResponse result = service.getResult(task.taskId());
-
-        assertThat(result.durationSeconds()).isBetween(0.0, 30.0);
+        assertThat(response.submitted()).isZero();
+        assertThat(response.failed()).isEqualTo(2);
+        assertThat(response.failures())
+                .extracting(BulkAnalysisResponse.BulkAnalysisFailure::reason)
+                .containsOnly("legacy analysis flow removed");
     }
 
     @Test
@@ -162,47 +89,6 @@ class AnalysisServiceTest {
                 .containsEntry("label", "Quant")
                 .containsEntry("status", "completed")
                 .containsEntry("message", "Quant 완료: 재무: F");
-    }
-
-    @Test
-    void getProgressReturnsStoredProgressEventsForPollingFallback() {
-        AnalysisTaskResponse task = service.submit(request("삼성전자", "005930", AnalysisMode.quick));
-        service.recordProgressEvent(task.taskId(), "progress", Map.of(
-                "agent", "quant",
-                "status", "running",
-                "message", "Quant 단계 진행 중",
-                "progress", 0.25,
-                "timestamp", "2026-06-13T02:10:00Z"
-        ));
-
-        Map<String, Object> progress = service.getProgress(task.taskId());
-
-        assertThat(progress)
-                .containsEntry("task_id", task.taskId())
-                .containsEntry("status", "running");
-        assertThat((List<?>) progress.get("events")).hasSize(1);
-    }
-
-    @Test
-    void completedAgentProgressDoesNotMeanWholeAnalysisIsComplete() {
-        AnalysisTaskResponse task = service.submit(request("한화오션", "042660", AnalysisMode.full));
-
-        service.recordProgressEvent(task.taskId(), "progress", Map.of(
-                "agent", "quant",
-                "status", "completed",
-                "message", "재무: F",
-                "progress", 1.0,
-                "timestamp", "2026-06-13T02:10:00Z"
-        ));
-
-        Map<String, Object> progress = service.getProgress(task.taskId());
-        List<?> events = (List<?>) progress.get("events");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> event = (Map<String, Object>) events.get(0);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = (Map<String, Object>) event.get("data");
-
-        assertThat((Double) data.get("progress")).isLessThan(1.0);
     }
 
     private AnalysisRequest request(String name, String code, AnalysisMode mode) {

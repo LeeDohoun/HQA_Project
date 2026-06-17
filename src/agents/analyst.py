@@ -23,6 +23,11 @@ from src.tools.evidence_tool import EvidenceSearchTool
 
 logger = logging.getLogger(__name__)
 
+INVESTMENT_EVIDENCE_TOP_K = 12
+NEWS_FORUM_EVIDENCE_TOP_K = 10
+INVESTMENT_EVIDENCE_CHAR_LIMIT = 5000
+NEWS_FORUM_EVIDENCE_CHAR_LIMIT = 1500
+
 
 # ──────────────────────────────────────────────
 # 데이터 클래스
@@ -149,12 +154,16 @@ class AnalystAgent:
         self._thinking_llm = None   # 필요 시에만 로드 (Lazy)
 
         # Source-aware evidence tools (canonical retriever 기반)
-        self.evidence_tool = EvidenceSearchTool(top_k=5)
+        self.evidence_tool = EvidenceSearchTool(top_k=INVESTMENT_EVIDENCE_TOP_K)
         self.evidence_tool_evidence = EvidenceSearchTool(
-            top_k=5, source_types=["dart", "news"], intent="investment"
+            top_k=INVESTMENT_EVIDENCE_TOP_K,
+            source_types=["dart", "news"],
+            intent="investment",
         )
         self.evidence_tool_news = EvidenceSearchTool(
-            top_k=5, source_types=["news", "forum"], intent="sentiment"
+            top_k=NEWS_FORUM_EVIDENCE_TOP_K,
+            source_types=["news", "forum"],
+            intent="sentiment",
         )
 
         # 내부 추적용
@@ -369,7 +378,7 @@ class AnalystAgent:
 
         [최적화] evidence 검색 결과를 LLM 없이 직접 반환.
         요약은 Thinking 모델이 통합 프롬프트에서 수행.
-        단, 결과가 3000자 초과 시에만 Instruct LLM으로 1회 요약.
+        단, 결과가 5000자 초과 시에만 Instruct LLM으로 1회 요약.
         """
         self._last_evidence_source = "none"
 
@@ -386,8 +395,8 @@ class AnalystAgent:
                     query,
                     self._extract_retrieval_hits(context),
                 )
-                # 3000자 이하면 원시 텍스트 그대로 전달 (LLM 호출 절약)
-                if len(context) <= 3000:
+                # 5000자 이하면 원시 텍스트 그대로 전달 (LLM 호출 절약)
+                if len(context) <= INVESTMENT_EVIDENCE_CHAR_LIMIT:
                     return context, sources
                 # 너무 길면 핵심만 Instruct LLM으로 압축 (1회)
                 summary = self._summarize_evidence(stock_name, context)
@@ -475,13 +484,13 @@ class AnalystAgent:
         )
 
     def _summarize_evidence(self, stock_name: str, context: str) -> str:
-        """DART/뉴스 투자 근거를 LLM으로 요약 (3000자 초과 시에만 호출)"""
+        """DART/뉴스 투자 근거를 LLM으로 요약 (5000자 초과 시에만 호출)"""
         summary_prompt = f"""
 다음은 '{stock_name}'에 대한 DART 공시와 뉴스 기반 투자 근거입니다.
 핵심 내용을 5줄 이내로 요약해주세요.
 
 [DART/뉴스 내용]
-{context[:3000]}
+{context[:INVESTMENT_EVIDENCE_CHAR_LIMIT]}
 
 [요약 포인트]
 - 실적 또는 사업 변화
@@ -511,7 +520,10 @@ class AnalystAgent:
                     rag_query,
                     self._extract_retrieval_hits(context),
                 )
-                return context[:500] + "\n\n[데이터 출처: evidence 저장 문서 — 실시간 뉴스 아님]"
+                return (
+                    context[:NEWS_FORUM_EVIDENCE_CHAR_LIMIT]
+                    + "\n\n[데이터 출처: evidence 저장 문서 — 실시간 뉴스 아님]"
+                )
         except Exception as e:
             print(f"   ⚠️ 뉴스/포럼 evidence 검색 실패: {e}")
 

@@ -22,25 +22,19 @@ RISK_ORDER = {
 
 
 class MultiThemeLeaderTradingRunner:
-    """Run all themes, rank leaders globally, and route selected leaders to preview/execute."""
+    """Run all themes, rank leaders globally, and return signal-ready candidates."""
 
     def __init__(
         self,
         *,
         config_path: str = "config/watchlist.yaml",
         data_dir: Optional[str] = None,
-        dry_run_override: Optional[bool] = None,
-        trading_enabled_override: Optional[bool] = None,
-        account_type_override: Optional[str] = None,
         theme_runner: Optional[ThemeLeaderTradingRunner] = None,
     ):
         self._data_dir = Path(data_dir) if data_dir else get_data_dir()
         self._theme_runner = theme_runner or ThemeLeaderTradingRunner(
             config_path=config_path,
             data_dir=str(self._data_dir),
-            dry_run_override=dry_run_override,
-            trading_enabled_override=trading_enabled_override,
-            account_type_override=account_type_override,
         )
         trading_cfg = dict(getattr(self._theme_runner, "_config", {}).get("trading") or {})
         self._signal_quality_cfg = resolve_signal_quality_config(dict(trading_cfg.get("signal_quality") or {}))
@@ -139,7 +133,7 @@ class MultiThemeLeaderTradingRunner:
             "status": "success",
             "mode": "execute" if execute else "preview",
             "executed_at": datetime.now(KST).isoformat(),
-            "runtime": self._theme_runner._executor.get_runtime_config(),
+            "runtime": {"mode": "signal_generation", "python_order_execution": False},
             "portfolio_context": self._report_portfolio_context(resolved_portfolio_context),
             "strategy_profile": resolved_profile,
             "theme_count": len(themes),

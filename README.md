@@ -85,7 +85,7 @@ HQA_Project/
 ├── prompts/                   # Agent별 프롬프트 템플릿
 ├── scripts/                   # 데이터 수집, evidence 빌드, 데모/헬스체크/dev 실행 스크립트
 ├── backtesting/               # point-in-time 주도주 백테스트와 검증 도구
-├── config/                    # watchlist, theme_trading 전략/스케줄/리스크 설정
+├── config/                    # watchlist 기반 multi-theme 분석 설정
 ├── data/                      # raw, corpus, index, market data, backtest 산출물
 └── tests/                     # Python 테스트
 ```
@@ -126,17 +126,14 @@ HQA_Project/
 
 ### AI 서버
 
-AI 서버는 evidence, 에이전트 분석, 주도주 선별, 신호 생성을 담당합니다.
+AI 서버는 evidence 조회, 채팅/추천 보조 API, 런타임 신호 생성을 담당합니다.
 
 - evidence 채팅: `POST /chat`
 - 추천 질문: `POST /suggest`
-- 단일 종목 분석: `POST /analyze`, `GET /analyze/{task_id}`
-- 테마 주도주 분석: `POST /theme/analyze`, `GET /theme/analyze/{task_id}`
-- 단일/다중 테마 런타임 분석: `POST /runtime/theme-trade`, `POST /runtime/multi-theme-trade`
-- 다중 테마 루프 실행/중지/상태: `/runtime/multi-theme-trade/loop/*`
+- 다중 테마 런타임 신호 생성: `POST /runtime/multi-theme-trade`
 - 런타임 task 조회: `GET /runtime/tasks/{task_id}`
 - 백테스트 결과 저장/조회: `POST /backtest/results`, `GET /backtest/results/{task_id}`
-- legacy 거래 판단 preview/execute API 유지
+- legacy 단일 종목 분석, 테마 분석, 거래 판단 preview/execute API는 제거되었습니다.
 
 새 자동매매 흐름에서는 AI 서버가 직접 주문하지 않습니다. `user_id`, `investor_profile`, `strategy_profile`을 받아 최종 신호를 만들고, 백엔드 내부 API로 제출합니다.
 
@@ -144,11 +141,11 @@ AI 서버는 evidence, 에이전트 분석, 주도주 선별, 신호 생성을 �
 
 `src/agents/supervisor.py`는 자연어 질문을 분석해 종목 분석, 빠른 분석, 시세 조회, 비교, 테마 탐색으로 라우팅하기 위한 대화형 오케스트레이터입니다. 현재 백엔드 `/api/v1/chat`와 AI 서버 `POST /chat` 경로는 남아 있지만, 프론트엔드에는 챗봇/자연어 질의 화면이 없고 자동매매, 테마 주도주 선별, 단일 종목 분석의 핵심 실행 경로에서는 사용하지 않습니다.
 
-따라서 `SupervisorAgent`는 삭제하지 않고 보류 상태로 유지합니다. 향후 챗봇 UI나 자연어 기반 분석 라우팅을 다시 제공할 때 재활성화할 수 있으며, 그 전까지 운영 판단은 `theme_orchestrator.py`, `graph.py`, `runner/` 계층을 기준으로 봅니다.
+따라서 `SupervisorAgent`는 삭제하지 않고 보류 상태로 유지합니다. 향후 챗봇 UI나 자연어 기반 분석 라우팅을 다시 제공할 때 재활성화할 수 있으며, 그 전까지 운영 판단은 `runner/` 계층과 TradeSignal 파이프라인을 기준으로 봅니다.
 
 ## 에이전트와 의사결정
 
-`src/agents/theme_orchestrator.py`가 테마 후보를 평가하고 에이전트 결과를 결합합니다.
+현재 운영 신호 생성 흐름은 `src/runner/` 계층에서 테마 후보를 평가하고 에이전트 결과를 결합합니다.
 
 - 후보군은 테마 멤버십, raw 문서, corpus, market data에서 가져옵니다.
 - 문서와 시장 데이터가 모두 없는 후보는 평가에서 제외합니다.
@@ -160,10 +157,12 @@ AI 서버는 evidence, 에이전트 분석, 주도주 선별, 신호 생성을 �
 
 ## 자동매매와 안전장치
 
-자동매매는 두 경로가 있습니다.
+자동매매는 백엔드 주도 흐름으로 동작합니다.
 
-1. 백엔드 주도 흐름: `TradingScheduler`가 자동매매 사용자를 조회하고 AI 서버에 multi-theme 분석을 요청합니다.
-2. Python runner 흐름: `src/runner/multi_theme_scheduler.py`가 short/long 전략 스케줄을 돌리고 필요하면 백엔드 내부 API에 신호를 제출합니다.
+1. Python `AnalysisScheduler`가 백엔드의 자동매매 ON 사용자/대상 테마를 조회합니다.
+2. AI 서버가 multi-theme 분석을 실행하고 실행 가능한 판단을 `TradeSignal`로 저장합니다.
+3. Python `SignalMonitor`가 저장된 조건을 감시하다가 조건 충족 시 백엔드 trigger endpoint만 호출합니다.
+4. 백엔드가 최종 주문 gate와 KIS 주문을 담당합니다.
 
 매매 신호 상태:
 
@@ -185,7 +184,7 @@ AI 서버는 evidence, 에이전트 분석, 주도주 선별, 신호 생성을 �
 - 매수는 현금 부족을 확인합니다.
 - 매도는 보유수량이 없으면 거절합니다.
 - 실전 주문은 설정에서 명시적으로 허용해야 합니다.
-- `config/watchlist.yaml`과 `config/theme_trading.yaml`에서 스케줄, universe filter, 리스크 제한, signal quality filter, order guard를 조정합니다.
+- `config/watchlist.yaml`에서 universe filter와 signal quality filter를 조정합니다.
 
 ## 데이터와 evidence 파이프라인
 
@@ -469,15 +468,7 @@ docker compose up --build
 | `GET` | `/health` | AI 서버 상태 |
 | `POST` | `/chat` | evidence/에이전트 채팅 |
 | `POST` | `/suggest` | 추천 질문 |
-| `POST` | `/analyze` | 단일 종목 분석 |
-| `GET` | `/analyze/{task_id}` | 단일 종목 분석 결과 |
-| `POST` | `/theme/analyze` | 테마 주도주 분석 |
-| `GET` | `/theme/analyze/{task_id}` | 테마 분석 결과 |
-| `POST` | `/runtime/theme-trade` | 단일 테마 주도주 거래 신호 생성 |
 | `POST` | `/runtime/multi-theme-trade` | 다중 테마 주도주 신호 생성 |
-| `POST` | `/runtime/multi-theme-trade/loop/start` | 다중 테마 루프 시작 |
-| `POST` | `/runtime/multi-theme-trade/loop/stop` | 다중 테마 루프 중지 |
-| `GET` | `/runtime/multi-theme-trade/loop/status` | 다중 테마 루프 상태 |
 | `GET` | `/runtime/tasks/{task_id}` | 런타임 작업 결과 |
 | `POST` | `/backtest/results` | 백테스트 결과 저장 |
 | `GET` | `/backtest/results/{task_id}` | 백테스트 결과 조회 |
@@ -517,9 +508,9 @@ venv/bin/python -m pytest \
   tests/test_risk_manager_cross_validation.py \
   tests/test_trade_signal_submitter.py \
   tests/test_price_snapshot_client.py \
-  tests/test_theme_orchestrator_json.py \
   tests/test_multi_theme_leader_trading_runner.py \
-  tests/test_multi_theme_scheduler.py
+  tests/test_analysis_scheduler.py \
+  tests/test_signal_monitor.py
 ```
 
 ### Java
@@ -560,9 +551,7 @@ NEXT_PUBLIC_API_BASE=https://localhost:8000 npm run build
 | `scripts/healthcheck.py` | 런타임 health check |
 | `scripts/theme_pipeline.py` | 테마 후보 수집부터 evidence 자산 생성까지 실행 |
 | `scripts/build_evidence_index.py` | raw 데이터 기반 evidence 자산 재생성 |
-| `scripts/run_theme_orchestrator.py` | 테마 주도주 오케스트레이터 실행 |
 | `scripts/run_theme_batch.py` | 테마 batch 실행 |
-| `scripts/run_theme_paper_trading.py` | multi-theme LLM paper trading 실행 |
 | `scripts/download_dart_corp_codes.py` | DART 기업 코드 다운로드 |
 
 ## 관련 문서

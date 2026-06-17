@@ -218,7 +218,7 @@ def _step_build(args, theme_key: str) -> dict:
 
 
 def _step_analyze(args, theme_key: str) -> dict:
-    """Step 3: Agent Analysis (via AutonomousRunner or direct)."""
+    """Step 3: Agent Analysis."""
     print("\n" + "=" * 60)
     print("🧠 Step 3: Agent Analysis")
     print("=" * 60)
@@ -252,15 +252,10 @@ def _step_analyze(args, theme_key: str) -> dict:
         for item in watchlist:
             print(f"    - {item.get('name', '?')} ({item.get('code', '?')})")
 
-        # Run analysis via AutonomousRunner
-        from src.runner.autonomous_runner import AutonomousRunner
-
-        runner = AutonomousRunner(config_path=str(config_path))
-        results = runner.run_once()
-
         return {
-            "status": "done",
-            "analyzed_count": len(results) if results else 0,
+            "status": "skipped",
+            "reason": "legacy_stock_analysis_removed",
+            "analyzed_count": 0,
         }
 
     except ImportError as e:

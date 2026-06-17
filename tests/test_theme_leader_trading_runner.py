@@ -37,30 +37,6 @@ trading:
     )
 
 
-def _write_real_config(path: Path) -> None:
-    path.write_text(
-        """
-schedule:
-  enabled: false
-watchlist: []
-trading:
-  enabled: false
-  dry_run: true
-  account_type: "real"
-  allow_real_trading: true
-  max_daily_buy_amount: 1000000
-  max_position_ratio: 0.25
-  cooldown_minutes: 0
-  auto_buy_conditions:
-    min_total_score: 70
-    min_confidence: 60
-    allowed_actions: ["BUY", "STRONG_BUY"]
-    max_risk_level: "MEDIUM"
-""",
-        encoding="utf-8",
-    )
-
-
 def test_decision_payload_roundtrip_preserves_executable_codes():
     decision = FinalDecision(
         stock_name="테스트",
@@ -112,7 +88,6 @@ def test_decision_adapter_accepts_display_values_for_legacy_payloads():
 def test_theme_leader_trading_preview_uses_leader_decision(tmp_path, monkeypatch):
     config_path = tmp_path / "watchlist.yaml"
     _write_config(config_path)
-    preview_calls = []
 
     class FakeOrchestrator:
         def run(self, **_kwargs):
@@ -138,19 +113,10 @@ def test_theme_leader_trading_preview_uses_leader_decision(tmp_path, monkeypatch
                 ],
             }
 
-    class FakeExecutor:
-        def get_runtime_config(self):
-            return {"enabled": True, "dry_run": True, "account_type": "paper"}
-
-        def preview_decision(self, **kwargs):
-            preview_calls.append(kwargs)
-            return {"status": "ready", "reason": "buy_conditions_met"}
-
     runner = ThemeLeaderTradingRunner(
         config_path=str(config_path),
         data_dir=str(tmp_path),
         orchestrator=FakeOrchestrator(),
-        executor=FakeExecutor(),
     )
     monkeypatch.setattr(runner, "_get_current_price", lambda _code: 10000)
 
@@ -163,9 +129,11 @@ def test_theme_leader_trading_preview_uses_leader_decision(tmp_path, monkeypatch
     )
 
     assert result["summary"] == {"ready": 1}
-    assert preview_calls[0]["stock_code"] == "123456"
-    assert preview_calls[0]["current_price"] == 10000
-    assert preview_calls[0]["decision"].action is InvestmentAction.BUY
+    preview = result["trade_results"][0]["preview"]
+    assert preview["status"] == "ready"
+    assert preview["reason"] == "signal_candidate_ready"
+    assert preview["order_owner"] == "backend"
+    assert result["trade_results"][0]["decision"]["action_code"] == "BUY"
 
 
 def test_theme_leader_trading_blocks_buy_without_current_price(tmp_path, monkeypatch):
@@ -190,21 +158,10 @@ def test_theme_leader_trading_blocks_buy_without_current_price(tmp_path, monkeyp
                 ],
             }
 
-    class FakeExecutor:
-        def get_runtime_config(self):
-            return {"enabled": True}
-
-        def preview_decision(self, **_kwargs):
-            raise AssertionError("missing price buy should not reach executor")
-
-        def execute_decision(self, **_kwargs):
-            raise AssertionError("missing price buy should not reach executor")
-
     runner = ThemeLeaderTradingRunner(
         config_path=str(config_path),
         data_dir=str(tmp_path),
         orchestrator=FakeOrchestrator(),
-        executor=FakeExecutor(),
     )
     monkeypatch.setattr(runner, "_get_current_price", lambda _code: None)
 
@@ -220,27 +177,7 @@ def test_theme_leader_trading_blocks_buy_without_current_price(tmp_path, monkeyp
     assert result["trade_results"][0]["reason"] == "missing_current_price_for_buy"
 
 
-def test_account_type_override_forces_paper_runtime(tmp_path):
-    config_path = tmp_path / "watchlist.yaml"
-    _write_real_config(config_path)
-
-    runner = ThemeLeaderTradingRunner(
-        config_path=str(config_path),
-        data_dir=str(tmp_path),
-        dry_run_override=False,
-        trading_enabled_override=True,
-        account_type_override="paper",
-        orchestrator=object(),
-    )
-
-    runtime = runner._executor.get_runtime_config()
-    assert runtime["enabled"] is True
-    assert runtime["dry_run"] is False
-    assert runtime["account_type"] == "paper"
-    assert runner._is_paper_account() is True
-
-
-def test_theme_leader_runner_passes_universe_filters_to_orchestrator(tmp_path, monkeypatch):
+def test_theme_leader_runner_default_orchestrator_is_removed(tmp_path):
     config_path = tmp_path / "watchlist.yaml"
     config_path.write_text(
         """
@@ -258,30 +195,17 @@ trading:
 """,
         encoding="utf-8",
     )
-    created = {}
-
-    class FakeOrchestrator:
-        def __init__(self, **kwargs):
-            created.update(kwargs)
-
-    monkeypatch.setattr("src.agents.ThemeLeaderOrchestrator", FakeOrchestrator)
-
-    class FakeExecutor:
-        def get_runtime_config(self):
-            return {"enabled": True, "dry_run": True, "account_type": "paper"}
-
     runner = ThemeLeaderTradingRunner(
         config_path=str(config_path),
         data_dir=str(tmp_path),
-        executor=FakeExecutor(),
     )
 
-    orchestrator = runner._get_orchestrator()
-
-    assert isinstance(orchestrator, FakeOrchestrator)
-    assert created["data_dir"] == str(tmp_path)
-    assert created["universe_filters"]["enabled"] is True
-    assert created["universe_filters"]["min_history_days"] == 60
+    try:
+        runner._get_orchestrator()
+    except ImportError as exc:
+        assert "ThemeLeaderOrchestrator" in str(exc)
+    else:
+        raise AssertionError("legacy default theme orchestrator should be removed")
 
 
 def test_theme_leader_trading_blocks_malformed_leader_score(tmp_path, monkeypatch):
@@ -306,21 +230,10 @@ def test_theme_leader_trading_blocks_malformed_leader_score(tmp_path, monkeypatc
                 ],
             }
 
-    class FakeExecutor:
-        def get_runtime_config(self):
-            return {"enabled": True}
-
-        def preview_decision(self, **_kwargs):
-            raise AssertionError("malformed score should be blocked before preview")
-
-        def execute_decision(self, **_kwargs):
-            raise AssertionError("malformed score should be blocked before execution")
-
     runner = ThemeLeaderTradingRunner(
         config_path=str(config_path),
         data_dir=str(tmp_path),
         orchestrator=FakeOrchestrator(),
-        executor=FakeExecutor(),
     )
     monkeypatch.setattr(runner, "_get_current_price", lambda _code: 10000)
 
@@ -342,16 +255,15 @@ def test_theme_trade_execute_requires_paper_or_dry_run():
     try:
         run_theme_trading_mode(theme="AI", execute=True, paper=False, dry_run=False)
     except ValueError as exc:
-        assert "--paper or --dry-run" in str(exc)
+        assert "Python direct order execution has been removed" in str(exc)
     else:
-        raise AssertionError("execute without paper or dry-run should be rejected")
+        raise AssertionError("python direct execution should be rejected")
 
 
-def test_run_from_report_executes_ready_preview_without_rerunning_orchestrator(tmp_path, monkeypatch):
+def test_run_from_report_blocks_python_direct_execution_without_rerunning_orchestrator(tmp_path, monkeypatch):
     config_path = tmp_path / "watchlist.yaml"
     _write_config(config_path)
     report_path = tmp_path / "preview.json"
-    execute_calls = []
     report_path.write_text(
         json.dumps(
             {
@@ -378,19 +290,10 @@ def test_run_from_report_executes_ready_preview_without_rerunning_orchestrator(t
         encoding="utf-8",
     )
 
-    class FakeExecutor:
-        def get_runtime_config(self):
-            return {"enabled": True, "dry_run": False, "account_type": "paper"}
-
-        def execute_decision(self, **kwargs):
-            execute_calls.append(kwargs)
-            return {"status": "simulated", "reason": "ok"}
-
     runner = ThemeLeaderTradingRunner(
         config_path=str(config_path),
         data_dir=str(tmp_path),
         orchestrator=object(),
-        executor=FakeExecutor(),
     )
     monkeypatch.setattr(runner, "_get_current_price", lambda _code: 10000)
 
@@ -401,6 +304,5 @@ def test_run_from_report_executes_ready_preview_without_rerunning_orchestrator(t
         save_report=False,
     )
 
-    assert result["summary"] == {"simulated": 1}
-    assert execute_calls[0]["stock_code"] == "123456"
-    assert execute_calls[0]["decision"].action is InvestmentAction.BUY
+    assert result["summary"] == {"blocked": 1}
+    assert result["trade_results"][0]["trade"]["reason"] == "python_direct_order_execution_removed"

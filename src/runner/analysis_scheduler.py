@@ -53,9 +53,6 @@ class AnalysisScheduler:
     ):
         self.backend_client = backend_client
         self.runner = runner or MultiThemeLeaderTradingRunner(
-            dry_run_override=True,
-            trading_enabled_override=True,
-            account_type_override="paper",
         )
         self.submitter = submitter
         self.interval_seconds = interval_seconds

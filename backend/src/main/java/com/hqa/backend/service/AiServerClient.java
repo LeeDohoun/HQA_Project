@@ -3,7 +3,6 @@ package com.hqa.backend.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hqa.backend.config.HqaProperties;
-import com.hqa.backend.dto.AiAnalyzeRequest;
 import com.hqa.backend.dto.ErrorCode;
 import com.hqa.backend.exception.ApiException;
 import java.io.IOException;
@@ -41,14 +40,6 @@ public class AiServerClient {
                 .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
-    }
-
-    public void submitAnalysis(AiAnalyzeRequest payload) {
-        postBodiless("/analyze", payload, "AI 서버가 분석 요청을 처리하지 못했습니다");
-    }
-
-    public Map<String, Object> getAnalysis(String taskId) {
-        return getForMap("/analyze/" + taskId);
     }
 
     public Map<String, Object> suggest(Map<String, Object> payload) {
@@ -125,13 +116,6 @@ public class AiServerClient {
                 Map.of(),
                 "AI 서버가 자동매매 루프를 중지하지 못했습니다"
         );
-    }
-
-    private void postBodiless(String path, Object payload, String failureMessage) {
-        byte[] body = serialize(payload);
-        log.info("[AiServerClient] POST {} bytes={} payload={}", path, body.length, payload);
-        HttpResponse<String> response = send(buildPost(path, body));
-        ensureSuccess(path, response, failureMessage);
     }
 
     private Map<String, Object> postForMap(String path, Object payload, String failureMessage) {

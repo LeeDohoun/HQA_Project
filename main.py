@@ -108,6 +108,10 @@ def run_stock_analysis(stock_input: str, quick: bool = False):
         stock_input: 종목명 또는 종목코드
         quick: True면 빠른 분석 (Thinking 없음)
     """
+    print("❌ 기존 quick/full 단일 종목 분석 흐름은 제거되었습니다.")
+    print("   새 분석 파이프라인으로 대체 예정입니다.")
+    return None
+
     # 종목 매핑
     mapper = get_stock_mapper()
     
@@ -138,7 +142,8 @@ def run_stock_analysis(stock_input: str, quick: bool = False):
 
 def _run_full_analysis(stock_code: str, stock_name: str):
     """전체 분석 (LangGraph 워크플로우 우선, 폴백: 병렬 실행)"""
-    from src.agents.graph import run_stock_analysis, is_langgraph_available
+    print("❌ 기존 full 분석 흐름은 제거되었습니다.")
+    return None
     
     if is_langgraph_available():
         print(f"\n⚡ LangGraph 워크플로우로 분석 실행")
@@ -251,7 +256,9 @@ def run_theme_orchestration(
     top_n: int = 3,
 ):
     """테마 데이터 기반 주도주 오케스트레이션 실행"""
-    from src.agents import ThemeLeaderOrchestrator
+    print("❌ 기존 테마 분석 흐름은 제거되었습니다.")
+    print("   새 테마 순회 파이프라인으로 대체 예정입니다.")
+    return {"status": "removed", "reason": "legacy_theme_orchestration_removed"}
 
     print("=" * 60)
     print(f"🏁 [Theme Orchestration] {theme}")
@@ -357,13 +364,6 @@ def show_help():
      python main.py --theme 반도체 --candidate-limit 7 --top-n 3
 
   6. 자율 에이전트 모드
-     python main.py --auto             # 감시 목록 1회 분석
-     python main.py --auto --loop      # 스케줄 반복 실행
-     python main.py --auto --dry-run   # 매매 시뮬레이션만
-     python main.py --auto --config config/watchlist.yaml
-
-═══════════════════════════════════════════════════════════════
-
 📌 대화형 모드 질문 예시:
 
   - "삼성전자 분석해줘"
@@ -386,36 +386,6 @@ def show_help():
     print(help_text)
 
 
-# ==========================================
-# 자율 에이전트 모드
-# ==========================================
-
-def run_autonomous_mode(
-    config_path: str = "config/watchlist.yaml",
-    loop: bool = False,
-    dry_run: bool = False,
-):
-    """
-    자율 에이전트 모드 — 설정 기반 자동 분석 + 매매
-
-    Args:
-        config_path: YAML 설정 파일 경로
-        loop: True면 스케줄 반복 실행
-        dry_run: True면 매매 시뮬레이션
-    """
-    from src.runner.autonomous_runner import AutonomousRunner
-
-    runner = AutonomousRunner(
-        config_path=config_path,
-        dry_run_override=True if dry_run else None,
-    )
-
-    if loop:
-        runner.run_loop()
-    else:
-        runner.run_once()
-
-
 def run_theme_trading_mode(
     *,
     theme: str,
@@ -430,27 +400,14 @@ def run_theme_trading_mode(
     paper: bool = False,
     dry_run: bool = False,
 ):
-    """테마 주도주를 발굴한 뒤 기존 TradeExecutor 경로로 preview/execute."""
+    """테마 주도주를 발굴한 뒤 백엔드 TradeSignal 후보로 볼 수 있는 preview를 생성."""
     from src.runner import ThemeLeaderTradingRunner
 
-    if execute and not (paper or dry_run):
-        raise ValueError("--theme-trade --execute requires --paper or --dry-run")
-
-    dry_run_override = True
-    trading_enabled_override = True
-    account_type_override = "paper"
-    if dry_run:
-        dry_run_override = True
-        trading_enabled_override = True
-    elif paper and execute:
-        dry_run_override = False
-        trading_enabled_override = True
+    if execute:
+        raise ValueError("Python direct order execution has been removed; use backend TradeSignal trigger flow")
 
     runner = ThemeLeaderTradingRunner(
         config_path=config_path,
-        dry_run_override=dry_run_override,
-        trading_enabled_override=trading_enabled_override,
-        account_type_override=account_type_override,
     )
     result = runner.run_once(
         theme=theme,
@@ -495,23 +452,14 @@ def run_theme_report_trading_mode(
     paper: bool = False,
     dry_run: bool = False,
 ):
-    """저장된 theme-trade preview 리포트를 재평가 없이 preview/execute."""
+    """저장된 theme-trade preview 리포트를 재평가 없이 다시 preview."""
     from src.runner import ThemeLeaderTradingRunner
 
-    if execute and not (paper or dry_run):
-        raise ValueError("--theme-trade-report --execute requires --paper or --dry-run")
-
-    dry_run_override = True
-    trading_enabled_override = True
-    account_type_override = "paper"
-    if paper and execute:
-        dry_run_override = False
+    if execute:
+        raise ValueError("Python direct order execution has been removed; use backend TradeSignal trigger flow")
 
     runner = ThemeLeaderTradingRunner(
         config_path=config_path,
-        dry_run_override=dry_run_override,
-        trading_enabled_override=trading_enabled_override,
-        account_type_override=account_type_override,
     )
     result = runner.run_from_report(
         report_path=report_path,
@@ -556,23 +504,14 @@ def run_multi_theme_trading_mode(
     paper: bool = False,
     dry_run: bool = False,
 ):
-    """전체 테마 순회 후 통합 랭킹 기반으로 상위 주도주를 preview/execute."""
+    """전체 테마 순회 후 통합 랭킹 기반으로 상위 TradeSignal 후보를 생성."""
     from src.runner import MultiThemeLeaderTradingRunner
 
-    if execute and not (paper or dry_run):
-        raise ValueError("--multi-theme-trade --execute requires --paper or --dry-run")
-
-    dry_run_override = True
-    trading_enabled_override = True
-    account_type_override = "paper"
-    if paper and execute:
-        dry_run_override = False
+    if execute:
+        raise ValueError("Python direct order execution has been removed; use backend TradeSignal trigger flow")
 
     runner = MultiThemeLeaderTradingRunner(
         config_path=config_path,
-        dry_run_override=dry_run_override,
-        trading_enabled_override=trading_enabled_override,
-        account_type_override=account_type_override,
     )
 
     result = runner.run_all(
@@ -587,7 +526,7 @@ def run_multi_theme_trading_mode(
         buy_only=True,
     )
 
-    mode_label = "실행" if execute else "미리보기"
+    mode_label = "신호 후보"
     print("=" * 60)
     print(f"🏁 [Multi Theme Leader Trading {mode_label}]")
     print("=" * 60)
@@ -611,72 +550,6 @@ def run_multi_theme_trading_mode(
             print(f"     reason: {reason}")
 
     return result
-
-
-def run_multi_theme_trading_loop_mode(
-    *,
-    top_n: int = 3,
-    per_theme_top_n: int = 3,
-    candidate_limit: int = 5,
-    execute: bool = False,
-    min_leader_score: Optional[int] = None,
-    min_confidence: Optional[int] = None,
-    max_risk_level: Optional[str] = None,
-    strategy_profile: str = "short",
-    config_path: str = "config/watchlist.yaml",
-    paper: bool = False,
-    dry_run: bool = False,
-    trade_interval_minutes: int = 60,
-    market_hours_only: bool = True,
-    long_plan_time: str = "08:00",
-    long_plan_window_minutes: int = 40,
-    long_trigger_check_minutes: int = 5,
-    long_market_hours_only: bool = True,
-    collect_interval_minutes: Optional[int] = None,
-    collect_command: Optional[str] = None,
-):
-    """multi-theme-trade 중심 반복 실행 스케줄러."""
-    from src.runner import MultiThemeLeaderTradingRunner
-    from src.runner.multi_theme_scheduler import MultiThemeScheduler
-
-    if execute and not (paper or dry_run):
-        raise ValueError("--multi-theme-trade --execute requires --paper or --dry-run")
-
-    dry_run_override = True
-    trading_enabled_override = True
-    account_type_override = "paper"
-    if paper and execute:
-        dry_run_override = False
-
-    trade_runner = MultiThemeLeaderTradingRunner(
-        config_path=config_path,
-        dry_run_override=dry_run_override,
-        trading_enabled_override=trading_enabled_override,
-        account_type_override=account_type_override,
-    )
-    scheduler = MultiThemeScheduler(
-        trade_runner=trade_runner,
-        short_interval_minutes=trade_interval_minutes,
-        short_market_hours_only=market_hours_only,
-        long_plan_time=long_plan_time,
-        long_plan_window_minutes=long_plan_window_minutes,
-        long_trigger_check_minutes=long_trigger_check_minutes,
-        long_market_hours_only=long_market_hours_only,
-        collect_interval_minutes=collect_interval_minutes,
-        collect_command=collect_command,
-    )
-    scheduler.run_loop(
-        candidate_limit=candidate_limit,
-        per_theme_top_n=per_theme_top_n,
-        short_top_n=top_n,
-        long_top_n=top_n,
-        execute=execute,
-        min_leader_score=min_leader_score,
-        min_confidence=min_confidence,
-        max_risk_level=max_risk_level,
-        short_strategy_profile="short",
-        long_strategy_profile="long",
-    )
 
 
 # ==========================================
@@ -810,61 +683,55 @@ def main():
         "--trade-interval-minutes",
         type=int,
         default=60,
-        help="[--multi-theme-trade --loop] 거래 실행 주기(분)"
+        help=argparse.SUPPRESS,
     )
 
     parser.add_argument(
         "--market-hours-only",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="[--multi-theme-trade --loop] 장중(09:00~15:30 KST)만 거래 실행 (기본: true, 비활성화: --no-market-hours-only)"
+        help=argparse.SUPPRESS,
     )
 
     parser.add_argument(
         "--collect-interval-minutes",
         type=int,
         default=None,
-        help="[--multi-theme-trade --loop] 데이터 수집 주기(분)"
+        help=argparse.SUPPRESS,
     )
 
     parser.add_argument(
         "--collect-command",
         type=str,
         default=None,
-        help="[--multi-theme-trade --loop] 주기 수집에 사용할 커맨드"
+        help=argparse.SUPPRESS,
     )
 
     parser.add_argument(
         "--long-plan-time",
         type=str,
         default="08:00",
-        help='[--multi-theme-trade --loop] 장기 전략 플랜 생성 시각 "HH:MM" (기본: 08:00)'
+        help=argparse.SUPPRESS,
     )
 
     parser.add_argument(
         "--long-trigger-check-minutes",
         type=int,
         default=5,
-        help="[--multi-theme-trade --loop] 장기 전략 트리거 점검 주기(분)"
+        help=argparse.SUPPRESS,
     )
 
     parser.add_argument(
         "--long-plan-window-minutes",
         type=int,
         default=40,
-        help='[--multi-theme-trade --loop] 장기 전략 플랜 생성 허용 창(분). 예: 08:00~08:40'
-    )
-    
-    parser.add_argument(
-        "--auto",
-        action="store_true",
-        help="자율 에이전트 모드 (config/watchlist.yaml 기반)"
+        help=argparse.SUPPRESS,
     )
     
     parser.add_argument(
         "--loop",
         action="store_true",
-        help="[--auto와 함께] 스케줄 반복 실행"
+        help=argparse.SUPPRESS,
     )
     
     parser.add_argument(
@@ -893,15 +760,6 @@ def main():
         show_help()
         return
     
-    # 자율 에이전트 모드
-    if args.auto:
-        run_autonomous_mode(
-            config_path=args.config,
-            loop=args.loop,
-            dry_run=args.dry_run,
-        )
-        return
-
     if args.theme_trade:
         if args.preview and args.execute:
             parser.error("--theme-trade에서는 --preview와 --execute를 동시에 사용할 수 없습니다.")
@@ -940,31 +798,8 @@ def main():
     if args.multi_theme_trade:
         if args.preview and args.execute:
             parser.error("--multi-theme-trade에서는 --preview와 --execute를 동시에 사용할 수 없습니다.")
-        if args.execute and not (args.paper or args.dry_run):
-            parser.error("--multi-theme-trade --execute는 --paper 또는 --dry-run을 함께 지정해야 합니다.")
         if args.loop:
-            run_multi_theme_trading_loop_mode(
-                top_n=args.execute_top_n,
-                per_theme_top_n=args.top_n,
-                candidate_limit=args.candidate_limit,
-                execute=args.execute,
-                min_leader_score=args.min_leader_score,
-                min_confidence=args.min_confidence,
-                max_risk_level=args.max_risk_level,
-                strategy_profile=args.strategy_profile,
-                config_path=args.config,
-                paper=args.paper,
-                dry_run=args.dry_run,
-                trade_interval_minutes=args.trade_interval_minutes,
-                market_hours_only=args.market_hours_only,
-                long_plan_time=args.long_plan_time,
-                long_plan_window_minutes=args.long_plan_window_minutes,
-                long_trigger_check_minutes=args.long_trigger_check_minutes,
-                long_market_hours_only=args.market_hours_only,
-                collect_interval_minutes=args.collect_interval_minutes,
-                collect_command=args.collect_command,
-            )
-            return
+            parser.error("--multi-theme-trade --loop has been removed; use src.runner.analysis_scheduler")
         run_multi_theme_trading_mode(
             top_n=args.execute_top_n,
             per_theme_top_n=args.top_n,

@@ -222,6 +222,15 @@ class TestAnalystSourceFilter:
         assert not hasattr(agent, "evidence_tool_policy")
         assert not hasattr(agent, "evidence_tool_industry")
 
+    def test_analyst_evidence_retrieval_limits(self):
+        pytest.importorskip("langchain_core")
+        from src.agents.analyst import AnalystAgent
+
+        agent = AnalystAgent()
+
+        assert agent.evidence_tool_evidence.top_k == 12
+        assert agent.evidence_tool_news.top_k == 10
+
     def test_evidence_tool_filters_sources(self):
         pytest.importorskip("langchain_core")
         from src.agents.analyst import AnalystAgent

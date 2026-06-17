@@ -21,7 +21,6 @@ from src.agents.llm_config import get_chartist_llm
 from src.utils.stock_mapper import StockMapper, get_mapper
 from src.utils.memory import ConversationMemory
 from src.utils.parallel import run_agents_parallel, is_error
-from src.agents.graph import run_stock_analysis, is_langgraph_available
 from src.utils.prompt_loader import load_prompt_optional
 
 
@@ -492,6 +491,10 @@ JSON만 응답하세요.
         """종목 분석 실행 (LangGraph 워크플로우 우선, 폴백: 병렬 처리)"""
         if not analysis.stocks:
             return {"status": "error", "message": "분석할 종목을 찾을 수 없습니다."}
+        return {
+            "status": "removed",
+            "message": "기존 단일 종목 분석 흐름은 제거되었습니다. 새 분석 파이프라인으로 대체 예정입니다.",
+        }
         
         stock = analysis.stocks[0]
         stock_name = stock["name"]
@@ -547,6 +550,10 @@ JSON만 응답하세요.
         """빠른 분석 실행 (Analyst 제외)"""
         if not analysis.stocks:
             return {"status": "error", "message": "분석할 종목을 찾을 수 없습니다."}
+        return {
+            "status": "removed",
+            "message": "기존 quick 분석 흐름은 제거되었습니다. 새 분석 파이프라인으로 대체 예정입니다.",
+        }
         
         stock = analysis.stocks[0]
         stock_name = stock["name"]
@@ -721,6 +728,11 @@ JSON만 응답하세요.
     def _execute_theme_screening(self, analysis: QueryAnalysis) -> Dict[str, Any]:
         """테마/관련주 탐색"""
         theme = analysis.theme or analysis.original_query
+        return {
+            "status": "removed",
+            "theme": theme,
+            "message": "기존 테마 분석 흐름은 제거되었습니다. 새 테마 순회 파이프라인으로 대체 예정입니다.",
+        }
 
         print(f"\n🔍 '{theme}' 테마 주도주 선별 중...")
 

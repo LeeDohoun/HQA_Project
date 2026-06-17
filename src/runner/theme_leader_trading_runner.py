@@ -15,38 +15,24 @@ from src.utils.portfolio_context import (
     build_portfolio_context_from_holdings,
     unavailable_portfolio_context,
 )
-from src.runner.trade_executor import TradeExecutor
 
 KST = timezone(timedelta(hours=9))
 
 
 class ThemeLeaderTradingRunner:
-    """Run theme leader discovery and route selected leaders into TradeExecutor."""
+    """Run theme leader discovery and produce signal-ready leader rows."""
 
     def __init__(
         self,
         *,
         config_path: str = "config/watchlist.yaml",
         data_dir: Optional[str] = None,
-        dry_run_override: Optional[bool] = None,
-        trading_enabled_override: Optional[bool] = None,
-        account_type_override: Optional[str] = None,
         orchestrator: Any = None,
-        executor: Optional[TradeExecutor] = None,
     ):
         self._config_path = Path(config_path)
         self._config = self._load_config()
-        trading_config = dict(self._config.get("trading") or {})
-        if dry_run_override is not None:
-            trading_config["dry_run"] = dry_run_override
-        if trading_enabled_override is not None:
-            trading_config["enabled"] = trading_enabled_override
-        if account_type_override is not None:
-            trading_config["account_type"] = account_type_override
-        self._config["trading"] = trading_config
         self._data_dir = Path(data_dir) if data_dir else get_data_dir()
         self._orchestrator = orchestrator
-        self._executor = executor or TradeExecutor(trading_config)
 
     def _load_config(self) -> Dict[str, Any]:
         if not self._config_path.exists():
@@ -112,7 +98,7 @@ class ThemeLeaderTradingRunner:
             "candidate_filter": theme_result.get("candidate_filter") or {},
             "selected_count": len(selected),
             "executed_at": datetime.now(KST).isoformat(),
-            "runtime": self._executor.get_runtime_config(),
+            "runtime": {"mode": "signal_generation", "python_order_execution": False},
             "portfolio_context": self._report_portfolio_context(resolved_portfolio_context),
             "leaders": leaders,
             "trade_results": trade_results,
@@ -179,7 +165,7 @@ class ThemeLeaderTradingRunner:
             "theme_key": source.get("theme_key"),
             "selected_count": len(ready_rows),
             "executed_at": datetime.now(KST).isoformat(),
-            "runtime": self._executor.get_runtime_config(),
+            "runtime": {"mode": "signal_generation", "python_order_execution": False},
             "trade_results": trade_results,
             "summary": self._summarize_trade_results(trade_results),
         }
@@ -190,15 +176,7 @@ class ThemeLeaderTradingRunner:
     def _get_orchestrator(self):
         if self._orchestrator is not None:
             return self._orchestrator
-        from src.agents import ThemeLeaderOrchestrator
-
-        trading_config = dict(self._config.get("trading") or {})
-        universe_filters = dict(trading_config.get("theme_universe_filters") or {})
-        self._orchestrator = ThemeLeaderOrchestrator(
-            data_dir=str(self._data_dir),
-            universe_filters=universe_filters,
-        )
-        return self._orchestrator
+        raise ImportError("legacy ThemeLeaderOrchestrator has been removed")
 
     def _preview_or_execute_leader(
         self,
@@ -255,13 +233,11 @@ class ThemeLeaderTradingRunner:
             quantity = self._get_sell_quantity(stock_code)
 
         if execute:
-            trade = self._executor.execute_decision(
-                stock_name=stock_name,
-                stock_code=stock_code,
-                decision=decision,
-                quantity=quantity,
-                current_price=current_price,
-            )
+            trade = {
+                "status": "blocked",
+                "reason": "python_direct_order_execution_removed",
+                "order_owner": "backend",
+            }
             return {
                 **base,
                 "status": trade.get("status", "unknown"),
@@ -270,13 +246,12 @@ class ThemeLeaderTradingRunner:
                 "trade": trade,
             }
 
-        preview = self._executor.preview_decision(
-            stock_name=stock_name,
-            stock_code=stock_code,
-            decision=decision,
-            quantity=quantity,
-            current_price=current_price,
-        )
+        preview = {
+            "status": "ready",
+            "reason": "signal_candidate_ready",
+            "order_owner": "backend",
+            "quantity": quantity,
+        }
         return {
             **base,
             "status": preview.get("status", "unknown"),
@@ -389,7 +364,7 @@ class ThemeLeaderTradingRunner:
         stamp = datetime.now(KST).strftime("%Y%m%d-%H%M%S")
         theme_key = str(result.get("theme_key") or result.get("theme") or "theme").replace("/", "_")
         mode = str(result.get("mode") or "preview")
-        path = reports_dir / f"{theme_key}_theme_trading_{mode}_{stamp}.json"
+        path = reports_dir / f"{theme_key}_theme_signal_candidates_{mode}_{stamp}.json"
         with path.open("w", encoding="utf-8") as f:
             json.dump(result, f, ensure_ascii=False, indent=2, default=str)
         return path
