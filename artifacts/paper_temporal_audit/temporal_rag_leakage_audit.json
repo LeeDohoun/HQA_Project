@@ -1,7 +1,7 @@
 {
   "purpose": "Representative point-in-time leakage audit for the CDE 2026 paper.",
-  "document_source": "experiment_results\\theme_recent_month_data_20260610\\ai\\processed\\corpus_combined.jsonl",
-  "price_source": "experiment_results\\theme_recent_month_data_20260610\\ai\\processed\\market_combined.jsonl",
+  "document_source": "experiment_results/theme_recent_month_data_20260610/ai/processed/corpus_combined.jsonl",
+  "price_source": "experiment_results/theme_recent_month_data_20260610/ai/processed/market_combined.jsonl",
   "rows": [
     {
       "as_of_date": "2026-05-20",

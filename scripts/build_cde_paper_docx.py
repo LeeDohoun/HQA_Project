@@ -7,7 +7,7 @@ from pathlib import Path
 
 from docx import Document
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt
@@ -35,14 +35,14 @@ PROTOCOL_ROWS = [
 ]
 
 RESULT_ROWS = [
-    ("2023", "Short", "14.92%", "13.58%", "15.15%"),
-    ("2023", "Long", "-0.42%", "7.64%", "52.69%"),
-    ("2024", "Short", "46.99%", "38.27%", "167.72%"),
-    ("2024", "Long", "0.08%", "16.78%", "16.02%"),
-    ("2025", "Short", "190.16%", "216.92%", "60.08%"),
-    ("2025", "Long", "103.29%", "82.78%", "94.71%"),
-    ("2026Q1", "Short", "15.40%", "24.62%", "8.55%"),
-    ("2026Q1", "Long", "14.20%", "6.14%", "0.00%"),
+    ("2023", "S", "14.92", "13.58", "15.15"),
+    ("2023", "L", "-0.42", "7.64", "52.69"),
+    ("2024", "S", "46.99", "38.27", "167.72"),
+    ("2024", "L", "0.08", "16.78", "16.02"),
+    ("2025", "S", "190.16", "216.92", "60.08"),
+    ("2025", "L", "103.29", "82.78", "94.71"),
+    ("2026Q1", "S", "15.40", "24.62", "8.55"),
+    ("2026Q1", "L", "14.20", "6.14", "0.00"),
 ]
 
 
@@ -74,8 +74,10 @@ def read_source() -> dict:
     affiliation = re.search(r"\*\*Affiliation:\*\*\s*(.+)", md).group(1).strip()
     english_author_match = re.search(r"\*\*English Author:\*\*\s*(.+)", md)
     english_affiliation_match = re.search(r"\*\*English Affiliation:\*\*\s*(.+)", md)
+    contact_email_match = re.search(r"\*\*Contact Email:\*\*\s*(.+)", md)
     english_author = english_author_match.group(1).strip() if english_author_match else author
     english_affiliation = english_affiliation_match.group(1).strip() if english_affiliation_match else affiliation
+    contact_email = contact_email_match.group(1).strip() if contact_email_match else ""
     abstract = section(md, "ABSTRACT").split("**Key Words:**")[0].strip()
     keywords = re.search(r"\*\*Key Words:\*\*\s*(.+)", md).group(1).strip()
     refs = paragraphs(section(md, "참고문헌").split("## 작성 메모")[0])
@@ -90,6 +92,7 @@ def read_source() -> dict:
         "affiliation": affiliation,
         "english_author": english_author,
         "english_affiliation": english_affiliation,
+        "contact_email": contact_email,
         "abstract": abstract,
         "keywords": keywords,
         "body_sections": body_sections,
@@ -131,19 +134,30 @@ def font_path(name: str) -> str | None:
         Path("C:/Windows/Fonts") / name,
         Path("C:/Windows/Fonts/malgun.ttf"),
         Path("C:/Windows/Fonts/arial.ttf"),
+        Path("/System/Library/Fonts/Supplemental") / name,
+        Path("/Library/Fonts") / name,
+        Path("/System/Library/Fonts/Helvetica.ttc"),
     ]:
         if candidate.exists():
             return str(candidate)
     return None
 
 
+def load_font(names: list[str], size: int):
+    for name in names:
+        path = font_path(name)
+        if path:
+            return ImageFont.truetype(path, size)
+    return ImageFont.load_default()
+
+
 def create_architecture_figure(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     img = Image.new("RGB", (1300, 430), "white")
     draw = ImageDraw.Draw(img)
-    title_font = ImageFont.truetype(font_path("arialbd.ttf") or font_path("arial.ttf"), 34)
-    label_font = ImageFont.truetype(font_path("arial.ttf"), 24)
-    small_font = ImageFont.truetype(font_path("arial.ttf"), 19)
+    title_font = load_font(["arialbd.ttf", "Arial Bold.ttf", "arial.ttf", "Arial.ttf"], 34)
+    label_font = load_font(["arial.ttf", "Arial.ttf"], 24)
+    small_font = load_font(["arial.ttf", "Arial.ttf"], 19)
     accent = "#2f5f8f"
     fill = "#eef5fb"
     line = "#6f8190"
@@ -225,6 +239,7 @@ def add_heading(doc: Document, text: str):
     p = add_para(doc, text, style="각 장 제목", size=10.0, bold=True)
     p.paragraph_format.space_before = Pt(5)
     p.paragraph_format.space_after = Pt(5)
+    p.paragraph_format.keep_with_next = True
     return p
 
 
@@ -291,6 +306,40 @@ def mark_header_row(row) -> None:
         tr_pr.append(tbl_header)
 
 
+def set_cell_width(cell, width_inches: float) -> None:
+    width = Inches(width_inches)
+    cell.width = width
+    tc_pr = cell._tc.get_or_add_tcPr()
+    tc_w = tc_pr.find(qn("w:tcW"))
+    if tc_w is None:
+        tc_w = OxmlElement("w:tcW")
+        tc_pr.append(tc_w)
+    tc_w.set(qn("w:w"), str(int(width_inches * 1440)))
+    tc_w.set(qn("w:type"), "dxa")
+
+
+def set_table_fixed_width(table, widths_inches: list[float]) -> None:
+    table.autofit = False
+    tbl_pr = table._tbl.tblPr
+    tbl_layout = tbl_pr.find(qn("w:tblLayout"))
+    if tbl_layout is None:
+        tbl_layout = OxmlElement("w:tblLayout")
+        tbl_pr.append(tbl_layout)
+    tbl_layout.set(qn("w:type"), "fixed")
+
+    tbl_w = tbl_pr.find(qn("w:tblW"))
+    if tbl_w is None:
+        tbl_w = OxmlElement("w:tblW")
+        tbl_pr.append(tbl_w)
+    tbl_w.set(qn("w:w"), str(int(sum(widths_inches) * 1440)))
+    tbl_w.set(qn("w:type"), "dxa")
+
+    for row in table.rows:
+        for idx, width in enumerate(widths_inches):
+            if idx < len(row.cells):
+                set_cell_width(row.cells[idx], width)
+
+
 def set_cell_text(cell, text: str, size=7.2, bold=False, align=WD_ALIGN_PARAGRAPH.CENTER) -> None:
     clear_cell(cell)
     p = cell.add_paragraph()
@@ -302,22 +351,62 @@ def set_cell_text(cell, text: str, size=7.2, bold=False, align=WD_ALIGN_PARAGRAP
     cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
 
 
-def add_small_table(doc: Document, rows, headers=None):
+def add_small_table(doc: Document, rows, headers=None, widths=None, font_size=6.2, header_size=6.2):
     n_cols = len(headers) if headers else len(rows[0])
     table = doc.add_table(rows=1 if headers else 0, cols=n_cols)
     table.style = "Table Grid"
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    table.autofit = True
+    if widths:
+        set_table_fixed_width(table, widths)
+    else:
+        table.autofit = False
     if headers:
         for i, h in enumerate(headers):
-            set_cell_text(table.rows[0].cells[i], h, size=6.8, bold=True)
+            set_cell_text(table.rows[0].cells[i], h, size=header_size, bold=True)
             shade_cell(table.rows[0].cells[i], "E9EEF4")
         mark_header_row(table.rows[0])
     for row in rows:
         cells = table.add_row().cells
         for i, text in enumerate(row):
-            set_cell_text(cells[i], str(text), size=6.7, bold=False)
+            set_cell_text(cells[i], str(text), size=font_size, bold=False)
+    if widths:
+        set_table_fixed_width(table, widths)
     return table
+
+
+def replace_footer_contact(doc: Document, email: str) -> None:
+    if not email:
+        return
+    footer_text = f"*발표자({email}), #교신저자({email})"
+
+    def rewrite(paragraph) -> None:
+        if "발표자" not in paragraph.text and "교신저자" not in paragraph.text and "이메일" not in paragraph.text:
+            return
+        set_paragraph_text(
+            paragraph,
+            footer_text,
+            size_pt=8.0,
+            bold=False,
+            font_name="굴림",
+            align=WD_ALIGN_PARAGRAPH.LEFT,
+        )
+
+    for section in doc.sections:
+        for footer in [section.footer, section.first_page_footer, section.even_page_footer]:
+            for paragraph in footer.paragraphs:
+                rewrite(paragraph)
+            for table in footer.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        for paragraph in cell.paragraphs:
+                            rewrite(paragraph)
+
+
+def add_column_break(doc: Document) -> None:
+    p = doc.add_paragraph()
+    p.paragraph_format.space_before = Pt(0)
+    p.paragraph_format.space_after = Pt(0)
+    p.add_run().add_break(WD_BREAK.COLUMN)
 
 
 def mark_section_tables(doc: Document) -> None:
@@ -340,7 +429,14 @@ def build_docx() -> None:
     create_architecture_figure(FIG_PATH)
 
     doc = Document(TEMPLATE)
+    doc.core_properties.author = data["english_author"]
+    doc.core_properties.last_modified_by = data["english_author"]
+    doc.core_properties.title = data["english_title"]
+    doc.core_properties.subject = "CDE 2026 paper"
+    doc.core_properties.keywords = data["keywords"]
+    doc.core_properties.comments = ""
     fill_header_table(doc.tables[0], data)
+    replace_footer_contact(doc, data["contact_email"])
     mark_section_tables(doc)
 
     # Keep the title/abstract section break and final two-column section settings.
@@ -384,24 +480,42 @@ def build_docx() -> None:
                 size=7.6,
                 align=WD_ALIGN_PARAGRAPH.LEFT,
             )
-            add_small_table(doc, PROTOCOL_ROWS, headers=["Item", "Setting"])
-            add_para(doc, "", style="Normal", size=3)
+            add_small_table(
+                doc,
+                PROTOCOL_ROWS,
+                headers=["Item", "Setting"],
+                widths=[0.78, 2.12],
+                font_size=5.5,
+                header_size=5.8,
+            )
+            add_para(doc, "", style="Normal", size=2)
         if text.startswith("Table 2는"):
+            add_column_break(doc)
             add_para(
                 doc,
-                "Table 2. Summary of period-horizon comparison.",
+                "Table 2. Period-horizon return comparison (%).",
                 style="Normal",
                 size=7.6,
                 align=WD_ALIGN_PARAGRAPH.LEFT,
             )
-            add_small_table(doc, RESULT_ROWS, headers=["Period", "Horizon", "Hybrid", "Det.", "Best tech"])
-            add_para(doc, "", style="Normal", size=3)
+            add_small_table(
+                doc,
+                RESULT_ROWS,
+                headers=["Period", "H", "Hybrid", "Det.", "Tech"],
+                widths=[0.50, 0.42, 0.62, 0.60, 0.62],
+                font_size=5.4,
+                header_size=5.5,
+            )
+            add_para(doc, "", style="Normal", size=2)
         if text.startswith("추가 감사에서는"):
-            audit_rows = load_audit_rows()
+            audit_rows = [
+                (as_of[-5:], max_doc[-5:], max_price[-5:], excluded)
+                for as_of, _docs, max_doc, _prices, max_price, excluded in load_audit_rows()
+            ]
             if audit_rows:
                 add_para(
                     doc,
-                    "Table 3. Temporal evidence leakage audit sample.",
+                    "Table 3. Temporal evidence leakage audit sample (2026).",
                     style="Normal",
                     size=7.6,
                     align=WD_ALIGN_PARAGRAPH.LEFT,
@@ -409,9 +523,12 @@ def build_docx() -> None:
                 add_small_table(
                     doc,
                     audit_rows,
-                    headers=["as_of", "Docs", "Max doc", "Prices", "Max price", "Future d/p"],
+                    headers=["as_of", "Max doc", "Max px", "Future d/p"],
+                    widths=[0.62, 0.66, 0.66, 0.72],
+                    font_size=5.8,
+                    header_size=5.8,
                 )
-                add_para(doc, "", style="Normal", size=3)
+                add_para(doc, "", style="Normal", size=2)
 
     for heading, items in data["body_sections"][3:]:
         add_heading(doc, heading)

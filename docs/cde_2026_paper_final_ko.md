@@ -6,6 +6,7 @@
 **Affiliation:** 광운대학교  
 **English Author:** Dohoun LEE  
 **English Affiliation:** Kwangwoon University
+**Contact Email:** leedohoun@kw.ac.kr
 
 ## ABSTRACT
 
@@ -52,28 +53,28 @@ Table 1. Experimental protocol and realism controls.
 
 Table 2는 8개 기간-구간 조합의 핵심 결과를 요약한다. hybrid multi-agent는 2023 short, 2024 short, 2025 long, 2026Q1 long에서 결정론적 기준선 이상을 보였다. 최고 기술지표 기준선 이상인 경우는 2025 short, 2025 long, 2026Q1 short, 2026Q1 long의 4건이며, 2023 short는 최고 기술지표 기준선과 근접했지만 초과하지는 못했다. 다만 2023 long, 2024 long처럼 기술지표 또는 결정론적 기준선에 뒤처지는 구간도 존재하였다.
 
-Table 2. Summary of period-horizon comparison.
+Table 2. Period-horizon return comparison (%).
 
-| Period | Horizon | Hybrid return | Deterministic return | Best technical return |
+| Period | Horizon | Hybrid | Deterministic | Best technical |
 |---|---:|---:|---:|---:|
-| 2023 | Short | 14.92% | 13.58% | 15.15% |
-| 2023 | Long | -0.42% | 7.64% | 52.69% |
-| 2024 | Short | 46.99% | 38.27% | 167.72% |
-| 2024 | Long | 0.08% | 16.78% | 16.02% |
-| 2025 | Short | 190.16% | 216.92% | 60.08% |
-| 2025 | Long | 103.29% | 82.78% | 94.71% |
-| 2026Q1 | Short | 15.40% | 24.62% | 8.55% |
-| 2026Q1 | Long | 14.20% | 6.14% | 0.00% |
+| 2023 | Short | 14.92 | 13.58 | 15.15 |
+| 2023 | Long | -0.42 | 7.64 | 52.69 |
+| 2024 | Short | 46.99 | 38.27 | 167.72 |
+| 2024 | Long | 0.08 | 16.78 | 16.02 |
+| 2025 | Short | 190.16 | 216.92 | 60.08 |
+| 2025 | Long | 103.29 | 82.78 | 94.71 |
+| 2026Q1 | Short | 15.40 | 24.62 | 8.55 |
+| 2026Q1 | Long | 14.20 | 6.14 | 0.00 |
 
 추가 감사에서는 최근 AI 테마 corpus의 세 `as_of_date` 샘플에 대해 문서의 `published_at`과 가격 데이터의 `timestamp`가 의사결정일을 넘지 않는지 확인하였다. Table 3에서 각 샘플의 최대 문서일과 최대 가격일은 모두 `as_of_date` 이하였고, 미래 날짜 레코드는 검색 및 가격 특징 계산에서 제외되었다.
 
-Table 3. Temporal evidence leakage audit sample.
+Table 3. Temporal evidence leakage audit sample (2026).
 
-| as_of_date | Document rows | Max document date | Price rows | Max price date | Future rows excluded (doc/price) |
-|---|---:|---|---:|---|---:|
-| 2026-05-20 | 847 | 2026-05-20 | 400 | 2026-05-20 | 6151/650 |
-| 2026-05-31 | 2130 | 2026-05-31 | 700 | 2026-05-29 | 4868/350 |
-| 2026-06-10 | 6998 | 2026-06-10 | 1050 | 2026-06-10 | 0/0 |
+| as_of | Max doc | Max price | Future excluded (doc/price) |
+|---|---|---|---:|
+| 05-20 | 05-20 | 05-20 | 6151/650 |
+| 05-31 | 05-31 | 05-29 | 4868/350 |
+| 06-10 | 06-10 | 06-10 | 0/0 |
 
 결과는 hybrid multi-agent가 모든 상황에서 우월한 보편 전략이 아님을 보여준다. 특히 LLM-only도 2024 short와 2026Q1 short 일부 비교에서 hybrid를 상회하므로, hybrid 구조의 장점은 일관된 수익률 우위가 아니라 역할별 근거 분해와 위험 해석 가능성으로 제한해 해석해야 한다. Table 2는 수익률 중심 요약이며, MDD와 Sharpe 같은 위험 조정 지표는 보조 산출물에서 함께 점검하였다. 오히려 본 검증의 의미는 복수 기준선을 동시에 두어 결과를 과장하지 않고, 각 의사결정 시점에서 어떤 문서와 가격 특징이 사용되었는지 추적할 수 있다는 데 있다. 결정론적 및 기술지표 기준선이 강한 구간은 Agentic AI 결과를 해석하는 하한선 또는 경쟁 기준으로 작동한다. 따라서 본 연구의 결과는 수익률 중심의 자동매매 모델이 아니라 시간 경계가 있는 산업 후보군 검증 방법론으로 해석되어야 한다.
 

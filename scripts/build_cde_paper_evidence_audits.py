@@ -163,6 +163,18 @@ def write_temporal_audit_markdown(audit: dict[str, Any]) -> None:
 
 
 def write_reproducibility_markdown(manifest: dict[str, Any]) -> None:
+    missing_count = manifest["missing_result_json_count"]
+    if missing_count:
+        interpretation = [
+            "The preserved comparison table and exported JSON are enough to reproduce the paper's summary tables.",
+            "However, the workspace is not yet a complete raw-run reproducibility package because some source `result_json` files are absent.",
+        ]
+    else:
+        interpretation = [
+            "The preserved comparison table, exported JSON, and every referenced raw `result_json` file are present in this workspace.",
+            "This completes the raw-run reproducibility package for the paper comparison artifact.",
+        ]
+
     lines = [
         "# CDE 2026 Reproducibility Manifest",
         "",
@@ -175,14 +187,16 @@ def write_reproducibility_markdown(manifest: dict[str, Any]) -> None:
         "",
         "## Interpretation",
         "",
-        "The preserved comparison table and exported JSON are enough to reproduce the paper's summary tables.",
-        "However, the workspace is not yet a complete raw-run reproducibility package because some source `result_json` files are absent.",
+        *interpretation,
         "",
         "## Missing Result JSON Files",
         "",
     ]
-    for path in manifest["missing_result_json"]:
-        lines.append(f"- `{path}`")
+    if manifest["missing_result_json"]:
+        for path in manifest["missing_result_json"]:
+            lines.append(f"- `{path}`")
+    else:
+        lines.append("- None")
     REPRO_MD.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 

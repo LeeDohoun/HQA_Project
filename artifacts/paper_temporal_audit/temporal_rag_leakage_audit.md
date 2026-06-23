@@ -3,8 +3,8 @@
 This audit checks representative AI-theme rows preserved in the local evidence corpus.
 A row passes when the maximum document or price date used at each `as_of_date` does not exceed that decision date.
 
-- Document source: `experiment_results\theme_recent_month_data_20260610\ai\processed\corpus_combined.jsonl`
-- Price source: `experiment_results\theme_recent_month_data_20260610\ai\processed\market_combined.jsonl`
+- Document source: `experiment_results/theme_recent_month_data_20260610/ai/processed/corpus_combined.jsonl`
+- Price source: `experiment_results/theme_recent_month_data_20260610/ai/processed/market_combined.jsonl`
 
 | as_of_date | Document rows | Max document date | Price rows | Max price date | Future rows excluded (doc/price) | Pass |
 |---|---:|---|---:|---|---:|---|
