@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import re
 import json
 from pathlib import Path
@@ -428,5 +429,15 @@ def build_docx() -> None:
     print(OUT_DOCX)
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Build the CDE 2026 paper DOCX from Markdown.")
+    parser.add_argument("--source-md", default=str(SOURCE_MD), help="Markdown source path")
+    parser.add_argument("--out-docx", default=str(OUT_DOCX), help="Output DOCX path")
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
+    args = parse_args()
+    SOURCE_MD = Path(args.source_md)
+    OUT_DOCX = Path(args.out_docx)
     build_docx()

@@ -94,10 +94,3 @@ Lewis, P., Perez, E., Piktus, A., Petroni, F., Karpukhin, V., Goyal, N., Kuttler
 Yao, S., Zhao, J., Yu, D., Du, N., Shafran, I., Narasimhan, K. and Cao, Y., 2023, ReAct: Synergizing Reasoning and Acting in Language Models, International Conference on Learning Representations, https://openreview.net/forum?id=WE_vluYUL-X.
 
 Bailey, D.H., Borwein, J.M., Lopez de Prado, M. and Zhu, Q.J., 2017, The Probability of Backtest Overfitting, Journal of Computational Finance, 20(4), pp.39-69, https://doi.org/10.21314/JCF.2016.322.
-
-## 작성 메모
-
-- 본 초안은 CDE 2026 하계 Paper Template의 구조를 따른다.
-- 저자명과 소속은 프로젝트 Git 설정 및 로컬 경로 단서를 바탕으로 임시 확정하였다. 실제 학교/기관 소속이 있으면 제출 전 교체해야 한다.
-- 본문 주장은 "수익률 우월"이 아니라 "시점 제한 검증 프레임워크와 의사결정 근거 추적성"으로 제한한다.
-- 다중 테마 paper trading은 운영 가능성 또는 향후 연구로만 언급한다.

@@ -1,9 +1,11 @@
 # CDE 2026 Paper Submission Readiness
 
-Generated: 2026-06-22
+Generated: 2026-06-23
 
 ## Current Deliverable
 
+- Final paper DOCX: `docs/cde_2026_paper_final_ko.docx`
+- Final paper Markdown: `docs/cde_2026_paper_final_ko.md`
 - Paper DOCX: `docs/cde_2026_paper_draft_ko.docx`
 - Editable source: `docs/cde_2026_paper_draft_ko.md`
 - Review feedback: `docs/cde_2026_paper_review_feedback.md`
@@ -20,7 +22,7 @@ Generated: 2026-06-22
 | CDE template | Pass | Based on `2026_summer_paper_template.docx` |
 | Korean title | Pass | Present |
 | English title | Pass | Present |
-| Author block | Pass | `이도훈 / 독립 연구자`, `Dohoun LEE / Independent Researcher` |
+| Author block | Pass | `이도훈 / 광운대학교`, `Dohoun LEE / Kwangwoon University` |
 | Abstract | Pass | About 150 space-separated words, within the template's 200-word guidance |
 | Key Words | Pass | 5 English keywords, within 6-keyword guidance |
 | Body structure | Pass | `1. 서론`, `2. 제안 프레임워크`, `3. 실험 설계 및 결과`, `4. 결론` |
@@ -28,14 +30,14 @@ Generated: 2026-06-22
 | References | Pass | References are written in English and body citations are superscripted |
 | Multi-agent review feedback | Pass | 2025 tuning/reference, 2026Q1 long pilot, LLM-only caveat, and risk-metric caveat reflected |
 | Temporal evidence audit | Pass | Table 3 added from `temporal_rag_leakage_audit.json`; max document/price dates do not exceed sampled `as_of_date` values |
-| Raw-run reproducibility | Partial | Summary artifacts are present; 18/68 referenced raw `result_json` files are present and 50 are missing |
+| Raw-run reproducibility | Partial | Summary artifacts are present; 18/68 referenced raw `result_json` files are present and 50 are missing. Recovery steps to run on the original Mac: `docs/cde_2026_mac_repro_recovery.md` |
 | Accessibility audit | Pass | No high/medium/low findings after fixes |
-| Word open check | Pass | Microsoft Word opens the updated DOCX; page count is 2; table count is 4 |
+| Word open check | Pass | Microsoft Word opens the final DOCX; page count is 2; table count is 4 |
 | Visual PNG render | Blocked | LibreOffice `soffice` is unavailable; `winget` install attempt did not complete within timeout |
 
 ## Remaining Human Check
 
-The paper is structurally ready, but the affiliation is set to `독립 연구자 / Independent Researcher` because no school or organization affiliation was discoverable in the project. Replace it before submission if a formal affiliation should be used.
+The paper is structurally ready. The affiliation is set to `광운대학교 / Kwangwoon University`. Confirm the exact department/lab name if the venue requires it.
 
 ## Claim Boundary
 
