@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import json
 from pathlib import Path
 
 from docx import Document
@@ -18,6 +19,7 @@ SOURCE_MD = ROOT / "docs" / "cde_2026_paper_draft_ko.md"
 OUT_DOCX = ROOT / "docs" / "cde_2026_paper_draft_ko.docx"
 FIG_DIR = ROOT / "artifacts" / "paper_figures"
 FIG_PATH = FIG_DIR / "temporal_rag_architecture.png"
+AUDIT_JSON = ROOT / "artifacts" / "paper_temporal_audit" / "temporal_rag_leakage_audit.json"
 
 PROTOCOL_ROWS = [
     ("Theme scope", "AI industry theme candidate selection"),
@@ -41,6 +43,26 @@ RESULT_ROWS = [
     ("2026Q1", "Short", "15.40%", "24.62%", "8.55%"),
     ("2026Q1", "Long", "14.20%", "6.14%", "0.00%"),
 ]
+
+
+def load_audit_rows() -> list[tuple[str, str, str, str, str, str]]:
+    if not AUDIT_JSON.exists():
+        return []
+    data = json.loads(AUDIT_JSON.read_text(encoding="utf-8"))
+    rows = []
+    for row in data.get("rows", []):
+        excluded = f"{row.get('future_document_rows_excluded', 0)}/{row.get('future_price_rows_excluded', 0)}"
+        rows.append(
+            (
+                str(row.get("as_of_date", "")),
+                str(row.get("document_rows", "")),
+                str(row.get("max_document_date", "")),
+                str(row.get("price_rows", "")),
+                str(row.get("max_price_date", "")),
+                excluded,
+            )
+        )
+    return rows
 
 
 def read_source() -> dict:
@@ -373,6 +395,22 @@ def build_docx() -> None:
             )
             add_small_table(doc, RESULT_ROWS, headers=["Period", "Horizon", "Hybrid", "Det.", "Best tech"])
             add_para(doc, "", style="Normal", size=3)
+        if text.startswith("추가 감사에서는"):
+            audit_rows = load_audit_rows()
+            if audit_rows:
+                add_para(
+                    doc,
+                    "Table 3. Temporal evidence leakage audit sample.",
+                    style="Normal",
+                    size=7.6,
+                    align=WD_ALIGN_PARAGRAPH.LEFT,
+                )
+                add_small_table(
+                    doc,
+                    audit_rows,
+                    headers=["as_of", "Docs", "Max doc", "Prices", "Max price", "Future d/p"],
+                )
+                add_para(doc, "", style="Normal", size=3)
 
     for heading, items in data["body_sections"][3:]:
         add_heading(doc, heading)

@@ -1,0 +1,52 @@
+{
+  "purpose": "Representative point-in-time leakage audit for the CDE 2026 paper.",
+  "document_source": "experiment_results\\theme_recent_month_data_20260610\\ai\\processed\\corpus_combined.jsonl",
+  "price_source": "experiment_results\\theme_recent_month_data_20260610\\ai\\processed\\market_combined.jsonl",
+  "rows": [
+    {
+      "as_of_date": "2026-05-20",
+      "document_rows": 847,
+      "document_source_counts": {
+        "dart": 189,
+        "forum": 607,
+        "news": 51
+      },
+      "max_document_date": "2026-05-20",
+      "future_document_rows_excluded": 6151,
+      "price_rows": 400,
+      "max_price_date": "2026-05-20",
+      "future_price_rows_excluded": 650,
+      "pass": true
+    },
+    {
+      "as_of_date": "2026-05-31",
+      "document_rows": 2130,
+      "document_source_counts": {
+        "dart": 222,
+        "forum": 1812,
+        "news": 96
+      },
+      "max_document_date": "2026-05-31",
+      "future_document_rows_excluded": 4868,
+      "price_rows": 700,
+      "max_price_date": "2026-05-29",
+      "future_price_rows_excluded": 350,
+      "pass": true
+    },
+    {
+      "as_of_date": "2026-06-10",
+      "document_rows": 6998,
+      "document_source_counts": {
+        "dart": 242,
+        "forum": 6346,
+        "news": 410
+      },
+      "max_document_date": "2026-06-10",
+      "future_document_rows_excluded": 0,
+      "price_rows": 1050,
+      "max_price_date": "2026-06-10",
+      "future_price_rows_excluded": 0,
+      "pass": true
+    }
+  ]
+}

@@ -1,13 +1,16 @@
 # CDE 2026 Paper Submission Readiness
 
-Generated: 2026-06-19
+Generated: 2026-06-22
 
 ## Current Deliverable
 
 - Paper DOCX: `docs/cde_2026_paper_draft_ko.docx`
 - Editable source: `docs/cde_2026_paper_draft_ko.md`
 - Review feedback: `docs/cde_2026_paper_review_feedback.md`
+- Temporal audit: `artifacts/paper_temporal_audit/temporal_rag_leakage_audit.md`
+- Reproducibility manifest: `docs/cde_2026_reproducibility_manifest.md`
 - Regeneration script: `scripts/build_cde_paper_docx.py`
+- Evidence audit script: `scripts/build_cde_paper_evidence_audits.py`
 - Official template files: `cde_2026_refs/`
 
 ## Status
@@ -24,8 +27,10 @@ Generated: 2026-06-19
 | Table/Figure captions | Pass | Captions are written in English |
 | References | Pass | References are written in English and body citations are superscripted |
 | Multi-agent review feedback | Pass | 2025 tuning/reference, 2026Q1 long pilot, LLM-only caveat, and risk-metric caveat reflected |
+| Temporal evidence audit | Pass | Table 3 added from `temporal_rag_leakage_audit.json`; max document/price dates do not exceed sampled `as_of_date` values |
+| Raw-run reproducibility | Partial | Summary artifacts are present; 18/68 referenced raw `result_json` files are present and 50 are missing |
 | Accessibility audit | Pass | No high/medium/low findings after fixes |
-| Word open check | Pass | Microsoft Word opens the updated DOCX; page count is 2; table count is 3 |
+| Word open check | Pass | Microsoft Word opens the updated DOCX; page count is 2; table count is 4 |
 | Visual PNG render | Blocked | LibreOffice `soffice` is unavailable; `winget` install attempt did not complete within timeout |
 
 ## Remaining Human Check

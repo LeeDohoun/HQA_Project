@@ -33,6 +33,8 @@
 - LLM-only가 일부 구간에서 hybrid를 상회한다는 한계를 명시하였다.
 - Table 2가 수익률 중심 요약이며 MDD/Sharpe는 보조 산출물에서 점검했다는 설명을 추가하였다.
 - 결론에서 2025와 2026Q1 long의 해석 한계를 다시 명시하였다.
+- 대표 `as_of_date` 3개에 대한 Temporal RAG 정보 누수 감사 표를 Table 3으로 추가하였다.
+- raw `result_json` 보존 상태를 `docs/cde_2026_reproducibility_manifest.md`로 분리 기록하였다.
 
 ## 근거 파일
 
@@ -40,13 +42,15 @@
 - DOCX 산출물: `docs/cde_2026_paper_draft_ko.docx`
 - 비교 요약 산출물: `artifacts/paper_backtesting_exports/ai-strategy-comparison.json`
 - 비교 보고서: `artifacts/paper_backtesting_exports/ai-strategy-comparison-report.md`
+- Temporal RAG 감사 산출물: `artifacts/paper_temporal_audit/temporal_rag_leakage_audit.md`
+- 재현성 manifest: `docs/cde_2026_reproducibility_manifest.md`
 - Temporal RAG 구현: `backtesting/temporal_rag.py`
 - 백테스트 구현: `backtesting/leader_backtest.py`
 - DOCX 생성 스크립트: `scripts/build_cde_paper_docx.py`
+- 감사 산출물 생성 스크립트: `scripts/build_cde_paper_evidence_audits.py`
 
 ## 제출 전 추가 권장 작업
 
 - 저자 소속이 실제 제출 소속과 다르면 `독립 연구자 / Independent Researcher`를 교체한다.
-- 대표 재조정일 1-2개에 대해 검색 문서의 `published_at <= as_of_date`를 보여주는 작은 감사 표를 추가한다.
-- 가능하면 raw 실행 JSON을 함께 보존하여 요약 CSV/JSON에서 원본 실행 결과까지 이어지는 재현성을 강화한다.
+- raw 실행 JSON 중 누락된 2025/2026Q1 원본 파일은 가능하면 재실행 또는 원 저장소 복구로 보강한다.
 - 제출 직전 CDE 공식 템플릿의 페이지 수, 글꼴, 캡션 위치를 Microsoft Word에서 육안 확인한다.
