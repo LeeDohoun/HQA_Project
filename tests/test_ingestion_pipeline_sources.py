@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from typing import Any, get_type_hints
 
 import pytest
@@ -190,7 +191,7 @@ def test_financials_source_dedupes_raw_snapshots_by_stock_year_and_report(tmp_pa
     assert second.report.skipped_counts["financials"] == 3
 
 
-def test_news_raw_save_appends_only_new_urls(tmp_path):
+def test_news_raw_save_retains_changed_title_at_same_url(tmp_path):
     service = IngestionService()
     raw_dir = str(tmp_path / "raw")
     first_docs = [
@@ -223,7 +224,7 @@ def test_news_raw_save_appends_only_new_urls(tmp_path):
     ]
 
     assert service._save_raw_documents(first_docs, raw_dir, "news", "semiconductor") == 1
-    assert service._save_raw_documents(next_docs, raw_dir, "news", "semiconductor") == 1
+    assert service._save_raw_documents(next_docs, raw_dir, "news", "semiconductor") == 2
 
     rows = [
         json.loads(line)
@@ -232,8 +233,110 @@ def test_news_raw_save_appends_only_new_urls(tmp_path):
 
     assert [row["url"] for row in rows] == [
         "https://news.example.com/a",
+        "https://news.example.com/a",
         "https://news.example.com/b",
     ]
+
+
+def _read_documents(tmp_path, source="news"):
+    return [json.loads(line) for line in (tmp_path / "raw" / source / "semiconductor.jsonl")
+            .read_text(encoding="utf-8").splitlines()]
+
+
+def test_raw_documents_dedupe_first_batch_and_preserve_first_observation(tmp_path):
+    service = IngestionService()
+    first = DocumentRecord("news", "Headline", "Same factual body", "https://news.example.com/a",
+                           stock_code="005930", published_at="2026-09-04T10:00:00+09:00",
+                           metadata={"collected_at": "2026-09-04T10:01:00+09:00", "theme_key": "first",
+                                     "freshness_score": 1.0, "credibility_score": 0.9, "content_quality_score": 0.8})
+    recollected = replace(first, metadata={"collected_at": "2026-09-04T10:20:00+09:00", "theme_key": "second",
+                                         "freshness_score": 0.5, "credibility_score": 0.8, "content_quality_score": 0.9})
+    args = (str(tmp_path / "raw"), "news", "semiconductor")
+    assert service._save_raw_documents([first, first, recollected], *args) == 1
+    assert service._save_raw_documents([recollected], *args) == 0
+    rows = _read_documents(tmp_path)
+    assert len(rows) == 1
+    assert rows[0]["metadata"]["collected_at"] == "2026-09-04T10:01:00+09:00"
+    assert rows[0]["metadata"]["theme_key"] == "first"
+
+
+def test_raw_news_retains_body_revisions_and_distinct_stock_associations(tmp_path):
+    service = IngestionService()
+    first = DocumentRecord("news", "Headline", "Original body", "https://news.example.com/a", stock_code="005930",
+                           metadata={"collected_at": "2026-09-04T10:01:00+09:00"})
+    revision = replace(first, content="Corrected body", metadata={"collected_at": "2026-09-04T10:02:00+09:00"})
+    second_stock = replace(first, stock_code="000660", metadata={"collected_at": "2026-09-04T10:03:00+09:00"})
+    args = (str(tmp_path / "raw"), "news", "semiconductor")
+    assert service._save_raw_documents([first], *args) == 1
+    assert service._save_raw_documents([revision, second_stock, revision, second_stock], *args) == 2
+    rows = _read_documents(tmp_path)
+    assert [(row["stock_code"], row["content"]) for row in rows] == [
+        ("005930", "Original body"), ("005930", "Corrected body"), ("000660", "Original body"),
+    ]
+    assert [row["metadata"]["collected_at"] for row in rows] == [
+        "2026-09-04T10:01:00+09:00", "2026-09-04T10:02:00+09:00", "2026-09-04T10:03:00+09:00",
+    ]
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("structured_row", {"rcept_no": "20260904000001", "nstk_ostk_cnt": "20,000"}),
+    ("structured_endpoint", "piicDecsn"),
+    ("has_correction", True),
+    ("is_withdrawal", True),
+    ("published_at_precision", "datetime"),
+    ("supersedes_source_ids", ["dart:20260903000001"]),
+])
+def test_dart_event_metadata_changes_keep_their_own_first_available_observation(tmp_path, field, value):
+    service = IngestionService()
+    metadata = {"rcept_no": "20260904000001", "published_at_precision": "date", "has_correction": False,
+                "collected_at": "2026-09-04T10:01:00+09:00"}
+    first = DocumentRecord("dart", "Report", "Same body", "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260904000001",
+                           stock_code="005930", published_at="2026-09-04", metadata=metadata)
+    revision = replace(first, metadata={**metadata, field: value, "collected_at": "2026-09-04T11:00:00+09:00"})
+    recollected = replace(revision, metadata={**revision.metadata, "collected_at": "2026-09-04T12:00:00+09:00"})
+    args = (str(tmp_path / "raw"), "dart", "semiconductor")
+    assert service._save_raw_documents([first], *args) == 1
+    assert service._save_raw_documents([revision, recollected], *args) == 1
+    assert service._save_raw_documents([recollected], *args) == 0
+    rows = _read_documents(tmp_path, "dart")
+    assert len(rows) == 2
+    assert rows[0]["metadata"]["collected_at"] == "2026-09-04T10:01:00+09:00"
+    assert rows[1]["metadata"]["collected_at"] == "2026-09-04T11:00:00+09:00"
+    assert rows[1]["metadata"][field] == value
+
+
+def test_revision_hash_ignores_metadata_key_order_but_keeps_corrected_publication_time(tmp_path):
+    service = IngestionService()
+    first = DocumentRecord("dart", "Report", "Body", "https://dart.example/a", stock_code="005930",
+                           published_at="2026-09-04", metadata={"rcept_no": "20260904000001",
+                           "structured_row": {"rcept_no": "20260904000001", "amount": "10"}})
+    reordered = replace(first, metadata={"structured_row": {"amount": "10", "rcept_no": "20260904000001"},
+                                        "rcept_no": "20260904000001"})
+    corrected_time = replace(first, published_at="2026-09-04T14:00:00+09:00")
+    args = (str(tmp_path / "raw"), "dart", "semiconductor")
+    assert service._save_raw_documents([first, reordered, corrected_time], *args) == 2
+
+
+@pytest.mark.parametrize("one_batch", [True, False])
+def test_raw_reappearance_creates_new_episode_and_unchanged_repeat_keeps_first_observation(tmp_path, one_batch):
+    service = IngestionService()
+    first = DocumentRecord("news", "Headline", "Content A", "https://news.example.com/a", stock_code="005930",
+                           metadata={"collected_at": "2026-09-04T10:00:00+09:00"})
+    changed = replace(first, content="Content B", metadata={"collected_at": "2026-09-04T11:00:00+09:00"})
+    returned = replace(first, metadata={"collected_at": "2026-09-04T12:00:00+09:00"})
+    repeat = replace(returned, metadata={"collected_at": "2026-09-04T13:00:00+09:00"})
+    args = (str(tmp_path / "raw"), "news", "semiconductor")
+    if one_batch:
+        assert service._save_raw_documents([first, changed, returned, repeat], *args) == 3
+    else:
+        assert [service._save_raw_documents([doc], *args) for doc in [first, changed, returned, repeat]] == [1, 1, 1, 0]
+    assert service._save_raw_documents([repeat], *args) == 0
+    rows = _read_documents(tmp_path)
+    assert [row["content"] for row in rows] == ["Content A", "Content B", "Content A"]
+    assert len({row["metadata"]["version_id"] for row in rows}) == 3
+    assert rows[-1]["metadata"]["collected_at"] == "2026-09-04T12:00:00+09:00"
+    assert "version_id" not in first.metadata
+    assert "version_id" not in returned.metadata
 
 
 def test_source_dedupe_keys_are_explicit():

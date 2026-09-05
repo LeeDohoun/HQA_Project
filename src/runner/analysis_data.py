@@ -190,8 +190,10 @@ class LocalAnalysisData:
         return {"indicators": values, "data_gaps": [f"undefined_indicator:{name}" for name, value in values.items() if value is None]}
 
     def load_evidence(self, candidate: dict, as_of: datetime) -> dict:
+        from src.runner.event_evidence import build_event_evidence, select_event_evidence
         from src.runner.financial_snapshot import load_financial_snapshot
         documents, errors = {}, []
+        conflicting_fragments = False
         for theme in candidate["theme_keys"]:
             path = self.data_dir / "canonical_index" / theme / "corpus.jsonl"
             if not path.exists():
@@ -200,7 +202,8 @@ class LocalAnalysisData:
             for row in read_jsonl(path):
                 if ThemeUniverseLoader._stock_code(row) != candidate["stock_code"]:
                     continue
-                meta = row.get("metadata") or {}
+                outer = row.get("metadata") or {}
+                meta = {**(outer.get("metadata") or {}), **outer}
                 kind = row.get("source_type") or meta.get("source_type")
                 if kind not in {"dart", "news", "general_news"}:
                     continue
@@ -214,25 +217,92 @@ class LocalAnalysisData:
                     if as_of - published > timedelta(days=400 if kind == "dart" else 7):
                         continue
                     url = row.get("url") or meta.get("url")
-                    body = row.get("text") or row.get("content") or meta.get("content")
+                    full_body = row.get("content") or meta.get("content")
+                    body = full_body or row.get("text")
                     if not url or not body:
                         raise ValueError("evidence requires URL and content")
-                    source_id = str(row.get("doc_id") or meta.get("doc_id") or content_hash({"url": url, "text": body}))
+                    title = str(row.get("title") or meta.get("title") or "")
+                    if kind == "dart" and meta.get("evidence_scope") == "structured_fields":
+                        from src.ingestion.dart import DartDisclosureCollector
+                        verified = DartDisclosureCollector.structured_fields_content(title, meta)
+                        if not verified or full_body != verified:
+                            raise ValueError("DART structured fields do not match verified provider content")
+                    elif kind == "dart" and (meta.get("has_body") is False or meta.get("body_extracted") is False
+                            or meta.get("wrapper_text_detected") is True or meta.get("mojibake_detected") is True
+                            or meta.get("body_source") in {"title_fallback", "title_only"}):
+                        raise ValueError("DART body quality is not suitable for event analysis")
+                    source_id = str(row.get("doc_id") or meta.get("doc_id") or content_hash({"url": url}))
+                    is_fragment = not full_body and "chunk_index" in meta
+                    body_hash = hashlib.sha256(str(body).encode("utf-8")).hexdigest()
                     document = {"source_id": source_id, "source_type": kind, "url": url,
                                 "published_at": published.isoformat(), "available_at": available.isoformat(),
-                                "title": str(row.get("title") or meta.get("title") or ""), "text": str(body)[:3500],
-                                "source_text_hash": hashlib.sha256(str(body).encode("utf-8")).hexdigest(),
-                                "truncated": len(str(body)) > 3500, "original_characters": len(str(body))}
-                    # Canonical chunks of the same document use a stable content hash.
-                    documents[content_hash({"source_id": source_id, "text": body})] = document
+                                "published_at_precision": meta.get("published_at_precision", "date" if kind == "dart" else "unknown"),
+                                "title": title,
+                                "metadata": {key: meta[key] for key in (
+                                    "rcept_no", "rcept_dt", "remark", "is_correction", "has_correction", "is_withdrawal",
+                                    "structured_endpoint", "structured_rcept_no", "structured_row", "structured_body_error_type",
+                                    "supersedes_source_ids", "published_at_precision", "has_body", "body_source",
+                                    "body_extracted", "evidence_scope") if key in meta},
+                                "_full_body": str(body) if not is_fragment else None,
+                                "_fragments": {}, "_fragment_times": {}}
+                    document["_content_context"] = content_hash({"metadata": document["metadata"],
+                        "title": document["title"], "published_at": document["published_at"]})
+                    document["_version_context"] = content_hash({"content_context": document["_content_context"],
+                        "provider_version": meta.get("version_id")})
+                    key = (kind, url, document["_version_context"], "fragments" if is_fragment else body_hash)
+                    existing = documents.setdefault(key, document)
+                    existing["source_id"] = min(existing["source_id"], source_id)
+                    if available.isoformat() < existing["available_at"]:
+                        existing["available_at"] = available.isoformat()
+                    if is_fragment:
+                        index = int(meta["chunk_index"])
+                        if index in existing["_fragments"] and existing["_fragments"][index] != body:
+                            conflicting_fragments = True
+                            raise ValueError("conflicting canonical chunks without a source version")
+                        existing["_fragments"][index] = str(body)
+                        existing["_fragment_times"][index] = min(available.isoformat(),
+                            existing["_fragment_times"].get(index, available.isoformat()))
                 except (ValueError, TypeError) as exc:
                     errors.append(f"invalid_evidence:{meta.get('doc_id', 'unknown')}:{exc}")
-        ordered = sorted(documents.values(), key=lambda row: (row["available_at"], row["source_id"]), reverse=True)
-        selected = [r for r in ordered if r["source_type"] == "dart"][:4] + [r for r in ordered if r["source_type"] != "dart"][:6]
+        if conflicting_fragments:
+            raise ValueError("conflicting canonical chunks without a source version")
+        for document in documents.values():
+            full_body = document.pop("_full_body")
+            fragments = document.pop("_fragments")
+            fragment_times = document.pop("_fragment_times")
+            body = full_body if full_body is not None else "\n[fragment]\n".join(fragments[key] for key in sorted(fragments))
+            if full_body is None:
+                document["available_at"] = max(fragment_times.values())
+            digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
+            document.update(text=body[:3500], source_text_hash=digest, truncated=len(body) > 3500,
+                            original_characters=len(body), text_scope=(document["metadata"].get("evidence_scope", "document")
+                                if full_body is not None else "available_fragments"))
+            document["version"] = content_hash({"text_hash": digest, "context": document.pop("_version_context")})
+            document["_content_version"] = content_hash({"text_hash": digest, "context": document.pop("_content_context")})
+            document["source_id"] += ":" + document["version"][:16]
+        latest, observations = {}, {}
+        # Theme-local observation IDs must not reset an unchanged event's first availability.
+        for document in sorted(documents.values(), key=lambda row: (row["available_at"], row["source_id"])):
+            logical = (document["source_type"], document["url"])
+            observed_key = (logical, document["available_at"])
+            if observations.setdefault(observed_key, document["_content_version"]) != document["_content_version"]:
+                raise ValueError("conflicting evidence revisions at the same availability time")
+            previous = latest.get(logical)
+            if previous is not None and document["_content_version"] == previous["_content_version"]:
+                continue
+            if previous is None or document["available_at"] > previous["available_at"]:
+                latest[logical] = document
+            else:
+                raise ValueError("conflicting evidence revisions at the same availability time")
+        for document in latest.values():
+            document.pop("_content_version")
+        events = select_event_evidence(build_event_evidence(list(latest.values()), candidate["stock_code"]), as_of=as_of)
+        selected_ids = {source_id for event in events for source_id in event["source_ids"]}
+        selected = [doc for doc in latest.values() if doc["source_id"] in selected_ids]
         financial = load_financial_snapshot(self.data_dir, candidate["stock_code"], as_of)
         if not selected and financial["status"] != "ready":
             raise ValueError("no_dated_dart_or_news_evidence:" + ";".join(errors[:3]))
-        return {"documents": selected, "data_gaps": errors,
+        return {"documents": selected, "events": events, "data_gaps": errors,
                 "financial_snapshot": financial}
 
 

@@ -54,6 +54,8 @@ class DartDisclosureCollector(BaseCollector):
     ]
     # report_nm 정규화 후 매핑: endpoint 이름은 OpenDART 가이드 기준 사용
     STRUCTURED_ENDPOINT_MAP = [
+        ("유상증자결정", ["piicDecsn"]),
+        ("자기주식취득결정", ["tsstkAqDecsn"]),
         ("유형자산취득결정", ["tgastInhDecsn"]),
         ("유형자산양도결정", ["tgastTrfDecsn"]),
         ("전환사채", ["cvbdIsDecsn"]),
@@ -71,6 +73,7 @@ class DartDisclosureCollector(BaseCollector):
         "증권신고서",
         "투자설명서",
         "유상증자결정",
+        "자기주식취득결정",
         "무상증자결정",
         "전환사채",
         "신주인수권부사채",
@@ -143,8 +146,8 @@ class DartDisclosureCollector(BaseCollector):
             published_at = self.to_iso_datetime(
                 item.get("rcept_dt", ""),
                 ["%Y%m%d"],
-                default_time="00:00:00",
-            )
+            )[:10]
+            remark = self._clean_text(item.get("rm", ""))
 
             detail_excerpt, body_source, quality_meta = self._fetch_structured_body(
                 corp_code=corp_code,
@@ -153,6 +156,12 @@ class DartDisclosureCollector(BaseCollector):
                 rcept_no=rcept_no,
                 report_nm=title,
             )
+            structured_meta = {
+                "structured_endpoint": quality_meta.get("structured_endpoint"),
+                "structured_rcept_no": quality_meta.get("structured_rcept_no"),
+                "structured_row": quality_meta.get("structured_row"),
+                "structured_body_error_type": quality_meta.get("body_error_type") or "success",
+            }
             if not detail_excerpt:
                 detail_excerpt, body_source, quality_meta = self._fetch_official_document_body(rcept_no)
             if not detail_excerpt and url:
@@ -174,6 +183,13 @@ class DartDisclosureCollector(BaseCollector):
             # raw/event 용으로는 남기되, 본문 성공 여부를 표시
             content = detail_excerpt if has_body else f"{corp_name} 공시: {title}"
             final_source = body_source if has_body else "title_fallback"
+            structured_content = self.structured_fields_content(title, {"rcept_no": rcept_no, **structured_meta})
+            structured_only = bool(structured_content) and (not has_body or body_source == "structured_api")
+            if structured_only:
+                content, final_source = structured_content, "structured_fields"
+                has_body = body_extracted = False
+                if body_source == "structured_api":
+                    body_error_type = "narrative_body_not_extracted"
             print(
                 f"[DART][PATH] rcept_no={rcept_no} "
                 f"structured_candidate={bool(self._match_structured_endpoints(title))} "
@@ -193,6 +209,16 @@ class DartDisclosureCollector(BaseCollector):
                         "flr_nm": self._clean_text(item.get("flr_nm", "")),
                         "rcept_no": rcept_no,
                         "report_nm": title,
+                        "rcept_dt": item.get("rcept_dt", ""),
+                        "published_at_precision": "date",
+                        "published_at_source": "dart_list.rcept_dt",
+                        "remark": remark,
+                        "is_correction": bool(re.match(r"^\[(?:기재|첨부)?정정\]", title)),
+                        # rm '정' marks a later correction, not this filing's type.
+                        "has_correction": "정" in remark,
+                        "is_withdrawal": "철회" in title or "철" in remark,
+                        **structured_meta,
+                        **({"evidence_scope": "structured_fields"} if structured_only else {}),
                         "has_body": has_body,
                         "body_source": final_source,
                         "body_extracted": body_extracted,
@@ -210,7 +236,8 @@ class DartDisclosureCollector(BaseCollector):
         return docs
 
     def _is_important_report(self, title: str) -> bool:
-        return any(keyword in title for keyword in self.IMPORTANT_REPORT_KEYWORDS)
+        normalized = self._normalize_report_name(title)
+        return any(keyword in normalized for keyword in self.IMPORTANT_REPORT_KEYWORDS)
 
     def _fetch_structured_body(
         self,
@@ -219,8 +246,8 @@ class DartDisclosureCollector(BaseCollector):
         end_de: str,
         rcept_no: str,
         report_nm: str,
-    ) -> Tuple[str, str, Dict[str, bool | str]]:
-        quality_meta: Dict[str, bool | str] = {
+    ) -> Tuple[str, str, Dict[str, object]]:
+        quality_meta: Dict[str, object] = {
             "wrapper_text_detected": False,
             "body_error_type": "no_structured_match",
             "encoding_fixed": False,
@@ -248,7 +275,7 @@ class DartDisclosureCollector(BaseCollector):
                         timeout=self.timeout,
                         log_prefix=f"DART:STRUCTURED:{endpoint}",
                     )
-                    payload = response.json()
+                    payload = self._redact_api_keys(response.json())
                 except Exception:
                     quality_meta["body_error_type"] = "structured_fetch_failed"
                     continue
@@ -269,6 +296,12 @@ class DartDisclosureCollector(BaseCollector):
                 quality_meta["body_error_type"] = "structured_no_rcept_match"
                 continue
             print(f"[DART][STRUCTURED] rcept_no match success endpoint={endpoint} target={rcept_no}")
+            target = self._redact_api_keys(target)
+            quality_meta.update({
+                "structured_endpoint": endpoint,
+                "structured_rcept_no": str(target["rcept_no"]).strip(),
+                "structured_row": target,
+            })
 
             text = self._structured_row_to_text(report_nm=report_nm, endpoint=endpoint, row=target)
             cleaned = self._sanitize_body_text(text)
@@ -291,34 +324,63 @@ class DartDisclosureCollector(BaseCollector):
 
         return "", "structured_api", quality_meta
 
-    def _match_structured_endpoints(self, report_nm: str) -> List[str]:
-        normalized = self._normalize_report_name(report_nm)
-        for keyword, endpoints in self.STRUCTURED_ENDPOINT_MAP:
+    @classmethod
+    def _match_structured_endpoints(cls, report_nm: str) -> List[str]:
+        normalized = cls._normalize_report_name(report_nm)
+        for keyword, endpoints in cls.STRUCTURED_ENDPOINT_MAP:
             if keyword in normalized:
                 return endpoints
         return []
 
-    def _normalize_report_name(self, report_nm: str) -> str:
-        normalized = self._clean_text(report_nm)
-        normalized = re.sub(r"\(.*?\)", "", normalized)
+    @classmethod
+    def _normalize_report_name(cls, report_nm: str) -> str:
+        normalized = cls._clean_text(report_nm)
+        normalized = normalized.replace("(", "").replace(")", "")
         normalized = normalized.replace(" ", "")
         return normalized
 
     def _find_structured_row(self, rows: List[Dict], rcept_no: str) -> Dict | None:
-        if not rows:
+        if not rcept_no:
             return None
-        if rcept_no:
-            for row in rows:
-                if str(row.get("rcept_no", "")).strip() == str(rcept_no).strip():
-                    return row
-        return rows[0]
+        matches = [row for row in rows if isinstance(row, dict)
+                   and str(row.get("rcept_no", "")).strip() == str(rcept_no).strip()]
+        return matches[0] if len(matches) == 1 else None
 
-    def _structured_row_to_text(self, report_nm: str, endpoint: str, row: Dict) -> str:
+    def _redact_api_keys(self, value):
+        if isinstance(value, dict):
+            return {key: self._redact_api_keys(item) for key, item in value.items()
+                    if str(key).lower() not in {"crtfc_key", "api_key", "apikey", "authorization", "access_token"}}
+        if isinstance(value, list):
+            return [self._redact_api_keys(item) for item in value]
+        if isinstance(value, str) and self.api_key:
+            return value.replace(self.api_key, "[REDACTED]")
+        return value
+
+    @classmethod
+    def structured_fields_content(cls, title: str, metadata: Dict) -> str:
+        row = metadata.get("structured_row")
+        receipt = metadata.get("rcept_no")
+        endpoint = metadata.get("structured_endpoint")
+        if (not isinstance(row, dict) or not isinstance(receipt, str) or not re.fullmatch(r"[0-9]{14}", receipt)
+                or row.get("rcept_no") != receipt or metadata.get("structured_rcept_no") != receipt
+                or endpoint not in cls._match_structured_endpoints(title)
+                or metadata.get("structured_body_error_type") not in ("success", "structured_too_short")):
+            return ""
+        identity_fields = {"rcept_no", "corp_code", "corp_cls", "corp_name", "status", "message"}
+        if not any(key not in identity_fields and value not in (None, "", "-", [], {}) for key, value in row.items()):
+            return ""
+        text = cls._structured_row_to_text(title, endpoint, row)
+        if cls._contains_wrapper_tokens(text) or cls._contains_error_page_tokens(text) or cls._is_mojibake_text(text):
+            return ""
+        return text[:2500].strip()
+
+    @classmethod
+    def _structured_row_to_text(cls, report_nm: str, endpoint: str, row: Dict) -> str:
         lines = [f"[공시유형] {report_nm}", f"[structured_endpoint] {endpoint}"]
         for key, value in row.items():
             if key in {"status", "message"}:
                 continue
-            val = self._clean_text(str(value or ""))
+            val = cls._clean_text(str(value if value is not None else ""))
             if not val:
                 continue
             lines.append(f"{key}: {val}")
@@ -688,28 +750,31 @@ class DartDisclosureCollector(BaseCollector):
         text = re.sub(r"\s+", " ", text).strip()
         return text
 
-    def _contains_wrapper_tokens(self, text: str) -> bool:
+    @classmethod
+    def _contains_wrapper_tokens(cls, text: str) -> bool:
         if not text:
             return False
-        if any(token in text for token in self.WRAPPER_TEXT_TOKENS):
+        if any(token in text for token in cls.WRAPPER_TEXT_TOKENS):
             return True
-        return self._contains_mojibake_wrapper_text(text)
+        return cls._contains_mojibake_wrapper_text(text)
 
-    def _contains_mojibake_wrapper_text(self, text: str) -> bool:
+    @classmethod
+    def _contains_mojibake_wrapper_text(cls, text: str) -> bool:
         if not text:
             return False
-        return any(re.search(pattern, text) for pattern in self.DART_ERROR_PAGE_MOJIBAKE_PATTERNS)
+        return any(re.search(pattern, text) for pattern in cls.DART_ERROR_PAGE_MOJIBAKE_PATTERNS)
 
     def _is_error_page_text(self, text: str) -> bool:
         return self._contains_error_page_tokens(text)
 
-    def _contains_error_page_tokens(self, text: str) -> bool:
+    @classmethod
+    def _contains_error_page_tokens(cls, text: str) -> bool:
         if not text:
             return False
-        normalized = self._clean_text(text)
-        if any(keyword in normalized for keyword in self.DART_ERROR_PAGE_KEYWORDS):
+        normalized = cls._clean_text(text)
+        if any(keyword in normalized for keyword in cls.DART_ERROR_PAGE_KEYWORDS):
             return True
-        if self._contains_mojibake_wrapper_text(normalized):
+        if cls._contains_mojibake_wrapper_text(normalized):
             return True
         return False
 
@@ -755,7 +820,8 @@ class DartDisclosureCollector(BaseCollector):
         score -= len(re.findall(r"(?:í|ì|ë|ê){4,}", text)) * 8
         return score
 
-    def _is_mojibake_text(self, text: str) -> bool:
+    @classmethod
+    def _is_mojibake_text(cls, text: str) -> bool:
         if not text:
             return False
         replacement_ratio = text.count("�") / max(1, len(text))
@@ -765,7 +831,7 @@ class DartDisclosureCollector(BaseCollector):
             replacement_ratio > 0.002
             or strange_latin >= 5
             or mojibake_jamo_like >= 3
-            or self._contains_mojibake_wrapper_text(text)
+            or cls._contains_mojibake_wrapper_text(text)
         )
 
     def _is_valid_body_text(

@@ -5,7 +5,9 @@ from __future__ import annotations
 # - Persist raw outputs, attach metadata, and return a structured run report.
 
 import inspect
+import hashlib
 import json
+import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -325,9 +327,8 @@ class IngestionService:
         raw_dir.mkdir(parents=True, exist_ok=True)
         output_path = raw_dir / f"{theme_key}.jsonl"
 
-        docs_to_save = docs
+        latest_revisions = {}
         if output_path.exists():
-            existing_keys = set()
             with output_path.open("r", encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
@@ -337,22 +338,25 @@ class IngestionService:
                         row = json.loads(line)
                     except json.JSONDecodeError:
                         continue
-                    existing_keys.add(self._document_dedupe_key_from_row(row, source))
+                    key = self._document_revision_key(row, source)
+                    latest_revisions[key[:2]] = key[2]
 
-            docs_to_save = []
-            for doc in docs:
-                key = self._document_dedupe_key(doc, source)
-                if key in existing_keys:
-                    continue
-                existing_keys.add(key)
-                docs_to_save.append(doc)
+        docs_to_save = []
+        for doc in docs:
+            payload = asdict(doc)
+            key = self._document_revision_key(payload, source)
+            if latest_revisions.get(key[:2]) == key[2]:
+                continue
+            latest_revisions[key[:2]] = key[2]
+            payload["metadata"] = {**(payload.get("metadata") or {}), "version_id": uuid.uuid4().hex}
+            docs_to_save.append(payload)
 
         if not docs_to_save:
             return 0
 
         with output_path.open("a", encoding="utf-8") as f:
-            for doc in docs_to_save:
-                f.write(json.dumps(asdict(doc), ensure_ascii=False) + "\n")
+            for payload in docs_to_save:
+                f.write(json.dumps(payload, ensure_ascii=False) + "\n")
         return len(docs_to_save)
 
     def _save_raw_market_records(self, rows: List[MarketRecord], raw_output_dir: str, theme_key: str) -> int:
@@ -478,6 +482,30 @@ class IngestionService:
             str(row.get("fiscal_year", "")).strip(),
             str(row.get("report_code", "")).strip(),
             str((row.get("metadata") or {}).get("version") or "legacy"),
+        )
+
+    @staticmethod
+    def _document_revision_key(row: Dict, source: str) -> tuple[str, str, str]:
+        metadata = row.get("metadata") or {}
+        event_fields = (
+            "rcept_no", "rcept_dt", "structured_endpoint", "structured_rcept_no", "structured_row",
+            "remark", "is_correction", "has_correction", "is_withdrawal", "has_body",
+            "published_at_precision", "published_at_source", "supersedes_source_ids",
+            "evidence_scope", "body_source", "body_extracted",
+            "original_rcept_no", "supersedes_rcept_no",
+        )
+        revision = {
+            "title": row.get("title") or "",
+            "content": row.get("content") or "",
+            "published_at": row.get("published_at") or "",
+            "event_metadata": {key: metadata[key] for key in event_fields if key in metadata},
+        }
+        digest = hashlib.sha256(json.dumps(revision, ensure_ascii=False, sort_keys=True,
+                                          separators=(",", ":")).encode("utf-8")).hexdigest()
+        return (
+            IngestionService._document_dedupe_key_from_row(row, source),
+            str(row.get("stock_code") or metadata.get("stock_code") or "").strip(),
+            digest,
         )
 
     @staticmethod

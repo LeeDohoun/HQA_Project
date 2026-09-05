@@ -15,6 +15,8 @@ from typing import Dict, Iterable, List, Optional
 from src.config.settings import get_data_dir
 from src.data_pipeline.evidence_corpus_builder import EvidenceCorpusBuilder
 from src.ingestion.types import DocumentRecord, generate_doc_id
+from src.ingestion.dart import DartDisclosureCollector
+from src.ingestion.services import IngestionService
 from src.retrieval.bm25_index import BM25IndexManager
 from src.retrieval.vector_store import SourceevidenceBuilder
 from src.evidence.dedupe import make_market_record_id, make_record_id
@@ -266,10 +268,6 @@ class EvidenceIndexBuilder:
                         skipped_invalid_count_by_source[source_type] += 1
                     continue
 
-                # DART는 본문이 있는 문서만 corpus/BM25/vector 대상으로 사용
-                if source_type == "dart" and not merged_metadata.get("has_body", False):
-                    continue
-
                 # ★ Compute canonical quality scores
                 title = row.get("title", "")
                 content = row.get("content", "")
@@ -363,6 +361,10 @@ class EvidenceIndexBuilder:
         content = str(row.get("content", "") or "").strip()
         if not title or not content:
             return False
+        if metadata.get("evidence_scope") == "structured_fields":
+            expected = DartDisclosureCollector.structured_fields_content(title, metadata)
+            return (metadata.get("body_source") == "structured_fields" and metadata.get("has_body") is False
+                    and metadata.get("body_extracted") is False and bool(expected) and content == expected)
         if not self._as_bool(metadata.get("has_body")):
             return False
         if self._as_bool(metadata.get("wrapper_text_detected")):
@@ -418,7 +420,10 @@ class EvidenceIndexBuilder:
         seen = set()
         deduped: List[Dict] = []
         for row in rows:
-            record_id = make_record_id(row)
+            metadata = row.get("metadata") or {}
+            source = row.get("source_type") or metadata.get("source_type", "")
+            revision = IngestionService._document_revision_key({**metadata, "metadata": metadata}, source)
+            record_id = (make_record_id(row), revision, metadata.get("version_id", ""))
             if record_id in seen:
                 continue
             seen.add(record_id)

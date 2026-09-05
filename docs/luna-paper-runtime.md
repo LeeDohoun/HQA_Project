@@ -59,6 +59,11 @@ canonical DART/news and financial snapshots. Initial price screening requires 15
 daily records. Missing or stale prices, evidence and fundamentals produce explicit
 errors rather than demo data or neutral scores.
 
+The [event data pipeline](event-data-pipeline.md) supplies disclosure/news event
+packets, correction-aware source revisions and observed daily price/volume responses.
+Its source-time rules, bounded role inputs and recollection requirements are documented
+separately. Event importance is not a buy signal or evidence of causal price impact.
+
 Financial snapshots now retain collection time, DART receipt, CFS/OFS division,
 currency and content version. Recollect old undated financial files before using
 them for entry decisions. `as_of` in old financial files is a fiscal statement date,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import threading
@@ -53,6 +54,42 @@ class Data:
 
     def load_technical(self, candidate):
         return {"indicators": {"MA150": 100 * self.price_version, "ATR": 5}, "data_gaps": []}
+
+
+class EventData(Data):
+    def __init__(self, source_type="dart"):
+        super().__init__(1)
+        self.source_type = source_type
+        dates = [NOW.date() - timedelta(days=offset) for offset in range(60, 0, -1)]
+        self.bars = [self.bar(day, 100.0 + index) for index, day in enumerate(
+            [day for day in dates if day.weekday() < 5][-30:])]
+
+    @staticmethod
+    def bar(day, close):
+        return {"available_at": datetime(day.year, day.month, day.day, 6, 30, tzinfo=timezone.utc).isoformat(),
+                "open": close - 1, "high": close + 2, "low": close - 2, "close": close, "volume": 1000.0}
+
+    def load_universe(self, as_of):
+        rows, errors = super().load_universe(as_of)
+        for row in rows:
+            row["price_history"] = [dict(bar) for bar in self.bars if datetime.fromisoformat(bar["available_at"]) <= as_of]
+        return rows, errors
+
+    def load_evidence(self, candidate, as_of):
+        from src.runner.event_evidence import build_event_evidence
+
+        evidence = super().load_evidence(candidate, as_of)
+        text = "단일판매 공급계약 원문 " + self.document_version
+        document = {"source_id": "doc:" + candidate["stock_code"], "source_type": self.source_type,
+                    "url": "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260901000001" if self.source_type == "dart"
+                           else "https://news.example/article/contract-1",
+                    "title": "단일판매ㆍ공급계약체결", "text": text,
+                    "published_at": "2026-09-01T00:00:00+09:00", "available_at": "2026-09-01T10:00:00+09:00",
+                    "source_text_hash": hashlib.sha256(text.encode()).hexdigest(), "truncated": False,
+                    "original_characters": len(text), "metadata": {"published_at_precision": "date"}}
+        evidence["documents"] = [document]
+        evidence["events"] = build_event_evidence([document], candidate["stock_code"])
+        return evidence
 
 
 class Accounts:
@@ -210,6 +247,162 @@ def test_role_caches_invalidate_independently():
     assert len([c for c in calls if c[0] == "chartist"]) == 2
 
 
+def test_event_packets_reactions_and_citations_reach_roles_without_account_leakage():
+    class ScopedAccounts(Accounts):
+        def fetch_accounts(self, ids):
+            return {user: snapshot(user, [holding()]).model_copy(update={
+                "equity": 20000.0 if user == "account-a" else 50000.0}) for user in ids}
+
+    class EventCitingModel(Model):
+        def invoke(self, messages):
+            result = super().invoke(messages)
+            payload = json.loads(messages[-1][1])
+            event_id = payload["event_reactions"][0]["event_id"]
+            values = result.model_dump()
+            values["citations"].append({"source_id": event_id, "claim": "Observed event association, not causality"})
+            return self.schema.model_validate(values)
+
+    data = EventData()
+    engine, calls = service(data, ScopedAccounts())
+    engine.models["chartist"] = EventCitingModel("chartist", calls)
+    cycle = engine.run_cycle([{"userId": "account-a", "investorProfile": {"private_marker": "profile-a"}},
+                              {"userId": "account-b", "investorProfile": {"private_marker": "profile-b"}}])
+    assert cycle["errors"] == []
+    assert all(result["status"] == "completed" for result in cycle["accounts"].values())
+    specialist_calls = {role: payload for role, payload in calls if role != "risk_manager"}
+    assert len(calls) == 5
+    analyst, chartist = specialist_calls["analyst"], specialist_calls["chartist"]
+    assert analyst["documents"] == []
+    assert len(analyst["events"]) == 1
+    event = analyst["events"][0]
+    assert event["source_ids"] == ["doc:000001"]
+    assert set(analyst["source_ids"]) == {event["event_id"], "doc:000001"}
+    assert len(specialist_calls["quant"]["disclosures"]) == 1
+    reaction = chartist["event_reactions"][0]
+    assert set(reaction["source_ids"]) == set(chartist["source_ids"])
+    assert event["event_id"] in chartist["source_ids"]
+    assert any(source.startswith("price:000001:") for source in chartist["source_ids"])
+    assert "not a causal" in reaction["interpretation"]
+    assert reaction["price_basis"] == "raw_only"
+    assert reaction["market_adjusted_return_pct"] is None
+    assert "corporate_action_adjustment_unverified" in reaction["data_gaps"]
+    assert reaction["horizons"]["3"]["status"] == "observed"
+    assert reaction["horizons"]["5"]["return_pct"] is None
+    assert reaction["horizons"]["5"]["status"] == "insufficient_post_event_bars"
+    assert reaction["post_event_bar_count"] == 3
+    assert all("account" not in payload and "investor_profile" not in payload for payload in specialist_calls.values())
+    assert all("account-a" not in json.dumps(payload) and "profile-b" not in json.dumps(payload)
+               for payload in specialist_calls.values())
+    risk_calls = {payload["account"]["userId"]: payload for role, payload in calls if role == "risk_manager"}
+    assert set(risk_calls) == {"account-a", "account-b"}
+    assert risk_calls["account-a"]["account"]["equity"] == 20000.0
+    assert risk_calls["account-b"]["account"]["equity"] == 50000.0
+    for user, risk in risk_calls.items():
+        assert risk["investor_profile"]["private_marker"] == "profile-" + user[-1]
+        candidate = risk["candidates"][0]
+        compact_reaction = candidate["event_reactions"][0]
+        assert compact_reaction["event_id"] == reaction["event_id"]
+        assert compact_reaction["source_ids"] == reaction["source_ids"]
+        assert compact_reaction["horizons"]["5"] == {"status": "insufficient_post_event_bars", "return_pct": None}
+        assert compact_reaction["latest_return_pct"] == reaction["latest_return_pct"]
+        assert compact_reaction["interpretation"] == reaction["interpretation"]
+        assert compact_reaction["price_basis"] == "raw_only"
+        assert compact_reaction["corporate_action_adjustment"] == "unverified"
+        assert compact_reaction["market_adjusted_return_pct"] is None
+        assert compact_reaction["data_gaps"] == reaction["data_gaps"]
+        assert set(compact_reaction["volume_reaction"]) == {"status", "ratio"}
+        assert not {"baseline_bar", "as_of_bar", "latest_post_event_bar", "post_event_bar_count"} & compact_reaction.keys()
+        assert all("bar" not in horizon for horizon in compact_reaction["horizons"].values())
+        assert "baseline_bar" in reaction and "bar" in reaction["horizons"]["3"]
+        assert candidate["events"][0]["event_id"] == event["event_id"]
+        assert "text" not in candidate["events"][0] and "sources" not in candidate["events"][0]
+        assert set(reaction["source_ids"]) <= set(candidate["source_ids"])
+        assert {citation["source_id"] for citation in candidate["specialists"]["chartist"]["citations"]} == set(chartist["source_ids"])
+
+
+@pytest.mark.parametrize("source_type", ["dart", "news"])
+def test_event_role_caches_ignore_clock_ticks_but_track_relevant_bar_and_document_changes(source_type):
+    data = EventData(source_type)
+    engine, calls = service(data)
+    first = engine.run_cycle([], as_of=NOW)
+    warm = engine.run_cycle([], as_of=NOW + timedelta(minutes=15))
+    assert first["errors"] == warm["errors"] == []
+    assert first["manifest"]["role_input_hashes"] == warm["manifest"]["role_input_hashes"]
+    assert len(calls) == 3
+    data.bars.append(data.bar(NOW.date(), 135.0))
+    after_bar = engine.run_cycle([], as_of=NOW + timedelta(hours=2))
+    first_hashes, bar_hashes = first["manifest"]["role_input_hashes"], after_bar["manifest"]["role_input_hashes"]
+    assert first_hashes["000001:analyst"] == bar_hashes["000001:analyst"]
+    assert first_hashes["000001:quant"] == bar_hashes["000001:quant"]
+    assert first_hashes["000001:chartist"] != bar_hashes["000001:chartist"]
+    assert [role for role, _ in calls].count("analyst") == 1
+    assert [role for role, _ in calls].count("quant") == 1
+    assert [role for role, _ in calls].count("chartist") == 2
+    chart_payloads = [payload for role, payload in calls if role == "chartist"]
+    assert chart_payloads[0]["event_reactions"][0]["post_event_bar_count"] == 3
+    assert chart_payloads[-1]["event_reactions"][0]["post_event_bar_count"] == 4
+    assert chart_payloads[-1]["event_reactions"][0]["latest_post_event_bar"]["close"] == 135.0
+    data.document_version = "v2"
+    after_event = engine.run_cycle([], as_of=NOW + timedelta(hours=2, minutes=15))
+    assert after_event["errors"] == []
+    assert [role for role, _ in calls].count("analyst") == 2
+    assert [role for role, _ in calls].count("quant") == (2 if source_type == "dart" else 1)
+    assert [role for role, _ in calls].count("chartist") == 3
+    final_chart = [payload for role, payload in calls if role == "chartist"][-1]
+    assert final_chart["event_reactions"][0]["event_id"] != chart_payloads[-1]["event_reactions"][0]["event_id"]
+
+
+@pytest.mark.parametrize("scope", ["document", "structured_fields"])
+def test_quant_disclosure_projection_bounds_text_and_preserves_distinct_provider_facts(scope):
+    class StructuredData(EventData):
+        def load_evidence(self, candidate, as_of):
+            from src.runner.event_evidence import build_event_evidence
+
+            evidence = super().load_evidence(candidate, as_of)
+            documents = []
+            for index in range(2):
+                receipt = f"2026090100000{index}"
+                text = "공시 원문에 실제로 기록된 내용. " * 150
+                documents.append({**evidence["documents"][0], "source_id": f"doc:{index}", "text": text,
+                    "source_text_hash": hashlib.sha256(text.encode()).hexdigest(), "original_characters": len(text),
+                    "text_scope": scope, "metadata": {"rcept_no": receipt, "structured_rcept_no": receipt,
+                        "structured_endpoint": "piicDecsn", "has_correction": True, "is_correction": False,
+                        "is_withdrawal": False, "structured_row": {"rcept_no": receipt,
+                            "nstk_ostk_cnt": str(10000 + index), "long_description": "RAW_PRIVATE_DETAIL_" * 1000}}})
+            evidence["documents"] = documents
+            evidence["events"] = build_event_evidence(documents, candidate["stock_code"])
+            return evidence
+
+    engine, calls = service(StructuredData())
+    result = engine.run_cycle([])
+    assert result["errors"] == []
+    quant = next(payload for role, payload in calls if role == "quant")
+    assert "RAW_PRIVATE_DETAIL_" not in json.dumps(quant)
+    assert set(quant["source_ids"]) == {"fin:000001", "doc:0", "doc:1"}
+    assert len(quant["disclosures"]) == 2
+    for index, row in enumerate(quant["disclosures"]):
+        assert "metadata" not in row and "structured_row" not in row
+        assert len(row["text"]) <= 1200 and row["text_truncated"] is True
+        assert bool(row["text"]) == (scope == "document")
+        assert row["text_scope"] == scope
+        assert row["has_correction"] is True and row["is_correction"] is False and row["is_withdrawal"] is False
+        assert row["source_text_hash"] and row["url"] and row["available_at"] and row["published_at"]
+        facts = row["structured_facts"]
+        assert len(facts) == 1 and facts[0]["source_id"] == f"doc:{index}"
+        assert facts[0]["fields"]["nstk_ostk_cnt"] == str(10000 + index)
+        assert facts[0]["omitted_fields_count"] == 1
+
+
+def test_legacy_quant_disclosure_projection_keeps_existing_text_without_requiring_events():
+    engine, calls = service(Data(1))
+    result = engine.run_cycle([])
+    assert result["errors"] == []
+    row = next(payload for role, payload in calls if role == "quant")["disclosures"][0]
+    assert row["source_id"] == "doc:000001"
+    assert row["text"] == "v1" and row["text_truncated"] is False
+    assert row["structured_facts"] == []
+
+
 def test_invalid_specialist_never_becomes_default_score_or_new_entry():
     engine, calls = service(invalid_role="analyst")
     cycle = engine.run_cycle([{"userId": "a"}])
@@ -354,7 +547,7 @@ def test_canonical_evidence_records_full_source_hash_and_explicit_truncation(tmp
     path = tmp_path / "canonical_index" / "a" / "corpus.jsonl"
     path.parent.mkdir(parents=True)
     body = "a" * length
-    document = {"text": body, "metadata": {"stock_code": "000001", "source_type": "dart", "doc_id": "doc-1",
+    document = {"text": body, "metadata": {"stock_code": "000001", "source_type": "dart", "doc_id": "doc-1", "title": "Quarterly report",
         "url": "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260904000001",
         "published_at": (NOW - timedelta(hours=1)).isoformat(), "collected_at": NOW.isoformat()}}
     path.write_text(json.dumps(document) + "\n", encoding="utf-8")
