@@ -30,7 +30,9 @@ class MultiThemeLeaderTradingRunner:
         config_path: str = "config/watchlist.yaml",
         data_dir: Optional[str] = None,
         theme_runner: Optional[ThemeLeaderTradingRunner] = None,
+        analysis_service: Any = None,
     ):
+        self._analysis_service = analysis_service
         self._data_dir = Path(data_dir) if data_dir else get_data_dir()
         self._theme_runner = theme_runner or ThemeLeaderTradingRunner(
             config_path=config_path,
@@ -58,6 +60,14 @@ class MultiThemeLeaderTradingRunner:
         investor_profile: Optional[Dict[str, Any]] = None,
         user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
+        if self._analysis_service is not None:
+            return self._analysis_service.run_all(
+                user_id=user_id, investor_profile=investor_profile,
+                include_theme_keys=include_theme_keys, exclude_theme_keys=exclude_theme_keys,
+                strategy_profile=strategy_profile, save_report=save_report,
+                min_leader_score=min_leader_score, min_confidence=min_confidence,
+                max_risk_level=max_risk_level,
+            )
         resolved_profile = self._normalize_strategy_profile(strategy_profile)
         themes = self._resolve_themes(include_theme_keys=include_theme_keys, exclude_theme_keys=exclude_theme_keys)
         resolved_portfolio_context = portfolio_context or self._build_portfolio_context()

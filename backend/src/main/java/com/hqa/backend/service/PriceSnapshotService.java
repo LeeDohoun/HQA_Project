@@ -47,6 +47,7 @@ public class PriceSnapshotService {
 
         User user = userOpt.get();
         UserSecret secret = user.getSecret();
+        if (secret != null && secret.isKisIsReal()) return failureRows(codes, "PAPER_ACCOUNT_REQUIRED");
         if (!hasKisSecret(secret)) {
             return failureRows(codes, "KIS_SECRET_MISSING");
         }
@@ -81,8 +82,9 @@ public class PriceSnapshotService {
         if (price == null || price <= 0) {
             return new PriceSnapshotResponse(stockCode, null, now, "kis", false, "CURRENT_PRICE_UNAVAILABLE");
         }
-        PriceSnapshotResponse response = new PriceSnapshotResponse(stockCode, price, now, "kis", true, null);
-        cache.put(cacheKey(userId, stockCode), new CachedSnapshot(response, now.plus(CACHE_TTL)));
+        OffsetDateTime capturedAt = OffsetDateTime.now();
+        PriceSnapshotResponse response = new PriceSnapshotResponse(stockCode, price, capturedAt, "kis", true, null);
+        cache.put(cacheKey(userId, stockCode), new CachedSnapshot(response, capturedAt.plus(CACHE_TTL)));
         return response;
     }
 

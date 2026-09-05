@@ -215,7 +215,7 @@ class IngestionService:
                 report.source_success["financials"] = False
                 report.failures["financials"] = "재무제표 없음"
                 return
-            collected_at = self._utc_timestamp()
+            collected_at = datetime.now(timezone.utc).isoformat()
             for snapshot in collected_snapshots:
                 snapshot.metadata = snapshot.metadata or {}
                 snapshot.metadata["theme_key"] = request.theme_key
@@ -449,7 +449,7 @@ class IngestionService:
         market_dir.mkdir(parents=True, exist_ok=True)
         output_path = market_dir / "financials.jsonl"
 
-        existing = []
+        existing = {}
         if output_path.exists():
             with output_path.open("r", encoding="utf-8") as f:
                 for line in f:
@@ -460,22 +460,24 @@ class IngestionService:
                         row = json.loads(line)
                     except json.JSONDecodeError:
                         continue
-                    if str(row.get("stock_code", "")) not in {item.stock_code for item in rows}:
-                        existing.append(row)
+                    existing[self._financial_snapshot_key(row)] = row
+
+        for row in rows:
+            payload = asdict(row)
+            existing.setdefault(self._financial_snapshot_key(payload), payload)
 
         with output_path.open("w", encoding="utf-8") as f:
-            for row in existing:
+            for row in existing.values():
                 f.write(json.dumps(row, ensure_ascii=False) + "\n")
-            for row in rows:
-                f.write(json.dumps(asdict(row), ensure_ascii=False) + "\n")
         return len(rows)
 
     @staticmethod
-    def _financial_snapshot_key(row: Dict) -> tuple[str, str, str]:
+    def _financial_snapshot_key(row: Dict) -> tuple[str, str, str, str]:
         return (
             str(row.get("stock_code", "")).strip(),
             str(row.get("fiscal_year", "")).strip(),
             str(row.get("report_code", "")).strip(),
+            str((row.get("metadata") or {}).get("version") or "legacy"),
         )
 
     @staticmethod

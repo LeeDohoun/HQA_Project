@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+import pytest
+
 from src.runner.analysis_scheduler import AnalysisScheduler, BackendAutoTradeTargetClient
 
 
@@ -154,3 +158,40 @@ def test_analysis_scheduler_runs_all_themes_when_theme_keys_are_empty():
     scheduler.run_once()
 
     assert runner_calls[0]["include_theme_keys"] is None
+
+
+@pytest.mark.parametrize("shared", [True, False])
+def test_empty_targets_skip_all_analysis_and_submission(shared):
+    def unexpected(*args, **kwargs):
+        pytest.fail("An empty scheduler cycle must not start paid work")
+
+    worker = SimpleNamespace(run_cycle=unexpected, run_all=unexpected)
+    scheduler = AnalysisScheduler(backend_client=SimpleNamespace(fetch_targets=lambda: []),
+                                  analysis_service=worker if shared else None,
+                                  runner=None if shared else worker, submitter=unexpected)
+    assert scheduler.run_once() == {
+        "status": "skipped", "reason": "no_auto_trade_targets", "no_paid_work": True,
+        "target_count": 0, "processed": 0, "submitted": 0, "failed": 0, "targets": []}
+
+
+@pytest.mark.parametrize("error", [ValueError("expired analysis"), TimeoutError("active plan request timed out")])
+def test_one_submission_failure_does_not_skip_other_accounts_or_retry(error):
+    attempted = []
+    targets = [{"userId": "user-1"}, {"userId": "user-2"}]
+    results = {row["userId"]: {"status": "completed", "selected_count": 1} for row in targets}
+
+    def submitter(*, user_id, result):
+        attempted.append(user_id)
+        if user_id == "user-1":
+            raise error
+        return {"submitted": 1}
+
+    scheduler = AnalysisScheduler(backend_client=SimpleNamespace(fetch_targets=lambda: targets),
+        analysis_service=SimpleNamespace(run_cycle=lambda _: {"accounts": results}), submitter=submitter)
+    report = scheduler.run_once()
+    assert attempted == ["user-1", "user-2"]
+    assert report["processed"] == 2
+    assert report["submitted"] == report["failed"] == 1
+    assert report["targets"][0]["error"] == f"{type(error).__name__}: {error}"
+    assert report["targets"][1]["submitted"] == 1
+    assert report["targets"][1]["error"] is None

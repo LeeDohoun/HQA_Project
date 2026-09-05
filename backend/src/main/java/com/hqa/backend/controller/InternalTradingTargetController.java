@@ -37,10 +37,7 @@ public class InternalTradingTargetController {
 
     private void requireInternalToken(String token) {
         String expected = properties.getInternalToken();
-        if (expected == null || expected.isBlank()) {
-            return;
-        }
-        if (!expected.equals(token)) {
+        if (expected == null || expected.isBlank() || !expected.equals(token)) {
             throw new ApiException(ErrorCode.UNAUTHORIZED, 401, "Invalid internal token", null);
         }
     }

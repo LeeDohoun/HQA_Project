@@ -187,6 +187,7 @@ def test_quant_agent_passes_missing_metric_warning_to_llm(monkeypatch):
                 )
             )
 
+    monkeypatch.setattr("src.agents.quant.get_quant_llm", FakeLLM)
     agent = QuantAgent()
     agent.analyzer = FakeAnalyzer()
     agent.llm = FakeLLM()
@@ -445,6 +446,7 @@ def test_quant_agent_passes_dart_and_krx_metrics_to_llm(monkeypatch):
                 )
             )
 
+    monkeypatch.setattr("src.agents.quant.get_quant_llm", FakeLLM)
     agent = QuantAgent()
     agent.analyzer = FakeAnalyzer()
     agent.llm = FakeLLM()

@@ -3,12 +3,11 @@ package com.hqa.backend.controller;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.hqa.backend.dto.AutoTradeToggleRequest;
-import com.hqa.backend.dto.ErrorCode;
 import com.hqa.backend.entity.User;
-import com.hqa.backend.exception.ApiException;
 import com.hqa.backend.service.AiServerClient;
 import com.hqa.backend.service.AuthService;
 import com.hqa.backend.service.AutoTradeService;
@@ -102,7 +101,7 @@ class TradingControllerTest {
     }
 
     @Test
-    void enablingAutoTradeStartsAiPaperLoopBeforePersistingUserToggle() {
+    void enablingAutoTradePersistsOnlyAuthenticatedUserForScheduler() {
         AiServerClient aiServerClient = mock(AiServerClient.class);
         AutoTradeService autoTradeService = mock(AutoTradeService.class);
         AuthService authService = mock(AuthService.class);
@@ -111,7 +110,6 @@ class TradingControllerTest {
         user.setUserId("user-1");
         when(authService.requireUser(session)).thenReturn(user);
         when(autoTradeService.setEnabled(user, true)).thenReturn(true);
-        when(aiServerClient.startPaperTradingLoop("user-1")).thenReturn(Map.of("status", "running"));
 
         TradingController controller = new TradingController(
                 aiServerClient,
@@ -126,12 +124,12 @@ class TradingControllerTest {
 
         controller.toggleAuto(request, session);
 
-        verify(aiServerClient).startPaperTradingLoop("user-1");
+        verifyNoInteractions(aiServerClient);
         verify(autoTradeService).setEnabled(user, true);
     }
 
     @Test
-    void disablingAutoTradeStopsAiPaperLoopBeforePersistingUserToggle() {
+    void disablingAutoTradeDoesNotStopOtherUsersOrCallDeletedLoop() {
         AiServerClient aiServerClient = mock(AiServerClient.class);
         AutoTradeService autoTradeService = mock(AutoTradeService.class);
         AuthService authService = mock(AuthService.class);
@@ -140,7 +138,6 @@ class TradingControllerTest {
         user.setUserId("user-1");
         when(authService.requireUser(session)).thenReturn(user);
         when(autoTradeService.setEnabled(user, false)).thenReturn(false);
-        when(aiServerClient.stopPaperTradingLoop()).thenReturn(Map.of("status", "stopped"));
 
         TradingController controller = new TradingController(
                 aiServerClient,
@@ -155,12 +152,12 @@ class TradingControllerTest {
 
         controller.toggleAuto(request, session);
 
-        verify(aiServerClient).stopPaperTradingLoop();
+        verifyNoInteractions(aiServerClient);
         verify(autoTradeService).setEnabled(user, false);
     }
 
     @Test
-    void enablingAutoTradeDoesNotPersistUserToggleWhenAiLoopStartFails() {
+    void enablingAutoTradePropagatesPaperAccountValidationFailure() {
         AiServerClient aiServerClient = mock(AiServerClient.class);
         AutoTradeService autoTradeService = mock(AutoTradeService.class);
         AuthService authService = mock(AuthService.class);
@@ -168,9 +165,7 @@ class TradingControllerTest {
         User user = new User();
         user.setUserId("user-1");
         when(authService.requireUser(session)).thenReturn(user);
-        when(aiServerClient.startPaperTradingLoop("user-1")).thenThrow(
-                new ApiException(ErrorCode.SERVICE_UNAVAILABLE, 503, "AI 서버에 연결할 수 없습니다", null)
-        );
+        when(autoTradeService.setEnabled(user, true)).thenThrow(new IllegalStateException("PAPER_ACCOUNT_REQUIRED"));
 
         TradingController controller = new TradingController(
                 aiServerClient,
@@ -183,8 +178,7 @@ class TradingControllerTest {
         AutoTradeToggleRequest request = new AutoTradeToggleRequest();
         request.setEnabled(true);
 
-        Assertions.assertThrows(ApiException.class, () -> controller.toggleAuto(request, session));
-
-        verify(autoTradeService, never()).setEnabled(user, true);
+        Assertions.assertThrows(IllegalStateException.class, () -> controller.toggleAuto(request, session));
+        verifyNoInteractions(aiServerClient);
     }
 }

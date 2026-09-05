@@ -802,12 +802,25 @@ class QuantitativeAnalyzer:
         snapshots.sort(
             key=lambda row: (
                 str(row.get("fiscal_year", "")),
+                str((row.get("metadata") or {}).get("collected_at", "")),
                 str(row.get("as_of", "")),
             ),
             reverse=True,
         )
         latest = snapshots[0]
-        annual_history = snapshots[:3]
+        # Archived corrections are versions of one year, not extra history years.
+        annual_history = []
+        seen_years = set()
+        for row in snapshots:
+            year = row.get("fiscal_year")
+            if year in seen_years or row.get("report_code") != latest.get("report_code"):
+                continue
+            if (row.get("metadata") or {}).get("fs_div") != (latest.get("metadata") or {}).get("fs_div"):
+                continue
+            annual_history.append(row)
+            seen_years.add(year)
+            if len(annual_history) == 3:
+                break
         trend_metrics = self._financial_trend_metrics(annual_history)
         return {
             "revenue": latest.get("revenue"),

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -105,6 +107,12 @@ class DartFinancialStatementCollector(BaseCollector):
         equity = account_values.get("equity")
         current_assets = account_values.get("current_assets")
         current_liabilities = account_values.get("current_liabilities")
+        receipts = sorted({str(row["rcept_no"]) for row in rows if row.get("rcept_no")})
+        divisions = sorted({str(row["fs_div"]) for row in rows if row.get("fs_div")})
+        currency = self._currency(rows)
+        version = hashlib.sha256(json.dumps({"accounts": account_values, "receipts": receipts,
+                                            "divisions": divisions, "currency": currency},
+                                           sort_keys=True, allow_nan=False).encode()).hexdigest()
 
         return FinancialSnapshot(
             source_type="financials",
@@ -128,10 +136,19 @@ class DartFinancialStatementCollector(BaseCollector):
             current_assets=current_assets,
             current_liabilities=current_liabilities,
             current_ratio=self._ratio(current_assets, current_liabilities),
-            currency=self._currency(rows),
+            currency=currency,
             as_of=self._as_of(rows),
             metadata={
                 "source": "dart",
+                "collected_at": datetime.now(timezone.utc).isoformat(),
+                "published_at": None,
+                "publication_precision": "unknown",
+                "rcept_no": receipts[0] if len(receipts) == 1 else None,
+                "source_url": f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={receipts[0]}" if len(receipts) == 1 else None,
+                "fs_div": divisions[0] if len(divisions) == 1 else None,
+                "amount_unit": currency,
+                "currency_verified": any(row.get("currency") for row in rows),
+                "version": version,
                 "report_code": self.ANNUAL_REPORT_CODE,
                 "quality_status": self._quality_status(account_values),
                 "missing_fields": ",".join(

@@ -6,6 +6,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -52,6 +53,15 @@ public class TradeSignal {
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
     private OffsetDateTime executedAt;
+    private Integer planVersion = 1;
+    private String accountMode = "PAPER";
+    private OffsetDateTime entryValidUntil;
+    private OffsetDateTime plannedExitAt;
+    private Integer managedQuantity = 0;
+    private String accountBinding;
+    private OffsetDateTime analysisAsOf;
+    @Version
+    private Long rowVersion;
 
     @PrePersist
     public void onCreate() {
@@ -115,4 +125,17 @@ public class TradeSignal {
     public OffsetDateTime getUpdatedAt() { return updatedAt; }
     public OffsetDateTime getExecutedAt() { return executedAt; }
     public void setExecutedAt(OffsetDateTime executedAt) { this.executedAt = executedAt; }
+    public Integer getPlanVersion() { return planVersion; }
+    public void setPlanVersion(Integer value) { this.planVersion = value; }
+    public String getAccountMode() { return accountMode; }
+    public OffsetDateTime getEntryValidUntil() { return entryValidUntil; }
+    public void setEntryValidUntil(OffsetDateTime value) { entryValidUntil = value; }
+    public OffsetDateTime getPlannedExitAt() { return plannedExitAt; }
+    public void setPlannedExitAt(OffsetDateTime value) { plannedExitAt = value; }
+    public Integer getManagedQuantity() { return managedQuantity; }
+    public void setManagedQuantity(Integer value) { managedQuantity = value; }
+    public String getAccountBinding() { return accountBinding; }
+    public void setAccountBinding(String value) { accountBinding = value; }
+    public OffsetDateTime getAnalysisAsOf() { return analysisAsOf; }
+    public void setAnalysisAsOf(OffsetDateTime value) { analysisAsOf = value; }
 }

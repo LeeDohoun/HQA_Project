@@ -20,7 +20,7 @@ public class TradingScheduler {
         this.tradeSignalService = tradeSignalService;
     }
 
-    @Scheduled(fixedRate = 900_000)
+    @Scheduled(fixedDelayString = "${hqa.paper-lifecycle-poll-ms:20000}")
     public void run() {
         try {
             tradeSignalService.processPendingSignals();
@@ -29,7 +29,7 @@ public class TradingScheduler {
         }
     }
 
-    @Scheduled(fixedRate = 60_000)
+    @Scheduled(fixedDelayString = "${hqa.paper-reconciliation-poll-ms:20000}")
     public void processSubmittedOrders() {
         try {
             tradeSignalService.processSubmittedOrderExpirations();

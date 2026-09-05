@@ -40,5 +40,7 @@ class InternalTradingTargetControllerTest {
 
         assertThatThrownBy(() -> controller.activeTargets("wrong"))
                 .isInstanceOf(ApiException.class);
+        properties.setInternalToken("");
+        assertThatThrownBy(() -> controller.activeTargets(null)).isInstanceOf(ApiException.class);
     }
 }

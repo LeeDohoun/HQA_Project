@@ -46,4 +46,14 @@ public class GlobalExceptionHandler {
                 "detail", ErrorResponse.of(ErrorCode.INTERNAL_ERROR, "Internal server error", exception.getMessage())
         ));
     }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidArgument(IllegalArgumentException exception) {
+        return ResponseEntity.badRequest().body(ErrorResponse.of(ErrorCode.INVALID_REQUEST, exception.getMessage(), null));
+    }
+
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidState(IllegalStateException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(ErrorResponse.of(ErrorCode.INVALID_REQUEST, exception.getMessage(), null));
+    }
 }

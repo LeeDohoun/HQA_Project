@@ -11,16 +11,18 @@ import asyncio
 import json
 import logging
 import os
+import secrets
 import sys
 import uuid
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 from contextvars import copy_context
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -47,6 +49,24 @@ logger = logging.getLogger(__name__)
 _results: OrderedDict[str, Dict[str, Any]] = OrderedDict()
 _MAX_CACHE = 500
 _runtime_tasks: OrderedDict[str, Dict[str, Any]] = OrderedDict()
+
+
+def _require_internal_runtime_token(x_hqa_internal_token: Optional[str] = Header(default=None)) -> None:
+    expected = os.getenv("HQA_INTERNAL_TOKEN")
+    if not expected:
+        raise HTTPException(status_code=503, detail="Internal runtime authentication is not configured")
+    if x_hqa_internal_token is None:
+        raise HTTPException(status_code=401, detail="Internal runtime token required")
+    if not secrets.compare_digest(x_hqa_internal_token, expected):
+        raise HTTPException(status_code=403, detail="Invalid internal runtime token")
+
+
+@lru_cache(maxsize=1)
+def _analysis_scheduler():
+    from src.runner.analysis_scheduler import AnalysisScheduler, BackendAutoTradeTargetClient
+    from src.runner.shared_analysis import get_runtime_analysis_service
+    return AnalysisScheduler(backend_client=BackendAutoTradeTargetClient(),
+                             analysis_service=get_runtime_analysis_service())
 
 
 def _runtime_port() -> int:
@@ -307,11 +327,13 @@ def _load_order_logs(date: Optional[str], limit: int) -> List[Dict[str, Any]]:
 
 def _run_multi_theme_trade(request: MultiThemeTradeRequest) -> Dict[str, Any]:
     from src.runner import MultiThemeLeaderTradingRunner
+    from src.runner.shared_analysis import get_runtime_analysis_service
     from src.runner.trade_signal_submitter import submit_trade_signals
 
     runner = MultiThemeLeaderTradingRunner(
         config_path=request.config_path,
         data_dir=request.data_dir,
+        analysis_service=get_runtime_analysis_service(request.config_path, request.data_dir),
     )
     result = runner.run_all(
         candidate_limit=max(1, int(request.candidate_limit)),
@@ -330,10 +352,17 @@ def _run_multi_theme_trade(request: MultiThemeTradeRequest) -> Dict[str, Any]:
         user_id=request.user_id,
     )
     if request.user_id:
-        result["signal_submission"] = submit_trade_signals(
-            user_id=request.user_id,
-            result=result,
-        )
+        if result.get("status") == "completed":
+            result["signal_submission"] = submit_trade_signals(
+                user_id=request.user_id,
+                result=result,
+            )
+        else:
+            result["signal_submission"] = {
+                "submitted": 0,
+                "failed": 1,
+                "error": result.get("error") or "analysis_not_completed",
+            }
     return result
 
 # ──────────────────────────────────────────────
@@ -498,12 +527,17 @@ async def list_trading_orders(
     }
 
 
-@app.post("/runtime/multi-theme-trade", status_code=202)
+@app.post("/runtime/multi-theme-trade", status_code=202, dependencies=[Depends(_require_internal_runtime_token)])
 async def runtime_multi_theme_trade(request: MultiThemeTradeRequest):
     return _submit_runtime_task("multi_theme_trade", lambda: _run_multi_theme_trade(request))
 
 
-@app.get("/runtime/tasks/{task_id}")
+@app.post("/internal/runtime/analysis-cycle", status_code=202, dependencies=[Depends(_require_internal_runtime_token)])
+async def internal_analysis_cycle():
+    return _submit_runtime_task("analysis_cycle", lambda: _analysis_scheduler().run_once())
+
+
+@app.get("/runtime/tasks/{task_id}", dependencies=[Depends(_require_internal_runtime_token)])
 async def runtime_task(task_id: str):
     task = _runtime_tasks.get(task_id)
     if task is None:
@@ -552,7 +586,7 @@ async def get_backtest_result(task_id: str):
     return await _get_stored_result(task_id)
 
 
-@app.post("/chat")
+@app.post("/chat", dependencies=[Depends(_require_internal_runtime_token)])
 async def chat(request: ChatRequest):
     """대화형 질문 (SupervisorAgent)"""
     loop = asyncio.get_event_loop()
@@ -575,7 +609,7 @@ async def chat(request: ChatRequest):
     return await loop.run_in_executor(None, _run)
 
 
-@app.post("/suggest")
+@app.post("/suggest", dependencies=[Depends(_require_internal_runtime_token)])
 async def suggest(request: SuggestRequest):
     """쿼리 제안 (Answerability Check)"""
     loop = asyncio.get_event_loop()

@@ -23,6 +23,11 @@ class FakeLLM:
         return SimpleNamespace(content=self.payload)
 
 
+@pytest.fixture(autouse=True)
+def offline_risk_factory(monkeypatch):
+    monkeypatch.setattr("src.agents.risk_manager.get_risk_manager_llm", lambda: FakeLLM("{}"))
+
+
 class StructuredRunner:
     def __init__(self, payload: dict):
         self.payload = payload

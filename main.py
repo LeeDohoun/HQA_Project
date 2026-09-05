@@ -21,6 +21,7 @@ HQA (Hegemony Quantitative Analyst) 메인 실행 파일
 """
 
 import argparse
+import json
 import sys
 from typing import Optional
 
@@ -376,7 +377,9 @@ def show_help():
 
 📌 필수 설정 (.env 파일):
 
-  GOOGLE_API_KEY=your_gemini_api_key     # 필수
+  OPENAI_API_KEY=your_openai_api_key     # AI 서버
+  AI_SERVER_URL=http://localhost:8001    # 공통 분석 서버
+  HQA_INTERNAL_TOKEN=your_internal_token # 서버와 동일한 내부 인증 토큰
   KIS_APP_KEY=your_kis_app_key           # 실시간 시세용
   KIS_APP_SECRET=your_kis_app_secret     # 실시간 시세용
   DART_API_KEY=your_dart_api_key         # 공시 조회용 (선택)
@@ -401,44 +404,22 @@ def run_theme_trading_mode(
     dry_run: bool = False,
 ):
     """테마 주도주를 발굴한 뒤 백엔드 TradeSignal 후보로 볼 수 있는 preview를 생성."""
-    from src.runner import ThemeLeaderTradingRunner
+    from src.runner.analysis_scheduler import RemoteAnalysisClient
 
     if execute:
         raise ValueError("Python direct order execution has been removed; use backend TradeSignal trigger flow")
 
-    runner = ThemeLeaderTradingRunner(
-        config_path=config_path,
-    )
-    result = runner.run_once(
-        theme=theme,
-        theme_key=theme_key,
-        candidate_limit=candidate_limit,
-        top_n=top_n,
-        execute_top_n=execute_top_n,
-        execute=execute,
-        min_leader_score=min_leader_score,
-        strategy_profile=strategy_profile,
-    )
+    result = RemoteAnalysisClient().submit("/runtime/multi-theme-trade", {
+        "config_path": config_path, "include_theme_keys": [theme_key or theme],
+        "candidate_limit": candidate_limit, "top_n": top_n,
+        "min_leader_score": min_leader_score, "strategy_profile": strategy_profile,
+    })
 
     mode_label = "실행" if execute else "미리보기"
     print("=" * 60)
     print(f"🏁 [Theme Leader Trading {mode_label}] {theme}")
     print("=" * 60)
-    print(f"   후보 평가: {result.get('evaluated_count', 0)}개")
-    print(f"   거래 대상: {result.get('selected_count', 0)}개")
-    print(f"   결과 요약: {result.get('summary', {})}")
-    if result.get("report_path"):
-        print(f"   리포트: {result['report_path']}")
-
-    for row in result.get("trade_results", []):
-        print(
-            f"   - #{row.get('rank')} {row.get('stock_name')}({row.get('stock_code')}): "
-            f"{row.get('status')} price={row.get('price')}"
-        )
-        detail = row.get("trade") or row.get("preview") or {}
-        reason = detail.get("reason") or row.get("reason")
-        if reason:
-            print(f"     reason: {reason}")
+    print(json.dumps(result, ensure_ascii=False, indent=2))
 
     return result
 
@@ -505,49 +486,23 @@ def run_multi_theme_trading_mode(
     dry_run: bool = False,
 ):
     """전체 테마 순회 후 통합 랭킹 기반으로 상위 TradeSignal 후보를 생성."""
-    from src.runner import MultiThemeLeaderTradingRunner
+    from src.runner.analysis_scheduler import RemoteAnalysisClient
 
     if execute:
         raise ValueError("Python direct order execution has been removed; use backend TradeSignal trigger flow")
 
-    runner = MultiThemeLeaderTradingRunner(
-        config_path=config_path,
-    )
-
-    result = runner.run_all(
-        candidate_limit=candidate_limit,
-        per_theme_top_n=per_theme_top_n,
-        top_n=top_n,
-        execute=execute,
-        min_leader_score=min_leader_score,
-        min_confidence=min_confidence,
-        max_risk_level=max_risk_level,
-        strategy_profile=strategy_profile,
-        buy_only=True,
-    )
+    result = RemoteAnalysisClient().submit("/runtime/multi-theme-trade", {
+        "config_path": config_path, "candidate_limit": candidate_limit,
+        "per_theme_top_n": per_theme_top_n, "top_n": top_n,
+        "min_leader_score": min_leader_score, "min_confidence": min_confidence,
+        "max_risk_level": max_risk_level, "strategy_profile": strategy_profile, "buy_only": True,
+    })
 
     mode_label = "신호 후보"
     print("=" * 60)
     print(f"🏁 [Multi Theme Leader Trading {mode_label}]")
     print("=" * 60)
-    print(f"   테마 수: {result.get('theme_count', 0)}")
-    print(f"   후보 리더 수: {result.get('leader_count', 0)}")
-    print(f"   최종 선별 수: {result.get('selected_count', 0)}")
-    print(f"   전략 프로필: {result.get('strategy_profile', strategy_profile)}")
-    print(f"   best_theme: {result.get('best_theme')}")
-    print(f"   결과 요약: {result.get('summary', {})}")
-    if result.get("report_path"):
-        print(f"   리포트: {result['report_path']}")
-
-    for row in result.get("trade_results", []):
-        print(
-            f"   - #{row.get('global_rank')} {row.get('stock_name')}({row.get('stock_code')}) "
-            f"[{row.get('theme_key')}] : {row.get('status')} price={row.get('price')}"
-        )
-        detail = row.get("trade") or row.get("preview") or {}
-        reason = detail.get("reason") or row.get("reason")
-        if reason:
-            print(f"     reason: {reason}")
+    print(json.dumps(result, ensure_ascii=False, indent=2))
 
     return result
 

@@ -317,18 +317,19 @@ npm run dev
 
 ### AI 서버
 
+운영 분석은 Luna 기반 공통 종목 분석과 계좌별 판단을 사용합니다. PAPER 설정, 실행 순서와 검증 한계는 [Luna PAPER 운영 문서](docs/luna-paper-runtime.md)를 참고하세요.
+
 ```env
-LLM_PROVIDER=ollama
+LLM_PROVIDER=openai
+OPENAI_API_KEY=
 HQA_DATA_DIR=./data
-OLLAMA_BASE_URL=http://localhost:11435
-OLLAMA_ANALYST_MODEL=gemma4:12b
-OLLAMA_SUMMARY_MODEL=gemma4:e4b
-OLLAMA_QUANT_MODEL=gemma4:12b
-OLLAMA_CHARTIST_MODEL=qwen3.5:9b
-OLLAMA_RISK_MANAGER_MODEL=gemma4:12b
+HQA_INTERNAL_TOKEN=
+BACKEND_INTERNAL_BASE_URL=http://localhost:8000
+HQA_LLM_MONTHLY_BUDGET_USD=100
+HQA_LLM_OPERATING_TARGET_USD=90
 ```
 
-Ollama 사용:
+Ollama는 `LLM_PROVIDER=ollama`를 명시한 개발 환경에서만 사용합니다. 자동 전환은 없습니다.
 
 ```bash
 OLLAMA_HOST=127.0.0.1:11435 ollama serve

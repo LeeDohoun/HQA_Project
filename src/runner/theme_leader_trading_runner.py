@@ -61,6 +61,11 @@ class ThemeLeaderTradingRunner:
         user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         orchestrator = self._get_orchestrator()
+        if hasattr(orchestrator, "run_cycle"):
+            return orchestrator.run(
+                theme=theme, theme_key=theme_key, user_id=user_id,
+                investor_profile=investor_profile, strategy_profile=strategy_profile,
+            )
         resolved_portfolio_context = portfolio_context or self.build_portfolio_context()
         theme_result = orchestrator.run(
             theme=theme,

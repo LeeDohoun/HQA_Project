@@ -2,6 +2,7 @@
 
 import os
 import logging
+import math
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any, Dict, Optional
@@ -18,8 +19,8 @@ logger = logging.getLogger(__name__)
 # Provider 설정
 # ==========================================
 
-DEFAULT_PROVIDER = "ollama"
-SUPPORTED_PROVIDERS = {"ollama", "mock"}
+DEFAULT_PROVIDER = "openai"
+SUPPORTED_PROVIDERS = {"openai", "ollama", "mock"}
 PROVIDER_ALIASES = {
     "test": "mock",
     "fake": "mock",
@@ -31,6 +32,35 @@ DEFAULT_OLLAMA_SUMMARY_MODEL = "gemma4:e4b"
 DEFAULT_OLLAMA_QUANT_MODEL = "gemma4:12b"
 DEFAULT_OLLAMA_CHARTIST_MODEL = "qwen3.5:9b"
 DEFAULT_OLLAMA_RISK_MANAGER_MODEL = "gemma4:12b"
+DEFAULT_OPENAI_MODEL = "gpt-5.6-luna"
+
+
+@dataclass(frozen=True)
+class RoleLimits:
+    reasoning_effort: str
+    input_tokens: int
+    output_tokens: int
+
+
+_ROLE_LIMITS = {
+    "analyst": RoleLimits("low", 12_000, 1_200),
+    "quant": RoleLimits("low", 12_000, 1_200),
+    "chartist": RoleLimits("low", 12_000, 1_200),
+    "risk_manager": RoleLimits("medium", 32_000, 12_000),
+    "summary": RoleLimits("none", 16_000, 800),
+    "instruct": RoleLimits("low", 12_000, 1_200),
+    "thinking": RoleLimits("medium", 32_000, 12_000),
+}
+
+
+def get_role_limits(role: str) -> RoleLimits:
+    defaults = _ROLE_LIMITS[role]
+    prefix = f"HQA_LLM_{role.upper()}"
+    inputs = int(os.getenv(f"{prefix}_MAX_INPUT_TOKENS", str(defaults.input_tokens)))
+    outputs = int(os.getenv(f"{prefix}_MAX_OUTPUT_TOKENS", str(defaults.output_tokens)))
+    if not 0 < inputs <= 1_000_000 or not 0 < outputs <= 128_000:
+        raise ValueError(f"Invalid {role} token limits")
+    return RoleLimits(defaults.reasoning_effort, inputs, outputs)
 
 
 def _env(name: str, default: str = "", *, allow_blank: bool = False) -> str:
@@ -69,17 +99,7 @@ class LLMConfig:
 
     @property
     def api_key_set(self) -> bool:
-        return False
-
-
-_WARNED_FALLBACKS: set[str] = set()
-
-
-def _warn_once(key: str, message: str, *args: Any) -> None:
-    if key in _WARNED_FALLBACKS:
-        return
-    _WARNED_FALLBACKS.add(key)
-    logger.warning(message, *args)
+        return bool(_env("OPENAI_API_KEY")) if self.provider == "openai" else False
 
 
 def get_llm_config() -> LLMConfig:
@@ -90,13 +110,9 @@ def get_llm_config() -> LLMConfig:
     fallback_reason = ""
 
     if requested_provider not in SUPPORTED_PROVIDERS:
-        provider = DEFAULT_PROVIDER
-        fallback_reason = f"unsupported_provider:{raw_provider}"
-        _warn_once(
-            fallback_reason,
-            "지원하지 않는 LLM_PROVIDER=%s 입니다. Ollama로 폴백합니다.",
-            raw_provider,
-        )
+        raise ValueError(f"Unsupported LLM_PROVIDER={raw_provider}; select openai, ollama, or mock explicitly")
+    if provider == "openai" and _env("OPENAI_MODEL", DEFAULT_OPENAI_MODEL) != DEFAULT_OPENAI_MODEL:
+        raise ValueError(f"All active HQA roles require OPENAI_MODEL={DEFAULT_OPENAI_MODEL}")
 
     return LLMConfig(
         raw_provider=raw_provider,
@@ -159,13 +175,13 @@ class TracingLLMProxy:
     def __init__(self, llm: Any):
         self._llm = llm
 
-    def invoke(self, prompt) -> Any:
-        response = run_with_llm_slot(lambda: self._llm.invoke(prompt))
+    def invoke(self, prompt, *args, **kwargs) -> Any:
+        response = run_with_llm_slot(lambda: self._llm.invoke(prompt, *args, **kwargs))
         add_token_usage_from_response(response)
         return response
 
-    async def ainvoke(self, prompt) -> Any:
-        response = await arun_with_llm_slot(lambda: self._llm.ainvoke(prompt))
+    async def ainvoke(self, prompt, *args, **kwargs) -> Any:
+        response = await arun_with_llm_slot(lambda: self._llm.ainvoke(prompt, *args, **kwargs))
         add_token_usage_from_response(response)
         return response
 
@@ -214,6 +230,25 @@ def _create_role_llm(role: str, model: str, temperature: float) -> Any:
     config = get_llm_config()
     if config.provider == "mock":
         return _with_tracing(MockChatModel(role))
+    if config.provider == "openai":
+        key = _env("OPENAI_API_KEY")
+        if not key:
+            raise ValueError("OPENAI_API_KEY is required to construct an HQA OpenAI agent")
+        from src.utils.luna_chat import LunaChatOpenAI
+
+        limits = get_role_limits(role)
+        timeout = float(os.getenv("HQA_LLM_TIMEOUT_SECONDS", "45"))
+        if not math.isfinite(timeout) or timeout <= 0:
+            raise ValueError("HQA_LLM_TIMEOUT_SECONDS must be positive and finite")
+        return LunaChatOpenAI(
+            model=DEFAULT_OPENAI_MODEL, api_key=key, base_url="https://api.openai.com/v1",
+            use_responses_api=True, use_previous_response_id=False,
+            reasoning={"effort": limits.reasoning_effort},
+            max_tokens=limits.output_tokens, timeout=timeout, max_retries=0,
+            service_tier="default", store=False, truncation="disabled",
+            streaming=False, disable_streaming=True, cache=False,
+            hqa_role=role, hqa_input_limit=limits.input_tokens, hqa_output_limit=limits.output_tokens,
+        )
     llm = _create_ollama_llm(
         model,
         temperature=temperature,
@@ -289,6 +324,16 @@ def get_llm_info() -> Dict[str, Any]:
     config = get_llm_config()
     provider = config.provider
     info: Dict[str, Any] = {"provider": provider}
+    if provider == "openai":
+        roles = ("analyst", "summary", "quant", "chartist", "risk_manager")
+        info.update({
+            "base_url": "https://api.openai.com/v1", "api_key_set": config.api_key_set,
+            "agent_models": {role: DEFAULT_OPENAI_MODEL for role in roles},
+            "reasoning_efforts": {role: get_role_limits(role).reasoning_effort for role in roles},
+            "role_token_limits": {role: {"input": get_role_limits(role).input_tokens,
+                                         "output_including_reasoning": get_role_limits(role).output_tokens} for role in roles},
+        })
+        return info
     if config.requested_provider != provider:
         info["requested_provider"] = config.requested_provider
     if config.raw_provider != config.requested_provider:

@@ -54,6 +54,11 @@ def test_dart_financial_statement_collector_builds_snapshot_from_major_accounts(
     assert snapshot.roa == 8.22
     assert snapshot.current_ratio == 200.0
     assert snapshot.metadata["quality_status"] == "complete"
+    assert snapshot.metadata["collected_at"]
+    assert snapshot.metadata["published_at"] is None
+    assert snapshot.metadata["fs_div"] == "CFS"
+    assert snapshot.metadata["currency_verified"] is True
+    assert snapshot.metadata["version"]
     assert session.requested[1]["params"]["corp_code"] == "00126380"
     assert session.requested[1]["params"]["reprt_code"] == "11011"
 

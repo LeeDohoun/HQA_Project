@@ -82,41 +82,13 @@ public class AiServerClient {
         return postForMap("/runtime/multi-theme-trade", payload, "AI 서버가 주도주 신호 생성을 처리하지 못했습니다");
     }
 
-    public Map<String, Object> startPaperTradingLoop(String userId) {
-        Map<String, Object> payload = Map.ofEntries(
-                Map.entry("user_id", userId),
-                Map.entry("candidate_limit", 5),
-                Map.entry("per_theme_top_n", 3),
-                Map.entry("top_n", 1),
-                Map.entry("execute", true),
-                Map.entry("preview", false),
-                Map.entry("paper", true),
-                Map.entry("dry_run", false),
-                Map.entry("dry_run_override", false),
-                Map.entry("trading_enabled_override", true),
-                Map.entry("account_type_override", "paper"),
-                Map.entry("buy_only", true),
-                Map.entry("config_path", "config/watchlist.yaml"),
-                Map.entry("save_report", true),
-                Map.entry("trade_interval_minutes", 30),
-                Map.entry("market_hours_only", true),
-                Map.entry("poll_seconds", 30)
-        );
-        return postForMapAllowConflict(
-                "/runtime/multi-theme-trade/loop/start",
-                payload,
-                "AI 서버가 자동매매 루프를 시작하지 못했습니다",
-                "running"
-        );
+    public Map<String, Object> getRuntimeTask(String taskId) {
+        if (taskId == null || !taskId.matches("[A-Za-z0-9_-]+")) {
+            throw new IllegalArgumentException("Invalid runtime task ID");
+        }
+        return getForMap("/runtime/tasks/" + taskId);
     }
 
-    public Map<String, Object> stopPaperTradingLoop() {
-        return postForMap(
-                "/runtime/multi-theme-trade/loop/stop",
-                Map.of(),
-                "AI 서버가 자동매매 루프를 중지하지 못했습니다"
-        );
-    }
 
     private Map<String, Object> postForMap(String path, Object payload, String failureMessage) {
         byte[] body = serialize(payload);
@@ -125,28 +97,14 @@ public class AiServerClient {
         return parseMap(response.body());
     }
 
-    private Map<String, Object> postForMapAllowConflict(
-            String path,
-            Object payload,
-            String failureMessage,
-            String conflictStatus
-    ) {
-        byte[] body = serialize(payload);
-        HttpResponse<String> response = send(buildPost(path, body));
-        if (response.statusCode() == 409) {
-            return Map.of("status", conflictStatus, "detail", response.body());
-        }
-        ensureSuccess(path, response, failureMessage);
-        return parseMap(response.body());
-    }
 
     private Map<String, Object> getForMap(String path) {
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(properties.getAiServerUrl() + path))
-                .timeout(TIMEOUT)
-                .header("Accept", "application/json")
-                .GET()
-                .build();
+        HttpRequest request = requestBuilder(path).GET().build();
+        if (privileged(path)) {
+            HttpResponse<String> response = send(request);
+            ensureSuccess(path, response, "AI runtime request failed");
+            return parseMap(response.body());
+        }
         try {
             HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() >= 200 && response.statusCode() < 300) {
@@ -162,13 +120,30 @@ public class AiServerClient {
     }
 
     private HttpRequest buildPost(String path, byte[] body) {
-        return HttpRequest.newBuilder()
-                .uri(URI.create(properties.getAiServerUrl() + path))
-                .timeout(TIMEOUT)
+        return requestBuilder(path)
                 .header("Content-Type", "application/json")
-                .header("Accept", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofByteArray(body))
                 .build();
+    }
+
+    private HttpRequest.Builder requestBuilder(String path) {
+        HttpRequest.Builder builder = HttpRequest.newBuilder()
+                .uri(URI.create(properties.getAiServerUrl() + path))
+                .timeout(TIMEOUT)
+                .header("Accept", "application/json");
+        if (privileged(path)) {
+            String token = properties.getInternalToken();
+            if (token == null || token.isBlank()) {
+                throw new ApiException(ErrorCode.SERVICE_UNAVAILABLE, 503, "AI runtime internal token is not configured", null);
+            }
+            builder.header("X-HQA-Internal-Token", token);
+        }
+        return builder;
+    }
+
+    private static boolean privileged(String path) {
+        return path.startsWith("/runtime/") || path.startsWith("/internal/runtime/")
+                || path.equals("/chat") || path.equals("/suggest");
     }
 
     private HttpResponse<String> send(HttpRequest request) {

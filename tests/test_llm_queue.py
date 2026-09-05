@@ -5,6 +5,9 @@ import threading
 import time
 from pathlib import Path
 
+import asyncio
+import pytest
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -78,3 +81,52 @@ def test_llm_queue_prefers_runtime_priority_when_waiting():
     high.join()
 
     assert order == ["low-long", "runtime-waiting", "low-waiting"]
+
+
+@pytest.mark.parametrize("kwargs,tokens", [({"requests_per_minute": 1}, 0), ({"tokens_per_minute": 100}, 60)])
+def test_queue_enforces_request_and_token_windows(kwargs, tokens):
+    from src.utils.llm_queue import LLMInvocationQueue
+
+    queue = LLMInvocationQueue(window_seconds=0.06, max_wait_seconds=1, **kwargs)
+    times = [queue.run(time.monotonic, tokens=tokens), queue.run(time.monotonic, tokens=tokens)]
+    assert times[1] - times[0] >= 0.05
+
+
+def test_queue_times_out_without_running_or_leaking_waiter():
+    from src.utils.llm_queue import LLMInvocationQueue, LLMQueueTimeout
+
+    queue = LLMInvocationQueue(requests_per_minute=1, max_wait_seconds=0.01)
+    queue.run(lambda: None)
+    with pytest.raises(LLMQueueTimeout):
+        queue.run(lambda: pytest.fail("must not run before admission"))
+    assert queue._waiting == []
+    assert queue._active == 0
+
+
+def test_cancellation_while_waiting_does_not_leak_concurrency_slot():
+    from src.utils.llm_queue import LLMInvocationQueue
+
+    async def scenario():
+        queue = LLMInvocationQueue(max_concurrency=1)
+        release = asyncio.Event()
+        started = asyncio.Event()
+
+        async def first():
+            started.set()
+            await release.wait()
+
+        running = asyncio.create_task(queue.arun(first))
+        await started.wait()
+        waiting = asyncio.create_task(queue.arun(first))
+        await asyncio.sleep(0.02)
+        waiting.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await waiting
+        release.set()
+        await running
+        await asyncio.sleep(0.02)
+        assert queue._active == 0
+        assert queue._waiting == []
+        assert await queue.arun(lambda: asyncio.sleep(0, result="ok")) == "ok"
+
+    asyncio.run(scenario())

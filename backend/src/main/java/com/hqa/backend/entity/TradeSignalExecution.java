@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -36,6 +37,16 @@ public class TradeSignalExecution {
     private OffsetDateTime filledAt;
     private OffsetDateTime orderExpiresAt;
     private OffsetDateTime executedAt;
+    @Column(unique = true)
+    private String triggerKey;
+    private String triggerType;
+    private String orderSide;
+    private String stockCode;
+    private String orderOrganization;
+    private Long reservedCash = 0L;
+    private String accountBinding;
+    @Version
+    private Long rowVersion;
 
     @PrePersist
     public void onCreate() {
@@ -79,4 +90,18 @@ public class TradeSignalExecution {
     public OffsetDateTime getOrderExpiresAt() { return orderExpiresAt; }
     public void setOrderExpiresAt(OffsetDateTime orderExpiresAt) { this.orderExpiresAt = orderExpiresAt; }
     public OffsetDateTime getExecutedAt() { return executedAt; }
+    public String getTriggerKey() { return triggerKey; }
+    public void setTriggerKey(String value) { triggerKey = value; }
+    public String getTriggerType() { return triggerType; }
+    public void setTriggerType(String value) { triggerType = value; }
+    public String getOrderSide() { return orderSide; }
+    public void setOrderSide(String value) { orderSide = value; }
+    public String getStockCode() { return stockCode; }
+    public void setStockCode(String value) { stockCode = value; }
+    public String getOrderOrganization() { return orderOrganization; }
+    public void setOrderOrganization(String value) { orderOrganization = value; }
+    public Long getReservedCash() { return reservedCash; }
+    public void setReservedCash(Long value) { reservedCash = value; }
+    public String getAccountBinding() { return accountBinding; }
+    public void setAccountBinding(String value) { accountBinding = value; }
 }

@@ -60,4 +60,4 @@ EXPOSE 8001
 CMD ["uvicorn", "ai_server.app:app", \
      "--host", "0.0.0.0", \
      "--port", "8001", \
-     "--workers", "2"]
+     "--workers", "1"]
