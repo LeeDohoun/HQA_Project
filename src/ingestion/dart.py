@@ -55,6 +55,7 @@ class DartDisclosureCollector(BaseCollector):
     # report_nm 정규화 후 매핑: endpoint 이름은 OpenDART 가이드 기준 사용
     STRUCTURED_ENDPOINT_MAP = [
         ("유상증자결정", ["piicDecsn"]),
+        ("무상증자결정", ["fricDecsn"]),
         ("자기주식취득결정", ["tsstkAqDecsn"]),
         ("유형자산취득결정", ["tgastInhDecsn"]),
         ("유형자산양도결정", ["tgastTrfDecsn"]),
@@ -75,6 +76,9 @@ class DartDisclosureCollector(BaseCollector):
         "유상증자결정",
         "자기주식취득결정",
         "무상증자결정",
+        "주식분할결정",
+        "주식병합결정",
+        "배당결정",
         "전환사채",
         "신주인수권부사채",
         "교환사채",

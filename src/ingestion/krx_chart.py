@@ -44,10 +44,10 @@ class KrxChartCollector:
         return records
 
     def _find_stock_row(self, stock_code: str, bas_dd: str) -> Dict[str, Any]:
-        for url in (self.KOSPI_DAILY_URL, self.KOSDAQ_DAILY_URL):
+        for market, url in (("KOSPI", self.KOSPI_DAILY_URL), ("KOSDAQ", self.KOSDAQ_DAILY_URL)):
             for row in self._fetch_market_rows(url, bas_dd):
                 if str(row.get("ISU_CD", "")).strip() == stock_code:
-                    return row
+                    return {**row, "_source_market": market, "_source_url": url}
         return {}
 
     def _fetch_market_rows(self, url: str, bas_dd: str) -> List[Dict[str, Any]]:
@@ -80,7 +80,9 @@ class KrxChartCollector:
             low=self._clean_number(row.get("TDD_LWPRC")),
             close=self._clean_number(row.get("TDD_CLSPRC")),
             volume=self._clean_number(row.get("ACC_TRDVOL")),
-            metadata={"source": "krx", "raw_date": bas_dd},
+            metadata={"source": "krx", "raw_date": bas_dd, "price_basis": "unadjusted",
+                      **({"market": row["_source_market"], "source_url": row["_source_url"]}
+                         if "_source_market" in row else {})},
         )
 
     @staticmethod

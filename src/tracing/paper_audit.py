@@ -29,7 +29,8 @@ class PaperAudit:
             db.close()
 
     def append(self, kind: str, payload: dict) -> int:
-        if kind not in {"analysis", "monitor", "llm_request", "llm_response", "llm_failure"}:
+        if kind not in {"analysis", "monitor", "llm_request", "llm_response", "llm_failure",
+                        "benchmark_context", "corporate_action_context"}:
             raise ValueError("Unknown PAPER audit event kind")
         body = json.dumps(payload, ensure_ascii=False, sort_keys=True, allow_nan=False)
         with self._connect() as db:

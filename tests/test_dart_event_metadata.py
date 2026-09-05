@@ -41,6 +41,8 @@ def collect_one(collector, rows, title="주요사항보고서(유상증자결정
 @pytest.mark.parametrize(("title", "endpoint"), [
     ("주요사항보고서(유상증자결정)", "piicDecsn"),
     ("[기재정정] 주요사항보고서 (유상증자 결정)", "piicDecsn"),
+    ("주요사항보고서(무상증자결정)", "fricDecsn"),
+    ("[기재정정] 주요사항보고서 (무상증자 결정)", "fricDecsn"),
     ("주요사항보고서(자기주식 취득 결정)", "tsstkAqDecsn"),
     ("자기주식 취득 결정", "tsstkAqDecsn"),
     ("주요사항보고서(전환사채권발행결정)", "cvbdIsDecsn"),
@@ -48,6 +50,23 @@ def collect_one(collector, rows, title="주요사항보고서(유상증자결정
 def test_parenthesized_event_type_routes_to_verified_endpoint(collector, title, endpoint):
     assert collector._is_important_report(title)
     assert collector._match_structured_endpoints(title) == [endpoint]
+
+
+@pytest.mark.parametrize("title", ["주식분할 결정", "주식병합결정", "현금ㆍ현물배당결정"])
+def test_price_basis_review_disclosures_do_not_get_guessed_endpoints(collector, title):
+    assert collector._is_important_report(title)
+    assert collector._match_structured_endpoints(title) == []
+
+
+def test_bonus_issue_dates_retain_official_field_names_and_receipt(collector):
+    row = {"rcept_no": RECEIPT, "nstk_asstd": "2026년 09월 15일", "nstk_lstprd": "2026-09-30",
+           "nstk_dividrk": "2026-01-01", "bddd": "2026-09-04"}
+    doc = collect_one(collector, [row], "주요사항보고서(무상증자결정)")
+    assert doc.metadata["structured_endpoint"] == "fricDecsn"
+    assert doc.metadata["structured_row"] == row
+    assert doc.metadata["evidence_scope"] == "structured_fields"
+    assert doc.content == DartDisclosureCollector.structured_fields_content(doc.title, doc.metadata)
+    assert "ex_date" not in doc.metadata
 
 
 def test_exact_provider_row_survives_excerpt_limit_without_request_secrets(collector, capsys):

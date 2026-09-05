@@ -279,13 +279,14 @@ def test_event_packets_reactions_and_citations_reach_roles_without_account_leaka
     assert set(analyst["source_ids"]) == {event["event_id"], "doc:000001"}
     assert len(specialist_calls["quant"]["disclosures"]) == 1
     reaction = chartist["event_reactions"][0]
-    assert set(reaction["source_ids"]) == set(chartist["source_ids"])
+    assert "source_ids" not in reaction
+    assert reaction["benchmark_comparison"]["source_id"] in chartist["source_ids"]
     assert event["event_id"] in chartist["source_ids"]
-    assert any(source.startswith("price:000001:") for source in chartist["source_ids"])
-    assert "not a causal" in reaction["interpretation"]
-    assert reaction["price_basis"] == "raw_only"
-    assert reaction["market_adjusted_return_pct"] is None
-    assert "corporate_action_adjustment_unverified" in reaction["data_gaps"]
+    price_source = next(source for source in chartist["source_ids"] if source.startswith("price:000001:"))
+    assert "not causation" in chartist["reaction_contract"]["interpretation"]
+    assert chartist["reaction_contract"]["stock_price_basis"] == "raw_only"
+    assert "market_adjusted_return_pct" not in reaction
+    assert "corporate_action_adjustment_unverified" in chartist["reaction_contract"]["data_gaps"]
     assert reaction["horizons"]["3"]["status"] == "observed"
     assert reaction["horizons"]["5"]["return_pct"] is None
     assert reaction["horizons"]["5"]["status"] == "insufficient_post_event_bars"
@@ -302,22 +303,25 @@ def test_event_packets_reactions_and_citations_reach_roles_without_account_leaka
         candidate = risk["candidates"][0]
         compact_reaction = candidate["event_reactions"][0]
         assert compact_reaction["event_id"] == reaction["event_id"]
-        assert compact_reaction["source_ids"] == reaction["source_ids"]
+        assert "source_ids" not in compact_reaction
+        assert {event["event_id"], price_source} <= set(candidate["source_ids"])
         assert compact_reaction["horizons"]["5"] == {"status": "insufficient_post_event_bars", "return_pct": None}
-        assert compact_reaction["latest_return_pct"] == reaction["latest_return_pct"]
-        assert compact_reaction["interpretation"] == reaction["interpretation"]
-        assert compact_reaction["price_basis"] == "raw_only"
-        assert compact_reaction["corporate_action_adjustment"] == "unverified"
-        assert compact_reaction["market_adjusted_return_pct"] is None
+        assert compact_reaction["latest_return_pct"] == round(reaction["latest_return_pct"], 4)
+        assert risk["reaction_contract"] == chartist["reaction_contract"]
+        assert risk["reaction_contract"]["stock_price_basis"] == "raw_only"
+        assert risk["reaction_contract"]["corporate_action_adjustment"] == "unverified"
+        assert not {"interpretation", "price_basis", "corporate_action_adjustment", "market_adjusted_return_pct"} & compact_reaction.keys()
         assert compact_reaction["data_gaps"] == reaction["data_gaps"]
         assert set(compact_reaction["volume_reaction"]) == {"status", "ratio"}
         assert not {"baseline_bar", "as_of_bar", "latest_post_event_bar", "post_event_bar_count"} & compact_reaction.keys()
         assert all("bar" not in horizon for horizon in compact_reaction["horizons"].values())
-        assert "baseline_bar" in reaction and "bar" in reaction["horizons"]["3"]
-        assert candidate["events"][0]["event_id"] == event["event_id"]
-        assert "text" not in candidate["events"][0] and "sources" not in candidate["events"][0]
-        assert set(reaction["source_ids"]) <= set(candidate["source_ids"])
-        assert {citation["source_id"] for citation in candidate["specialists"]["chartist"]["citations"]} == set(chartist["source_ids"])
+        assert "baseline_bar" in reaction and "bar" not in reaction["horizons"]["3"]
+        assert "events" not in candidate
+        assert compact_reaction["title"] == event["title"]
+        assert compact_reaction["event_type"] == event["event_type"]
+        assert "text" not in compact_reaction and "sources" not in compact_reaction
+        assert {citation["source_id"] for citation in candidate["specialists"]["chartist"]["citations"]} == {
+            event["event_id"], price_source}
 
 
 @pytest.mark.parametrize("source_type", ["dart", "news"])

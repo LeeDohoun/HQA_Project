@@ -65,6 +65,14 @@ def price_features(rows: list[dict], as_of: datetime) -> tuple[dict, list[dict]]
         if at > as_of:
             continue
         normalized = {"available_at": at.isoformat()}
+        meta = row.get("metadata") or {}
+        if meta.get("source") == "krx" and meta.get("market") in {"KOSPI", "KOSDAQ"}:
+            from src.ingestion.krx_chart import KrxChartCollector
+            endpoint = (KrxChartCollector.KOSPI_DAILY_URL if meta["market"] == "KOSPI"
+                        else KrxChartCollector.KOSDAQ_DAILY_URL)
+            if meta.get("source_url") != endpoint or meta.get("price_basis") != "unadjusted":
+                raise ValueError("unverified KRX price market/basis provenance")
+            normalized.update(market=meta["market"], price_basis="unadjusted", source="krx", source_url=endpoint)
         for field in ("open", "high", "low", "close", "volume"):
             value = row.get(field)
             if value is None:
@@ -76,8 +84,12 @@ def price_features(rows: list[dict], as_of: datetime) -> tuple[dict, list[dict]]
         if not normalized["low"] <= min(normalized["open"], normalized["close"]) <= max(normalized["open"], normalized["close"]) <= normalized["high"]:
             raise ValueError("inconsistent OHLC values")
         key = at.isoformat()
-        if key in by_date and by_date[key] != normalized:
-            raise ValueError("conflicting OHLCV rows for the same stock/date")
+        if key in by_date:
+            previous = by_date[key]
+            if (any(previous[field] != normalized[field] for field in ("open", "high", "low", "close", "volume"))
+                    or (previous.get("market") and normalized.get("market") and previous["market"] != normalized["market"])):
+                raise ValueError("conflicting OHLCV rows for the same stock/date")
+            normalized = {**previous, **normalized}
         by_date[key] = normalized
     known = [by_date[key] for key in sorted(by_date)][-300:]
     if len(known) < 150:
@@ -189,7 +201,12 @@ class LocalAnalysisData:
         values = {name: float(calculated[name]) if math.isfinite(calculated[name]) else None for name in fields}
         return {"indicators": values, "data_gaps": [f"undefined_indicator:{name}" for name, value in values.items() if value is None]}
 
+    def load_market_context(self, candidate: dict, as_of: datetime) -> dict:
+        from src.runner.market_context_data import load_benchmark_context
+        return load_benchmark_context(self.data_dir, candidate, as_of)
+
     def load_evidence(self, candidate: dict, as_of: datetime) -> dict:
+        from src.runner.corporate_actions import build_corporate_action_context, corporate_action_type
         from src.runner.event_evidence import build_event_evidence, select_event_evidence
         from src.runner.financial_snapshot import load_financial_snapshot
         documents, errors = {}, []
@@ -213,15 +230,16 @@ class LocalAnalysisData:
                     available = max(published, observed)
                     if available > as_of:
                         continue
-                    # Current/news evidence is deliberately bounded; DART can be annual.
-                    if as_of - published > timedelta(days=400 if kind == "dart" else 7):
+                    title = str(row.get("title") or meta.get("title") or "")
+                    # Attention age does not resolve an outstanding corporate action.
+                    if (as_of - published > timedelta(days=400 if kind == "dart" else 7)
+                            and not (kind == "dart" and corporate_action_type(title))):
                         continue
                     url = row.get("url") or meta.get("url")
                     full_body = row.get("content") or meta.get("content")
                     body = full_body or row.get("text")
                     if not url or not body:
                         raise ValueError("evidence requires URL and content")
-                    title = str(row.get("title") or meta.get("title") or "")
                     if kind == "dart" and meta.get("evidence_scope") == "structured_fields":
                         from src.ingestion.dart import DartDisclosureCollector
                         verified = DartDisclosureCollector.structured_fields_content(title, meta)
@@ -296,13 +314,14 @@ class LocalAnalysisData:
                 raise ValueError("conflicting evidence revisions at the same availability time")
         for document in latest.values():
             document.pop("_content_version")
+        corporate_actions = build_corporate_action_context(list(latest.values()), as_of)
         events = select_event_evidence(build_event_evidence(list(latest.values()), candidate["stock_code"]), as_of=as_of)
         selected_ids = {source_id for event in events for source_id in event["source_ids"]}
         selected = [doc for doc in latest.values() if doc["source_id"] in selected_ids]
         financial = load_financial_snapshot(self.data_dir, candidate["stock_code"], as_of)
         if not selected and financial["status"] != "ready":
             raise ValueError("no_dated_dart_or_news_evidence:" + ";".join(errors[:3]))
-        return {"documents": selected, "events": events, "data_gaps": errors,
+        return {"documents": selected, "events": events, "corporate_actions": corporate_actions, "data_gaps": errors,
                 "financial_snapshot": financial}
 
 

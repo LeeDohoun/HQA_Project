@@ -1,7 +1,7 @@
 # Event Evidence and Observed Price Response
 
 This extends the Luna PAPER runtime with deterministic event preparation. It adds
-no model calls, paid source, broker operation, sentiment score or automatic buy
+no model calls, broker operation, sentiment score or automatic buy
 rule. Company analysis remains shared; account-specific decisions remain private.
 
 ## Data Path
@@ -14,6 +14,13 @@ Existing DART/news collectors
   -> bounded event packets
   -> Analyst: events / Quant: financial facts / Chartist: observed reactions
   -> account-specific RiskManager
+
+Standalone KRX index collection + explicit benchmark mappings
+  -> market/sector comparisons on the same stock observation dates
+
+All eligible latest-known DART documents, before event attention caps
+  -> disclosed corporate-action dates and price-basis review
+  -> Chartist context and deterministic new-entry guard
 ```
 
 The existing price-only candidate selection is unchanged. This work improves the
@@ -33,7 +40,9 @@ evidence supplied for selected candidates and holdings, not the ranking weights.
   event and four source references. Omitted references and excerpt truncation are
   explicit. Recent availability within 30 days precedes risk flags and materiality;
   older evidence can fill remaining slots. This is not an obligation expiry rule.
-- Existing source-age gates remain: 400 days for DART, seven days for news. Source
+- Source-age gates remain 400 days for ordinary DART evidence and seven days for
+  news. Recognized corporate-action disclosures are retained beyond that age so
+  unresolved risks and future disclosed action dates are not silently expired. Source
   URL, publication precision, availability, content hash and revision-bound source
   IDs remain attached. A corpus chunk is not counted as a separate event.
 - The DART collector preserves receipt-matched structured provider fields, including
@@ -69,19 +78,36 @@ are excluded from both sides. Future bars cannot influence the result.
 Insufficient bars, missing baseline or zero mean volume produce `null` values with
 explicit status/gaps, not zero returns. Horizons count supplied bars; there is no
 exchange-calendar completeness guarantee. These are raw, unadjusted associations,
-not causal effects or market/sector excess returns. Corporate-action adjustment,
-intraday reaction and consensus-surprise estimation are not implemented.
+not causal effects. When dated benchmark observations and an applicable mapping
+exist, the runtime also computes market/sector price-index return differences in
+percentage points over the exact same stock baseline and endpoint dates. Missing
+dates remain unavailable; there is no nearest-date substitution.
+
+Disclosed corporate-action context is evaluated before the eight-event attention
+cap. Known bonus issues, stock splits or reverse splits affecting the observed
+price window can require price-basis review and block new BUY plans. This guard
+does not disable existing holding protection or authorize an automatic sale.
+Absence of a detected event does not certify adjusted prices or complete coverage.
+Price adjustment factors, inferred ex-dates, intraday reaction and consensus-surprise
+estimation remain unimplemented. See [Market Context Data](market-context-data.md)
+for collection, storage, mapping requirements and the exact first-stage limits.
 
 ## Cost and Refresh
 
 Event grouping and reaction calculations use code, not an additional extraction LLM.
 The Analyst gets one excerpt per event instead of repeated corpus chunks. Quant gets
 bounded disclosure facts instead of the entire structured provider response. Risk
-gets compact event/reaction context, not another copy of full document/bar inputs.
+gets at most three risk-prioritized event/reaction details, an omitted-event count
+and the union of event risk flags, not another copy of full document/bar inputs.
+Chartist retains all eight selected events and 1/3/5/latest index comparisons;
+Risk uses the latest index comparison with omitted horizon labels. Price-basis
+guards still use the full eligible corporate-action context before these limits.
 
 Unchanged events and financial inputs reuse specialist results across users and
 15-minute cycles. A newly completed price bar refreshes Chartist without rerunning
-Analyst/Quant. A changed event refreshes its affected role inputs. Role input-token
+Analyst/Quant. A changed event refreshes its affected role inputs. Benchmark revision
+and mapping provenance also participate in Chartist inputs; advancing the clock
+alone does not create a new benchmark observation. Role input-token
 limits still include prompts and schemas and are enforced by the existing provider
 token counter; character limits do not guarantee that every packet fits. Rejection
 is explicit. No live API cost/latency improvement is claimed by offline tests.

@@ -11,6 +11,7 @@ from src.ingestion.dart import DartDisclosureCollector
 from src.ingestion.services import IngestionService
 from src.ingestion.types import DocumentRecord
 from src.runner.analysis_data import LocalAnalysisData
+from src.runner.corporate_actions import assess_price_basis
 
 NOW = datetime(2026, 9, 4, 8, tzinfo=timezone.utc)
 CANDIDATE = {"stock_code": "005930", "theme_keys": ["semiconductor"]}
@@ -54,6 +55,82 @@ def test_many_chunks_form_one_full_document_without_using_up_event_slots(tmp_pat
     assert result["original_characters"] == len(long.content)
     assert result["text_scope"] == "document"
     assert result["truncated"] is True
+
+
+def test_corporate_action_guard_uses_documents_beyond_eight_event_limit(tmp_path):
+    documents = [document(f"2026090200000{index}", title="\ubb34\uc0c1\uc99d\uc790\uacb0\uc815",
+                          body=f"Distinct disclosed bonus issue terms {index}",
+                          available=NOW - timedelta(hours=12 - index),
+                          metadata={"rcept_no": f"2026090200000{index}"}) for index in range(9)]
+    write_corpus(tmp_path, documents)
+    evidence = LocalAnalysisData(data_dir=str(tmp_path)).load_evidence(CANDIDATE, NOW)
+    assert len(evidence["events"]) == 8
+    selected = {source for event in evidence["events"] for source in event["source_ids"]}
+    risks = evidence["corporate_actions"]["risks"]
+    guarded = {source for risk in risks if risk["code"] == "price_basis_review" for source in risk["source_ids"]}
+    assert len(guarded) == 9
+    assert guarded - selected
+
+
+@pytest.mark.parametrize("flag,risk_code", [("is_correction", "unlinked_correction"),
+    ("has_correction", "subsequent_correction_unresolved"), ("is_withdrawal", "unlinked_withdrawal")])
+def test_aged_unresolved_corporate_action_survives_actual_loader_and_attention_cap(tmp_path, flag, risk_code):
+    receipt = "20250701000001"
+    old = document(receipt, title="\uc8fc\uc694\uc0ac\ud56d\ubcf4\uace0\uc11c(\ubb34\uc0c1\uc99d\uc790 \uacb0\uc815)",
+                   available=NOW - timedelta(days=420), body="Verified historical corporate action. " * 10,
+                   metadata={"rcept_no": receipt, flag: True,
+                       "structured_endpoint": "fricDecsn", "structured_rcept_no": receipt,
+                       "structured_body_error_type": "success",
+                       "structured_row": {"rcept_no": receipt, "nstk_asstd": "2026-09-03"}})
+    old.published_at = (NOW - timedelta(days=430)).isoformat()
+    recent = []
+    for index in range(9):
+        new_receipt = f"2026090200000{index}"
+        recent.append(document(new_receipt, title="\ubb34\uc0c1\uc99d\uc790\uacb0\uc815",
+            body=f"Distinct future bonus issue plan {index}. " * 10,
+            metadata={"rcept_no": new_receipt, "structured_rcept_no": new_receipt,
+                      "structured_endpoint": "fricDecsn", "structured_body_error_type": "success",
+                      "structured_row": {"rcept_no": new_receipt, "nstk_asstd": "2026-09-15"}}))
+    write_corpus(tmp_path, [old, *recent])
+    evidence = LocalAnalysisData(data_dir=str(tmp_path)).load_evidence(CANDIDATE, NOW)
+    context = evidence["corporate_actions"]
+    risk = next(row for row in context["risks"] if row["code"] == risk_code)
+    assert risk["sources"][0]["rcept_no"] == receipt
+    assert risk["available_at"] == old.metadata["collected_at"]
+    assert context["upcoming_events"] == []
+    assert len(evidence["events"]) == 8
+    selected_ids = {source for event in evidence["events"] for source in event["source_ids"]}
+    assert not selected_ids.intersection(risk["source_ids"])
+    history = [{"available_at": day + "T15:30:00+09:00", "close": 100,
+                "price_basis": "unadjusted", "source": "krx"} for day in ("2026-09-02", "2026-09-03")]
+    safety = assess_price_basis(history, context, NOW)
+    assert safety["entry_block_reasons"] == ["unverified_corporate_action_price_basis"]
+    assert set(risk["source_ids"]) <= set(safety["source_ids"])
+
+
+def test_age_exception_is_only_for_dart_corporate_actions(tmp_path):
+    old_action = document("20250701000001", title="\uc8fc\uc2dd\ubcd1\ud569\uacb0\uc815",
+                          available=NOW - timedelta(days=420), metadata={"rcept_no": "20250701000001"})
+    old_annual = document("20250701000002", title="\uc0ac\uc5c5\ubcf4\uace0\uc11c", available=NOW - timedelta(days=420))
+    old_news = document("old-news", title="\uc8fc\uc2dd\ubcd1\ud569\uacb0\uc815", available=NOW - timedelta(days=420))
+    old_news.source_type = "news"
+    for row in (old_action, old_annual, old_news):
+        row.published_at = (NOW - timedelta(days=430)).isoformat()
+    write_corpus(tmp_path, [old_action, old_annual, old_news])
+    evidence = LocalAnalysisData(data_dir=str(tmp_path)).load_evidence(CANDIDATE, NOW)
+    assert {row["url"] for row in evidence["documents"]} == {old_action.url}
+    assert {risk["action_type"] for risk in evidence["corporate_actions"]["risks"]} == {"reverse_split"}
+
+
+def test_age_exception_does_not_admit_a_future_observed_corporate_action(tmp_path):
+    future = document("20250701000001", title="\uc8fc\uc2dd\ubd84\ud560\uacb0\uc815",
+                      available=NOW + timedelta(seconds=1), metadata={"rcept_no": "20250701000001"})
+    future.published_at = (NOW - timedelta(days=430)).isoformat()
+    current = document("current")
+    write_corpus(tmp_path, [future, current])
+    evidence = LocalAnalysisData(data_dir=str(tmp_path)).load_evidence(CANDIDATE, NOW)
+    assert {row["url"] for row in evidence["documents"]} == {current.url}
+    assert evidence["corporate_actions"]["events"] == evidence["corporate_actions"]["risks"] == []
 
 
 def test_chunk_only_corpus_uses_all_available_fragments_and_conservative_timestamp(tmp_path):
