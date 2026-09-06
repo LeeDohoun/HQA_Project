@@ -67,7 +67,7 @@ def test_search_for_context_explains_missing_indexes():
         context = retriever.search_for_context("삼성전자")
 
         assert "retrieval 인덱스가 없습니다" in context
-        assert "build_evidence_index.py" in context
+        assert "scripts.data.build" in context
 
 
 def test_run_agent_demo_fails_fast_without_retrieval_assets(tmp_path):

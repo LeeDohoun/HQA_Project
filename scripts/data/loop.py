@@ -8,6 +8,8 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[2]
+
 KST = timezone(timedelta(hours=9))
 DEFAULT_THEMES = ["ai", "battery", "bio", "defense", "robot", "semiconductor"]
 RATE_LIMIT_PATTERNS = [
@@ -16,6 +18,7 @@ RATE_LIMIT_PATTERNS = [
     "too many requests",
     "quota exceeded",
     "한도",
+    "status=020",
 ]
 
 
@@ -46,14 +49,14 @@ def _sleep_until_next_day(resume_hour: int, resume_minute: int) -> None:
 def _run_once(theme: str, enabled_sources: str) -> tuple[int, str]:
     cmd = [
         sys.executable,
-        "scripts/run_pipeline.py",
+        "-m",
+        "scripts.data.collect",
         "--theme",
         theme,
-        "--collect-and-build",
         "--enabled-sources",
         enabled_sources,
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT)
     output = f"{proc.stdout}\n{proc.stderr}".strip()
     return proc.returncode, output
 
@@ -67,8 +70,8 @@ def main() -> int:
     parser.add_argument(
         "--enabled-sources",
         type=str,
-        default="news,dart,financials,forum,chart",
-        help="Comma-separated sources passed to run_pipeline.py. chart=KRX OHLCV, financials=DART statements.",
+        default="news,dart,financials,chart",
+        help="Sources passed to scripts.data.collect. chart=KRX OHLCV, financials=DART statements.",
     )
     args = parser.parse_args()
 
@@ -103,7 +106,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    project_root = Path(__file__).resolve().parents[1]
+    project_root = ROOT
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
     raise SystemExit(main())

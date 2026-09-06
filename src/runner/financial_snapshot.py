@@ -48,7 +48,7 @@ def load_financial_snapshot(data_dir: Path, stock_code: str, as_of: datetime) ->
         raise ValueError("analysis timestamp must include timezone")
     paths = sorted((data_dir / "raw" / "financials").glob("*.jsonl"))
     paths += sorted((data_dir / "market_data").glob("*/financials.jsonl"))
-    versions: dict[str, dict] = {}
+    observations: dict[tuple, list[dict]] = {}
     gaps = []
     for path in paths:
         with path.open(encoding="utf-8") as handle:
@@ -88,9 +88,10 @@ def load_financial_snapshot(data_dir: Path, stock_code: str, as_of: datetime) ->
                     identity = {"values": values, "receipt": receipt, "fs_div": meta["fs_div"],
                                 "fiscal_year": fiscal_year, "report_code": row["report_code"]}
                     version = hashlib.sha256(json.dumps(identity, sort_keys=True, allow_nan=False).encode()).hexdigest()
+                    observation_id = hashlib.sha256(f"{version}|{available.isoformat()}".encode()).hexdigest()
                     missing = [key for key in AMOUNTS[:6] if values[key] is None]
                     data = {"status": "ready" if not missing else "blocked",
-                            "source_id": f"dart-financial:{receipt}:{version}", "version": version,
+                            "source_id": f"dart-financial:{receipt}:{observation_id}", "version": version,
                             "available_at": available.isoformat(), "observed_at": observed.isoformat(),
                             "published_at": published.isoformat() if published else None,
                             "source_url": f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={receipt}",
@@ -98,14 +99,29 @@ def load_financial_snapshot(data_dir: Path, stock_code: str, as_of: datetime) ->
                             "fiscal_year": fiscal_year, "report_code": row["report_code"], "period": period,
                             "values": values, "ratios": ratios,
                             "gaps": [f"missing_financial_field:{key}" for key in missing]}
-                    if version not in versions or available < _at(versions[version]["available_at"]):
-                        versions[version] = data
+                    key = (fiscal_year, row["report_code"], meta["fs_div"])
+                    observations.setdefault(key, []).append(data)
                 except (ValueError, KeyError, TypeError) as exc:
                     gaps.append(f"{path.name}:{line_number}:{exc}")
-    if not versions:
+    if not observations:
         return {"status": "blocked", "source_id": None, "ratios": None, "values": None,
                 "gaps": gaps or ["no_dated_financial_snapshot; recollect DART financials"]}
-    latest = max(versions.values(), key=lambda row: (row["fiscal_year"], row["period"],
+    versions = []
+    for rows in observations.values():
+        current = None
+        previous = None
+        # Cross-theme copies coalesce, but A -> B -> A is three observations,
+        # not two unique content hashes. Repeated A keeps its first availability.
+        for row in sorted(rows, key=lambda value: _at(value["available_at"])):
+            if (previous is not None and _at(row["available_at"]) == _at(previous["available_at"])
+                    and row["version"] != previous["version"]):
+                return {"status": "blocked", "source_id": None, "ratios": None, "values": None,
+                        "gaps": gaps + ["conflicting_financial_observations_at_same_time"]}
+            if current is None or row["version"] != current["version"]:
+                current = row
+            previous = row
+        versions.append(current)
+    latest = max(versions, key=lambda row: (row["fiscal_year"], row["period"],
                  row["fs_div"] == "CFS", _at(row["available_at"])))
     latest["gaps"].extend(gaps)
     return latest

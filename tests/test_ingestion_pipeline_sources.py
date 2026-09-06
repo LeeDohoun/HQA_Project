@@ -372,7 +372,7 @@ def test_source_dedupe_keys_are_explicit():
             published_at="2025-01-01T00:00:00",
         ),
         "forum",
-    ) == "forum|005930|토론글|2025-01-01T00:00:00"
+    ) == "forum|https://forum.example.com/a"
     assert IngestionService._market_record_key(
         MarketRecord(
             source_type="chart",

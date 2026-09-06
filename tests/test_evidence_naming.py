@@ -12,7 +12,7 @@ def test_evidence_tool_replaces_rag_tool_name():
 
 
 def test_build_evidence_index_script_replaces_build_rag_script():
-    assert Path("scripts/build_evidence_index.py").exists()
+    assert Path("scripts/data/build.py").exists()
     assert not Path("scripts/build_rag.py").exists()
 
 

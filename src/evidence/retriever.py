@@ -156,7 +156,7 @@ class EvidenceRetriever:
                 return (
                     "관련 문서를 찾을 수 없습니다. "
                     "raw 데이터는 있지만 retrieval 인덱스가 없습니다. "
-                    "`python3 scripts/build_evidence_index.py --theme-key <theme> --data-dir "
+                    "`python3 -m scripts.data.build --theme-key <theme> --data-dir "
                     f"{self.data_dir}` 로 인덱스를 생성하세요."
                 )
             if not status["data_dir_exists"]:

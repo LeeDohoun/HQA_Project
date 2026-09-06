@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections import OrderedDict
+import json
 import sys
 from pathlib import Path
 
@@ -25,7 +27,27 @@ def test_health_reports_runtime_port(monkeypatch):
     assert response.json()["port"] == 8123
 
 
-def test_backtest_result_submit_and_fetch():
+def test_backtest_result_submit_and_fetch(monkeypatch):
+    class MemoryRedis:
+        def __init__(self):
+            self.values = {}
+            self.expirations = {}
+            self.events = []
+
+        def setex(self, key, ttl, value):
+            self.values[key] = value
+            self.expirations[key] = ttl
+
+        def get(self, key):
+            return self.values.get(key)
+
+        def publish(self, channel, event):
+            self.events.append((channel, json.loads(event)))
+            return 0
+
+    store = MemoryRedis()
+    monkeypatch.setattr("redis.from_url", lambda url: store)
+    monkeypatch.setattr("ai_server.app._results", OrderedDict())
     client = TestClient(app)
     payload = {
         "task_id": "bt-ai-2025-smoke",
@@ -59,6 +81,11 @@ def test_backtest_result_submit_and_fetch():
     assert body["metrics"]["sharpe"] == 1.1
     assert body["leaders"][0]["stock_code"] == "005930"
     assert body["received_at"]
+    assert json.loads(store.values["hqa:result:bt-ai-2025-smoke"]) == body
+    assert store.expirations["hqa:result:bt-ai-2025-smoke"] == 3600
+    assert len(store.events) == 1
+    assert store.events[0][0] == "hqa:progress:bt-ai-2025-smoke"
+    assert store.events[0][1]["status"] == "completed"
 
     shared_fetch_response = client.get("/analyze/bt-ai-2025-smoke")
     assert shared_fetch_response.status_code == 404

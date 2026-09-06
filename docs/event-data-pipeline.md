@@ -3,6 +3,7 @@
 This extends the Luna PAPER runtime with deterministic event preparation. It adds
 no model calls, broker operation, sentiment score or automatic buy
 rule. Company analysis remains shared; account-specific decisions remain private.
+Collection and revision hardening is documented in [Data Cleansing](data-cleansing.md).
 
 ## Data Path
 
@@ -34,7 +35,9 @@ evidence supplied for selected candidates and holdings, not the ranking weights.
 - Categories indicate review topics, not positive/negative investment judgments.
   News claims are not upgraded to company-confirmed facts.
 - Exact normalized title/body duplicates on the same Korean publication date share
-  an event. Different bodies remain separate, and truncated prefixes cannot prove
+  an event. Full-body news syndication may also share an event when headline facts
+  are compatible; corrections and opposing/numerically different claims remain separate.
+  Different bodies remain separate, and truncated prefixes cannot prove
   duplication. Semantic clustering of differently worded articles is not performed.
 - Each stock receives at most eight events, a 2,400-character primary excerpt per
   event and four source references. Omitted references and excerpt truncation are
@@ -77,7 +80,9 @@ are excluded from both sides. Future bars cannot influence the result.
 
 Insufficient bars, missing baseline or zero mean volume produce `null` values with
 explicit status/gaps, not zero returns. Horizons count supplied bars; there is no
-exchange-calendar completeness guarantee. These are raw, unadjusted associations,
+exchange-calendar completeness guarantee inside this standalone reaction function.
+The local price loader now separately validates XKRX session completeness before
+supplying bars. These are raw, unadjusted associations,
 not causal effects. When dated benchmark observations and an applicable mapping
 exist, the runtime also computes market/sector price-index return differences in
 percentage points over the exact same stock baseline and endpoint dates. Missing
@@ -115,11 +120,11 @@ is explicit. No live API cost/latency improvement is claimed by offline tests.
 ## Activation and Verification
 
 Recollect and rebuild the existing pipeline to obtain new structured metadata.
-Use the existing `scripts.theme_pipeline` with explicit current date ranges,
+Use `python -m scripts.data.collect` with explicit current date ranges,
 `--reuse-saved-targets`, `--enabled-sources news,dart,financials,chart` and
 `--update-mode append-new-stocks`. Its canonical corpus is rebuilt from retained raw
-records. Do not use its `overwrite` mode for a prospective observation run: that
-mode deletes raw history. News collection remains subject to source access rights.
+records. Its `overwrite` mode now replaces only derived indexes and preserves raw
+observation history. News collection remains subject to source access rights.
 
 Old data discarded by prior ingestion cannot be reconstructed by this change.
 Recollected historical articles become available at recollection, not retroactively.

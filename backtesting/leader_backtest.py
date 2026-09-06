@@ -25,6 +25,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from backtesting.metrics import max_drawdown as _max_drawdown
 from backtesting.temporal_evidence import normalize_ymd
 from src.config.settings import get_data_dir
 from src.ingestion.theme_membership import (
@@ -1322,12 +1323,6 @@ def _period_return(closes: pd.Series, days: int) -> float:
     return last / base - 1.0 if base > 0 else 0.0
 
 
-def _max_drawdown(equity_values: np.ndarray) -> float:
-    peaks = np.maximum.accumulate(equity_values)
-    drawdowns = equity_values / peaks - 1.0
-    return float(drawdowns.min()) if len(drawdowns) else 0.0
-
-
 def _max_consecutive_losses(period_returns: np.ndarray) -> int:
     longest = 0
     current = 0
@@ -1501,7 +1496,7 @@ def _print_summary(result: Dict[str, Any]) -> None:
         )
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run point-in-time AI theme leader backtest.")
     parser.add_argument("--data-dir", default=str(get_data_dir()))
     parser.add_argument("--theme", default="AI")
@@ -1570,7 +1565,7 @@ def main() -> int:
     parser.add_argument("--output-dir", default="")
     parser.add_argument("--task-id", default="")
     parser.add_argument("--submit-url", default="")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     result = run_leader_backtest(
         data_dir=args.data_dir,

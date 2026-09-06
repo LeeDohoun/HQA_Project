@@ -4,7 +4,7 @@ from __future__ import annotations
 import math
 from datetime import date, datetime, timedelta, timezone
 
-BENCHMARK_CONTEXT_VERSION = "benchmark-context-v1"
+BENCHMARK_CONTEXT_VERSION = "benchmark-context-v2"
 _KST = timezone(timedelta(hours=9))
 
 
@@ -86,11 +86,57 @@ def _stock_date(snapshot, cutoff: datetime) -> str | None:
         return None
     if not isinstance(snapshot, dict):
         raise ValueError("stock reaction bar must be an object")
-    at = _at(snapshot.get("available_at"), "stock.bar.available_at")
-    if at > cutoff:
+    at = _at(snapshot.get("bar_at") or snapshot.get("available_at"), "stock.bar.bar_at")
+    observed = _at(snapshot.get("observed_at") or snapshot.get("available_at"), "stock.bar.observed_at")
+    if at > cutoff or observed > cutoff:
         raise ValueError("stock reaction includes a future bar")
     _number(snapshot.get("close"), "stock.close", positive=True)
+    if snapshot.get("trade_date") is not None:
+        day = _date(snapshot["trade_date"], "stock.trade_date")
+        if day != at.astimezone(_KST).date().isoformat():
+            raise ValueError("stock trade_date must match bar_at")
+        return day
     return at.astimezone(_KST).date().isoformat()
+
+
+def _historical_mapping(benchmark: dict, baseline: str | None, cutoff: datetime) -> dict:
+    history = benchmark.get("mapping_history")
+    if history is None:
+        return benchmark
+    if not isinstance(history, list) or not history:
+        raise ValueError("benchmark mapping_history must be a nonempty list")
+    periods = {}
+    for row in history:
+        if not isinstance(row, dict):
+            raise ValueError("benchmark mapping history must contain objects")
+        available = _at(row.get("mapping_available_at"), "mapping_available_at")
+        if available > cutoff:
+            continue
+        start = _date(row.get("effective_from"), "mapping.effective_from")
+        if "effective_to" not in row:
+            raise ValueError("ready benchmark requires nullable effective_to")
+        end = _date(row["effective_to"], "mapping.effective_to") if row["effective_to"] is not None else None
+        if end is not None and end < start:
+            raise ValueError("mapping effective_to precedes effective_from")
+        previous = periods.get(start)
+        if previous and available == previous[0] and row != previous[1]:
+            raise ValueError("conflicting benchmark mappings at the same availability")
+        if previous is None or available > previous[0]:
+            periods[start] = (available, row)
+    if not periods:
+        return {"status": "unavailable", "data_gaps": ["mapping_not_available_as_of"]}
+    starts = sorted(periods)
+    applicable = [start for start in starts if baseline is None or start <= baseline]
+    selected_start = applicable[-1] if applicable else starts[0]
+    selected = dict(periods[selected_start][1])
+    successors = [start for start in starts if start > selected_start]
+    if successors:
+        # A later classification supersedes an open-ended earlier interval; never
+        # compare across classifications or revive an older mapping across a gap.
+        last_day = (date.fromisoformat(successors[0]) - timedelta(days=1)).isoformat()
+        if selected["effective_to"] is None or selected["effective_to"] > last_day:
+            selected["effective_to"] = last_day
+    return selected
 
 
 def _window(baseline: str | None, endpoint: str | None, stock_return, stock_status: str,
@@ -157,6 +203,7 @@ def compare_event_to_benchmarks(reaction: dict, benchmarks: dict, as_of: datetim
         if benchmark is not None and not isinstance(benchmark, dict):
             raise ValueError(f"{scope} benchmark must be an object")
         benchmark = benchmark or {"status": "unavailable", "data_gaps": ["benchmark_mapping_unavailable"]}
+        benchmark = _historical_mapping(benchmark, baseline, cutoff)
         if benchmark.get("mapping_available_at") is not None:
             if _at(benchmark["mapping_available_at"], "mapping_available_at") > cutoff:
                 benchmark = {"status": "unavailable", "data_gaps": ["mapping_not_available_as_of"]}

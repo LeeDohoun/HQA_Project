@@ -58,6 +58,36 @@ def test_unchanged_recollection_preserves_first_known_time(tmp_path):
     assert result["available_at"] == "2026-03-02T00:00:00+00:00"
 
 
+@pytest.mark.parametrize("with_episode_ids", [False, True])
+def test_return_to_earlier_value_is_a_new_observation_not_permanent_duplicate(tmp_path, with_episode_ids):
+    first = snapshot(collected_at="2026-03-02T00:00:00+00:00")
+    changed = snapshot(collected_at="2026-03-03T00:00:00+00:00")
+    changed.operating_profit = 80
+    returned = snapshot(collected_at="2026-03-04T00:00:00+00:00")
+    repeated = snapshot(collected_at="2026-03-05T00:00:00+00:00")
+    if with_episode_ids:
+        for number, value in enumerate((first, changed, returned, repeated)):
+            value.metadata["version_id"] = f"episode-{number}"
+    persist(tmp_path, returned, changed, first, repeated)
+    before = load_financial_snapshot(tmp_path, "005930", datetime(2026, 3, 3, 12, tzinfo=UTC))
+    after = load_financial_snapshot(tmp_path, "005930", datetime(2026, 3, 6, tzinfo=UTC))
+    original = load_financial_snapshot(tmp_path, "005930", datetime(2026, 3, 2, 12, tzinfo=UTC))
+    assert before["values"]["operating_profit"] == 80
+    assert after["values"]["operating_profit"] == 100
+    assert after["available_at"] == "2026-03-04T00:00:00+00:00"
+    assert original["version"] == after["version"]
+    assert original["source_id"] != after["source_id"]
+
+
+def test_conflicting_same_time_financial_observations_fail_closed(tmp_path):
+    changed = snapshot()
+    changed.operating_profit = 80
+    persist(tmp_path, snapshot(), changed)
+    result = load_financial_snapshot(tmp_path, "005930", datetime(2026, 3, 6, tzinfo=UTC))
+    assert result["status"] == "blocked"
+    assert "conflicting_financial_observations_at_same_time" in result["gaps"]
+
+
 def test_consolidated_and_standalone_facts_never_mix(tmp_path):
     standalone = snapshot(fs_div="OFS", collected_at="2026-03-03T00:00:00+00:00")
     standalone.revenue = 600

@@ -118,10 +118,10 @@ def test_equivalent_timezone_and_universe_order_are_comparable():
 
 
 def test_cli_reads_observations_and_prints_json_without_network(tmp_path, monkeypatch, capsys):
-    from scripts.evaluate_paper_performance import main
+    from backtesting.__main__ import main
     path = tmp_path / "observations.json"
     path.write_text(json.dumps(observations()), encoding="utf-8")
-    monkeypatch.setattr(sys, "argv", ["evaluate_paper_performance", "--input", str(path)])
+    monkeypatch.setattr(sys, "argv", ["backtesting", "paper-performance", "--input", str(path)])
     main()
     assert json.loads(capsys.readouterr().out)["runs"]["strategy"]["net_return_pct"] == pytest.approx(10.0)
 

@@ -5,12 +5,14 @@ from __future__ import annotations
 # - Produces corpora, BM25 indexes, vector stores, and market-data shards.
 # - Syncs canonical evidence index after build (new Step 2 integration).
 
-import json
 import re
+import hashlib
+import json
 from dataclasses import asdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
+import uuid
 
 from src.config.settings import get_data_dir
 from src.data_pipeline.evidence_corpus_builder import EvidenceCorpusBuilder
@@ -19,7 +21,8 @@ from src.ingestion.dart import DartDisclosureCollector
 from src.ingestion.services import IngestionService
 from src.retrieval.bm25_index import BM25IndexManager
 from src.retrieval.vector_store import SourceevidenceBuilder
-from src.evidence.dedupe import make_market_record_id, make_record_id
+from src.evidence.dedupe import make_record_id
+from src.ingestion.storage import atomic_write, file_lock, read_rows, write_rows
 from src.evidence.source_registry import DEFAULT_MARKET_SOURCES, is_document_source, is_market_source
 
 
@@ -121,6 +124,45 @@ class EvidenceIndexBuilder:
 
         Returns a detailed stats dict.
         """
+        with file_lock(self.canonical_index_root / f"{theme_key}.build.lock"):
+            inputs = {}
+            if self.raw_dir.exists():
+                for directory in sorted(self.raw_dir.iterdir()):
+                    path = directory / f"{theme_key}.jsonl"
+                    if directory.is_dir() and path.exists():
+                        inputs[directory.name] = hashlib.sha256(path.read_bytes()).hexdigest()
+            signature = {"version": "cleaning-v2-generation-store", "mode": update_mode, "inputs": inputs}
+            index_dir = self.canonical_index_root / theme_key
+            state_path = index_dir / "build_state.json"
+            current_path = index_dir / "current.json"
+            if state_path.exists():
+                state = json.loads(state_path.read_text())
+                if (state["signature"] == signature
+                        and current_path.exists()
+                        and json.loads(current_path.read_text()).get("generation") == state.get("generation")
+                        and all((self.data_dir / output).exists() for output in state["outputs"])):
+                    return {**state["result"], "records": read_rows(index_dir / "corpus.jsonl"), "reused": True}
+            # This marker prevents incomplete first builds from being read as legacy corpora.
+            (index_dir / "generations").mkdir(parents=True, exist_ok=True)
+            result = self._rebuild_theme(theme_key, update_mode)
+            outputs = [index_dir / name for name in ("documents.jsonl", "corpus.jsonl", "bm25_index.json", "combined_vector_store.json")]
+            outputs += list((self.market_root / theme_key).glob("*.jsonl"))
+            generation = uuid.uuid4().hex
+            generation_dir = index_dir / "generations" / generation
+            for source in (index_dir / "documents.jsonl", self.market_root / theme_key / "chart.jsonl"):
+                if source.exists():
+                    destination = generation_dir / source.name
+                    write_rows(destination, read_rows(source))
+                    outputs.append(destination)
+            atomic_write(state_path, json.dumps({"signature": signature, "generation": generation,
+                "outputs": [str(path.relative_to(self.data_dir)) for path in outputs],
+                "result": {key: value for key, value in result.items() if key != "records"}},
+                ensure_ascii=False, allow_nan=False))
+            atomic_write(current_path, json.dumps({"schema_version": 1, "generation": generation,
+                "published_at": datetime.now(timezone.utc).isoformat()}))
+            return {**result, "reused": False}
+
+    def _rebuild_theme(self, theme_key: str, update_mode: str) -> Dict:
         # 1) validate raw documents
         docs, doc_quality_stats = self._load_raw_documents(theme_key)
 
@@ -128,6 +170,9 @@ class EvidenceIndexBuilder:
         builder = EvidenceCorpusBuilder(chunk_size=700, chunk_overlap=100)
         records = builder.build_records(docs)
         deduped_records = self._dedupe_records(records)
+        # Full documents are published once; retrieval chunks carry only references.
+        for row in deduped_records:
+            row["metadata"].pop("content", None)
 
         # 3) write text corpus
         corpora_dir = self.corpora_root / theme_key
@@ -166,6 +211,7 @@ class EvidenceIndexBuilder:
 
         # 7) ★ Canonical evidence sync — write combined index for agent consumption
         canonical_stats = self._sync_canonical_index(theme_key, deduped_records)
+        write_rows(self.canonical_index_root / theme_key / "documents.jsonl", [asdict(doc) for doc in docs])
 
         return {
             "combined_count": combined_count,
@@ -197,9 +243,7 @@ class EvidenceIndexBuilder:
 
         # 1) Corpus JSONL
         corpus_path = index_dir / "corpus.jsonl"
-        with corpus_path.open("w", encoding="utf-8") as f:
-            for row in records:
-                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        write_rows(corpus_path, records)
 
         # 2) BM25 Index
         bm25_path = index_dir / "bm25_index.json"
@@ -380,6 +424,7 @@ class EvidenceIndexBuilder:
 
     def _load_raw_market_records(self, theme_key: str) -> List[Dict]:
         rows: List[Dict] = []
+        quarantined = []
         if not self.raw_dir.exists():
             return rows
 
@@ -395,8 +440,17 @@ class EvidenceIndexBuilder:
                     continue
                 row["source_type"] = source_type
                 row["metadata"] = row.get("metadata") or {}
+                if source_type == "chart":
+                    observed = row["metadata"].get("collected_at") or row["metadata"].get("available_at")
+                    try:
+                        parsed = datetime.fromisoformat(str(observed).replace("Z", "+00:00"))
+                        if parsed.tzinfo is None or parsed.utcoffset() is None:
+                            raise ValueError("observation requires timezone")
+                    except (TypeError, ValueError):
+                        quarantined.append({"reason": "missing_or_invalid_price_observation_time", "record": row})
+                        continue
                 rows.append(row)
-
+        write_rows(self.data_dir / "quarantine" / "chart" / f"{theme_key}.jsonl", quarantined)
         return rows
 
     def _save_market_data(self, theme_key: str, rows: List[Dict]) -> Dict[str, int]:
@@ -404,6 +458,8 @@ class EvidenceIndexBuilder:
         theme_dir.mkdir(parents=True, exist_ok=True)
 
         grouped = self._group_by_source(rows)
+        # Never carry an old derived price file into a newly published generation.
+        grouped.setdefault("chart", [])
         stats: Dict[str, int] = {}
         for source, source_rows in grouped.items():
             output = theme_dir / f"{source}.jsonl"
@@ -434,7 +490,10 @@ class EvidenceIndexBuilder:
         seen = set()
         deduped: List[Dict] = []
         for row in rows:
-            record_id = make_market_record_id(row)
+            metadata = row.get("metadata") or {}
+            record_id = (IngestionService._market_record_key_from_row(row),
+                         IngestionService._numeric_revision(row),
+                         metadata.get("version_id") or metadata.get("collected_at", ""))
             if record_id in seen:
                 continue
             seen.add(record_id)
@@ -472,21 +531,8 @@ class EvidenceIndexBuilder:
 
     @staticmethod
     def _iter_jsonl(path: Path) -> Iterable[Dict]:
-        with path.open("r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                yield json.loads(line)
+        yield from read_rows(path)
 
     @staticmethod
     def _save_jsonl(rows: List[Dict], path: Path) -> int:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", encoding="utf-8") as f:
-            for row in rows:
-                if hasattr(row, "__dataclass_fields__"):
-                    payload = asdict(row)
-                else:
-                    payload = row
-                f.write(json.dumps(payload, ensure_ascii=False) + "\n")
-        return len(rows)
+        return write_rows(path, [asdict(row) if hasattr(row, "__dataclass_fields__") else row for row in rows])

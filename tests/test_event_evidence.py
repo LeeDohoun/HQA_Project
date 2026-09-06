@@ -127,7 +127,7 @@ def test_nonfinite_omitted_source_facts_fail_before_grouping():
         build_event_evidence(documents, "005930")
 
 
-@pytest.mark.parametrize("scope", ["document", "available_fragments", "structured_fields"])
+@pytest.mark.parametrize("scope", ["document", "available_fragments", "structured_fields", "summary"])
 @pytest.mark.parametrize("location", ["row", "metadata"])
 def test_text_scope_is_preserved_on_event_and_source_rows(scope, location):
     row = document()
@@ -235,3 +235,49 @@ def test_recent_attention_window_precedes_old_materiality_without_dropping_old_c
 def test_invalid_event_limit_fails(limit):
     with pytest.raises(ValueError):
         select_event_evidence([], limit)
+
+
+def test_full_body_syndication_groups_headline_variants_and_retains_both_titles():
+    body = "삼성전자는 공급계약을 체결했다고 발표했다. 계약 기간과 대상은 원문에 명시되어 있다. " * 6
+    first = document("news:1", source_type="news", title="삼성전자 공급계약체결 발표", text=body)
+    second = document("news:2", source_type="news", title="공급계약체결 알린 삼성전자", text=body)
+    events = build_event_evidence([first, second], "005930")
+    assert len(events) == 1
+    assert events[0]["deduplication_basis"] == "full_body_syndication"
+    assert {source["title"] for source in events[0]["sources"]} == {first["title"], second["title"]}
+    assert events == build_event_evidence([second, first], "005930")
+
+
+@pytest.mark.parametrize("title,metadata", [
+    ("삼성전자 공급계약체결 정정", {}),
+    ("삼성전자 공급계약체결 철회", {}),
+    ("삼성전자 공급계약체결 부인", {}),
+    ("삼성전자 공급계약체결 발표", {"is_correction": True}),
+    ("삼성전자 공급계약체결 발표", {"is_withdrawal": True}),
+    ("삼성전자 공급계약체결 발표", {"has_correction": True}),
+])
+def test_identical_body_does_not_merge_correction_with_original(title, metadata):
+    body = "계약에 대한 원문과 구체적인 내용. " * 30
+    first = document("news:1", source_type="news", title="삼성전자 공급계약체결 발표", text=body)
+    second = document("news:2", source_type="news", title=title, text=body, metadata=metadata)
+    assert len(build_event_evidence([first, second], "005930")) == 2
+
+
+@pytest.mark.parametrize("first_amount,second_amount", [("100억원", "200억원"), ("100억원", "100만원"),
+    ("100%", "100억원"), ("+100억원", "-100억원"), ("$100", "€100"), ("100억원 흑자", "100억원 적자")])
+def test_identical_body_does_not_merge_conflicting_headline_amounts(first_amount, second_amount):
+    body = "계약에 대한 원문과 구체적인 내용. " * 30
+    first = document("news:1", source_type="news", title=f"공급계약체결 {first_amount}", text=body)
+    second = document("news:2", source_type="news", title=f"공급계약체결 {second_amount}", text=body)
+    assert len(build_event_evidence([first, second], "005930")) == 2
+
+
+@pytest.mark.parametrize("overrides", [{"text_scope": "summary"}, {"text_scope": "available_fragments"},
+                                       {"truncated": True}, {"source_type": "dart"}])
+def test_headline_variant_clustering_requires_complete_news_body(overrides):
+    body = "계약에 대한 원문과 구체적인 내용. " * 30
+    first = document("news:1", source_type="news", title="공급계약체결 발표", text=body)
+    second = document("news:2", source_type="news", title="새 공급계약체결", text=body)
+    first.update(overrides)
+    second.update(overrides)
+    assert len(build_event_evidence([first, second], "005930")) == 2

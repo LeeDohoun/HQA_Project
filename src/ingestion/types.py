@@ -79,10 +79,11 @@ class CollectRequest:
     to_date: str
     dart_api_key: str
     theme_key: str
-    enabled_sources: List[str] = field(default_factory=lambda: ["news", "dart", "financials", "forum"])
+    enabled_sources: List[str] = field(default_factory=lambda: ["news", "dart", "financials", "chart"])
     general_news_keywords: Optional[List[str]] = None
     max_general_news: int = 20
     raw_output_dir: str = field(default_factory=lambda: str(get_data_dir() / "raw"))
+    incremental: bool = False
 
 
 @dataclass

@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -16,10 +17,11 @@ import yaml
 from src.config.settings import get_data_dir
 from src.runner.analysis_contracts import AccountSnapshot
 from src.runner.theme_universe_loader import ThemeUniverseLoader
+from src.runner.trading_calendar import CALENDAR_VERSION, completed_daily_sessions, daily_session_close
 
 UTC = timezone.utc
 KST = timezone(timedelta(hours=9))
-FACTOR_VERSION = "leader-price-v1-ma150-annualized-vol"
+FACTOR_VERSION = "leader-price-v2-observed-xkrx-sessions"
 PRICE_WEIGHTS = {"return_60d": .25 / .85, "return_20d": .20 / .85,
                  "trend_150d": .20 / .85, "volume_ratio_20d": .10 / .85,
                  "volatility_20d": .10 / .85}
@@ -59,20 +61,56 @@ def read_jsonl(path: Path) -> list[dict]:
 
 
 def price_features(rows: list[dict], as_of: datetime) -> tuple[dict, list[dict]]:
-    by_date: dict[str, dict] = {}
+    sessions = completed_daily_sessions(as_of)
+    by_date: dict[str, dict[str, dict]] = {}
     for row in rows:
-        at = source_time(row.get("timestamp") or row.get("date"), daily_close=True)
+        if not isinstance(row, dict) or not isinstance(row.get("metadata", {}), dict):
+            raise ValueError("OHLCV rows and metadata must be objects")
+        meta = row.get("metadata") or {}
+        day = source_time(row.get("timestamp") or row.get("date")).astimezone(KST).date().isoformat()
+        declared_day = meta.get("trade_date") or row.get("trade_date")
+        if declared_day is not None and declared_day != day:
+            raise ValueError("OHLCV trade_date does not match timestamp")
+        if day > as_of.astimezone(KST).date().isoformat():
+            continue
+        observed_values = [value for value in (meta.get("collected_at"), meta.get("available_at"),
+                                               row.get("collected_at"), row.get("observed_at")) if value is not None]
+        observations = []
+        for value in observed_values:
+            if not isinstance(value, str):
+                raise ValueError("price observation requires an aware ISO timestamp")
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if parsed.tzinfo is None or parsed.utcoffset() is None:
+                raise ValueError("price observation requires an aware ISO timestamp")
+            observations.append(parsed.astimezone(UTC))
+        if observations and max(observations) > as_of:
+            continue
+        at = daily_session_close(day)
         if at > as_of:
             continue
-        normalized = {"available_at": at.isoformat()}
-        meta = row.get("metadata") or {}
-        if meta.get("source") == "krx" and meta.get("market") in {"KOSPI", "KOSDAQ"}:
+        if not observations:
+            raise ValueError("missing_price_observation_time:recollect_legacy_prices")
+        observed = max(observations)
+        if min(observations) < at:
+            raise ValueError("price observation precedes the completed session close")
+        declared_close = meta.get("bar_at") or row.get("bar_at")
+        if declared_close is not None and source_time(declared_close) != at:
+            raise ValueError("OHLCV bar_at does not match XKRX session close")
+        normalized = {"available_at": at.isoformat(), "bar_at": at.isoformat(),
+                      "trade_date": day, "observed_at": observed.isoformat()}
+        if meta.get("market") is not None:
             from src.ingestion.krx_chart import KrxChartCollector
             endpoint = (KrxChartCollector.KOSPI_DAILY_URL if meta["market"] == "KOSPI"
                         else KrxChartCollector.KOSDAQ_DAILY_URL)
-            if meta.get("source_url") != endpoint or meta.get("price_basis") != "unadjusted":
+            if (meta.get("source") != "krx" or meta["market"] not in {"KOSPI", "KOSDAQ"}
+                    or meta.get("source_url") != endpoint or meta.get("price_basis") != "unadjusted"):
                 raise ValueError("unverified KRX price market/basis provenance")
             normalized.update(market=meta["market"], price_basis="unadjusted", source="krx", source_url=endpoint)
+        for field in ("version", "source_id"):
+            if field in meta:
+                if not isinstance(meta[field], str) or not meta[field].strip():
+                    raise ValueError(f"invalid OHLCV provenance field:{field}")
+                normalized[field] = meta[field]
         for field in ("open", "high", "low", "close", "volume"):
             value = row.get(field)
             if value is None:
@@ -83,24 +121,41 @@ def price_features(rows: list[dict], as_of: datetime) -> tuple[dict, list[dict]]
             normalized[field] = number
         if not normalized["low"] <= min(normalized["open"], normalized["close"]) <= max(normalized["open"], normalized["close"]) <= normalized["high"]:
             raise ValueError("inconsistent OHLC values")
-        key = at.isoformat()
-        if key in by_date:
-            previous = by_date[key]
+        observations_by_time = by_date.setdefault(day, {})
+        key = observed.isoformat()
+        if key in observations_by_time:
+            previous = observations_by_time[key]
             if (any(previous[field] != normalized[field] for field in ("open", "high", "low", "close", "volume"))
                     or (previous.get("market") and normalized.get("market") and previous["market"] != normalized["market"])):
-                raise ValueError("conflicting OHLCV rows for the same stock/date")
+                raise ValueError("conflicting OHLCV rows for the same stock/date/observation")
+            if any(previous.get(field) and normalized.get(field) and previous[field] != normalized[field]
+                   for field in ("version", "source_id")):
+                raise ValueError("conflicting OHLCV provenance for the same observation")
             normalized = {**previous, **normalized}
-        by_date[key] = normalized
-    known = [by_date[key] for key in sorted(by_date)][-300:]
+        observations_by_time[key] = normalized
+    known = []
+    for day in sorted(by_date)[-300:]:
+        latest = None
+        for observed in sorted(by_date[day]):
+            row = by_date[day][observed]
+            content = {key: value for key, value in row.items() if key != "observed_at"}
+            if latest is None or content != {key: value for key, value in latest.items() if key != "observed_at"}:
+                latest = row
+        known.append(latest)
+    if known and sessions:
+        if known[-1]["trade_date"] != sessions[-1][0]:
+            raise ValueError(f"stale_daily_prices:latest={known[-1]['trade_date']}:expected={sessions[-1][0]}")
+        present = {row["trade_date"] for row in known}
+        missing = [day for day, _ in sessions if day >= known[0]["trade_date"] and day not in present]
+        if missing:
+            raise ValueError(f"incomplete_price_history:missing_sessions={len(missing)}:first={','.join(missing[:3])}")
     if len(known) < 150:
         raise ValueError(f"insufficient_price_history:{len(known)}<150")
-    if as_of - source_time(known[-1]["available_at"]) > timedelta(days=4):
-        raise ValueError("stale_daily_prices:older_than_4_calendar_days")
     frame = pd.DataFrame(known)
     close, volume = frame["close"], frame["volume"]
     if volume.tail(20).mean() <= 0:
         raise ValueError("zero_20d_volume")
-    features = {"current_price": float(close.iloc[-1]), "history_days": len(known),
+    features = {"current_price": float(close.iloc[-1]), "history_days": len(known), "calendar_version": CALENDAR_VERSION,
                 "latest_timestamp": known[-1]["available_at"],
                 "return_5d": float(close.iloc[-1] / close.iloc[-6] - 1),
                 "return_20d": float(close.iloc[-1] / close.iloc[-21] - 1),
@@ -139,6 +194,29 @@ class LocalAnalysisData:
             raise ValueError("Korean analysis schedule requires Asia/Seoul")
         self.filters = dict(config["trading"].get("theme_universe_filters") or {})
 
+    def _current_generation(self, theme: str) -> str | None:
+        index = self.data_dir / "canonical_index" / theme
+        pointer = index / "current.json"
+        if not pointer.exists():
+            if (index / "generations").exists():
+                raise ValueError(f"unpublished_analysis_generation:{theme}")
+            return None
+        manifest = json.loads(pointer.read_text(encoding="utf-8"))
+        if (not isinstance(manifest, dict) or manifest.get("schema_version") != 1
+                or not isinstance(manifest.get("generation"), str)
+                or not re.fullmatch(r"[0-9a-f]{32}", manifest["generation"])):
+            raise ValueError(f"invalid_analysis_generation:{theme}")
+        self._generation_dir(theme, manifest["generation"])
+        return manifest["generation"]
+
+    def _generation_dir(self, theme: str, generation: str) -> Path:
+        if not isinstance(generation, str) or not re.fullmatch(r"[0-9a-f]{32}", generation):
+            raise ValueError(f"invalid_analysis_generation:{theme}")
+        path = self.data_dir / "canonical_index" / theme / "generations" / generation
+        if not (path / "documents.jsonl").is_file():
+            raise ValueError(f"missing_analysis_generation:{theme}:{generation}")
+        return path
+
     def load_universe(self, as_of: datetime) -> tuple[list[dict], list[dict]]:
         if abs((datetime.now(UTC) - as_of).total_seconds()) > 60:
             raise ValueError("historical_replay_requires_versioned_price_and_universe_store")
@@ -151,13 +229,17 @@ class LocalAnalysisData:
         errors = []
         for path in paths:
             key = path.stem
+            generation = self._current_generation(key)
             for target in read_jsonl(path):
                 code = ThemeUniverseLoader._stock_code(target)
                 name = ThemeUniverseLoader._stock_name(target)
                 if not code or len(code) != 6 or not code.isdigit() or not name:
                     raise ValueError(f"invalid theme target:{path}")
-                stocks.setdefault(code, {"stock_code": code, "stock_name": name, "theme_keys": []})["theme_keys"].append(key)
-            price_path = self.data_dir / "market_data" / key / "chart.jsonl"
+                stock = stocks.setdefault(code, {"stock_code": code, "stock_name": name, "theme_keys": [], "theme_generations": {}})
+                stock["theme_keys"].append(key)
+                stock["theme_generations"][key] = generation
+            price_path = ((self._generation_dir(key, generation) if generation is not None
+                           else self.data_dir / "market_data" / key) / "chart.jsonl")
             if not price_path.exists():
                 errors.append({"theme_key": key, "stage": "price_data", "error": "missing_chart_file"})
                 continue
@@ -212,7 +294,21 @@ class LocalAnalysisData:
         documents, errors = {}, []
         conflicting_fragments = False
         for theme in candidate["theme_keys"]:
-            path = self.data_dir / "canonical_index" / theme / "corpus.jsonl"
+            captured = candidate.get("theme_generations")
+            if captured is not None:
+                if theme not in captured:
+                    raise ValueError(f"missing_captured_analysis_generation:{theme}")
+                generation = captured[theme]
+                if generation is None and self._current_generation(theme) is not None:
+                    raise ValueError(f"analysis_generation_changed_from_legacy:{theme}")
+            else:
+                generation = self._current_generation(theme)
+            index_dir = (self._generation_dir(theme, generation) if generation is not None
+                         else self.data_dir / "canonical_index" / theme)
+            path = index_dir / "documents.jsonl"
+            if not path.exists():
+                # Legacy canonical corpora embed the full document in each chunk.
+                path = index_dir / "corpus.jsonl"
             if not path.exists():
                 errors.append(f"missing_canonical_corpus:{theme}")
                 continue
@@ -231,6 +327,11 @@ class LocalAnalysisData:
                     if available > as_of:
                         continue
                     title = str(row.get("title") or meta.get("title") or "")
+                    if kind in {"news", "general_news"}:
+                        if meta.get("entity_match", {}).get("matched") is False:
+                            raise ValueError("unverified news subject")
+                        if meta.get("publication_time_status") in {"estimated", "missing", "invalid"}:
+                            raise ValueError("unverified news publication time")
                     # Attention age does not resolve an outstanding corporate action.
                     if (as_of - published > timedelta(days=400 if kind == "dart" else 7)
                             and not (kind == "dart" and corporate_action_type(title))):
@@ -260,7 +361,8 @@ class LocalAnalysisData:
                                     "rcept_no", "rcept_dt", "remark", "is_correction", "has_correction", "is_withdrawal",
                                     "structured_endpoint", "structured_rcept_no", "structured_row", "structured_body_error_type",
                                     "supersedes_source_ids", "published_at_precision", "has_body", "body_source",
-                                    "body_extracted", "evidence_scope") if key in meta},
+                                    "body_extracted", "evidence_scope", "entity_match", "publication_time_status",
+                                    "published_at_source") if key in meta},
                                 "_full_body": str(body) if not is_fragment else None,
                                 "_fragments": {}, "_fragment_times": {}}
                     document["_content_context"] = content_hash({"metadata": document["metadata"],

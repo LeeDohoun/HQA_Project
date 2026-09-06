@@ -8,12 +8,12 @@ account-specific broker data. The parent flow is documented in
 
 ## Collect Shared Indices
 
-`scripts/collect_market_context.py` is a standalone collector, not a theme-pipeline
+`scripts/data/market_context.py` is a standalone collector, not a theme-pipeline
 or trading-scheduler step. Run it from the repository root using the module entry:
 
 ```bash
-venv/bin/python -m scripts.collect_market_context --help
-venv/bin/python -m scripts.collect_market_context \
+venv/bin/python -m scripts.data.market_context --help
+venv/bin/python -m scripts.data.market_context \
   --from-date 2026-08-01 --to-date 2026-09-04 \
   --series KOSPI KOSDAQ --data-dir ./data
 ```
@@ -185,15 +185,17 @@ certificate or a blanket mechanical-action finding.
 ## Legacy Data and Limits
 
 New KRX stock observations retain endpoint-backed market identity and unadjusted
-price provenance. The existing raw OHLCV writer deduplicates by its stock/time
-identity: recollecting a saved bar does not replace it with enriched metadata.
-Old or mixed histories therefore may not qualify for automatic market mapping.
-Use a separately verified, dated mapping when needed; do not delete prospective
-history or label old bars with today's membership just to make the context ready.
+price provenance. The raw OHLCV writer retains changed observation episodes,
+including added provenance, without deleting earlier observations. The current
+runtime selects the latest episode known at its cutoff. Legacy undated bars remain
+raw but are quarantined from newly published price generations. Old or mixed
+histories may not qualify for automatic market mapping. Use a separately verified,
+dated mapping when needed; do not label old bars with today's membership.
 
 This stage does not implement corporate-action adjustment factors, reconstructed
 adjusted OHLCV, a complete exchange/holiday/action calendar, investor flows,
 quarterly cash-flow ingestion, TTM financials, consensus surprises, or intraday
-benchmark reactions. Historical stock OHLCV/universe storage is still not a fully
-versioned point-in-time archive. Backfilled index observations become usable when
-collected, not retroactively on their historical trading dates.
+benchmark reactions. Versioned price observations do not reconstruct a historical
+universe or certify the legacy backtesting loaders' point-in-time behavior.
+Backfilled index observations become usable when collected, not retroactively on
+their historical trading dates. See [backtesting limits](../backtesting/README.md).

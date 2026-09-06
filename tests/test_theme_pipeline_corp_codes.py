@@ -6,7 +6,7 @@ import os
 
 import pytest
 
-import scripts.theme_pipeline as theme_pipeline
+import scripts.data.collect as theme_pipeline
 
 
 def _write_corp_codes(path: Path) -> None:

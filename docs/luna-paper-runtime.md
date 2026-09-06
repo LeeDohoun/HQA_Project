@@ -158,7 +158,7 @@ workaround; backend idempotency is a safety boundary, not additional broker capa
 ```bash
 venv/bin/python -m pytest -q
 mvn -f backend/pom.xml test
-venv/bin/python -m scripts.evaluate_paper_runtime --audit data/paper_audit.sqlite3 --budget data/llm_budget.sqlite3
+venv/bin/python -m backtesting paper-runtime --audit data/paper_audit.sqlite3 --budget data/llm_budget.sqlite3
 ```
 
 The evaluator reads SQLite in read-only mode and does not call any API. Supply
@@ -179,7 +179,7 @@ investment performance. REAL activation is outside this implementation.
 ## Observed Investment Comparison
 
 ```bash
-venv/bin/python -m scripts.evaluate_paper_performance --input data/paper-comparison.json
+venv/bin/python -m backtesting paper-performance --input data/paper-comparison.json
 ```
 
 This separate offline evaluator requires a JSON object with exactly three runs:

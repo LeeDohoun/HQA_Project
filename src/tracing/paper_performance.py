@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 import numpy as np
 from pydantic import AwareDatetime, BaseModel, BeforeValidator, ConfigDict, Field, StrictFloat, StringConstraints, model_validator
 
-from backtesting.leader_backtest import _max_drawdown
+from backtesting.metrics import max_drawdown
 
 
 def _timestamp(value):
@@ -128,7 +128,7 @@ def _metrics(run: ObservedRun) -> dict:
     return {"observations": count, "fill_count": len(run.fills),
             "initial_net_equity": float(equity[0]), "final_net_equity": float(equity[-1]),
             "net_return_pct": float((equity[-1] / equity[0] - 1) * 100),
-            "max_drawdown_pct": _max_drawdown(equity) * 100,
+            "max_drawdown_pct": max_drawdown(equity) * 100,
             "traded_notional": traded, "one_way_turnover": traded / average_equity,
             "mean_market_exposure_pct": math.fsum(sector_exposure.values()),
             "mean_sector_exposure_pct": sector_exposure,

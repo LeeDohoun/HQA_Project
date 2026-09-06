@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 from src.agents.risk_manager import FinalDecision, InvestmentAction, RiskLevel
 from src.runner.decision_adapter import (
@@ -9,6 +12,21 @@ from src.runner.decision_adapter import (
     final_decision_to_payload,
 )
 from src.runner.theme_leader_trading_runner import ThemeLeaderTradingRunner
+
+
+@pytest.fixture
+def paper_balance(monkeypatch):
+    calls = []
+
+    def inquire_balance(*, paper):
+        calls.append(paper)
+        return {"rt_cd": "0", "output1": [], "output2": [{
+            "tot_evlu_amt": "0", "evlu_pfls_smtl_amt": "0", "dnca_tot_amt": "1000000",
+        }]}
+
+    monkeypatch.setattr(ThemeLeaderTradingRunner, "_get_realtime_tool", lambda self: SimpleNamespace(is_available=True))
+    monkeypatch.setattr("src.tools.realtime_tool.inquire_balance", inquire_balance)
+    return calls
 
 
 def _write_config(path: Path) -> None:
@@ -85,7 +103,7 @@ def test_decision_adapter_accepts_display_values_for_legacy_payloads():
     assert rebuilt.risk_level is RiskLevel.LOW
 
 
-def test_theme_leader_trading_preview_uses_leader_decision(tmp_path, monkeypatch):
+def test_theme_leader_trading_preview_uses_leader_decision(tmp_path, monkeypatch, paper_balance):
     config_path = tmp_path / "watchlist.yaml"
     _write_config(config_path)
 
@@ -129,6 +147,8 @@ def test_theme_leader_trading_preview_uses_leader_decision(tmp_path, monkeypatch
     )
 
     assert result["summary"] == {"ready": 1}
+    assert paper_balance == [True]
+    assert result["portfolio_context"]["summary"]["available_cash"] == 1000000
     preview = result["trade_results"][0]["preview"]
     assert preview["status"] == "ready"
     assert preview["reason"] == "signal_candidate_ready"
@@ -136,7 +156,7 @@ def test_theme_leader_trading_preview_uses_leader_decision(tmp_path, monkeypatch
     assert result["trade_results"][0]["decision"]["action_code"] == "BUY"
 
 
-def test_theme_leader_trading_blocks_buy_without_current_price(tmp_path, monkeypatch):
+def test_theme_leader_trading_blocks_buy_without_current_price(tmp_path, monkeypatch, paper_balance):
     config_path = tmp_path / "watchlist.yaml"
     _write_config(config_path)
 
@@ -175,6 +195,7 @@ def test_theme_leader_trading_blocks_buy_without_current_price(tmp_path, monkeyp
 
     assert result["summary"] == {"blocked": 1}
     assert result["trade_results"][0]["reason"] == "missing_current_price_for_buy"
+    assert paper_balance == [True]
 
 
 def test_theme_leader_runner_default_orchestrator_is_removed(tmp_path):
@@ -208,7 +229,7 @@ trading:
         raise AssertionError("legacy default theme orchestrator should be removed")
 
 
-def test_theme_leader_trading_blocks_malformed_leader_score(tmp_path, monkeypatch):
+def test_theme_leader_trading_blocks_malformed_leader_score(tmp_path, monkeypatch, paper_balance):
     config_path = tmp_path / "watchlist.yaml"
     _write_config(config_path)
 
@@ -247,13 +268,14 @@ def test_theme_leader_trading_blocks_malformed_leader_score(tmp_path, monkeypatc
 
     assert result["summary"] == {"blocked": 1}
     assert result["trade_results"][0]["reason"] == "invalid_leader_score"
+    assert paper_balance == [True]
 
 
-def test_theme_trade_execute_requires_paper_or_dry_run():
+def test_theme_trade_rejects_python_direct_execution():
     from main import run_theme_trading_mode
 
     try:
-        run_theme_trading_mode(theme="AI", execute=True, paper=False, dry_run=False)
+        run_theme_trading_mode(theme="AI", execute=True)
     except ValueError as exc:
         assert "Python direct order execution has been removed" in str(exc)
     else:

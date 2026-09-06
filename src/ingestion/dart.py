@@ -17,6 +17,7 @@ except ImportError:
     BeautifulSoup = None
 
 from .base import BaseCollector
+from .dart_api import DartAPIError, read_dart_payload
 from .types import DocumentRecord
 
 
@@ -116,26 +117,15 @@ class DartDisclosureCollector(BaseCollector):
         end_de: str,
         page_count: int = 100,
     ) -> List[DocumentRecord]:
-        response = self.get_with_retry(
-            self.LIST_URL,
-            params={
-                "crtfc_key": self.api_key,
-                "corp_code": corp_code,
-                "bgn_de": bgn_de,
-                "end_de": end_de,
-                "page_count": page_count,
-            },
-            timeout=self.timeout,
-            log_prefix=f"DART:{corp_code}",
-        )
-        payload = response.json()
-
-        if payload.get("status") != "000":
-            return []
-
+        if not self.api_key or not corp_code:
+            raise ValueError("DART API key and corporate code are required")
+        if isinstance(page_count, bool) or not isinstance(page_count, int) or not 1 <= page_count <= 100:
+            raise ValueError("DART page_count must be between 1 and 100")
+        self._structured_cache.clear()
+        items = self._collect_listing(corp_code, bgn_de, end_de, page_count)
         docs: List[DocumentRecord] = []
 
-        for item in payload.get("list", []):
+        for item in items:
             title = self._clean_text(item.get("report_nm", ""))
             if not title:
                 continue
@@ -239,6 +229,60 @@ class DartDisclosureCollector(BaseCollector):
 
         return docs
 
+    def _collect_listing(self, corp_code: str, bgn_de: str, end_de: str, page_count: int) -> List[Dict]:
+        items: Dict[str, Dict] = {}
+        expected = None
+        page_no = 1
+        while True:
+            try:
+                response = self.get_with_retry(
+                    self.LIST_URL,
+                    params={"crtfc_key": self.api_key, "corp_code": corp_code,
+                            "bgn_de": bgn_de, "end_de": end_de, "page_count": page_count,
+                            "page_no": page_no, "last_reprt_at": "N", "sort": "date", "sort_mth": "asc"},
+                    timeout=self.timeout, log_prefix=f"DART:{corp_code}",
+                )
+            except Exception:
+                raise DartAPIError(f"DART list transport failure page={page_no}") from None
+            payload = read_dart_payload(response)
+            if payload["status"] == "013":
+                if page_no != 1:
+                    raise DartAPIError("DART incomplete pagination: later page has no data")
+                return []
+            counts = {}
+            for key in ("page_no", "page_count", "total_count", "total_page"):
+                value = payload.get(key)
+                if isinstance(value, bool) or not re.fullmatch(r"[0-9]+", str(value)):
+                    raise DartAPIError(f"DART invalid pagination field: {key}")
+                counts[key] = int(value)
+            total, pages = counts["total_count"], counts["total_page"]
+            if (counts["page_no"] != page_no or counts["page_count"] != page_count or total < 1
+                    or pages != (total + page_count - 1) // page_count):
+                raise DartAPIError("DART inconsistent pagination metadata")
+            if expected is not None and expected != (total, pages):
+                raise DartAPIError("DART result set changed during pagination")
+            expected = (total, pages)
+            rows = payload.get("list")
+            if not isinstance(rows, list) or len(rows) != min(page_count, total - (page_no - 1) * page_count):
+                raise DartAPIError("DART incomplete pagination: unexpected page length")
+            for row in rows:
+                if (not isinstance(row, dict) or not isinstance(row.get("rcept_no"), str)
+                        or not re.fullmatch(r"[0-9]{14}", row["rcept_no"])
+                        or not isinstance(row.get("report_nm"), str) or not row["report_nm"].strip()
+                        or not isinstance(row.get("rcept_dt"), str)
+                        or not re.fullmatch(r"[0-9]{8}", row["rcept_dt"])
+                        or not self.to_iso_datetime(row["rcept_dt"], ["%Y%m%d"])):
+                    raise DartAPIError("DART malformed disclosure row")
+                if row.get("corp_code") not in (None, "", corp_code):
+                    raise DartAPIError("DART disclosure corporate code mismatch")
+                receipt = row["rcept_no"]
+                if receipt in items and items[receipt] != row:
+                    raise DartAPIError("DART conflicting rows for the same receipt")
+                items[receipt] = row
+            if page_no == pages:
+                return list(items.values())
+            page_no += 1
+
     def _is_important_report(self, title: str) -> bool:
         normalized = self._normalize_report_name(title)
         return any(keyword in normalized for keyword in self.IMPORTANT_REPORT_KEYWORDS)
@@ -279,10 +323,10 @@ class DartDisclosureCollector(BaseCollector):
                         timeout=self.timeout,
                         log_prefix=f"DART:STRUCTURED:{endpoint}",
                     )
-                    payload = self._redact_api_keys(response.json())
                 except Exception:
                     quality_meta["body_error_type"] = "structured_fetch_failed"
                     continue
+                payload = self._redact_api_keys(read_dart_payload(response))
                 self._structured_cache[cache_key] = payload
 
             if not isinstance(payload, dict) or payload.get("status") != "000":

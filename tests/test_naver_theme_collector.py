@@ -5,7 +5,7 @@ import json
 from src.ingestion.naver_theme import NaverThemeStockCollector, ThemeStock, ThemeTargets
 from src.ingestion.theme_targets import ThemeTargetStore
 from src.ingestion.types import StockTarget
-from scripts.collect_all_naver_themes import save_collected_themes
+from scripts.data.discover import save_collected_themes
 
 
 def test_extract_theme_links_supports_all_themes_without_keyword():

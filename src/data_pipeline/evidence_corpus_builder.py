@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from pathlib import Path
 from typing import Iterable, List, Dict
-import json
+from src.ingestion.storage import write_rows
 
 from .collectors import CrawledDocument
 from src.ingestion.types import generate_doc_id
@@ -72,12 +72,7 @@ class EvidenceCorpusBuilder:
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
 
-        count = 0
-        with output.open("w", encoding="utf-8") as f:
-            for row in records:
-                f.write(json.dumps(row, ensure_ascii=False) + "\n")
-                count += 1
-        return count
+        return write_rows(output, list(records))
 
     def _split_text(self, text: str) -> List[str]:
         if not text:
@@ -123,4 +118,3 @@ class EvidenceCorpusBuilder:
         if not metadata.get("doc_id"):
             chunk_idx = metadata.get("chunk_index", 0)
             metadata["doc_id"] = f"{base_doc_id}_c{chunk_idx}"
-

@@ -69,7 +69,7 @@ def main() -> int:
         report["retrieval_path"] = "missing_indexes"
         report["error"] = (
             "raw 데이터는 있지만 retrieval 인덱스가 없습니다. "
-            f"python3 scripts/build_evidence_index.py --theme-key <theme> --data-dir {data_dir}"
+            f"python3 -m scripts.data.build --theme-key <theme> --data-dir {data_dir}"
         )
     else:
         report["retrieval_path"] = "missing_data"

@@ -488,63 +488,13 @@ JSON만 응답하세요.
         return result
     
     def _execute_stock_analysis(self, analysis: QueryAnalysis) -> Dict[str, Any]:
-        """종목 분석 실행 (LangGraph 워크플로우 우선, 폴백: 병렬 처리)"""
+        """종료된 단일 종목 분석 경로를 명시적으로 거부합니다."""
         if not analysis.stocks:
             return {"status": "error", "message": "분석할 종목을 찾을 수 없습니다."}
         return {
             "status": "removed",
             "message": "기존 단일 종목 분석 흐름은 제거되었습니다. 새 분석 파이프라인으로 대체 예정입니다.",
         }
-        
-        stock = analysis.stocks[0]
-        stock_name = stock["name"]
-        stock_code = stock["code"]
-        
-        # LangGraph 워크플로우 실행 (미설치 시 내부에서 폴백)
-        if is_langgraph_available():
-            print(f"\n🚀 {stock_name}({stock_code}) LangGraph 워크플로우 실행")
-        else:
-            print(f"\n🚀 {stock_name}({stock_code}) 전체 분석 시작...")
-            print(f"   ⚡ Analyst / Quant / Chartist 병렬 실행")
-        
-        result = run_stock_analysis(
-            stock_name=stock_name,
-            stock_code=stock_code,
-            query=analysis.original_query,
-            max_retries=1,
-        )
-        
-        # 결과 보강
-        result["stock"] = stock
-        
-        # 에이전트 점수 출력
-        scores = result.get("scores", {})
-        analyst_score = scores.get("analyst")
-        quant_score = scores.get("quant")
-        chartist_score = scores.get("chartist")
-        
-        if analyst_score:
-            print(f"   → Analyst  헤게모니: {analyst_score.hegemony_grade} ({analyst_score.total_score}/100점)")
-        if quant_score:
-            print(f"   → Quant    재무등급: {quant_score.grade} ({quant_score.total_score}/100점)")
-        if chartist_score:
-            print(f"   → Chartist 기술신호: {chartist_score.signal} ({chartist_score.total_score}/100점)")
-        
-        # 결과 요약
-        result["summary"] = self._generate_summary(stock_name, result)
-        
-        # 분석 결과 캐시
-        final_decision = result.get("final_decision")
-        if final_decision:
-            self.memory.cache_analysis(stock_name, {
-                "total_score": final_decision.total_score,
-                "action": final_decision.action.value,
-                "analyst_total": analyst_score.total_score if analyst_score else 0,
-                "quant_total": quant_score.total_score if quant_score else 0,
-                "chartist_total": chartist_score.total_score if chartist_score else 0,
-            })
-        
-        return result
     
     def _execute_quick_analysis(self, analysis: QueryAnalysis) -> Dict[str, Any]:
         """빠른 분석 실행 (Analyst 제외)"""
@@ -554,40 +504,6 @@ JSON만 응답하세요.
             "status": "removed",
             "message": "기존 quick 분석 흐름은 제거되었습니다. 새 분석 파이프라인으로 대체 예정입니다.",
         }
-        
-        stock = analysis.stocks[0]
-        stock_name = stock["name"]
-        stock_code = stock["code"]
-        
-        print(f"\n⚡ {stock_name}({stock_code}) 빠른 분석 시작...")
-        
-        results = {"status": "success", "stock": stock, "scores": {}}
-        
-        # Quant
-        quant_score = self.agents["quant"].full_analysis(stock_name, stock_code)
-        results["scores"]["quant"] = quant_score
-        
-        # Chartist
-        chartist_score = self.agents["chartist"].full_analysis(stock_name, stock_code)
-        results["scores"]["chartist"] = chartist_score
-        
-        from src.agents import AgentScores
-
-        decision = self.agents["risk_manager"].make_decision(
-            stock_name,
-            stock_code,
-            AgentScores(
-                quant_result=quant_score,
-                chartist_result=chartist_score,
-                analyst_total=50,
-                analyst_grade="C",
-                analyst_opinion="빠른 분석 모드에서는 Analyst 정성 리서치를 생략했습니다.",
-            ),
-        )
-        results["scores"]["risk_manager"] = decision
-        results["final_decision"] = decision
-        
-        return results
     
     def _execute_realtime_price(self, analysis: QueryAnalysis) -> Dict[str, Any]:
         """실시간 시세 조회"""
@@ -733,22 +649,6 @@ JSON만 응답하세요.
             "theme": theme,
             "message": "기존 테마 분석 흐름은 제거되었습니다. 새 테마 순회 파이프라인으로 대체 예정입니다.",
         }
-
-        print(f"\n🔍 '{theme}' 테마 주도주 선별 중...")
-
-        from src.agents import ThemeLeaderOrchestrator
-
-        orchestrator = ThemeLeaderOrchestrator()
-        result = orchestrator.run(theme=theme, candidate_limit=5, top_n=3)
-
-        if result.get("status") != "success":
-            return result
-
-        result["message"] = (
-            f"'{theme}' 테마 데이터를 스캔해 후보를 추출하고, "
-            "Analyst/Quant/Chartist/Risk Manager를 통해 주도주를 선정했습니다."
-        )
-        return result
     
     def _execute_general_qa(self, analysis: QueryAnalysis) -> Dict[str, Any]:
         """일반 질문 처리 (대화 맥락 포함)"""
@@ -803,27 +703,6 @@ JSON만 응답하세요.
             intent=analysis.intent.value,
             stocks=stock_names,
         )
-    
-    def _generate_summary(self, stock_name: str, results: Dict) -> str:
-        """결과 요약 생성"""
-        decision = results.get("final_decision")
-        if not decision:
-            return "분석 결과를 요약할 수 없습니다."
-        
-        return f"""
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📊 {stock_name} 종합 분석 결과
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎯 최종 판단: {decision.action.value}
-📈 종합 점수: {decision.total_score}/100점
-⚠️ 리스크 레벨: {decision.risk_level.value}
-💰 목표가: {decision.target_price or 'N/A'}
-🛑 손절가: {decision.stop_loss or 'N/A'}
-
-💬 의견: {decision.summary}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-"""
-
 
 # ==========================================
 # 대화형 인터페이스

@@ -143,13 +143,13 @@ def _iter_jsonl(path: Path) -> Iterable[Dict[str, Any]]:
                 yield json.loads(line)
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build point-in-time theme membership evidence.")
     parser.add_argument("--data-dir", default=str(get_data_dir()))
     parser.add_argument("--theme-key", default="ai")
     parser.add_argument("--theme-name", default="AI")
     parser.add_argument("--min-evidence-count", type=int, default=1)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     rows = build_inferred_membership(
         data_dir=args.data_dir,

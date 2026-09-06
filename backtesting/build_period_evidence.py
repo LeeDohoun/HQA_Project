@@ -18,7 +18,7 @@ def _parse_sources(raw: str):
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Build a period-specific evidence snapshot.")
     parser.add_argument("--data-dir", default="./data")
     parser.add_argument("--theme-key", required=True)
@@ -27,7 +27,7 @@ def main() -> None:
     parser.add_argument("--source-types", default="", help="Comma-separated sources, e.g. news,dart")
     parser.add_argument("--output-name", required=True)
     parser.add_argument("--build-vector", action="store_true")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     result = build_period_snapshot(
         data_dir=args.data_dir,

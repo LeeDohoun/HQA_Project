@@ -9,12 +9,12 @@ from pathlib import Path
 from src.tracing.paper_audit import summarize_runtime
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--audit", type=Path, required=True)
     parser.add_argument("--baseline-audit", type=Path)
     parser.add_argument("--budget", type=Path)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     def summarize(path):
         if not path.is_file():

@@ -40,7 +40,8 @@ def main() -> int:
         "dependencies": [
             _module_status("dotenv"),
             _module_status("langchain_core"),
-            _module_status("langgraph"),
+            _module_status("langchain_openai"),
+            _module_status("openai"),
             _module_status("rank_bm25"),
         ],
     }

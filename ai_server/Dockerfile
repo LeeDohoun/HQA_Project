@@ -35,9 +35,10 @@ COPY ai_server/ ./ai_server/
 COPY prompts/ ./prompts/
 COPY config/ ./config/
 COPY scripts/ ./scripts/
+COPY backtesting/ ./backtesting/
 
 # 데이터/DB 디렉토리 생성
-RUN mkdir -p /app/database /app/data/files /app/data/token /app/logs
+RUN mkdir -p /app/data/files /app/data/token /app/logs
 
 # 비root 사용자
 RUN groupadd -r hqa && useradd -r -g hqa -d /app hqa

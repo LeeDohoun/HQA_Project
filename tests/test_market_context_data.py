@@ -8,6 +8,7 @@ from src.ingestion.krx_chart import KrxChartCollector
 from src.ingestion.krx_benchmarks import _record
 from src.runner.analysis_data import price_features
 from src.runner.market_context_data import load_benchmark_context
+from src.runner.trading_calendar import completed_daily_sessions
 
 
 AS_OF = datetime(2026, 9, 5, 3, tzinfo=timezone.utc)
@@ -63,10 +64,10 @@ def test_sector_is_never_inferred_from_theme_or_available_sector_bars(tmp_path):
 
 
 def test_legacy_price_history_stays_unknown_through_actual_normalizer(tmp_path):
-    last = datetime(2026, 9, 4, tzinfo=timezone.utc)
-    rows = [{"timestamp": (last - timedelta(days=offset)).date().isoformat(),
+    rows = [{"timestamp": day,
              "open": "100", "high": "101", "low": "99", "close": "100", "volume": "1000",
-             "metadata": {"source": "krx", "raw_date": "20260904"}} for offset in range(150)]
+             "metadata": {"source": "krx", "collected_at": close.isoformat()}}
+            for day, close in completed_daily_sessions(AS_OF, 150)]
     _, history = price_features(rows, AS_OF)
     assert all("market" not in row and "price_basis" not in row for row in history)
     write_rows(tmp_path, "benchmarks.jsonl", [bar(), bar("KOSDAQ", KOSDAQ)])
@@ -148,6 +149,47 @@ def test_latest_known_mapping_selection_is_independent_of_file_order(tmp_path, r
     write_rows(tmp_path, "benchmarks.jsonl", [bar(index_name=SECTOR)])
     result = load_benchmark_context(tmp_path, candidate(), AS_OF)
     assert result["sector"]["mapping_source_id"] == "revised"
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_mapping_history_retains_prior_period_and_only_latest_revision_of_each_period(tmp_path, reverse):
+    original = mapping("sector", source_id="old-original", available_at="2026-09-01T09:00:00+09:00")
+    revised = {**original, "source_id": "old-corrected", "version": "v2", "effective_to": "2026-09-03",
+               "available_at": "2026-09-03T09:00:00+09:00"}
+    current = mapping("sector", source_id="current", effective_from="2026-09-04", index_name="New sector")
+    rows = [original, current, revised]
+    write_rows(tmp_path, "benchmark_mappings.jsonl", rows[::-1] if reverse else rows)
+    write_rows(tmp_path, "benchmarks.jsonl", [bar(index_name=SECTOR), bar(index_name="New sector")])
+    result = load_benchmark_context(tmp_path, candidate(), AS_OF)["sector"]
+    assert result["mapping_source_id"] == "current"
+    assert [row["mapping_source_id"] for row in result["mapping_history"]] == ["old-corrected", "current"]
+    assert result["mapping_history"][0]["bars"][0]["index_name"] == SECTOR
+    assert result["mapping_history"][1]["bars"][0]["index_name"] == "New sector"
+
+
+def test_market_transfer_intervals_do_not_create_false_cross_period_conflicts(tmp_path):
+    stock = candidate("KOSPI")
+    stock["price_history"][1].update(market="KOSDAQ", source_url=KrxChartCollector.KOSDAQ_DAILY_URL)
+    old = mapping(effective_to="2026-09-03", available_at="2026-09-03T09:00:00+09:00")
+    new = mapping(series="KOSDAQ", effective_from="2026-09-04", source_id="new-market")
+    old_sector = mapping("sector", effective_to="2026-09-03", available_at="2026-09-03T09:00:00+09:00")
+    new_sector = mapping("sector", "KOSDAQ", effective_from="2026-09-04", source_id="new-sector")
+    write_rows(tmp_path, "benchmark_mappings.jsonl", [old, new, old_sector, new_sector])
+    write_rows(tmp_path, "benchmarks.jsonl", [bar(), bar("KOSDAQ", KOSDAQ),
+                                            bar(index_name=SECTOR), bar("KOSDAQ", SECTOR)])
+    result = load_benchmark_context(tmp_path, stock, AS_OF)
+    assert all(len(result[kind]["mapping_history"]) == 2 for kind in ("market", "sector"))
+
+
+def test_price_mapping_uses_trade_day_and_excludes_future_observations(tmp_path):
+    stock = candidate("KOSPI")
+    for row in stock["price_history"]:
+        row.update(trade_date=row["available_at"][:10], bar_at=row["available_at"],
+                   observed_at="2026-09-05T09:00:00+09:00")
+    stock["price_history"].append({"observed_at": "2026-09-06T09:00:00+09:00", "market": "invalid"})
+    write_rows(tmp_path, "benchmarks.jsonl", [bar()])
+    result = load_benchmark_context(tmp_path, stock, AS_OF)["market"]
+    assert result["effective_from"] == "2026-09-03" and result["effective_to"] == "2026-09-04"
 
 
 def test_same_availability_conflict_fails_but_exact_duplicate_is_harmless(tmp_path):

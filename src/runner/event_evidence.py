@@ -9,10 +9,10 @@ import unicodedata
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-EVENT_EVIDENCE_VERSION = "event-evidence-v1"
+EVENT_EVIDENCE_VERSION = "event-evidence-v2"
 MAX_TEXT = 2400
 MAX_SOURCES = 4
-TEXT_SCOPES = {"document", "available_fragments", "structured_fields"}
+TEXT_SCOPES = {"document", "available_fragments", "structured_fields", "summary"}
 _KST = ZoneInfo("Asia/Seoul")
 _PATTERNS = (
     ("regulatory_risk", r"거래정지|상장폐지|관리종목|불성실공시|횡령|배임|감사의견(?:거절|부적정)|과징금|영업정지"),
@@ -113,6 +113,19 @@ def _facts(row: dict) -> list[dict]:
              "rcept_no": receipt, "fields": preserved, "omitted_fields_count": len(fields) - len(preserved)}]
 
 
+def _group_fingerprint(row: dict, identity: tuple) -> tuple:
+    # Headline variants may share a syndicated full body, but summaries and unseen tails cannot prove it.
+    flags = tuple(bool(row["metadata"].get(flag)) for flag in ("is_correction", "is_withdrawal", "has_correction"))
+    if (row["source_type"] not in {"news", "general_news"} or row["text_scope"] != "document"
+            or row["truncated"] or len(_normalized(row["text"])) < 200
+            or any(flags)
+            or re.search(r"정정|철회|해명|오보|부인|해지|취소|아니|않|못|없|적자|흑자|증가|감소|상승|하락|확대|축소", row["title"])):
+        return ("exact_document", *identity, flags)
+    headline_numbers = tuple(re.findall(r"[+\-$₩€£]?\d[\d,.]*(?:\s*[가-힣%]+)?", _normalized(row["title"])))
+    return ("full_body_syndication", identity[0], _category(row), headline_numbers,
+            _normalized(row["text"]), row["text_scope"])
+
+
 def build_event_evidence(documents: list[dict], stock_code: str) -> list[dict]:
     """No LLM extraction, inferred amounts, fuzzy deduplication, or time filtering."""
     if not isinstance(documents, list):
@@ -131,7 +144,7 @@ def build_event_evidence(documents: list[dict], stock_code: str) -> list[dict]:
         prior = identities.setdefault(row["source_id"], fingerprint)
         if prior != fingerprint:
             raise ValueError(f"conflicting_source_document:{row['source_id']}")
-        groups.setdefault(fingerprint, []).append(row)
+        groups.setdefault(_group_fingerprint(row, fingerprint), []).append(row)
     events = []
     for fingerprint, members in sorted(groups.items()):
         members.sort(key=lambda row: (row["source_type"] != "dart", row["source_id"], row["available_at"]))
@@ -164,6 +177,7 @@ def build_event_evidence(documents: list[dict], stock_code: str) -> list[dict]:
                  ("contract_termination", bool(re.search(r"계약\s*(?:해지|취소)", primary["title"])))) if active]
         event_id = "event:" + hashlib.sha256(json.dumps([stock_code, fingerprint], ensure_ascii=False).encode()).hexdigest()
         events.append({"event_id": event_id, "stock_code": stock_code, "event_type": category,
+            "deduplication_basis": fingerprint[0],
             "title": primary["title"], "text": primary["text"][:MAX_TEXT],
             "text_scope": primary["text_scope"],
             "text_source_id": primary["source_id"], "text_truncated": primary["truncated"] or len(primary["text"]) > MAX_TEXT,
@@ -173,7 +187,7 @@ def build_event_evidence(documents: list[dict], stock_code: str) -> list[dict]:
             "available_at": min(row["available_at"] for row in members),
             "updated_at": max(row["available_at"] for row in candidates),
             "source_ids": [row["source_id"] for row in sources],
-            "sources": [{key: row[key] for key in ("source_id", "source_type", "url", "published_at", "available_at",
+            "sources": [{key: row[key] for key in ("source_id", "source_type", "url", "title", "published_at", "available_at",
                        "published_at_precision", "source_text_hash", "truncated", "original_characters", "text_scope") if key in row}
                         for row in sources],
             "source_count": len(unique), "omitted_sources_count": max(0, len(unique) - MAX_SOURCES),

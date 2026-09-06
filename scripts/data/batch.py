@@ -10,6 +10,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List
 
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
+
+from scripts.data.common import DEFAULT_SOURCES
+from src.config.settings import get_data_dir
+
 
 @dataclass(frozen=True)
 class ThemeSpec:
@@ -108,8 +114,8 @@ def _append_common_args(command: List[str], args: argparse.Namespace) -> None:
         if value not in (None, ""):
             command.extend([option, str(value)])
 
-    if args.reuse_saved_targets:
-        command.append("--reuse-saved-targets")
+    if not args.reuse_saved_targets:
+        command.append("--refresh-targets")
     if args.save_only:
         command.append("--save-only")
 
@@ -117,7 +123,8 @@ def _append_common_args(command: List[str], args: argparse.Namespace) -> None:
 def _build_command(spec: ThemeSpec, args: argparse.Namespace) -> List[str]:
     command = [
         sys.executable,
-        "scripts/theme_pipeline.py",
+        "-m",
+        "scripts.data.collect",
         "--theme",
         spec.theme,
     ]
@@ -143,7 +150,7 @@ def run_batch(specs: Iterable[ThemeSpec], args: argparse.Namespace) -> int:
         if args.dry_run:
             continue
 
-        result = subprocess.run(command, check=False)
+        result = subprocess.run(command, check=False, cwd=ROOT)
         if result.returncode != 0:
             failures.append((spec, result.returncode))
             print(f"[BATCH][ERROR] {_format_spec(spec)} failed rc={result.returncode}")
@@ -162,7 +169,7 @@ def run_batch(specs: Iterable[ThemeSpec], args: argparse.Namespace) -> int:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="여러 테마를 순차적으로 theme_pipeline.py에 전달해 수집/빌드합니다.",
+        description="여러 테마를 순차적으로 scripts.data.collect에 전달해 수집/빌드합니다.",
     )
     parser.add_argument(
         "--themes",
@@ -177,20 +184,22 @@ def main() -> None:
     parser.add_argument("--continue-on-error", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
 
-    parser.add_argument("--data-dir", default="./data")
+    parser.add_argument("--data-dir", default=str(get_data_dir()))
     parser.add_argument("--theme-max-stocks", type=int, default=30)
     parser.add_argument("--theme-max-pages", type=int, default=10)
     parser.add_argument("--target-mode", choices=["overwrite", "append"], default="overwrite")
-    parser.add_argument("--reuse-saved-targets", action="store_true")
+    target_source = parser.add_mutually_exclusive_group()
+    target_source.add_argument("--reuse-saved-targets", action="store_true", default=True)
+    target_source.add_argument("--refresh-targets", dest="reuse_saved_targets", action="store_false")
     parser.add_argument("--save-only", action="store_true")
     parser.add_argument("--corp-codes-csv", default="./corp_codes.csv")
-    parser.add_argument("--from-date", default="20250101")
-    parser.add_argument("--to-date", default="20251231")
+    parser.add_argument("--from-date", default=None)
+    parser.add_argument("--to-date", default=None)
     parser.add_argument("--max-news", type=int, default=20)
     parser.add_argument("--max-general-news", type=int, default=20)
     parser.add_argument("--forum-pages", type=int, default=3)
     parser.add_argument("--chart-pages", type=int, default=5)
-    parser.add_argument("--enabled-sources", default="news,dart,forum")
+    parser.add_argument("--enabled-sources", default=DEFAULT_SOURCES)
     parser.add_argument("--general-news-keywords", default="")
     parser.add_argument(
         "--update-mode",

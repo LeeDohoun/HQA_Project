@@ -27,7 +27,7 @@ def collector(monkeypatch):
 
 
 def collect_one(collector, rows, title="주요사항보고서(유상증자결정)", remark=""):
-    listing = {"status": "000", "list": [{
+    listing = {"status": "000", "page_no": 1, "page_count": 100, "total_count": 1, "total_page": 1, "list": [{
         "report_nm": title, "rcept_no": RECEIPT, "rcept_dt": "20260904",
         "corp_name": "Example", "stock_code": "005930", "rm": remark,
     }]}
@@ -145,7 +145,7 @@ def test_verified_short_fields_are_evidence_without_claiming_a_narrative_body(co
 
 
 def test_structured_request_failure_remains_explicit_after_existing_body_fallback(collector):
-    listing = {"status": "000", "list": [{
+    listing = {"status": "000", "page_no": 1, "page_count": 100, "total_count": 1, "total_page": 1, "list": [{
         "report_nm": "주요사항보고서(유상증자결정)", "rcept_no": RECEIPT,
         "rcept_dt": "20260904", "corp_name": "Example",
     }]}

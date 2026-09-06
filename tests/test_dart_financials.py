@@ -1,3 +1,9 @@
+from types import SimpleNamespace
+from unittest.mock import Mock
+
+import pytest
+
+from src.ingestion.dart_api import DartAPIError
 from src.ingestion.dart_financials import DartFinancialStatementCollector
 
 
@@ -95,3 +101,42 @@ def test_dart_financial_statement_collector_collects_recent_annual_series():
 
     assert [snapshot.fiscal_year for snapshot in snapshots] == ["2025", "2023", "2022"]
     assert calls == ["2025", "2024", "2023", "2022"]
+
+
+def test_incremental_event_window_does_not_exclude_previous_annual_reports():
+    collector = DartFinancialStatementCollector(api_key="fixture-key")
+    collector.collect_annual = Mock(side_effect=lambda **kwargs: (
+        None if kwargs["fiscal_year"] == "2026" else SimpleNamespace(fiscal_year=kwargs["fiscal_year"])))
+    snapshots = collector.collect_annual_series("Example", "005930", "00126380", "20260901", "20260905")
+    assert [value.fiscal_year for value in snapshots] == ["2025", "2024", "2023"]
+    assert [call.kwargs["fiscal_year"] for call in collector.collect_annual.call_args_list] == ["2026", "2025", "2024", "2023"]
+
+
+@pytest.mark.parametrize("payload", [
+    {"status": "020", "message": "fixture-key"}, {"status": "010"}, {"status": "014"},
+    {"status": "800"}, {"status": "000", "list": []}, {"status": "000", "list": [None]},
+    {"status": "000", "list": {}}, {}, [],
+])
+def test_financial_business_or_schema_errors_do_not_trigger_older_year_fallback(payload):
+    collector = DartFinancialStatementCollector(api_key="fixture-key")
+    collector.get_with_retry = Mock(return_value=SimpleNamespace(json=lambda: payload))
+    with pytest.raises(DartAPIError) as error:
+        collector.collect_annual_series("Example", "005930", "00126380", "20260901", "20260905")
+    assert collector.get_with_retry.call_count == 1
+    assert "fixture-key" not in str(error.value)
+
+
+def test_financial_genuine_no_data_is_not_an_error():
+    collector = DartFinancialStatementCollector(api_key="fixture-key")
+    collector.get_with_retry = Mock(return_value=SimpleNamespace(json=lambda: {"status": "013"}))
+    assert collector.collect_annual("Example", "005930", "00126380", "2025") is None
+
+
+def test_financial_missing_configuration_and_transport_error_are_explicit():
+    with pytest.raises(ValueError, match="required"):
+        DartFinancialStatementCollector().collect_annual("Example", "005930", "00126380", "2025")
+    collector = DartFinancialStatementCollector(api_key="fixture-key")
+    collector.get_with_retry = Mock(side_effect=RuntimeError("https://example.invalid?crtfc_key=fixture-key"))
+    with pytest.raises(DartAPIError, match="transport failure") as error:
+        collector.collect_annual("Example", "005930", "00126380", "2025")
+    assert "fixture-key" not in str(error.value)

@@ -202,14 +202,14 @@ def write_snapshot(rows: List[Dict[str, Any]], output_dir: Path, report: Dict[st
         json.dump(report, f, ensure_ascii=False, indent=2)
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Clean a period evidence snapshot without modifying the original.")
     parser.add_argument("--input-dir", required=True, help="Directory containing combined.jsonl")
     parser.add_argument("--output-dir", required=True, help="Directory to write the cleaned snapshot")
     parser.add_argument("--forum-min-normalized-chars", type=int, default=20)
     parser.add_argument("--max-news-chunks-per-title", type=int, default=3)
     parser.add_argument("--max-forum-chunks-per-title", type=int, default=1)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     input_dir = Path(args.input_dir)
     output_dir = Path(args.output_dir)

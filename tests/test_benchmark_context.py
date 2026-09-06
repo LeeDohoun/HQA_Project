@@ -218,3 +218,60 @@ def test_malformed_known_mapping_interval_and_observation_fail(change):
     data["sector"].update(change)
     with pytest.raises(ValueError):
         compare(data)
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_historical_mapping_is_selected_for_the_event_window_not_latest_classification(reverse):
+    data = benchmarks()
+    old = deepcopy(data["sector"])
+    old["effective_to"] = "2026-09-07"
+    new = {**deepcopy(old), "effective_from": "2026-09-08", "effective_to": None,
+           "mapping_source_id": "mapping:new-sector", "index_name": "New sector",
+           "mapping_available_at": "2026-09-07T16:00:00+09:00"}
+    history = [old, new]
+    data["sector"] = {**new, "mapping_history": history[::-1] if reverse else history}
+    result = compare(data)
+    assert result["sector"]["status"] == "ready"
+    assert result["sector"]["mapping_source_id"] == old["mapping_source_id"]
+    assert new["mapping_source_id"] not in result["source_ids"]
+
+
+def test_new_classification_closes_older_open_interval_without_splicing_index_series():
+    data = benchmarks()
+    old = deepcopy(data["sector"])
+    new = {**deepcopy(old), "effective_from": "2026-09-03", "mapping_source_id": "mapping:new-sector",
+           "mapping_available_at": "2026-09-03T09:00:00+09:00"}
+    data["sector"] = {**new, "mapping_history": [old, new]}
+    result = compare(data)
+    assert result["sector"]["horizons"]["1"]["status"] == "observed"
+    assert result["sector"]["horizons"]["3"]["status"] == "mapping_not_effective_for_window"
+    assert result["sector"]["latest"]["excess_return_pp"] is None
+
+
+def test_revised_closed_interval_does_not_revive_superseded_open_mapping():
+    data = benchmarks()
+    original = deepcopy(data["sector"])
+    revised = {**deepcopy(original), "effective_to": "2026-08-30",
+               "mapping_available_at": "2026-09-07T16:00:00+09:00", "mapping_source_id": "mapping:closed"}
+    data["sector"] = {**revised, "mapping_history": [original, revised]}
+    result = compare(data)
+    assert result["sector"]["status"] == "unavailable"
+    assert result["sector"]["latest"]["status"] == "mapping_not_effective_for_window"
+
+
+def test_future_mapping_in_history_does_not_change_known_classification():
+    data = benchmarks()
+    original = deepcopy(data["sector"])
+    future = {"mapping_available_at": "2026-09-08T16:00:00+09:00"}
+    data["sector"] = {**original, "mapping_history": [original, future]}
+    assert compare(data)["sector"] == compare()["sector"]
+
+
+def test_stock_collection_time_is_not_used_as_benchmark_trade_date():
+    reaction = stock_reaction()
+    reaction["baseline_bar"].update(bar_at="2026-08-31T15:30:00+09:00", trade_date="2026-08-31",
+                                    observed_at="2026-09-07T16:00:00+09:00")
+    assert compare(reaction=reaction)["market"]["latest"]["baseline_trade_date"] == "2026-08-31"
+    reaction["baseline_bar"]["observed_at"] = "2026-09-08T16:00:00+09:00"
+    with pytest.raises(ValueError, match="future bar"):
+        compare(reaction=reaction)

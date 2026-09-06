@@ -8,10 +8,10 @@ from pathlib import Path
 from src.tracing.paper_performance import compare_performance
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, required=True)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     with args.input.open(encoding="utf-8") as handle:
         report = compare_performance(json.load(handle))
     print(json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False))

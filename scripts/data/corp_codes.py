@@ -4,24 +4,21 @@ from __future__ import annotations
 import argparse
 import csv
 import os
+import re
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
 from io import BytesIO
 from pathlib import Path
-from zipfile import ZipFile
+from zipfile import BadZipFile, ZipFile
 
 import requests
 
-sys.path.insert(0, os.path.abspath("."))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-try:
-    from src.config.settings import load_project_env
-except ImportError:
-    load_project_env = None
+from src.config.settings import load_project_env
 
-if load_project_env is not None:
-    load_project_env()
+load_project_env()
 
 
 CORP_CODE_URL = "https://opendart.fss.or.kr/api/corpCode.xml"
@@ -45,8 +42,8 @@ def _parse_corp_codes(xml_bytes: bytes, *, include_unlisted: bool = False) -> li
         stock_code = (item.findtext("stock_code") or "").strip()
         modify_date = (item.findtext("modify_date") or "").strip()
 
-        if not corp_code:
-            continue
+        if not re.fullmatch(r"[0-9]{8}", corp_code) or (stock_code and not re.fullmatch(r"[0-9]{6}", stock_code)):
+            raise ValueError("DART corpCode contains invalid corporate or stock code")
         if not include_unlisted and not stock_code:
             continue
 
@@ -59,6 +56,14 @@ def _parse_corp_codes(xml_bytes: bytes, *, include_unlisted: bool = False) -> li
             }
         )
 
+    if not rows:
+        raise ValueError("DART corpCode contains no eligible records")
+    listed = {}
+    for row in rows:
+        stock = row["stock_code"]
+        if stock and stock in listed and listed[stock] != row["corp_code"]:
+            raise ValueError(f"DART corpCode contains conflicting mapping for stock:{stock}")
+        listed[stock] = row["corp_code"]
     rows.sort(key=lambda row: (row["stock_code"] or "999999", row["corp_name"]))
     return rows
 
@@ -83,15 +88,27 @@ def _write_csv(rows: list[dict[str, str]], output_path: Path) -> None:
 
 
 def download_corp_codes(api_key: str, *, include_unlisted: bool = False) -> list[dict[str, str]]:
-    response = requests.get(
-        CORP_CODE_URL,
-        params={"crtfc_key": api_key},
-        timeout=60,
-    )
-    response.raise_for_status()
-
-    xml_bytes = _extract_corp_code_xml(response.content)
-    return _parse_corp_codes(xml_bytes, include_unlisted=include_unlisted)
+    if not api_key or not api_key.strip():
+        raise ValueError("DART_API_KEY is required")
+    try:
+        response = requests.get(CORP_CODE_URL, params={"crtfc_key": api_key}, timeout=60, allow_redirects=False)
+        if not 200 <= response.status_code < 300:
+            raise ValueError(f"DART corpCode HTTP status={response.status_code}")
+    except requests.RequestException:
+        raise ValueError("DART corpCode transport failure") from None
+    if not response.content.startswith(b"PK"):
+        try:
+            status = ET.fromstring(response.content).findtext("status")
+        except ET.ParseError:
+            status = None
+        if status and re.fullmatch(r"[0-9]{3}", status):
+            raise ValueError(f"DART corpCode provider error status={status}")
+        raise ValueError("DART corpCode response is not a ZIP archive")
+    try:
+        xml_bytes = _extract_corp_code_xml(response.content)
+        return _parse_corp_codes(xml_bytes, include_unlisted=include_unlisted)
+    except (BadZipFile, ET.ParseError):
+        raise ValueError("DART corpCode malformed archive or XML") from None
 
 
 def main() -> None:

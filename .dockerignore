@@ -32,9 +32,17 @@ data/
 database/
 logs/
 output/
+research/
+artifacts/
+experiment_results/
+
+# Credentials must never enter the build context.
+.env*
+.local/
+backend/target/
+backend/.m2/
 
 # Docker
-Dockerfile
 docker-compose*.yml
 .dockerignore
 

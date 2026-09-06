@@ -459,11 +459,12 @@ def test_singleflight_shares_inflight_work_and_does_not_cache_errors():
 
 
 def test_price_features_use_backtest_ma150_annualized_vol_and_pit_close():
+    from src.runner.trading_calendar import completed_daily_sessions
     rows = []
-    for i in range(160):
-        day = NOW.date() - timedelta(days=160 - i)
-        rows.append({"timestamp": day.isoformat(), "open": 100 + i, "high": 102 + i,
-                     "low": 99 + i, "close": 101 + i, "volume": 1000 + i})
+    for i, (day, close) in enumerate(completed_daily_sessions(NOW, 160)):
+        rows.append({"timestamp": day, "open": 100 + i, "high": 102 + i,
+                     "low": 99 + i, "close": 101 + i, "volume": 1000 + i,
+                     "metadata": {"collected_at": close.isoformat()}})
     rows.append({"timestamp": NOW.date().isoformat(), "open": 10000, "high": 10000, "low": 10000, "close": 10000, "volume": 1})
     features, known = price_features(rows, NOW)
     assert len(known) == 160

@@ -31,6 +31,12 @@ def _aware(value: str) -> datetime:
     return at.astimezone(timezone.utc)
 
 
+def _price_day(row: dict) -> str:
+    if row.get("trade_date") is not None:
+        return date.fromisoformat(row["trade_date"]).isoformat()
+    return source_time(row.get("bar_at") or row["available_at"]).astimezone(KST).date().isoformat()
+
+
 def _mapping(row: dict) -> dict:
     for field in ("stock_code", "kind", "series", "index_name", "source_id", "version", "source_url"):
         if not isinstance(row.get(field), str) or not row[field].strip():
@@ -68,7 +74,9 @@ def load_benchmark_context(data_dir: Path, candidate: dict, as_of: datetime) -> 
         raise ValueError("benchmark context as_of requires a timezone")
     result = {kind: {"status": "unavailable", "data_gaps": [f"{kind}_mapping_unavailable"]}
               for kind in ("market", "sector")}
-    history = [row for row in candidate["price_history"] if _aware(row.get("available_at")) <= as_of]
+    history = [row for row in candidate["price_history"]
+               if _aware(row.get("observed_at") or row.get("available_at")) <= as_of
+               and _aware(row.get("bar_at") or row.get("available_at")) <= as_of]
     from src.ingestion.krx_chart import KrxChartCollector
     endpoints = {"KOSPI": KrxChartCollector.KOSPI_DAILY_URL, "KOSDAQ": KrxChartCollector.KOSDAQ_DAILY_URL}
     for row in history:
@@ -80,8 +88,8 @@ def load_benchmark_context(data_dir: Path, candidate: dict, as_of: datetime) -> 
         market = next(iter(markets))
         result["market"] = {"status": "ready", "series": market, "index_name": MARKET_INDEX_NAMES[market],
             "mapping_source_id": "price:" + candidate["stock_code"] + ":" + content_hash(history),
-            "effective_from": min(source_time(row["available_at"]).astimezone(KST).date() for row in history).isoformat(),
-            "effective_to": max(source_time(row["available_at"]).astimezone(KST).date() for row in history).isoformat()}
+            "effective_from": min(_price_day(row) for row in history),
+            "effective_to": max(_price_day(row) for row in history)}
     mapping_path = data_dir / "market_context" / "benchmark_mappings.jsonl"
     if mapping_path.exists():
         selected = {}
@@ -94,36 +102,45 @@ def load_benchmark_context(data_dir: Path, candidate: dict, as_of: datetime) -> 
             mapped = _mapping(row)
             if date.fromisoformat(mapped["effective_from"]) > today:
                 continue
-            kind = row["kind"]
-            previous = selected.get(kind)
+            key = (row["kind"], mapped["effective_from"])
+            previous = selected.get(key)
             if previous and mapped["mapping_available_at"] == previous["mapping_available_at"] and mapped != previous:
                 raise ValueError("conflicting benchmark mappings at the same availability")
             if previous is None or mapped["mapping_available_at"] > previous["mapping_available_at"]:
-                selected[kind] = mapped
-        for kind, mapped in selected.items():
+                selected[key] = mapped
+        grouped = {kind: [] for kind in result}
+        for (kind, _), mapped in selected.items():
             for row in history:
-                day = source_time(row["available_at"]).astimezone(KST).date().isoformat()
+                day = _price_day(row)
                 if (row.get("market") and mapped["effective_from"] <= day
                         and (mapped["effective_to"] is None or day <= mapped["effective_to"])
                         and row["market"] != mapped["series"]):
                     raise ValueError("benchmark mapping conflicts with verified stock market in its effective interval")
-            if result["market"]["status"] == "ready" and mapped["series"] != result["market"]["series"]:
-                raise ValueError("benchmark mapping conflicts with verified stock market")
-            result[kind] = mapped
-        if (result["market"]["status"] == result["sector"]["status"] == "ready"
-                and result["market"]["series"] != result["sector"]["series"]):
-            raise ValueError("sector benchmark conflicts with verified stock market")
+            grouped[kind].append(mapped)
+        for market in grouped["market"]:
+            for sector in grouped["sector"]:
+                if (market["series"] != sector["series"]
+                        and market["effective_from"] <= (sector["effective_to"] or "9999-12-31")
+                        and sector["effective_from"] <= (market["effective_to"] or "9999-12-31")):
+                    raise ValueError("sector benchmark conflicts with verified stock market")
+        for kind, mappings in grouped.items():
+            if mappings:
+                mappings.sort(key=lambda item: (item["mapping_available_at"], item["effective_from"]))
+                result[kind] = {**mappings[-1], "mapping_history": mappings}
     path = data_dir / "market_context" / "benchmarks.jsonl"
     from src.ingestion.krx_benchmarks import validate_benchmark_record
     for kind, mapped in result.items():
         if mapped["status"] != "ready":
             continue
-        if not path.exists():
-            mapped.update(status="unavailable", data_gaps=["benchmark_history_unavailable"])
-            continue
-        mapped["bars"] = [validate_benchmark_record(row) for row in _rows(path)
-                          if row.get("series") == mapped["series"] and row.get("index_name") == mapped["index_name"]
-                          and _aware(row.get("available_at")) <= as_of]
-        if not mapped["bars"]:
-            mapped.update(status="unavailable", data_gaps=["benchmark_index_not_found"])
+        for item in mapped.get("mapping_history", [mapped]):
+            if not path.exists():
+                item.update(status="unavailable", data_gaps=["benchmark_history_unavailable"])
+                continue
+            item["bars"] = [validate_benchmark_record(row) for row in _rows(path)
+                            if row.get("series") == item["series"] and row.get("index_name") == item["index_name"]
+                            and _aware(row.get("available_at")) <= as_of]
+            if not item["bars"]:
+                item.update(status="unavailable", data_gaps=["benchmark_index_not_found"])
+        if "mapping_history" in mapped:
+            mapped.update(mapped["mapping_history"][-1])
     return result

@@ -3,10 +3,10 @@
 HQA evidence Build CLI — 한 명령으로 raw → corpus → canonical evidence sync
 
 Usage:
-    python scripts/build_evidence_index.py --theme 반도체
-    python scripts/build_evidence_index.py --theme 반도체 --mode overwrite
-    python scripts/build_evidence_index.py --theme 반도체 --stats
-    python scripts/build_evidence_index.py --theme-key 반도체 --stats-only
+    python -m scripts.data.build --theme 반도체
+    python -m scripts.data.build --theme 반도체 --mode overwrite
+    python -m scripts.data.build --theme 반도체 --stats
+    python -m scripts.data.build --theme-key 반도체 --stats-only
 
 theme_targets가 저장되어 있으면 자동으로 theme_key를 결정합니다.
 """
@@ -16,10 +16,10 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import os
+from pathlib import Path
 
 # Add project root to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from src.config.settings import get_data_dir
 

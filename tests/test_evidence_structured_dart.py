@@ -41,7 +41,8 @@ def raw_to_records(tmp_path, docs, source="dart"):
 
 def test_collector_structured_only_fields_survive_raw_loading_and_corpus(tmp_path, monkeypatch):
     collector = DartDisclosureCollector("not-a-live-key")
-    listing = {"status": "000", "list": [{"report_nm": TITLE, "rcept_no": RECEIPT,
+    listing = {"status": "000", "page_no": 1, "page_count": 100, "total_count": 1, "total_page": 1,
+               "list": [{"report_nm": TITLE, "rcept_no": RECEIPT,
                                            "rcept_dt": "20260904", "stock_code": "005930"}]}
     response = {"status": "000", "list": [{"rcept_no": RECEIPT, "nstk_ostk_cnt": "12500"}]}
     monkeypatch.setattr(collector, "get_with_retry", Mock(side_effect=[

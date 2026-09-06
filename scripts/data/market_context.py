@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from src.config.settings import get_data_dir, load_project_env
 from src.ingestion.krx_benchmarks import KrxBenchmarkCollector, save_benchmark_records

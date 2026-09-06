@@ -1,0 +1,2 @@
+# Install alongside requirements.txt. No live API credentials are needed.
+pytest>=8.0.0,<9.0.0
