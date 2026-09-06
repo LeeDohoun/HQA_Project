@@ -2,7 +2,7 @@ from __future__ import annotations
 
 # File role:
 # - Lightweight BM25 index for pipeline-built corpora.
-# - Avoids depending on the ai-main RAG stack during data-pipeline flows.
+# - Avoids depending on the ai-main evidence stack during data-pipeline flows.
 
 import json
 import hashlib

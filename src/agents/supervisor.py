@@ -8,7 +8,7 @@ Supervisor Agent (수퍼바이저 에이전트)
 - 적절한 에이전트/도구 조합 선택
 - 결과 통합 및 응답 생성
 
-모델: Instruct (빠른 처리, 복잡한 추론 불필요)
+모델: Chartist 역할 모델 기반 빠른 처리
 """
 
 import json
@@ -17,11 +17,10 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 from enum import Enum
 
-from src.agents.llm_config import get_instruct_llm
+from src.agents.llm_config import get_chartist_llm
 from src.utils.stock_mapper import StockMapper, get_mapper
 from src.utils.memory import ConversationMemory
 from src.utils.parallel import run_agents_parallel, is_error
-from src.agents.graph import run_stock_analysis, is_langgraph_available
 from src.utils.prompt_loader import load_prompt_optional
 
 
@@ -81,7 +80,7 @@ class SupervisorAgent:
     """
     
     def __init__(self, memory: Optional[ConversationMemory] = None):
-        self.llm = get_instruct_llm()
+        self.llm = get_chartist_llm()
         self.stock_mapper = get_mapper()  # 분리된 StockMapper 사용
         self.memory = memory or ConversationMemory(max_turns=10)
         
@@ -118,13 +117,6 @@ class SupervisorAgent:
             except ImportError:
                 pass
             
-            # 웹 검색 (선택적)
-            try:
-                from src.tools.web_search_tool import WebSearchTool
-                self._tools["web_search"] = WebSearchTool()
-            except ImportError:
-                pass
-        
         return self._tools
     
     def analyze(self, query: str) -> QueryAnalysis:
@@ -169,8 +161,8 @@ class SupervisorAgent:
             if analysis.stocks:
                 if any(kw in query for kw in ["빠르게", "간단히", "요약"]):
                     analysis.intent = Intent.QUICK_ANALYSIS
-                    analysis.required_agents = ["quant", "chartist"]
-                    analysis.execution_plan = ["quant", "chartist", "quick_decision"]
+                    analysis.required_agents = ["quant", "chartist", "risk_manager"]
+                    analysis.execution_plan = ["quant", "chartist", "risk_manager"]
                     analysis.confidence = 0.85
                 else:
                     analysis.intent = Intent.STOCK_ANALYSIS
@@ -240,8 +232,7 @@ class SupervisorAgent:
                 if any(kw in query for kw in ["산업", "업종", "섹터", "동향", "전망"]):
                     analysis.intent = Intent.INDUSTRY_ANALYSIS
                     analysis.industry = industry
-                    analysis.required_agents = ["analyst"]  # Researcher + Strategist
-                    analysis.required_tools = ["web_search"]
+                    analysis.required_agents = ["analyst"]
                     analysis.execution_plan = ["research_industry", "analyze_industry"]
                     analysis.confidence = 0.85
                     return analysis
@@ -269,7 +260,6 @@ class SupervisorAgent:
                 analysis.intent = Intent.ISSUE_ANALYSIS
                 analysis.issue = keyword
                 analysis.required_agents = ["analyst"]
-                analysis.required_tools = ["web_search"]
                 analysis.execution_plan = ["research_issue", "analyze_impact"]
                 analysis.confidence = 0.8
                 return analysis
@@ -382,7 +372,7 @@ JSON만 응답하세요.
         if analysis.intent == Intent.STOCK_ANALYSIS:
             analysis.required_agents = ["analyst", "quant", "chartist", "risk_manager"]
             analysis.execution_plan = [
-                "1. Analyst: 헤게모니 분석 (Researcher → Strategist)",
+                "1. Analyst: 헤게모니 분석",
                 "2. Quant: 재무 분석",
                 "3. Chartist: 기술적 분석",
                 "4. Risk Manager: 최종 판단",
@@ -393,23 +383,21 @@ JSON만 응답하세요.
             analysis.execution_plan = [
                 "1. Quant: 재무 분석",
                 "2. Chartist: 기술적 분석",
-                "3. Risk Manager: 빠른 판단",
+                "3. Risk Manager: 최종 판단",
             ]
             
         elif analysis.intent == Intent.INDUSTRY_ANALYSIS:
             analysis.required_agents = ["analyst"]
-            analysis.required_tools = ["web_search"]
             analysis.execution_plan = [
-                "1. Researcher: 산업 뉴스/정책 검색",
-                "2. Strategist: 산업 구조 분석",
+                "1. Analyst: 산업 관련 뉴스/포럼 확인",
+                "2. Analyst: 산업 영향 분석",
             ]
             
         elif analysis.intent == Intent.ISSUE_ANALYSIS:
             analysis.required_agents = ["analyst"]
-            analysis.required_tools = ["web_search"]
             analysis.execution_plan = [
-                "1. Researcher: 이슈 관련 정보 검색",
-                "2. Strategist: 영향도 분석",
+                "1. Analyst: 이슈 관련 뉴스/포럼 확인",
+                "2. Analyst: 영향도 분석",
             ]
             
         elif analysis.intent == Intent.REALTIME_PRICE:
@@ -500,90 +488,22 @@ JSON만 응답하세요.
         return result
     
     def _execute_stock_analysis(self, analysis: QueryAnalysis) -> Dict[str, Any]:
-        """종목 분석 실행 (LangGraph 워크플로우 우선, 폴백: 병렬 처리)"""
+        """종료된 단일 종목 분석 경로를 명시적으로 거부합니다."""
         if not analysis.stocks:
             return {"status": "error", "message": "분석할 종목을 찾을 수 없습니다."}
-        
-        stock = analysis.stocks[0]
-        stock_name = stock["name"]
-        stock_code = stock["code"]
-        
-        # LangGraph 워크플로우 실행 (미설치 시 내부에서 폴백)
-        if is_langgraph_available():
-            print(f"\n🚀 {stock_name}({stock_code}) LangGraph 워크플로우 실행")
-        else:
-            print(f"\n🚀 {stock_name}({stock_code}) 전체 분석 시작...")
-            print(f"   ⚡ Analyst / Quant / Chartist 병렬 실행")
-        
-        result = run_stock_analysis(
-            stock_name=stock_name,
-            stock_code=stock_code,
-            query=analysis.original_query,
-            max_retries=1,
-        )
-        
-        # 결과 보강
-        result["stock"] = stock
-        
-        # 에이전트 점수 출력
-        scores = result.get("scores", {})
-        analyst_score = scores.get("analyst")
-        quant_score = scores.get("quant")
-        chartist_score = scores.get("chartist")
-        
-        if analyst_score:
-            print(f"   → Analyst  헤게모니: {analyst_score.hegemony_grade} ({analyst_score.total_score}/70점)")
-        if quant_score:
-            print(f"   → Quant    재무등급: {quant_score.grade} ({quant_score.total_score}/100점)")
-        if chartist_score:
-            print(f"   → Chartist 기술신호: {chartist_score.signal} ({chartist_score.total_score}/100점)")
-        
-        # 결과 요약
-        result["summary"] = self._generate_summary(stock_name, result)
-        
-        # 분석 결과 캐시
-        final_decision = result.get("final_decision")
-        if final_decision:
-            self.memory.cache_analysis(stock_name, {
-                "total_score": final_decision.total_score,
-                "action": final_decision.action.value,
-                "analyst_total": analyst_score.total_score if analyst_score else 0,
-                "quant_total": quant_score.total_score if quant_score else 0,
-                "chartist_total": chartist_score.total_score if chartist_score else 0,
-            })
-        
-        return result
+        return {
+            "status": "removed",
+            "message": "기존 단일 종목 분석 흐름은 제거되었습니다. 새 분석 파이프라인으로 대체 예정입니다.",
+        }
     
     def _execute_quick_analysis(self, analysis: QueryAnalysis) -> Dict[str, Any]:
         """빠른 분석 실행 (Analyst 제외)"""
         if not analysis.stocks:
             return {"status": "error", "message": "분석할 종목을 찾을 수 없습니다."}
-        
-        stock = analysis.stocks[0]
-        stock_name = stock["name"]
-        stock_code = stock["code"]
-        
-        print(f"\n⚡ {stock_name}({stock_code}) 빠른 분석 시작...")
-        
-        results = {"status": "success", "stock": stock, "scores": {}}
-        
-        # Quant
-        quant_score = self.agents["quant"].full_analysis(stock_name, stock_code)
-        results["scores"]["quant"] = quant_score
-        
-        # Chartist
-        chartist_score = self.agents["chartist"].full_analysis(stock_name, stock_code)
-        results["scores"]["chartist"] = chartist_score
-        
-        # Quick Decision
-        quick_opinion = self.agents["risk_manager"].quick_decision(
-            analyst_total=35,  # 기본값
-            quant_total=quant_score.total_score,
-            chartist_total=chartist_score.total_score,
-        )
-        results["quick_opinion"] = quick_opinion
-        
-        return results
+        return {
+            "status": "removed",
+            "message": "기존 quick 분석 흐름은 제거되었습니다. 새 분석 파이프라인으로 대체 예정입니다.",
+        }
     
     def _execute_realtime_price(self, analysis: QueryAnalysis) -> Dict[str, Any]:
         """실시간 시세 조회"""
@@ -612,26 +532,17 @@ JSON만 응답하세요.
         
         print(f"\n🏭 {industry} 산업 분석 시작...")
         
-        # 통합 AnalystAgent로 산업 분석
         from src.agents.analyst import AnalystAgent
         analyst = AnalystAgent()
         
         # 산업 관련 정보 수집
         news = analyst._search_news(industry)
-        policy = analyst._search_policy(industry)
-        industry_info = analyst._search_industry(industry)
-        
+
         analysis_prompt = f"""
 {industry} 산업에 대해 분석하세요:
 
-[뉴스]
+[뉴스/포럼]
 {news}
-
-[정책]
-{policy}
-
-[산업 동향]
-{industry_info}
 
 다음을 포함해서 분석해주세요:
 1. 산업 현황 요약
@@ -640,14 +551,13 @@ JSON만 응답하세요.
 4. 투자 시사점
 5. 관련 종목 추천
 """
-        
-        response = analyst.llm.invoke(analysis_prompt)
+
+        response = analyst.thinking_llm.invoke(analysis_prompt)
         
         return {
             "status": "success",
             "industry": industry,
             "news": news,
-            "policy": policy,
             "analysis": response.content,
         }
     
@@ -678,7 +588,7 @@ JSON만 응답하세요.
 5. 투자 전략 제안
 """
         
-        response = analyst.llm.invoke(analysis_prompt)
+        response = analyst.thinking_llm.invoke(analysis_prompt)
         
         return {
             "status": "success",
@@ -734,22 +644,11 @@ JSON만 응답하세요.
     def _execute_theme_screening(self, analysis: QueryAnalysis) -> Dict[str, Any]:
         """테마/관련주 탐색"""
         theme = analysis.theme or analysis.original_query
-
-        print(f"\n🔍 '{theme}' 테마 주도주 선별 중...")
-
-        from src.agents import ThemeLeaderOrchestrator
-
-        orchestrator = ThemeLeaderOrchestrator()
-        result = orchestrator.run(theme=theme, candidate_limit=5, top_n=3)
-
-        if result.get("status") != "success":
-            return result
-
-        result["message"] = (
-            f"'{theme}' 테마 데이터를 스캔해 후보를 추출하고, "
-            "Analyst/Quant/Chartist/Risk Manager를 통해 주도주를 선정했습니다."
-        )
-        return result
+        return {
+            "status": "removed",
+            "theme": theme,
+            "message": "기존 테마 분석 흐름은 제거되었습니다. 새 테마 순회 파이프라인으로 대체 예정입니다.",
+        }
     
     def _execute_general_qa(self, analysis: QueryAnalysis) -> Dict[str, Any]:
         """일반 질문 처리 (대화 맥락 포함)"""
@@ -804,27 +703,6 @@ JSON만 응답하세요.
             intent=analysis.intent.value,
             stocks=stock_names,
         )
-    
-    def _generate_summary(self, stock_name: str, results: Dict) -> str:
-        """결과 요약 생성"""
-        decision = results.get("final_decision")
-        if not decision:
-            return "분석 결과를 요약할 수 없습니다."
-        
-        return f"""
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📊 {stock_name} 종합 분석 결과
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎯 최종 판단: {decision.action.value}
-📈 종합 점수: {decision.total_score}/270점
-⚠️ 리스크 레벨: {decision.risk_level.value}
-💰 목표가: {decision.target_price or 'N/A'}
-🛑 손절가: {decision.stop_loss or 'N/A'}
-
-💬 의견: {decision.summary}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-"""
-
 
 # ==========================================
 # 대화형 인터페이스

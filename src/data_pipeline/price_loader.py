@@ -1,5 +1,5 @@
 """
-Market-data loader bridging rag-data-pipeline outputs to ai-main chart analysis.
+Market-data loader bridging evidence pipeline outputs to chart analysis.
 
 Reads JSONL files produced under:
 - data/market_data/<theme>/chart.jsonl

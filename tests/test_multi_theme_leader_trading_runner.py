@@ -2,13 +2,29 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
+import pytest
+
 from src.runner.multi_theme_leader_trading_runner import MultiThemeLeaderTradingRunner
+
+
+@pytest.fixture(autouse=True)
+def price_history(monkeypatch):
+    # Breadth uses price history even when quality penalties are disabled.
+    def get_stock_data(self, stock_code, days):
+        assert stock_code in {"111111", "111112", "222221", "333331"}
+        assert days == 220
+        return pd.DataFrame({
+            "Close": [10000 + index for index in range(days)],
+            "Volume": [100000] * days,
+        })
+
+    monkeypatch.setattr("src.runner.signal_quality_filter.PriceLoader.get_stock_data", get_stock_data)
 
 
 class _FakeThemeRunner:
     def __init__(self):
         self._config = {"trading": {}}
-        self._executor = type("Executor", (), {"get_runtime_config": lambda self: {"enabled": True, "dry_run": True, "account_type": "paper"}})()
         self.received_run_once_kwargs = []
 
     def run_once(self, **kwargs):

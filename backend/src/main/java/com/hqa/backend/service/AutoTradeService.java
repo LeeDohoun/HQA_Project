@@ -24,6 +24,9 @@ public class AutoTradeService {
 
     @Transactional
     public boolean setEnabled(User user, boolean value) {
+        if (value && (user.getSecret() == null || user.getSecret().isKisIsReal())) {
+            throw new IllegalStateException("PAPER_ACCOUNT_REQUIRED");
+        }
         user.setAutoTradeEnabled(value);
         userRepository.save(user);
         return value;

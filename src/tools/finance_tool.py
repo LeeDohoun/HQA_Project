@@ -17,8 +17,8 @@ import requests
 from bs4 import BeautifulSoup
 import json
 from pathlib import Path
-from typing import ClassVar, Dict, Iterable, Optional, Tuple
-from dataclasses import dataclass
+from typing import Any, ClassVar, Dict, Iterable, Optional, Tuple
+from dataclasses import dataclass, field
 
 from src.config.settings import get_data_dir
 
@@ -40,9 +40,9 @@ except ImportError:
 
 class NaverFinanceCrawler:
     """네이버 금융 데이터 크롤러"""
-    
+
     BASE_URL = "https://finance.naver.com/item"
-    
+
     HEADERS = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
@@ -355,9 +355,24 @@ class QuantitativeAnalysis:
     
     # 재무 건전성
     debt_ratio: Optional[float]
+    current_ratio: Optional[float] = None
+    current_assets: Optional[float] = None
+    current_liabilities: Optional[float] = None
+
+    # 손익 규모
+    revenue: Optional[float] = None
+    operating_profit: Optional[float] = None
+    net_income: Optional[float] = None
+    revenue_yoy_change: Optional[float] = None
+    operating_profit_yoy_change: Optional[float] = None
+    revenue_growth_3y: Optional[float] = None
+    operating_profit_growth_3y: Optional[float] = None
+    operating_margin_trend: Optional[float] = None
+    net_margin_trend: Optional[float] = None
+    financial_history_years: list[str] = field(default_factory=list)
     
     # 배당
-    dividend_yield: Optional[float]
+    dividend_yield: Optional[float] = None
     
     # 점수
     valuation_score: int = 0      # 밸류에이션 점수 (25점)
@@ -391,7 +406,7 @@ class QuantitativeAnalysis:
         # 2. 수익성 점수 (25점)
         self.profitability_score = self._calc_profitability_score()
         
-        # 3. 성장성 점수 (25점) - 현재는 ROE 기반 추정
+        # 3. 성장성 점수 (25점)
         self.growth_score = self._calc_growth_score()
         
         # 4. 안정성 점수 (25점)
@@ -487,8 +502,55 @@ class QuantitativeAnalysis:
         return min(score, 25)
     
     def _calc_growth_score(self) -> int:
-        """성장성 점수 계산 (ROE 기반 추정)"""
+        """성장성 점수 계산."""
         score = 0
+
+        has_growth_data = (
+            self.revenue_growth_3y is not None
+            or self.operating_profit_growth_3y is not None
+            or self.revenue_yoy_change is not None
+            or self.operating_profit_yoy_change is not None
+        )
+
+        if has_growth_data:
+            if self.revenue_growth_3y is not None:
+                if self.revenue_growth_3y >= 20:
+                    score += 8
+                elif self.revenue_growth_3y >= 10:
+                    score += 6
+                elif self.revenue_growth_3y >= 3:
+                    score += 4
+                elif self.revenue_growth_3y > 0:
+                    score += 2
+
+            if self.operating_profit_growth_3y is not None:
+                if self.operating_profit_growth_3y >= 25:
+                    score += 8
+                elif self.operating_profit_growth_3y >= 12:
+                    score += 6
+                elif self.operating_profit_growth_3y >= 3:
+                    score += 4
+                elif self.operating_profit_growth_3y > 0:
+                    score += 2
+
+            if self.revenue_yoy_change is not None:
+                if self.revenue_yoy_change >= 15:
+                    score += 4
+                elif self.revenue_yoy_change >= 5:
+                    score += 3
+                elif self.revenue_yoy_change > 0:
+                    score += 1
+
+            if self.operating_margin_trend is not None:
+                if self.operating_margin_trend >= 3:
+                    score += 3
+                elif self.operating_margin_trend > 0:
+                    score += 2
+
+            if self.dividend_yield is not None and self.dividend_yield < 2:
+                score += 2
+
+            return min(score, 25)
         
         # ROE가 높으면 재투자 수익률이 높아 성장 가능성 높음
         if self.roe is not None:
@@ -535,13 +597,22 @@ class QuantitativeAnalysis:
             else:
                 score += 0   # 위험
         
-        # 배당 지급 여부 (안정적 기업 지표) (0~5점)
+        # 유동비율 평가 (0~5점)
+        if self.current_ratio is not None:
+            if self.current_ratio >= 200:
+                score += 5
+            elif self.current_ratio >= 150:
+                score += 4
+            elif self.current_ratio >= 100:
+                score += 2
+
+        # 배당 지급 여부 (안정적 기업 지표) (0~3점)
         if self.dividend_yield is not None and self.dividend_yield > 0:
-            score += 5
+            score += 3
         
-        # PBR > 0 (자본잠식 아님) (0~5점)
+        # PBR > 0 (자본잠식 아님) (0~2점)
         if self.pbr is not None and self.pbr > 0:
-            score += 5
+            score += 2
         
         return min(score, 25)
     
@@ -584,6 +655,7 @@ class QuantitativeAnalysis:
             f"",
             f"【 재무 안정성 】 {self.stability_score}/25점",
             f"  • 부채비율: {self._fmt(self.debt_ratio)}% {self._debt_comment()}",
+            f"  • 유동비율: {self._fmt(self.current_ratio)}%",
             f"  • 배당수익률: {self._fmt(self.dividend_yield)}%",
             f"",
             f"═══════════════════════════════════════════════════",
@@ -665,29 +737,51 @@ class QuantitativeAnalyzer:
         Returns:
             QuantitativeAnalysis 객체
         """
-        # 네이버 금융에서 데이터 수집
+        # 네이버는 현재가/종목명 보조 소스로만 사용하고,
+        # PER/PBR/EPS/BPS는 로컬 KRX fundamentals를 우선한다.
         stock_info = self.naver_crawler.get_stock_info(stock_code)
+        krx_fundamental = self._load_krx_fundamental(stock_code)
         financial_data = self._load_financial_snapshot(stock_code)
         if not financial_data:
             financial_data = self.naver_crawler.get_financial_summary(stock_code)
+
+        financial_source = financial_data.get("source", "naver_finance")
+        if krx_fundamental:
+            financial_source = f"{financial_source}+krx_fundamental"
         
         # 분석 결과 생성
         analysis = QuantitativeAnalysis(
             stock_code=stock_code,
-            stock_name=stock_info.get("stock_name", "Unknown"),
+            stock_name=stock_info.get("stock_name") or krx_fundamental.get("stock_name") or "Unknown",
             current_price=stock_info.get("current_price", 0),
             market_cap=stock_info.get("market_cap", "N/A"),
-            per=stock_info.get("per"),
-            pbr=stock_info.get("pbr"),
-            eps=stock_info.get("eps"),
-            bps=stock_info.get("bps"),
+            per=self._first_number(krx_fundamental.get("per"), stock_info.get("per")),
+            pbr=self._first_number(krx_fundamental.get("pbr"), stock_info.get("pbr")),
+            eps=self._first_number(krx_fundamental.get("eps"), stock_info.get("eps")),
+            bps=self._first_number(krx_fundamental.get("bps"), stock_info.get("bps")),
             roe=financial_data.get("roe"),
             roa=financial_data.get("roa"),
             operating_margin=financial_data.get("operating_margin"),
             net_margin=financial_data.get("net_margin"),
             debt_ratio=financial_data.get("debt_ratio"),
-            dividend_yield=stock_info.get("dividend_yield"),
-            financial_source=financial_data.get("source", "naver_finance"),
+            current_ratio=financial_data.get("current_ratio"),
+            current_assets=financial_data.get("current_assets"),
+            current_liabilities=financial_data.get("current_liabilities"),
+            revenue=financial_data.get("revenue"),
+            operating_profit=financial_data.get("operating_profit"),
+            net_income=financial_data.get("net_income"),
+            revenue_yoy_change=financial_data.get("revenue_yoy_change"),
+            operating_profit_yoy_change=financial_data.get("operating_profit_yoy_change"),
+            revenue_growth_3y=financial_data.get("revenue_growth_3y"),
+            operating_profit_growth_3y=financial_data.get("operating_profit_growth_3y"),
+            operating_margin_trend=financial_data.get("operating_margin_trend"),
+            net_margin_trend=financial_data.get("net_margin_trend"),
+            financial_history_years=financial_data.get("financial_history_years") or [],
+            dividend_yield=self._first_number(
+                krx_fundamental.get("dividend_yield"),
+                stock_info.get("dividend_yield"),
+            ),
+            financial_source=financial_source,
         )
         
         # 점수 계산
@@ -708,22 +802,181 @@ class QuantitativeAnalyzer:
         snapshots.sort(
             key=lambda row: (
                 str(row.get("fiscal_year", "")),
+                str((row.get("metadata") or {}).get("collected_at", "")),
                 str(row.get("as_of", "")),
             ),
             reverse=True,
         )
         latest = snapshots[0]
+        # Archived corrections are versions of one year, not extra history years.
+        annual_history = []
+        seen_years = set()
+        for row in snapshots:
+            year = row.get("fiscal_year")
+            if year in seen_years or row.get("report_code") != latest.get("report_code"):
+                continue
+            if (row.get("metadata") or {}).get("fs_div") != (latest.get("metadata") or {}).get("fs_div"):
+                continue
+            annual_history.append(row)
+            seen_years.add(year)
+            if len(annual_history) == 3:
+                break
+        trend_metrics = self._financial_trend_metrics(annual_history)
         return {
             "revenue": latest.get("revenue"),
             "operating_profit": latest.get("operating_profit"),
             "net_income": latest.get("net_income"),
+            "assets": latest.get("assets"),
+            "liabilities": latest.get("liabilities"),
+            "equity": latest.get("equity"),
+            "current_assets": latest.get("current_assets"),
+            "current_liabilities": latest.get("current_liabilities"),
             "roe": latest.get("roe"),
             "roa": latest.get("roa"),
             "debt_ratio": latest.get("debt_ratio"),
+            "current_ratio": latest.get("current_ratio"),
             "operating_margin": latest.get("operating_margin"),
             "net_margin": latest.get("net_margin"),
             "source": "dart_financial_snapshot",
+            **trend_metrics,
         }
+
+    def _financial_trend_metrics(self, rows: list[Dict[str, Any]]) -> Dict[str, Any]:
+        if not rows:
+            return {}
+        latest_first = sorted(
+            rows,
+            key=lambda row: (str(row.get("fiscal_year", "")), str(row.get("as_of", ""))),
+            reverse=True,
+        )
+        chronological = list(reversed(latest_first))
+        latest = latest_first[0]
+        previous = latest_first[1] if len(latest_first) >= 2 else {}
+        oldest = chronological[0]
+
+        return {
+            "revenue_yoy_change": self._pct_change(latest.get("revenue"), previous.get("revenue")),
+            "operating_profit_yoy_change": self._pct_change(
+                latest.get("operating_profit"),
+                previous.get("operating_profit"),
+            ),
+            "revenue_growth_3y": self._cagr(
+                oldest.get("revenue"),
+                latest.get("revenue"),
+                len(chronological) - 1,
+            ),
+            "operating_profit_growth_3y": self._cagr(
+                oldest.get("operating_profit"),
+                latest.get("operating_profit"),
+                len(chronological) - 1,
+            ),
+            "operating_margin_trend": self._point_change(
+                oldest.get("operating_margin"),
+                latest.get("operating_margin"),
+            ),
+            "net_margin_trend": self._point_change(oldest.get("net_margin"), latest.get("net_margin")),
+            "financial_history_years": [str(row.get("fiscal_year", "")) for row in latest_first if row.get("fiscal_year")],
+        }
+
+    @staticmethod
+    def _pct_change(current: Any, previous: Any) -> Optional[float]:
+        current_number = QuantitativeAnalyzer._first_number(current)
+        previous_number = QuantitativeAnalyzer._first_number(previous)
+        if current_number is None or previous_number in (None, 0):
+            return None
+        return round(((current_number - previous_number) / previous_number) * 100, 2)
+
+    @staticmethod
+    def _cagr(start: Any, end: Any, periods: int) -> Optional[float]:
+        start_number = QuantitativeAnalyzer._first_number(start)
+        end_number = QuantitativeAnalyzer._first_number(end)
+        if periods <= 0 or start_number is None or end_number is None or start_number <= 0 or end_number <= 0:
+            return None
+        return round(((end_number / start_number) ** (1 / periods) - 1) * 100, 2)
+
+    @staticmethod
+    def _point_change(start: Any, end: Any) -> Optional[float]:
+        start_number = QuantitativeAnalyzer._first_number(start)
+        end_number = QuantitativeAnalyzer._first_number(end)
+        if start_number is None or end_number is None:
+            return None
+        return round(end_number - start_number, 2)
+
+    def _load_krx_fundamental(self, stock_code: str) -> Dict[str, Any]:
+        for path in self._krx_fundamental_paths():
+            rows = [
+                row for row in self._iter_jsonl(path)
+                if str(row.get("stock_code") or row.get("code") or row.get("ticker") or "").strip() == stock_code
+            ]
+            if not rows:
+                continue
+            rows.sort(key=self._fundamental_sort_key, reverse=True)
+            return self._normalize_krx_fundamental(rows[0])
+
+        return self._load_krx_fundamental_from_pykrx(stock_code)
+
+    def _krx_fundamental_paths(self) -> Iterable[Path]:
+        market_root = self.data_dir / "market_data"
+        if market_root.exists():
+            yield from sorted(market_root.glob("*/fundamentals.jsonl"))
+
+        raw_root = self.data_dir / "raw"
+        for relative in ("krx_fundamentals", "fundamentals"):
+            root = raw_root / relative
+            if root.exists():
+                yield from sorted(root.glob("*.jsonl"))
+
+    @staticmethod
+    def _fundamental_sort_key(row: Dict[str, Any]) -> Tuple[str, str, str]:
+        return (
+            str(row.get("date") or row.get("bas_dd") or row.get("as_of") or ""),
+            str(row.get("collected_at") or row.get("timestamp") or ""),
+            str(row.get("fiscal_year") or ""),
+        )
+
+    def _normalize_krx_fundamental(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "stock_code": row.get("stock_code") or row.get("code") or row.get("ticker"),
+            "stock_name": row.get("stock_name") or row.get("name") or row.get("isu_abbrv"),
+            "per": self._first_number(row.get("per"), row.get("PER")),
+            "pbr": self._first_number(row.get("pbr"), row.get("PBR")),
+            "eps": self._first_number(row.get("eps"), row.get("EPS")),
+            "bps": self._first_number(row.get("bps"), row.get("BPS")),
+            "dividend_yield": self._first_number(
+                row.get("dividend_yield"),
+                row.get("div"),
+                row.get("DIV"),
+                row.get("dvd_yld"),
+            ),
+            "source": "krx_fundamental",
+        }
+
+    def _load_krx_fundamental_from_pykrx(self, stock_code: str) -> Dict[str, Any]:
+        try:
+            from datetime import datetime
+            from pykrx import stock
+        except Exception:
+            return {}
+
+        try:
+            today = datetime.now().strftime("%Y%m%d")
+            frame = stock.get_market_fundamental(today, market="ALL")
+            if frame is None or stock_code not in frame.index:
+                return {}
+            row = frame.loc[stock_code].to_dict()
+        except Exception:
+            return {}
+
+        return self._normalize_krx_fundamental(
+            {
+                "stock_code": stock_code,
+                "per": row.get("PER"),
+                "pbr": row.get("PBR"),
+                "eps": row.get("EPS"),
+                "bps": row.get("BPS"),
+                "dividend_yield": row.get("DIV"),
+            }
+        )
 
     def _financial_snapshot_paths(self) -> Iterable[Path]:
         raw_root = self.data_dir / "raw" / "financials"
@@ -748,6 +1001,20 @@ class QuantitativeAnalyzer:
                     continue
                 if isinstance(row, dict):
                     yield row
+
+    @staticmethod
+    def _first_number(*values: Any) -> Optional[float]:
+        for value in values:
+            if value in (None, "", "-", "N/A"):
+                continue
+            if isinstance(value, (int, float)):
+                return float(value)
+            try:
+                cleaned = str(value).replace(",", "").replace("%", "").strip()
+                return float(cleaned)
+            except ValueError:
+                continue
+        return None
 
 
 # ============================================================

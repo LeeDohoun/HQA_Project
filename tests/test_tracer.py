@@ -41,12 +41,12 @@ class TestAgentTracerLifecycle:
         # 에이전트 실행
         with tracer.trace_agent("analyst", "삼성전자(005930)") as span:
             time.sleep(0.05)  # 최소 실행 시간
-            span.set_output("A등급 (65/70)")
+            span.set_output("A등급 (85/100)")
             span.set_reasoning("반도체 시장 지배력 확인됨")
 
         # 세션 종료
         saved_path = tracer.finish_trace(
-            final_result_summary="매수, 230/270점",
+            final_result_summary="매수, 260/300점",
             research_quality="B",
             retry_count=0,
         )
@@ -68,7 +68,7 @@ class TestAgentTracerLifecycle:
         assert agent["agent_name"] == "analyst"
         assert agent["status"] == "success"
         assert agent["duration_seconds"] >= 0.05
-        assert agent["output_summary"] == "A등급 (65/70)"
+        assert agent["output_summary"] == "A등급 (85/100)"
         assert agent["reasoning_summary"] == "반도체 시장 지배력 확인됨"
 
     def test_multiple_agents(self, tmp_path):
@@ -303,7 +303,7 @@ class TestJsonFileStructure:
         tracer.start_trace("삼성전자", "005930", "langgraph", query="분석해줘")
 
         with tracer.trace_agent("analyst", "삼성전자(005930)") as span:
-            span.set_output("A등급 65/70")
+            span.set_output("A등급 85/100")
             span.set_reasoning("요약문")
 
         saved_path = tracer.finish_trace(
@@ -341,13 +341,13 @@ class TestJsonFileStructure:
         tracer = AgentTracer(traces_dir=str(tmp_path))
         tracer.start_trace(
             "삼성전자", "005930", "langgraph",
-            metadata={"model": "gemini-2.5-flash-lite"},
+            metadata={"model": "qwen3.5:9b"},
         )
         tracer.set_metadata("total_tokens", 5000)
         tracer.finish_trace("완료")
 
         data = tracer.to_dict()
-        assert data["metadata"]["model"] == "gemini-2.5-flash-lite"
+        assert data["metadata"]["model"] == "qwen3.5:9b"
         assert data["metadata"]["total_tokens"] == 5000
 
 

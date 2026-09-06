@@ -5,13 +5,15 @@ env/
 .local/
 
 # 2. 보안 파일 (해킹 방지 - 가장 중요!)
-.env
-.env.local
-.env-*
+.env*
+!.env.example
 
 # 3. 파이썬 자동 생성 파일 (불필요한 쓰레기 파일)
 __pycache__/
 *.pyc
+.pytest_cache/
+.coverage
+htmlcov/
 
 # 4. 데이터베이스 및 저장소 (로컬 테스트용 데이터는 업로드 제외)
 *.db
@@ -50,3 +52,7 @@ backend/.m2/
 
 # 10. dev.sh per-service runtime logs (local only)
 logs/
+
+# Historical snapshots are curated in research/, not new output roots.
+/artifacts/
+/experiment_results/

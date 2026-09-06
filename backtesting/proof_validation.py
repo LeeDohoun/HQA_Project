@@ -920,7 +920,7 @@ def select_strategies(strategies: List[StrategySpec], raw: str) -> List[Strategy
     return [strategy for strategy in strategies if strategy.strategy_id in selected]
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run fixed short/long proof validation backtests.")
     parser.add_argument("--data-dir", default=str(get_data_dir()))
     parser.add_argument("--theme", default="AI")
@@ -975,9 +975,9 @@ def main() -> int:
     parser.add_argument(
         "--mock-llm",
         action="store_true",
-        help="Use LLM_PROVIDER=mock for fast runner smoke tests without Ollama/Gemini calls.",
+        help="Use LLM_PROVIDER=mock for runner smoke tests without model API calls.",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.mock_llm:
         os.environ["LLM_PROVIDER"] = "mock"

@@ -78,12 +78,60 @@ services:
       - ENV=production
       - PORT=8001
       - REDIS_URL=redis://redis:6379/0
+      - LLM_PROVIDER=openai
+      - HQA_DATA_DIR=/app/data
+      - HQA_LLM_BUDGET_PATH=/app/data/llm_budget.sqlite3
+      - HQA_PAPER_AUDIT_PATH=/app/data/paper_audit.sqlite3
+      - BACKEND_INTERNAL_BASE_URL=http://backend:8000
     depends_on:
       redis:
         condition: service_healthy
     volumes:
       - hqa-data:/app/data
-      - hqa-db:/app/database
+    restart: unless-stopped
+    networks:
+      - hqa-network
+
+  # These workers are opt-in; analysis remains inside the single AI service.
+  analysis-scheduler:
+    profiles: ["paper"]
+    build:
+      context: .
+      dockerfile: ai_server/Dockerfile
+    env_file:
+      - .env
+    environment:
+      - AI_SERVER_URL=http://ai:8001
+    command: ["python", "-m", "src.runner.analysis_scheduler", "--forever"]
+    healthcheck:
+      disable: true
+    depends_on:
+      ai:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - hqa-network
+
+  signal-monitor:
+    profiles: ["paper"]
+    build:
+      context: .
+      dockerfile: ai_server/Dockerfile
+    env_file:
+      - .env
+    environment:
+      - BACKEND_INTERNAL_BASE_URL=http://backend:8000
+      - HQA_DATA_DIR=/app/data
+      - HQA_PAPER_AUDIT_PATH=/app/data/paper_audit.sqlite3
+    command: ["python", "-m", "src.runner.signal_monitor"]
+    volumes:
+      - hqa-data:/app/data
+    healthcheck:
+      disable: true
+    depends_on:
+      - backend
     restart: unless-stopped
     networks:
       - hqa-network
@@ -129,7 +177,6 @@ services:
 
 volumes:
   hqa-data:
-  hqa-db:
   maven-cache:
   frontend-node-modules:
   redis-data:

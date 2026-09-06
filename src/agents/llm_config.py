@@ -2,6 +2,7 @@
 
 import os
 import logging
+import math
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any, Dict, Optional
@@ -18,36 +19,48 @@ logger = logging.getLogger(__name__)
 # Provider 설정
 # ==========================================
 
-DEFAULT_PROVIDER = "ollama"
-SUPPORTED_PROVIDERS = {"ollama", "gemini", "cliproxy", "mock"}
+DEFAULT_PROVIDER = "openai"
+SUPPORTED_PROVIDERS = {"openai", "ollama", "mock"}
 PROVIDER_ALIASES = {
-    "google": "gemini",
-    "google_ai": "gemini",
-    "google-ai": "gemini",
-    "google_genai": "gemini",
-    "google-genai": "gemini",
-    # CLIProxyAPI (https://github.com/router-for-me/CLIProxyAPI) 별칭.
-    # Anthropic(Claude) 호환 엔드포인트를 프록시로 노출하므로 claude/anthropic도 매핑.
-    "claude": "cliproxy",
-    "anthropic": "cliproxy",
-    "cli-proxy": "cliproxy",
-    "cli_proxy": "cliproxy",
     "test": "mock",
     "fake": "mock",
 }
 
-DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
-DEFAULT_OLLAMA_INSTRUCT_MODEL = "qwen2.5:14b"
-DEFAULT_OLLAMA_THINKING_MODEL = "qwen2.5:14b"
+DEFAULT_OLLAMA_BASE_URL = "http://localhost:11435"
+DEFAULT_OLLAMA_ANALYST_MODEL = "gemma4:12b"
+DEFAULT_OLLAMA_SUMMARY_MODEL = "gemma4:e4b"
+DEFAULT_OLLAMA_QUANT_MODEL = "gemma4:12b"
+DEFAULT_OLLAMA_CHARTIST_MODEL = "qwen3.5:9b"
+DEFAULT_OLLAMA_RISK_MANAGER_MODEL = "gemma4:12b"
+DEFAULT_OPENAI_MODEL = "gpt-5.6-luna"
 
-DEFAULT_GEMINI_INSTRUCT_MODEL = "gemini-2.5-flash-lite"
-DEFAULT_GEMINI_THINKING_MODEL = "gemini-2.5-pro"
 
-# CLIProxyAPI 기본값 (Anthropic 호환 프록시)
-# 프록시는 기본 포트 8317에서 Claude messages API를 노출한다.
-DEFAULT_CLIPROXY_BASE_URL = "http://localhost:8317"
-DEFAULT_CLIPROXY_INSTRUCT_MODEL = "claude-3-5-haiku-20241022"
-DEFAULT_CLIPROXY_THINKING_MODEL = "claude-opus-4-5-20251101"
+@dataclass(frozen=True)
+class RoleLimits:
+    reasoning_effort: str
+    input_tokens: int
+    output_tokens: int
+
+
+_ROLE_LIMITS = {
+    "analyst": RoleLimits("low", 12_000, 1_200),
+    "quant": RoleLimits("low", 12_000, 1_200),
+    "chartist": RoleLimits("low", 12_000, 1_200),
+    "risk_manager": RoleLimits("medium", 32_000, 12_000),
+    "summary": RoleLimits("none", 16_000, 800),
+    "instruct": RoleLimits("low", 12_000, 1_200),
+    "thinking": RoleLimits("medium", 32_000, 12_000),
+}
+
+
+def get_role_limits(role: str) -> RoleLimits:
+    defaults = _ROLE_LIMITS[role]
+    prefix = f"HQA_LLM_{role.upper()}"
+    inputs = int(os.getenv(f"{prefix}_MAX_INPUT_TOKENS", str(defaults.input_tokens)))
+    outputs = int(os.getenv(f"{prefix}_MAX_OUTPUT_TOKENS", str(defaults.output_tokens)))
+    if not 0 < inputs <= 1_000_000 or not 0 < outputs <= 128_000:
+        raise ValueError(f"Invalid {role} token limits")
+    return RoleLimits(defaults.reasoning_effort, inputs, outputs)
 
 
 def _env(name: str, default: str = "", *, allow_blank: bool = False) -> str:
@@ -61,56 +74,15 @@ def _env(name: str, default: str = "", *, allow_blank: bool = False) -> str:
     return value
 
 
-def _get_google_api_key() -> str:
-    return _env("GOOGLE_API_KEY", "", allow_blank=True) or _env(
-        "GEMINI_API_KEY",
-        "",
-        allow_blank=True,
-    )
-
-
-def _get_cliproxy_api_key() -> str:
-    """CLIProxyAPI 인증 키. 전용 변수 우선, ANTHROPIC_API_KEY 폴백."""
-    return _env("CLIPROXY_API_KEY", "", allow_blank=True) or _env(
-        "ANTHROPIC_API_KEY",
-        "",
-        allow_blank=True,
-    )
-
-
 LLM_PROVIDER = _env("LLM_PROVIDER", DEFAULT_PROVIDER).lower().strip()
 
 # Ollama 설정
 OLLAMA_BASE_URL = _env("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL)
-OLLAMA_INSTRUCT_MODEL = _env("OLLAMA_INSTRUCT_MODEL", DEFAULT_OLLAMA_INSTRUCT_MODEL)
-OLLAMA_THINKING_MODEL = _env("OLLAMA_THINKING_MODEL", DEFAULT_OLLAMA_THINKING_MODEL)
-OLLAMA_THINKING_VALIDATOR_MODEL = _env(
-    "OLLAMA_THINKING_VALIDATOR_MODEL",
-    "",
-    allow_blank=True,
-)
-
-# Gemini 설정
-GOOGLE_API_KEY = _get_google_api_key()
-GEMINI_INSTRUCT_MODEL = _env("GEMINI_INSTRUCT_MODEL", DEFAULT_GEMINI_INSTRUCT_MODEL)
-GEMINI_THINKING_MODEL = _env("GEMINI_THINKING_MODEL", DEFAULT_GEMINI_THINKING_MODEL)
-GEMINI_THINKING_VALIDATOR_MODEL = _env(
-    "GEMINI_THINKING_VALIDATOR_MODEL",
-    "",
-    allow_blank=True,
-)
-
-# CLIProxyAPI 설정 (Anthropic 호환)
-CLIPROXY_BASE_URL = _env("CLIPROXY_BASE_URL", DEFAULT_CLIPROXY_BASE_URL)
-CLIPROXY_API_KEY = _get_cliproxy_api_key()
-CLIPROXY_INSTRUCT_MODEL = _env("CLIPROXY_INSTRUCT_MODEL", DEFAULT_CLIPROXY_INSTRUCT_MODEL)
-CLIPROXY_THINKING_MODEL = _env("CLIPROXY_THINKING_MODEL", DEFAULT_CLIPROXY_THINKING_MODEL)
-CLIPROXY_THINKING_VALIDATOR_MODEL = _env(
-    "CLIPROXY_THINKING_VALIDATOR_MODEL",
-    "",
-    allow_blank=True,
-)
-
+OLLAMA_ANALYST_MODEL = _env("OLLAMA_ANALYST_MODEL", DEFAULT_OLLAMA_ANALYST_MODEL)
+OLLAMA_SUMMARY_MODEL = _env("OLLAMA_SUMMARY_MODEL", DEFAULT_OLLAMA_SUMMARY_MODEL)
+OLLAMA_QUANT_MODEL = _env("OLLAMA_QUANT_MODEL", DEFAULT_OLLAMA_QUANT_MODEL)
+OLLAMA_CHARTIST_MODEL = _env("OLLAMA_CHARTIST_MODEL", DEFAULT_OLLAMA_CHARTIST_MODEL)
+OLLAMA_RISK_MANAGER_MODEL = _env("OLLAMA_RISK_MANAGER_MODEL", DEFAULT_OLLAMA_RISK_MANAGER_MODEL)
 
 @dataclass(frozen=True)
 class LLMConfig:
@@ -119,60 +91,28 @@ class LLMConfig:
     provider: str
     fallback_reason: str
     ollama_base_url: str
-    ollama_instruct_model: str
-    ollama_thinking_model: str
-    ollama_thinking_validator_model: str
-    google_api_key: str
-    gemini_instruct_model: str
-    gemini_thinking_model: str
-    gemini_thinking_validator_model: str
-    cliproxy_base_url: str
-    cliproxy_api_key: str
-    cliproxy_instruct_model: str
-    cliproxy_thinking_model: str
-    cliproxy_thinking_validator_model: str
+    ollama_analyst_model: str
+    ollama_summary_model: str
+    ollama_quant_model: str
+    ollama_chartist_model: str
+    ollama_risk_manager_model: str
 
     @property
     def api_key_set(self) -> bool:
-        if self.provider == "cliproxy":
-            return bool(self.cliproxy_api_key)
-        return bool(self.google_api_key)
-
-
-_WARNED_FALLBACKS: set[str] = set()
-
-
-def _warn_once(key: str, message: str, *args: Any) -> None:
-    if key in _WARNED_FALLBACKS:
-        return
-    _WARNED_FALLBACKS.add(key)
-    logger.warning(message, *args)
+        return bool(_env("OPENAI_API_KEY")) if self.provider == "openai" else False
 
 
 def get_llm_config() -> LLMConfig:
     """환경변수 기반 LLM 설정을 동적으로 반환합니다."""
     raw_provider = _env("LLM_PROVIDER", DEFAULT_PROVIDER).lower().strip()
     requested_provider = PROVIDER_ALIASES.get(raw_provider, raw_provider)
-    google_api_key = _get_google_api_key()
-    cliproxy_api_key = _get_cliproxy_api_key()
     provider = requested_provider
     fallback_reason = ""
 
     if requested_provider not in SUPPORTED_PROVIDERS:
-        provider = DEFAULT_PROVIDER
-        fallback_reason = f"unsupported_provider:{raw_provider}"
-        _warn_once(
-            fallback_reason,
-            "지원하지 않는 LLM_PROVIDER=%s 입니다. Ollama로 폴백합니다.",
-            raw_provider,
-        )
-    elif requested_provider == "gemini" and not google_api_key:
-        provider = DEFAULT_PROVIDER
-        fallback_reason = "missing_google_api_key"
-        _warn_once(
-            fallback_reason,
-            "LLM_PROVIDER=gemini이지만 GOOGLE_API_KEY/GEMINI_API_KEY가 미설정되어 Ollama로 폴백합니다.",
-        )
+        raise ValueError(f"Unsupported LLM_PROVIDER={raw_provider}; select openai, ollama, or mock explicitly")
+    if provider == "openai" and _env("OPENAI_MODEL", DEFAULT_OPENAI_MODEL) != DEFAULT_OPENAI_MODEL:
+        raise ValueError(f"All active HQA roles require OPENAI_MODEL={DEFAULT_OPENAI_MODEL}")
 
     return LLMConfig(
         raw_provider=raw_provider,
@@ -180,29 +120,13 @@ def get_llm_config() -> LLMConfig:
         provider=provider,
         fallback_reason=fallback_reason,
         ollama_base_url=_env("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL),
-        ollama_instruct_model=_env("OLLAMA_INSTRUCT_MODEL", DEFAULT_OLLAMA_INSTRUCT_MODEL),
-        ollama_thinking_model=_env("OLLAMA_THINKING_MODEL", DEFAULT_OLLAMA_THINKING_MODEL),
-        ollama_thinking_validator_model=_env(
-            "OLLAMA_THINKING_VALIDATOR_MODEL",
-            "",
-            allow_blank=True,
-        ),
-        google_api_key=google_api_key,
-        gemini_instruct_model=_env("GEMINI_INSTRUCT_MODEL", DEFAULT_GEMINI_INSTRUCT_MODEL),
-        gemini_thinking_model=_env("GEMINI_THINKING_MODEL", DEFAULT_GEMINI_THINKING_MODEL),
-        gemini_thinking_validator_model=_env(
-            "GEMINI_THINKING_VALIDATOR_MODEL",
-            "",
-            allow_blank=True,
-        ),
-        cliproxy_base_url=_env("CLIPROXY_BASE_URL", DEFAULT_CLIPROXY_BASE_URL),
-        cliproxy_api_key=cliproxy_api_key,
-        cliproxy_instruct_model=_env("CLIPROXY_INSTRUCT_MODEL", DEFAULT_CLIPROXY_INSTRUCT_MODEL),
-        cliproxy_thinking_model=_env("CLIPROXY_THINKING_MODEL", DEFAULT_CLIPROXY_THINKING_MODEL),
-        cliproxy_thinking_validator_model=_env(
-            "CLIPROXY_THINKING_VALIDATOR_MODEL",
-            "",
-            allow_blank=True,
+        ollama_analyst_model=_env("OLLAMA_ANALYST_MODEL", DEFAULT_OLLAMA_ANALYST_MODEL),
+        ollama_summary_model=_env("OLLAMA_SUMMARY_MODEL", DEFAULT_OLLAMA_SUMMARY_MODEL),
+        ollama_quant_model=_env("OLLAMA_QUANT_MODEL", DEFAULT_OLLAMA_QUANT_MODEL),
+        ollama_chartist_model=_env("OLLAMA_CHARTIST_MODEL", DEFAULT_OLLAMA_CHARTIST_MODEL),
+        ollama_risk_manager_model=_env(
+            "OLLAMA_RISK_MANAGER_MODEL",
+            DEFAULT_OLLAMA_RISK_MANAGER_MODEL,
         ),
     )
 
@@ -251,13 +175,13 @@ class TracingLLMProxy:
     def __init__(self, llm: Any):
         self._llm = llm
 
-    def invoke(self, prompt) -> Any:
-        response = run_with_llm_slot(lambda: self._llm.invoke(prompt))
+    def invoke(self, prompt, *args, **kwargs) -> Any:
+        response = run_with_llm_slot(lambda: self._llm.invoke(prompt, *args, **kwargs))
         add_token_usage_from_response(response)
         return response
 
-    async def ainvoke(self, prompt) -> Any:
-        response = await arun_with_llm_slot(lambda: self._llm.ainvoke(prompt))
+    async def ainvoke(self, prompt, *args, **kwargs) -> Any:
+        response = await arun_with_llm_slot(lambda: self._llm.ainvoke(prompt, *args, **kwargs))
         add_token_usage_from_response(response)
         return response
 
@@ -302,72 +226,37 @@ def _create_ollama_llm(
         return ChatOllama(**kwargs)
 
 
-# ==========================================
-# Gemini LLM 생성
-# ==========================================
-
-def _create_gemini_llm(
-    model: str,
-    temperature: float = 0.3,
-    google_api_key: Optional[str] = None,
-    **kwargs: Any,
-) -> Any:
-    """Google Gemini ChatModel 생성"""
-    try:
-        from langchain_google_genai import ChatGoogleGenerativeAI
-    except ImportError:
-        raise ImportError(
-            "LLM_PROVIDER=gemini 사용 시 langchain-google-genai 패키지가 필요합니다.\n"
-            "  pip install langchain-google-genai"
-        )
-
-    return ChatGoogleGenerativeAI(
-        model=model,
-        google_api_key=google_api_key or get_llm_config().google_api_key,
-        temperature=temperature,
-        **kwargs,
-    )
-
-
-# ==========================================
-# CLIProxyAPI LLM 생성 (Anthropic 호환)
-# ==========================================
-
-def _create_cliproxy_llm(
-    model: str,
-    temperature: float = 0.3,
-    base_url: Optional[str] = None,
-    api_key: Optional[str] = None,
-    **kwargs: Any,
-) -> Any:
-    """
-    CLIProxyAPI(Anthropic 호환 프록시) ChatModel 생성.
-
-    프록시(https://github.com/router-for-me/CLIProxyAPI)는 Claude messages API를
-    로컬에서 노출한다. langchain-anthropic의 ChatAnthropic에 base_url만 프록시로
-    돌려 사용한다. 프록시가 OAuth로 상위 Claude 구독을 처리하면 api_key는 임의의
-    placeholder여도 동작하지만, 프록시의 api-keys 인증이 켜져 있으면 일치해야 한다.
-    """
-    try:
-        from langchain_anthropic import ChatAnthropic
-    except ImportError:
-        raise ImportError(
-            "LLM_PROVIDER=cliproxy 사용 시 langchain-anthropic 패키지가 필요합니다.\n"
-            "  pip install langchain-anthropic"
-        )
-
+def _create_role_llm(role: str, model: str, temperature: float) -> Any:
     config = get_llm_config()
-    resolved_base_url = base_url or config.cliproxy_base_url
-    # 프록시 api-keys 인증이 꺼져 있어도 SDK가 비어있는 키를 거부하므로 placeholder 사용.
-    resolved_api_key = api_key or config.cliproxy_api_key or "cliproxy"
+    if config.provider == "mock":
+        return _with_tracing(MockChatModel(role))
+    if config.provider == "openai":
+        key = _env("OPENAI_API_KEY")
+        if not key:
+            raise ValueError("OPENAI_API_KEY is required to construct an HQA OpenAI agent")
+        from src.utils.luna_chat import LunaChatOpenAI
 
-    return ChatAnthropic(
-        model=model,
-        base_url=resolved_base_url,
-        api_key=resolved_api_key,
+        limits = get_role_limits(role)
+        timeout = float(os.getenv("HQA_LLM_TIMEOUT_SECONDS", "45"))
+        if not math.isfinite(timeout) or timeout <= 0:
+            raise ValueError("HQA_LLM_TIMEOUT_SECONDS must be positive and finite")
+        return LunaChatOpenAI(
+            model=DEFAULT_OPENAI_MODEL, api_key=key, base_url="https://api.openai.com/v1",
+            use_responses_api=True, use_previous_response_id=False,
+            reasoning={"effort": limits.reasoning_effort},
+            max_tokens=limits.output_tokens, timeout=timeout, max_retries=0,
+            service_tier="default", store=False, truncation="disabled",
+            streaming=False, disable_streaming=True, cache=False,
+            hqa_role=role, hqa_input_limit=limits.input_tokens, hqa_output_limit=limits.output_tokens,
+        )
+    llm = _create_ollama_llm(
+        model,
         temperature=temperature,
-        **kwargs,
+        reasoning=False,
+        base_url=config.ollama_base_url,
     )
+    logger.debug("🤖 %s LLM: Ollama (%s)", role, model)
+    return _with_tracing(llm)
 
 
 # ==========================================
@@ -376,146 +265,54 @@ def _create_cliproxy_llm(
 
 def get_instruct_llm() -> Any:
     """
-    Instruct (빠른 분석) LLM
+    구형 호출부 호환용 빠른 LLM.
 
-    - Supervisor, Researcher, Quant, Chartist용
-    - 빠르고 가벼운 추론
-
-    Returns:
-        LangChain BaseChatModel
+    별도 공통 Instruct 설정은 더 이상 사용하지 않고, 빠른 판단 역할에
+    가까운 Chartist 모델 설정을 사용합니다.
     """
     config = get_llm_config()
-    provider = config.provider
-
-    if provider == "mock":
-        llm = MockChatModel("instruct")
-        logger.debug("🤖 Instruct LLM: Mock")
-    elif provider == "gemini":
-        llm = _create_gemini_llm(
-            config.gemini_instruct_model,
-            temperature=0.3,
-            google_api_key=config.google_api_key,
-        )
-        logger.debug("🤖 Instruct LLM: Gemini (%s)", config.gemini_instruct_model)
-    elif provider == "cliproxy":
-        llm = _create_cliproxy_llm(
-            config.cliproxy_instruct_model,
-            temperature=0.3,
-        )
-        logger.debug("🤖 Instruct LLM: CLIProxyAPI (%s)", config.cliproxy_instruct_model)
-    else:
-        llm = _create_ollama_llm(
-            config.ollama_instruct_model,
-            temperature=0.3,
-            reasoning=False,
-            base_url=config.ollama_base_url,
-        )
-        logger.debug("🤖 Instruct LLM: Ollama (%s)", config.ollama_instruct_model)
-
-    return _with_tracing(llm)
+    return _create_role_llm("instruct", config.ollama_chartist_model, temperature=0.3)
 
 
 def get_thinking_llm() -> Any:
     """
-    Thinking (깊은 추론) LLM
+    구형 호출부 호환용 깊은 추론 LLM.
 
-    - Strategist, Risk Manager용
-    - 복잡한 맥락 추론, 트레이드오프 판단
-
-    Returns:
-        LangChain BaseChatModel
+    별도 공통 Thinking 설정은 더 이상 사용하지 않고, 최종 판단 역할에
+    가까운 Risk Manager 모델 설정을 사용합니다.
     """
     config = get_llm_config()
-    provider = config.provider
-
-    if provider == "mock":
-        llm = MockChatModel("thinking")
-        logger.debug("🧠 Thinking LLM: Mock")
-    elif provider == "gemini":
-        llm = _create_gemini_llm(
-            config.gemini_thinking_model,
-            temperature=1,  # Gemini Thinking은 temperature=1 권장
-            google_api_key=config.google_api_key,
-        )
-        logger.debug("🧠 Thinking LLM: Gemini (%s)", config.gemini_thinking_model)
-    elif provider == "cliproxy":
-        llm = _create_cliproxy_llm(
-            config.cliproxy_thinking_model,
-            temperature=0.5,
-        )
-        logger.debug("🧠 Thinking LLM: CLIProxyAPI (%s)", config.cliproxy_thinking_model)
-    else:
-        llm = _create_ollama_llm(
-            config.ollama_thinking_model,
-            temperature=0.5,
-            reasoning=False,
-            base_url=config.ollama_base_url,
-        )
-        logger.debug("🧠 Thinking LLM: Ollama (%s)", config.ollama_thinking_model)
-
-    return _with_tracing(llm)
+    return _create_role_llm("thinking", config.ollama_risk_manager_model, temperature=0.5)
 
 
-def get_thinking_validator_llm() -> Optional[Any]:
-    """
-    Thinking Validator (최종 판단 교차 검증) LLM
-
-    - Risk Manager 최종 판단 재검토용
-    - 미설정 시 None 반환
-    """
+def get_analyst_llm() -> Any:
+    """AnalystAgent 전용 LLM."""
     config = get_llm_config()
-    provider = config.provider
-
-    if provider == "mock":
-        return _with_tracing(MockChatModel("thinking_validator"))
-
-    if provider == "gemini":
-        if not config.gemini_thinking_validator_model:
-            return None
-        llm = _create_gemini_llm(
-            config.gemini_thinking_validator_model,
-            temperature=0.7,
-            google_api_key=config.google_api_key,
-        )
-        logger.debug(
-            "🧪 Thinking Validator LLM: Gemini (%s)",
-            config.gemini_thinking_validator_model,
-        )
-        return _with_tracing(llm)
-
-    if provider == "cliproxy":
-        if not config.cliproxy_thinking_validator_model:
-            return None
-        llm = _create_cliproxy_llm(
-            config.cliproxy_thinking_validator_model,
-            temperature=0.5,
-        )
-        logger.debug(
-            "🧪 Thinking Validator LLM: CLIProxyAPI (%s)",
-            config.cliproxy_thinking_validator_model,
-        )
-        return _with_tracing(llm)
-
-    if not config.ollama_thinking_validator_model:
-        return None
-
-    llm = _create_ollama_llm(
-        config.ollama_thinking_validator_model,
-        temperature=0.5,
-        reasoning=False,
-        base_url=config.ollama_base_url,
-    )
-    logger.debug(
-        "🧪 Thinking Validator LLM: Ollama (%s)",
-        config.ollama_thinking_validator_model,
-    )
-    return _with_tracing(llm)
+    return _create_role_llm("analyst", config.ollama_analyst_model, temperature=0.5)
 
 
-# ==========================================
-# 하위 호환 별칭 (기존 코드 깨지지 않도록)
-# ==========================================
-get_gemini_llm = get_instruct_llm
+def get_summary_llm() -> Any:
+    """긴 검색 근거를 짧게 압축하는 요약 전용 LLM."""
+    config = get_llm_config()
+    return _create_role_llm("summary", config.ollama_summary_model, temperature=0.2)
+
+
+def get_quant_llm() -> Any:
+    """QuantAgent 전용 LLM."""
+    config = get_llm_config()
+    return _create_role_llm("quant", config.ollama_quant_model, temperature=0.3)
+
+
+def get_chartist_llm() -> Any:
+    """ChartistAgent 전용 LLM."""
+    config = get_llm_config()
+    return _create_role_llm("chartist", config.ollama_chartist_model, temperature=0.3)
+
+
+def get_risk_manager_llm() -> Any:
+    """RiskManagerAgent 전용 LLM."""
+    config = get_llm_config()
+    return _create_role_llm("risk_manager", config.ollama_risk_manager_model, temperature=0.5)
 
 
 # ==========================================
@@ -527,6 +324,16 @@ def get_llm_info() -> Dict[str, Any]:
     config = get_llm_config()
     provider = config.provider
     info: Dict[str, Any] = {"provider": provider}
+    if provider == "openai":
+        roles = ("analyst", "summary", "quant", "chartist", "risk_manager")
+        info.update({
+            "base_url": "https://api.openai.com/v1", "api_key_set": config.api_key_set,
+            "agent_models": {role: DEFAULT_OPENAI_MODEL for role in roles},
+            "reasoning_efforts": {role: get_role_limits(role).reasoning_effort for role in roles},
+            "role_token_limits": {role: {"input": get_role_limits(role).input_tokens,
+                                         "output_including_reasoning": get_role_limits(role).output_tokens} for role in roles},
+        })
+        return info
     if config.requested_provider != provider:
         info["requested_provider"] = config.requested_provider
     if config.raw_provider != config.requested_provider:
@@ -534,37 +341,14 @@ def get_llm_info() -> Dict[str, Any]:
     if config.fallback_reason:
         info["fallback_reason"] = config.fallback_reason
 
-    if provider == "mock":
-        info.update({
-            "instruct_model": "mock",
-            "thinking_model": "mock",
-            "thinking_validator_model": "mock",
-        })
-        return info
-
-    if provider == "gemini":
-        info.update({
-            "instruct_model": config.gemini_instruct_model,
-            "thinking_model": config.gemini_thinking_model,
-            "thinking_validator_model": config.gemini_thinking_validator_model,
-            "api_key_set": config.api_key_set,
-        })
-        return info
-
-    if provider == "cliproxy":
-        info.update({
-            "base_url": config.cliproxy_base_url,
-            "instruct_model": config.cliproxy_instruct_model,
-            "thinking_model": config.cliproxy_thinking_model,
-            "thinking_validator_model": config.cliproxy_thinking_validator_model,
-            "api_key_set": config.api_key_set,
-        })
-        return info
-
     info.update({
         "base_url": config.ollama_base_url,
-        "instruct_model": config.ollama_instruct_model,
-        "thinking_model": config.ollama_thinking_model,
-        "thinking_validator_model": config.ollama_thinking_validator_model,
+        "agent_models": {
+            "analyst": "mock" if provider == "mock" else config.ollama_analyst_model,
+            "summary": "mock" if provider == "mock" else config.ollama_summary_model,
+            "quant": "mock" if provider == "mock" else config.ollama_quant_model,
+            "chartist": "mock" if provider == "mock" else config.ollama_chartist_model,
+            "risk_manager": "mock" if provider == "mock" else config.ollama_risk_manager_model,
+        },
     })
     return info

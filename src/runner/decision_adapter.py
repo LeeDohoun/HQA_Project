@@ -47,6 +47,16 @@ def _list_value(value: Any) -> List[str]:
     return [str(value)]
 
 
+def _dict_value(value: Any) -> Dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _condition_list(value: Any) -> List[Dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [dict(item) for item in value if isinstance(item, dict)]
+
+
 def build_final_decision_from_payload(
     stock_name: str,
     stock_code: str,
@@ -88,15 +98,11 @@ def build_final_decision_from_payload(
         contrarian_view=str(data.get("contrarian_view") or ""),
         summary=str(data.get("summary") or ""),
         detailed_reasoning=str(data.get("detailed_reasoning") or ""),
-        validation_status=str(data.get("validation_status") or "disabled"),
-        validation_summary=str(data.get("validation_summary") or ""),
-        validator_model=str(data.get("validator_model") or ""),
-        primary_model=str(data.get("primary_model") or ""),
-        validator_action=str(data.get("validator_action") or ""),
-        validator_confidence=_bounded_int(
-            data.get("validator_confidence"),
-            default=0,
-        ),
+        trade_plan=_dict_value(data.get("trade_plan")),
+        entry_conditions=_condition_list(data.get("entry_conditions")),
+        exit_conditions=_condition_list(data.get("exit_conditions")),
+        reduce_conditions=_condition_list(data.get("reduce_conditions")),
+        invalidation_conditions=_condition_list(data.get("invalidation_conditions")),
     )
 
 
@@ -114,16 +120,15 @@ def final_decision_to_payload(decision: FinalDecision) -> Dict[str, Any]:
         "entry_strategy": decision.entry_strategy,
         "exit_strategy": decision.exit_strategy,
         "stop_loss": decision.stop_loss,
+        "trade_plan": dict(decision.trade_plan),
+        "entry_conditions": [dict(item) for item in decision.entry_conditions],
+        "exit_conditions": [dict(item) for item in decision.exit_conditions],
+        "reduce_conditions": [dict(item) for item in decision.reduce_conditions],
+        "invalidation_conditions": [dict(item) for item in decision.invalidation_conditions],
         "signal_alignment": decision.signal_alignment,
         "key_catalysts": list(decision.key_catalysts),
         "contrarian_view": decision.contrarian_view,
         "summary": decision.summary,
         "detailed_reasoning": decision.detailed_reasoning,
-        "validation_status": decision.validation_status,
-        "validation_summary": decision.validation_summary,
-        "validator_model": decision.validator_model,
-        "primary_model": decision.primary_model,
-        "validator_action": decision.validator_action,
-        "validator_confidence": decision.validator_confidence,
         "timestamp": decision.timestamp,
     }

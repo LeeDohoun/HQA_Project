@@ -5,7 +5,7 @@
 # ── 분석 스케줄 ──
 schedule:
   enabled: true
-  interval_minutes: 60          # 분석 주기 (분)
+  interval_minutes: 15          # 분석 주기 (분)
   market_hours_only: true       # 장중(09:00~15:30)에만 실행
   timezone: "Asia/Seoul"
 
@@ -14,7 +14,7 @@ schedule:
 strategy_schedule:
   short:
     enabled: true
-    interval_minutes: 60         # 단기: 장중 60분 주기
+    interval_minutes: 15         # 단기: 장중 15분 주기
     market_hours_only: true
   long:
     enabled: true
@@ -54,7 +54,7 @@ trading:
 
   # 리스크 제한 (서킷 브레이커)
   max_daily_buy_amount: 1000000    # 일일 최대 매수 금액 (원)
-  max_position_ratio: 0.25          # 종목당 최대 비중 (25%)
+  # Position limits are supplied by the backend account snapshot (20%).
   stop_loss_pct: 10                 # 손절 기준 (%)
   cooldown_minutes: 30              # 동일 종목 재주문 대기 (분)
 
@@ -68,7 +68,7 @@ trading:
     max_return_20d: 0.9
     require_price_history: true
     require_recent_documents: true
-    min_history_days: 60
+    min_history_days: 151
 
   # 자동 매수 조건 (FinalDecision 기반)
   auto_buy_conditions:

@@ -6,6 +6,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -42,10 +43,25 @@ public class TradeSignal {
     private String rejectReason;
     @Column(columnDefinition = "TEXT")
     private String rawPayload;
+    @Column(columnDefinition = "TEXT")
+    private String tradePlanJson;
+    @Column(columnDefinition = "TEXT")
+    private String conditionPayload;
+    @Column(unique = true)
+    private String idempotencyKey;
     private OffsetDateTime expiresAt;
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
     private OffsetDateTime executedAt;
+    private Integer planVersion = 1;
+    private String accountMode = "PAPER";
+    private OffsetDateTime entryValidUntil;
+    private OffsetDateTime plannedExitAt;
+    private Integer managedQuantity = 0;
+    private String accountBinding;
+    private OffsetDateTime analysisAsOf;
+    @Version
+    private Long rowVersion;
 
     @PrePersist
     public void onCreate() {
@@ -97,10 +113,29 @@ public class TradeSignal {
     public void setRejectReason(String rejectReason) { this.rejectReason = rejectReason; }
     public String getRawPayload() { return rawPayload; }
     public void setRawPayload(String rawPayload) { this.rawPayload = rawPayload; }
+    public String getTradePlanJson() { return tradePlanJson; }
+    public void setTradePlanJson(String tradePlanJson) { this.tradePlanJson = tradePlanJson; }
+    public String getConditionPayload() { return conditionPayload; }
+    public void setConditionPayload(String conditionPayload) { this.conditionPayload = conditionPayload; }
+    public String getIdempotencyKey() { return idempotencyKey; }
+    public void setIdempotencyKey(String idempotencyKey) { this.idempotencyKey = idempotencyKey; }
     public OffsetDateTime getExpiresAt() { return expiresAt; }
     public void setExpiresAt(OffsetDateTime expiresAt) { this.expiresAt = expiresAt; }
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public OffsetDateTime getUpdatedAt() { return updatedAt; }
     public OffsetDateTime getExecutedAt() { return executedAt; }
     public void setExecutedAt(OffsetDateTime executedAt) { this.executedAt = executedAt; }
+    public Integer getPlanVersion() { return planVersion; }
+    public void setPlanVersion(Integer value) { this.planVersion = value; }
+    public String getAccountMode() { return accountMode; }
+    public OffsetDateTime getEntryValidUntil() { return entryValidUntil; }
+    public void setEntryValidUntil(OffsetDateTime value) { entryValidUntil = value; }
+    public OffsetDateTime getPlannedExitAt() { return plannedExitAt; }
+    public void setPlannedExitAt(OffsetDateTime value) { plannedExitAt = value; }
+    public Integer getManagedQuantity() { return managedQuantity; }
+    public void setManagedQuantity(Integer value) { managedQuantity = value; }
+    public String getAccountBinding() { return accountBinding; }
+    public void setAccountBinding(String value) { accountBinding = value; }
+    public OffsetDateTime getAnalysisAsOf() { return analysisAsOf; }
+    public void setAnalysisAsOf(OffsetDateTime value) { analysisAsOf = value; }
 }

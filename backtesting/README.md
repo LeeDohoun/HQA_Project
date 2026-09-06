@@ -1,238 +1,159 @@
-# Backtesting Temporal RAG
+# 백테스트와 PAPER 평가
 
-이 폴더는 운영용 RAG와 분리된 백테스트 전용 도구입니다. 핵심 원칙은 `as_of_date` 기준으로 그 날짜 이전에 공개된 문서와 차트만 모델/전략에 전달하는 것입니다.
-
-## 권장 구조
-
-- 원본 데이터는 기존 위치를 그대로 사용합니다.
-- 백테스트에서는 `TemporalRAG`와 `TemporalPriceLoader`를 통해 날짜 필터를 적용합니다.
-- 기간별 RAG 스냅샷은 반복 실행 속도를 위한 캐시로만 사용합니다.
-
-```text
-data/canonical_index/ai/corpus.jsonl
-data/market_data/ai/chart.jsonl
-        |
-        v
-backtesting.TemporalRAG(as_of_date="2025-06-30")
-backtesting.TemporalPriceLoader(as_of_date="2025-06-30")
-```
-
-## 예시
-
-```python
-from backtesting import TemporalPriceLoader, TemporalRAG
-
-rag = TemporalRAG(data_dir="./data", theme_key="ai")
-context = rag.search_for_context(
-    "AI 반도체 HBM 수혜",
-    as_of_date="2025-06-30",
-    source_types=["news", "dart"],
-)
-
-prices = TemporalPriceLoader(data_dir="./data", theme_key="ai").get_stock_data(
-    "005930",
-    as_of_date="2025-06-30",
-    days=300,
-)
-```
-
-## 종토방 사용 기준
-
-종토방은 모의투자에서는 유용하지만 백테스트에서는 미래 누수 위험이 큽니다. 포함하려면 반드시 `as_of_date` 필터와 짧은 lookback을 같이 사용합니다.
-
-```python
-context = rag.search_for_context(
-    "시장 심리",
-    as_of_date="2026-04-01",
-    source_types=["forum"],
-    lookback_days={"forum": 60},
-)
-```
-
-## 기간 캐시 생성
+과거 전략 실험, 기간별 근거 준비, 기록된 PAPER 성과 평가의 실행 진입점입니다.
+프로젝트 루트에서 `venv/bin/python -m backtesting <명령>`으로 실행합니다.
+명령을 생략하면 실행하지 않고 오류를 반환합니다.
 
 ```bash
-.venv/bin/python backtesting/build_period_rag.py \
-  --data-dir ./data \
-  --theme-key ai \
-  --from-date 20250101 \
-  --to-date 20251231 \
-  --source-types news,dart \
-  --output-name ai_2025_news_dart \
-  --build-vector
+venv/bin/python -m backtesting --help
+venv/bin/python -m backtesting run --help
 ```
 
-결과는 `data/period_rag/<output-name>/`에 저장됩니다. 이 캐시는 편의용이며, 실제 백테스트 판단에는 여전히 `as_of_date`를 기준으로 미래 문서를 제외해야 합니다.
+## 명령 구분
 
-## 중복/노이즈 정제
+| 명령 | 목적 | 모델 호출 |
+| --- | --- | --- |
+| `run` | 과거 테마 주도주 전략 1회 평가 | 기본 없음. LLM 옵션 사용 시 가능 |
+| `sweep` | 수치 전략 파라미터 조합 비교 | 없음 |
+| `validate` | 고정 실험군의 baseline/hybrid/LLM 비교 | 기본 가능. `--mock-llm`은 테스트용 |
+| `build-evidence` | 기간별 근거 스냅샷 생성 | 생성형 LLM 없음 |
+| `clean-evidence` | 원본을 보존한 별도 정제 스냅샷 생성 | 없음 |
+| `build-membership` | 과거 테마 멤버십 근거 생성 | 없음 |
+| `paper-runtime` | 저장된 처리 시간, 호출량, 예산 원장 평가 | 없음 |
+| `paper-performance` | 저장된 순자산과 체결 기록의 성과 비교 | 없음 |
 
-기간 캐시를 만든 뒤에는 원본을 보존하고 clean 스냅샷을 따로 만듭니다. DART chunk는 유지하고, 종토방의 짧은 링크성 글, exact 본문 중복, 뉴스/종토방의 과도한 동일 제목 chunk를 줄입니다.
+`build-evidence --build-vector`는 별도 벡터 인덱스를 생성하므로 관련 모델/환경 설정이 필요합니다.
+`run --submit-url`은 결과를 지정한 서버에 전송합니다. PAPER 평가 명령은 읽기 전용이며
+LLM, 데이터 공급자, 증권사 API를 호출하지 않습니다.
+
+## 저장 위치
+
+| 위치 | 내용 |
+| --- | --- |
+| `backtesting/` | 실행 코드와 이 안내서 |
+| `src/tracing/paper_audit.py`, `paper_performance.py` | PAPER 관측 계약과 보고서 계산 |
+| `data/raw/theme_membership/` | 테마 멤버십 근거 |
+| `data/canonical_index/`, `data/market_data/` | 실험 입력 자료 |
+| `data/period_rag/` | 기간별 스냅샷과 정제 결과 |
+| `data/backtest_results/` | 새 실행 결과와 재사용 LLM 캐시 |
+| `research/backtesting/` | 보존한 과거 실험 산출물과 보고서 |
+
+과거 결과는 [연구 산출물 안내](../research/backtesting/results/README.md)를 참고합니다.
+운영 데이터와 예산/주문 원장은 정리 목적으로 삭제하거나 덮어쓰지 않습니다.
+
+## 수치 전략
 
 ```bash
-.venv/bin/python backtesting/clean_period_rag.py \
-  --input-dir data/period_rag/ai_2026_news_dart_forum \
-  --output-dir data/period_rag/ai_2026_news_dart_forum_clean
-```
-
-정제 결과와 제거 사유는 `clean_report.json`에 저장됩니다.
-
-## AI 테마 주도주 백테스트
-
-`leader_backtest.py`는 AI 테마 종목군에서 과거 시점 기준 주도주를 고르고, 보유 기간 이후 수익률로 예측/선정 결과를 평가합니다.
-
-백테스트 전에 point-in-time 테마 멤버십 근거를 만들 수 있습니다. 이 파일은 기존 raw/RAG corpus를 수정하지 않고 `data/raw/theme_membership/`에 별도로 저장됩니다.
-
-```bash
-.venv/bin/python backtesting/build_theme_membership.py \
-  --data-dir data \
-  --theme-key ai \
-  --theme-name AI
-```
-
-`leader_backtest.py`와 `sweep_leader_backtest.py`는 `data/raw/theme_membership/<theme_key>.jsonl`이 있으면 매 리밸런싱일의 활성 종목만 후보군으로 사용합니다.
-
-```bash
-.venv/bin/python backtesting/leader_backtest.py \
-  --theme AI \
-  --theme-key ai \
-  --from-date 20250101 \
-  --to-date 20251231 \
-  --rebalance W \
-  --top-n 5 \
-  --hold-days 5 \
-  --min-market-breadth-pct 40 \
-  --max-volatility-20d 1.2 \
-  --max-return-5d 0.35 \
-  --max-return-20d 0.9 \
-  --trailing-stop-pct 15 \
+venv/bin/python -m backtesting run \
+  --theme AI --theme-key ai \
+  --from-date 20250101 --to-date 20251231 \
+  --rebalance W --top-n 5 --hold-days 5 \
   --task-id bt-ai-2025-w-top5-h5
 ```
 
-선택 종목은 기본적으로 `hold-days` 이후 종가로 청산합니다. 보유 기간 중 조기 청산 규칙을 시험하려면 다음 옵션을 추가할 수 있습니다.
-
-- `--stop-loss-pct`: 진입가 대비 손절률
-- `--take-profit-pct`: 진입가 대비 익절률
-- `--trailing-stop-pct`: 고점 대비 트레일링 손절률
-
-동일 일자 OHLC에서 손절/트레일링과 익절이 동시에 닿을 수 있으면 보수적으로 손절/트레일링을 먼저 적용합니다.
-
-LLM이 과거 시점 문서와 feature snapshot을 읽고 후보를 재평가하게 하려면 `--llm-rerank-top-k`를 사용합니다. 이 값은 `top-n`보다 커야 실제 선택 종목이 바뀝니다. 예를 들어 `top-n 3`, `--llm-rerank-top-k 5`는 규칙 기반 상위 5개를 먼저 고른 뒤 LLM 점수로 최종 3개를 다시 선택합니다.
-
-AI가 이미 좁혀진 후보만 검증하는 한계를 줄이려면 `--llm-candidate-scope broad`를 사용합니다. 이 모드는 리스크 필터를 통과한 후보군 전체를 LLM/멀티 에이전트가 평가합니다. 비용을 줄이고 싶으면 `--llm-rerank-top-k 30`처럼 상한을 줄 수 있고, `--llm-rerank-top-k 0`이면 해당 리밸런싱일의 리스크 통과 후보 전체를 평가합니다. `--llm-weight 1.0`은 LLM-only, `--llm-weight 0.3~0.7`은 정량/LLM hybrid 실험입니다.
-
-기본 LLM 모드는 단일 LLM 점수화입니다. 프로젝트의 멀티 에이전트 구조를 백테스트에 반영하려면 `--llm-mode multi_agent`를 추가합니다. 이 모드는 `Analyst`, `Quant`, `Chartist`, `RiskManager` 흐름으로 후보를 평가하되, 운영 오케스트레이터를 그대로 호출하지는 않습니다. 운영 오케스트레이터는 현재 시점 데이터 접근 가능성이 있어 백테스트에는 맞지 않기 때문에, 백테스트용 구현은 모든 문서/feature를 `as_of_date` 이전으로 제한합니다.
-
-LLM 평가는 `--llm-horizon auto|short|long`으로 단타/장타 프로필을 분리합니다. `auto`는 `hold-days <= 10`이면 `short`, 그보다 길면 `long`을 사용합니다. `short`는 3~10거래일 주도주 탐색에 맞춰 가격 모멘텀/거래량/단기 촉매를 더 크게 보고, `long`은 20~60거래일 관점에서 AI 테마 직접성/성장성/재무 안정성을 더 크게 봅니다.
+기본 선택은 수치 전략입니다. `hold-days` 이후 종가 청산을 사용하며 `--stop-loss-pct`,
+`--take-profit-pct`, `--trailing-stop-pct`로 조기 청산을 시험할 수 있습니다.
+동일 일봉에서 손절/트레일링과 익절이 동시에 닿으면 손절/트레일링을 먼저 적용합니다.
 
 ```bash
-.venv/bin/python backtesting/leader_backtest.py \
-  --theme AI \
-  --theme-key ai \
-  --from-date 20260101 \
-  --to-date 20260116 \
-  --rebalance W \
-  --top-n 3 \
-  --hold-days 5 \
-  --min-market-breadth-pct 40 \
-  --max-volatility-20d 1.2 \
-  --max-return-5d 0.35 \
-  --max-return-20d 0.9 \
-  --trailing-stop-pct 15 \
-  --llm-mode multi_agent \
-  --llm-horizon short \
-  --llm-rerank-top-k 5 \
-  --llm-weight 0.1 \
-  --llm-context-docs 3
+venv/bin/python -m backtesting sweep \
+  --theme AI --theme-key ai \
+  --rebalances W --top-ns 3,5,7 --hold-days 3,5,7 \
+  --output-dir data/backtest_results/validation/risk_sweep
 ```
 
-넓은 후보군을 대상으로 qwen3/gpt-oss 조합을 시험하려면 환경변수로 역할별 모델을 지정할 수 있습니다.
+## 근거 준비
 
 ```bash
-OLLAMA_INSTRUCT_MODEL=qwen3:14b \
-OLLAMA_THINKING_MODEL=gpt-oss:20b \
-.venv/bin/python backtesting/leader_backtest.py \
-  --theme AI \
-  --theme-key ai \
-  --from-date 20260101 \
-  --to-date 20260331 \
-  --rebalance W \
-  --top-n 3 \
-  --hold-days 5 \
-  --min-market-breadth-pct 40 \
-  --max-volatility-20d 1.2 \
-  --max-return-5d 0.35 \
-  --max-return-20d 0.9 \
-  --trailing-stop-pct 15 \
-  --llm-mode multi_agent \
-  --llm-horizon short \
-  --llm-candidate-scope broad \
-  --llm-rerank-top-k 30 \
-  --llm-weight 0.5 \
-  --llm-context-docs 3
+venv/bin/python -m backtesting build-membership \
+  --data-dir data --theme-key ai --theme-name AI
+
+venv/bin/python -m backtesting build-evidence \
+  --data-dir data --theme-key ai \
+  --from-date 20250101 --to-date 20251231 \
+  --source-types news,dart --output-name ai_2025_news_dart
+
+venv/bin/python -m backtesting clean-evidence \
+  --input-dir data/period_rag/ai_2025_news_dart \
+  --output-dir data/period_rag/ai_2025_news_dart_clean
 ```
 
-멀티 에이전트 모드의 최종 점수는 보유기간 프로필별로 보정됩니다. `short`는 Analyst 30%, Quant 15%, Chartist 55%로 단기 가격/수급 리더십을 크게 보고, `long`은 Analyst 45%, Quant 40%, Chartist 15%로 테마 지속성/기초체력을 크게 봅니다. `RiskManager` LLM은 요약/행동/리스크 판단을 만들지만, 최종 랭킹 점수는 이 보정 가중치로 계산해 보유기간 목적과 다른 판단이 점수를 과도하게 덮어쓰지 않도록 했습니다.
+기간 스냅샷은 캐시이며, 기간 전체의 문서를 모든 리밸런싱일에 제공하는 용도가 아닙니다.
+`TemporalEvidence`는 `as_of_date`로 공개 날짜를 제한하고, `TemporalPriceLoader`는
+해당 날짜까지의 가격을 제공합니다. 기존 Python import는 유지합니다.
 
-`short` 프로필에서는 결과에 `llm_score`와 별도로 `llm_ranking_score`가 기록될 수 있습니다. `llm_score`는 RiskManager가 해석한 원점수이고, `llm_ranking_score`는 Chartist의 단기 가격/거래량 리더십을 바닥 점수로 삼되 테마 적합도 부족과 리스크 점수로만 제한적으로 감점한 실제 랭킹용 점수입니다. 이는 단타 백테스트에서 LLM이 장기 테마 검증자처럼 행동해 단기 주도주를 과도하게 탈락시키는 문제를 줄이기 위한 보정입니다.
+```python
+from backtesting import TemporalEvidence, TemporalPriceLoader, run_leader_backtest
 
-LLM 평가는 `data/backtest_results/llm_cache/<theme_key>/`에 캐시됩니다. 같은 날짜/종목/feature 조합은 재실행 시 다시 호출하지 않습니다.
-
-결과 JSON은 기본적으로 `data/backtest_results/`에 저장됩니다. AI 서버가 실행 중이면 같은 payload를 백엔드 호환 저장소로 보낼 수 있습니다.
-
-```bash
-.venv/bin/python backtesting/leader_backtest.py \
-  --theme AI \
-  --theme-key ai \
-  --from-date 20250101 \
-  --to-date 20251231 \
-  --rebalance W \
-  --top-n 5 \
-  --hold-days 5 \
-  --submit-url http://127.0.0.1:8001/backtest/results
+context = TemporalEvidence(data_dir="data", theme_key="ai").search_for_context(
+    "AI 반도체 HBM 수혜", as_of_date="2025-06-30", source_types=["news", "dart"],
+)
 ```
 
-여러 조합을 비교하려면 sweep runner를 사용합니다.
+## 과거 LLM 실험
+
+과거용 `llm_signal.py`는 공유 LLM 설정을 사용하지만, 현재 Luna 운영 분석 서비스와
+동일한 흐름은 아닙니다. 과거 실험 점수를 현재 PAPER 성능으로 해석하면 안 됩니다.
+
+- `--llm-rerank-top-k N`: 수치 후보 상위 N개를 재평가합니다. N이 `top-n`보다 커야 선택 구성이 바뀔 수 있습니다.
+- `--llm-candidate-scope broad`: 위험 필터를 통과한 후보를 넓게 평가합니다. top-k 0은 전체 후보이므로 호출량에 주의합니다.
+- `--llm-mode single|multi_agent`: 과거용 단일 점수화 또는 역할별 점수화입니다.
+- `--llm-horizon auto|short|long`: auto는 보유 기간 10거래일 이하를 short로 분류합니다.
+- `--llm-weight`: 수치 점수와 LLM 랭킹 점수의 혼합 비율입니다.
+
+멀티 에이전트 랭킹의 역할 가중치는 short에서 Analyst/Quant/Chartist 30/15/55%,
+long에서 45/40/15%입니다. `llm_score`와 보정 후 `llm_ranking_score`는 구분해서 읽습니다.
+반복 실행 캐시는 `data/backtest_results/llm_cache/<theme_key>/`를 계속 사용합니다.
+
+**현재 공유 설정의 기본 provider는 OpenAI입니다.** `OLLAMA_*` 모델 이름만 바꿔서는
+로컬 모델로 전환되지 않습니다. 외부 호출 없이 흐름만 시험하는 명시적 명령은 다음과 같습니다.
 
 ```bash
-.venv/bin/python backtesting/sweep_leader_backtest.py \
-  --theme AI \
-  --theme-key ai \
-  --rebalances W \
-  --top-ns 3,5,7 \
-  --hold-days 3,5,7 \
-  --min-market-breadth-pct 40 \
-  --max-volatility-20d 1.2 \
-  --max-return-5d 0.35 \
-  --max-return-20d 0.9 \
-  --trailing-stop-pct 15 \
-  --output-dir data/backtest_results/validation/risk_sweep_w_top357_h357
-```
-
-단타/장타 AI 유용성을 증명하기 위한 고정 프로토콜은 proof runner를 사용합니다. 이 runner는 단타/장타별 deterministic baseline, hybrid, LLM-only를 같은 기간에서 비교하고 `summary.json`, `summary.csv`, `report.md`를 함께 생성합니다.
-
-먼저 runner 자체를 빠르게 확인하려면 mock LLM smoke를 실행합니다.
-
-```bash
-.venv/bin/python backtesting/proof_validation.py \
-  --preset smoke \
-  --mock-llm \
-  --short-top-k 5 \
-  --long-top-k 5 \
+venv/bin/python -m backtesting validate \
+  --preset smoke --mock-llm --short-top-k 5 --long-top-k 5 \
   --output-dir data/backtest_results/proof/smoke_mock
 ```
 
-실제 모델로 검증 자료를 만들 때는 `qwen3:14b`와 `gpt-oss:20b`를 역할별로 지정하고 `--preset proof`를 사용합니다.
+mock 결과는 투자 성능의 근거가 아닙니다. 실제 LLM 실험에는 별도의 비용 승인이 필요합니다.
+
+## PAPER 관측 평가
 
 ```bash
-OLLAMA_INSTRUCT_MODEL=qwen3:14b \
-OLLAMA_THINKING_MODEL=gpt-oss:20b \
-.venv/bin/python backtesting/proof_validation.py \
-  --preset proof \
-  --short-top-k 10 \
-  --long-top-k 10 \
-  --output-dir data/backtest_results/proof/qwen3_gptoss
+venv/bin/python -m backtesting paper-runtime \
+  --audit data/paper_audit.sqlite3 --budget data/llm_budget.sqlite3
+
+venv/bin/python -m backtesting paper-performance \
+  --input data/paper-comparison.json
 ```
 
-기본 proof 기간은 2025년 튜닝 참고 구간, 2026년 1분기 검증 구간, 2026년 4월 이후 최근 확인 구간입니다. 결과에서 핵심 판단은 `excess_delta_vs_baseline_pct`, `win_vs_baseline`, `scorecard.evidence_grade`입니다.
+성과 비교에는 동일 투자대상, 기간, 비용 조건, 관측 시각을 가진 전략/수치 기준선/
+buy-and-hold 기록을 직접 제공해야 합니다. 누락된 기준선이나 체결 기록을 생성하지 않습니다.
+입력 계약과 해석은 [PAPER 운영 안내](../docs/luna-paper-runtime.md)를 참고합니다.
 
-현재 산출물과 해석은 `data/backtest_results/README.md`에 정리되어 있습니다.
+## 검증 경계
+
+과거 도구는 공개일/봉 날짜를 필터링하지만, 새 수집 파이프라인의 `available_at`,
+`observed_at`, 정정 버전 이력을 모두 반영하는 재생 엔진은 아닙니다.
+특히 과거 가격 로더는 같은 날짜의 마지막 행을 선택합니다. 따라서 현재 수집한 정정 자료를
+넣는 것만으로 당시 이용 가능했던 자료가 완전히 재현되지는 않습니다.
+
+테마 멤버십 파일이 있으면 해당 시점의 활성 종목을 사용하지만, 파일이 없을 때의 현재
+종목 목록에는 생존 편향이 남을 수 있습니다. LLM 사전학습 기억, 일봉 안의 가격 경로,
+실제 주문 거절/부분 체결 역시 이 실험만으로 검증하지 못합니다.
+날짜 필터 테스트 통과와 투자 성과 검증은 별개이며 전향적 PAPER 관측이 필요합니다.
+
+## 이전 명령 대응
+
+과거 엔진 모듈의 직접 실행/import는 유지합니다. 권장 실행 경로는 위 단일 진입점입니다.
+흩어져 있던 PAPER 평가 스크립트는 중복 wrapper 없이 옮겼습니다.
+
+| 이전 | 현재 |
+| --- | --- |
+| `backtesting/leader_backtest.py` | `python -m backtesting run` |
+| `backtesting/sweep_leader_backtest.py` | `python -m backtesting sweep` |
+| `backtesting/proof_validation.py` | `python -m backtesting validate` |
+| `backtesting/build_period_evidence.py` | `python -m backtesting build-evidence` |
+| `backtesting/clean_period_evidence.py` | `python -m backtesting clean-evidence` |
+| `backtesting/build_theme_membership.py` | `python -m backtesting build-membership` |
+| `python -m scripts.evaluate_paper_runtime` | `python -m backtesting paper-runtime` |
+| `python -m scripts.evaluate_paper_performance` | `python -m backtesting paper-performance` |

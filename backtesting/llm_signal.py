@@ -11,8 +11,8 @@ from typing import Any, Dict, Iterable, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from backtesting.temporal_rag import TemporalRAG
-from src.agents.llm_config import get_instruct_llm, get_llm_info, get_thinking_llm
+from backtesting.temporal_evidence import TemporalEvidence
+from src.agents.llm_config import get_analyst_llm, get_llm_info, get_risk_manager_llm
 from src.config.settings import get_data_dir
 
 logger = logging.getLogger(__name__)
@@ -109,19 +109,20 @@ class TemporalLLMStockScorer:
         self.theme_key = theme_key
         self.context_docs = max(1, int(context_docs))
         self.horizon = _normalize_llm_horizon(horizon)
-        self.rag = TemporalRAG(data_dir=str(self.data_dir), theme_key=theme_key)
+        self.evidence = TemporalEvidence(data_dir=str(self.data_dir), theme_key=theme_key)
         self.llm_info = get_llm_info()
         self.provider = str(self.llm_info.get("provider") or "")
+        agent_models = self.llm_info.get("agent_models") or {}
         self.model_name = str(
-            self.llm_info.get("instruct_model")
-            or self.llm_info.get("thinking_model")
+            agent_models.get("analyst")
+            or agent_models.get("risk_manager")
             or self.provider
             or "unknown"
         )
         self.cache_path = Path(cache_path) if cache_path else self._default_cache_path()
         self.cache: Dict[str, Dict[str, Any]] = {}
         self._load_cache()
-        self.llm = get_instruct_llm()
+        self.llm = get_analyst_llm()
         self.structured_llm = self._build_structured_llm(self.llm)
 
     def metadata(self) -> Dict[str, Any]:
@@ -201,7 +202,7 @@ class TemporalLLMStockScorer:
         stock_name = str(row.get("stock_name") or "")
         stock_code = str(row.get("stock_code") or "")
         query = f"{stock_name} {stock_code} {self.theme} AI 수혜 성장 실적 공시 리스크"
-        return self.rag.search_for_context(
+        return self.evidence.search_for_context(
             query=query,
             as_of_date=as_of_ymd,
             top_k=self.context_docs,
@@ -359,21 +360,22 @@ class TemporalMultiAgentStockScorer:
         self.theme_key = theme_key
         self.context_docs = max(1, int(context_docs))
         self.horizon = _normalize_llm_horizon(horizon)
-        self.rag = TemporalRAG(data_dir=str(self.data_dir), theme_key=theme_key)
+        self.evidence = TemporalEvidence(data_dir=str(self.data_dir), theme_key=theme_key)
         self.llm_info = get_llm_info()
         self.provider = str(self.llm_info.get("provider") or "")
+        agent_models = self.llm_info.get("agent_models") or {}
         self.model_name = str(
-            self.llm_info.get("instruct_model")
-            or self.llm_info.get("thinking_model")
+            agent_models.get("analyst")
+            or agent_models.get("risk_manager")
             or self.provider
             or "unknown"
         )
-        self.thinking_model_name = str(self.llm_info.get("thinking_model") or self.model_name)
+        self.thinking_model_name = str(agent_models.get("risk_manager") or self.model_name)
         self.cache_path = Path(cache_path) if cache_path else self._default_cache_path()
         self.cache: Dict[str, Dict[str, Any]] = {}
         self._load_cache()
-        self.instruct_llm = get_instruct_llm()
-        self.thinking_llm = get_thinking_llm()
+        self.instruct_llm = get_analyst_llm()
+        self.thinking_llm = get_risk_manager_llm()
 
     def metadata(self) -> Dict[str, Any]:
         payload = asdict(
@@ -474,7 +476,7 @@ class TemporalMultiAgentStockScorer:
         stock_name = str(row.get("stock_name") or "")
         stock_code = str(row.get("stock_code") or "")
         query = f"{stock_name} {stock_code} {self.theme} AI 테마 수혜 성장 실적 공시 리스크"
-        return self.rag.search_for_context(
+        return self.evidence.search_for_context(
             query=query,
             as_of_date=as_of_ymd,
             top_k=self.context_docs,

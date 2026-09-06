@@ -1,28 +1,28 @@
 """
-HQA AI Server - AI 에이전트 & RAG 전용 서버
+HQA AI Server - AI 분석 런타임 서버
 
 포트: 8001
-역할: CPU/GPU 집약적인 LLM 추론, LangGraph 워크플로우, RAG 파이프라인 실행
+역할: CPU/GPU 집약적인 LLM 추론, 런타임 시그널 생성, 데이터 조회 보조 API
 """
 
 from __future__ import annotations
 
 import asyncio
-import re
 import json
 import logging
 import os
+import secrets
 import sys
-import threading
 import uuid
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 from contextvars import copy_context
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -49,16 +49,24 @@ logger = logging.getLogger(__name__)
 _results: OrderedDict[str, Dict[str, Any]] = OrderedDict()
 _MAX_CACHE = 500
 _runtime_tasks: OrderedDict[str, Dict[str, Any]] = OrderedDict()
-_runtime_loop_lock = threading.Lock()
-_runtime_loop_state: Dict[str, Any] = {
-    "status": "stopped",
-    "task_id": None,
-    "operation": "multi_theme_trade_loop",
-    "started_at": None,
-    "stopped_at": None,
-    "error": None,
-}
-_runtime_loop_stop_event: Optional[threading.Event] = None
+
+
+def _require_internal_runtime_token(x_hqa_internal_token: Optional[str] = Header(default=None)) -> None:
+    expected = os.getenv("HQA_INTERNAL_TOKEN")
+    if not expected:
+        raise HTTPException(status_code=503, detail="Internal runtime authentication is not configured")
+    if x_hqa_internal_token is None:
+        raise HTTPException(status_code=401, detail="Internal runtime token required")
+    if not secrets.compare_digest(x_hqa_internal_token, expected):
+        raise HTTPException(status_code=403, detail="Invalid internal runtime token")
+
+
+@lru_cache(maxsize=1)
+def _analysis_scheduler():
+    from src.runner.analysis_scheduler import AnalysisScheduler, BackendAutoTradeTargetClient
+    from src.runner.shared_analysis import get_runtime_analysis_service
+    return AnalysisScheduler(backend_client=BackendAutoTradeTargetClient(),
+                             analysis_service=get_runtime_analysis_service())
 
 
 def _runtime_port() -> int:
@@ -76,14 +84,6 @@ def _runtime_port() -> int:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🤖 HQA AI Server 시작 (port %s)", _runtime_port())
-    try:
-        from src.agents.graph import is_langgraph_available
-        if is_langgraph_available():
-            logger.info("   LangGraph: 활성 ✅")
-        else:
-            logger.info("   LangGraph: 비활성 (폴백 모드)")
-    except Exception:
-        logger.info("   LangGraph: 로드 실패")
     yield
     logger.info("🛑 HQA AI Server 종료")
 
@@ -94,7 +94,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="HQA AI Server",
-    description="AI 에이전트 & RAG 분석 전용 서버",
+    description="AI 분석 런타임 및 시그널 생성 서버",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -127,14 +127,6 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 # 스키마
 # ──────────────────────────────────────────────
 
-class AnalyzeRequest(BaseModel):
-    task_id: str
-    stock_name: str
-    stock_code: str
-    mode: str = "full"          # "full" | "quick"
-    max_retries: int = 1
-
-
 class ChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
@@ -142,14 +134,6 @@ class ChatRequest(BaseModel):
 
 class SuggestRequest(BaseModel):
     query: str
-
-
-class ThemeAnalyzeRequest(BaseModel):
-    task_id: str
-    theme: str
-    theme_key: str = ""
-    candidate_limit: int = 5
-    top_n: int = 3
 
 
 class BacktestResultRequest(BaseModel):
@@ -174,86 +158,12 @@ class BacktestResultRequest(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
-class TradeDecisionPayload(BaseModel):
-    total_score: int
-    action: str
-    action_code: str = ""
-    confidence: int = 0
-    risk_level: str = "MEDIUM"
-    risk_level_code: str = ""
-    summary: str = ""
-    key_catalysts: List[str] = Field(default_factory=list)
-    risk_factors: List[str] = Field(default_factory=list)
-    detailed_reasoning: str = ""
-    position_size: str = "0%"
-    entry_strategy: str = ""
-    exit_strategy: str = ""
-    stop_loss: str = ""
-    signal_alignment: str = ""
-    contrarian_view: str = ""
-    validation_status: str = "disabled"
-    validation_summary: str = ""
-    validator_model: str = ""
-    primary_model: str = ""
-    validator_action: str = ""
-    validator_confidence: int = 0
-
-
-class TradeDecisionRequest(BaseModel):
-    stock_name: str
-    stock_code: str
-    final_decision: TradeDecisionPayload
-    current_price: Optional[int] = None
-    quantity: int = 0
-    dry_run_override: Optional[bool] = None
-    trading_enabled_override: Optional[bool] = None
-
-
-class ThemeTradeRequest(BaseModel):
-    user_id: Optional[str] = None
-    investor_profile: Optional[Dict[str, Any]] = None
-    theme: str
-    theme_key: str = ""
-    candidate_limit: int = 5
-    top_n: int = 3
-    execute_top_n: int = 1
-    execute: bool = False
-    preview: bool = True
-    min_leader_score: Optional[int] = None
-    strategy_profile: str = "default"
-    config_path: str = "config/watchlist.yaml"
-    data_dir: Optional[str] = None
-    paper: bool = False
-    dry_run: bool = True
-    save_report: bool = True
-    dry_run_override: Optional[bool] = None
-    trading_enabled_override: Optional[bool] = None
-    account_type_override: Optional[str] = None
-
-
-class ThemeTradeReportRequest(BaseModel):
-    report_path: str
-    execute_top_n: Optional[int] = 1
-    execute: bool = False
-    preview: bool = True
-    config_path: str = "config/watchlist.yaml"
-    data_dir: Optional[str] = None
-    paper: bool = False
-    dry_run: bool = True
-    save_report: bool = True
-    dry_run_override: Optional[bool] = None
-    trading_enabled_override: Optional[bool] = None
-    account_type_override: Optional[str] = None
-
-
 class MultiThemeTradeRequest(BaseModel):
     user_id: Optional[str] = None
     investor_profile: Optional[Dict[str, Any]] = None
     candidate_limit: int = 5
     per_theme_top_n: int = 3
     top_n: int = 3
-    execute: bool = False
-    preview: bool = True
     min_leader_score: Optional[int] = None
     min_confidence: Optional[int] = None
     max_risk_level: Optional[str] = None
@@ -263,29 +173,7 @@ class MultiThemeTradeRequest(BaseModel):
     exclude_theme_keys: Optional[List[str]] = None
     config_path: str = "config/watchlist.yaml"
     data_dir: Optional[str] = None
-    paper: bool = False
-    dry_run: bool = True
     save_report: bool = True
-    dry_run_override: Optional[bool] = None
-    trading_enabled_override: Optional[bool] = None
-    account_type_override: Optional[str] = None
-
-
-class MultiThemeLoopStartRequest(MultiThemeTradeRequest):
-    trade_interval_minutes: int = 60
-    market_hours_only: bool = True
-    collect_interval_minutes: Optional[int] = None
-    collection_command: Optional[str] = None
-    long_plan_time: str = "08:00"
-    long_plan_window_minutes: int = 40
-    long_check_interval_minutes: int = 5
-    poll_seconds: int = 30
-
-
-class AutonomousRunRequest(BaseModel):
-    config_path: str = "config/watchlist.yaml"
-    dry_run: bool = True
-    loop: bool = False
 
 
 # ──────────────────────────────────────────────
@@ -397,488 +285,9 @@ def _submit_runtime_task(operation: str, fn) -> Dict[str, Any]:
     }
 
 
-def _resolve_runner_overrides(
-    *,
-    execute: bool,
-    paper: bool,
-    dry_run: bool,
-    dry_run_override: Optional[bool],
-    trading_enabled_override: Optional[bool],
-    account_type_override: Optional[str],
-) -> Dict[str, Any]:
-    account_type = account_type_override or "paper"
-    resolved_dry_run = True
-    resolved_trading_enabled = True
-
-    if execute:
-        if dry_run_override is False and not paper:
-            raise HTTPException(status_code=400, detail="dry_run_override=false requires paper=true")
-        if account_type == "real" and dry_run_override is False:
-            raise HTTPException(status_code=400, detail="real trading is not enabled through runtime API")
-        if paper:
-            resolved_dry_run = False
-            account_type = "paper"
-        elif dry_run or dry_run_override is True:
-            resolved_dry_run = True
-        else:
-            raise HTTPException(status_code=400, detail="execute requires paper=true or dry_run=true")
-
-    if dry_run_override is not None:
-        resolved_dry_run = bool(dry_run_override)
-    if trading_enabled_override is not None:
-        resolved_trading_enabled = bool(trading_enabled_override)
-
-    return {
-        "dry_run_override": resolved_dry_run,
-        "trading_enabled_override": resolved_trading_enabled,
-        "account_type_override": account_type,
-    }
-
-
-# ──────────────────────────────────────────────
-# 분석 실행 (백그라운드)
-# ──────────────────────────────────────────────
-
-async def _run_analysis_background(
-    task_id: str, stock_name: str, stock_code: str, mode: str, max_retries: int
-):
-    """asyncio 백그라운드에서 AI 분석 실행"""
-    loop = asyncio.get_event_loop()
-    try:
-        _publish_progress(task_id, "system", "started", f"{stock_name} 분석 시작", 0.0)
-
-        with llm_task_priority(LLMTaskPriority.UI_ANALYSIS):
-            context = copy_context()
-            if mode == "quick":
-                result = await loop.run_in_executor(
-                    None, context.run, _execute_quick, task_id, stock_name, stock_code
-                )
-            else:
-                result = await loop.run_in_executor(
-                    None, context.run, _execute_full, task_id, stock_name, stock_code, max_retries
-                )
-
-        _store_result(task_id, {**result, "status": "completed"})
-        _publish_progress(task_id, "system", "completed", "분석 완료", 1.0)
-
-    except Exception as e:
-        logger.exception(f"분석 실패: {task_id}")
-        _store_result(task_id, {"task_id": task_id, "status": "failed", "error": str(e)})
-        _publish_progress(task_id, "system", "error", f"오류: {str(e)[:200]}", 0.0)
-
-
-async def _run_theme_analysis_background(
-    task_id: str,
-    theme: str,
-    theme_key: str,
-    candidate_limit: int,
-    top_n: int,
-):
-    """asyncio 백그라운드에서 테마 주도주 선별 실행"""
-    loop = asyncio.get_event_loop()
-    try:
-        _publish_progress(task_id, "system", "started", f"{theme} 테마 분석 시작", 0.0)
-
-        result = await loop.run_in_executor(
-            None,
-            _execute_theme,
-            task_id,
-            theme,
-            theme_key,
-            candidate_limit,
-            top_n,
-        )
-
-        _store_result(task_id, {**result, "status": "completed"})
-        _publish_progress(task_id, "system", "completed", "테마 분석 완료", 1.0)
-    except Exception as e:
-        logger.exception(f"테마 분석 실패: {task_id}")
-        _store_result(task_id, {"task_id": task_id, "status": "failed", "error": str(e)})
-        _publish_progress(task_id, "system", "error", f"오류: {str(e)[:200]}", 0.0)
-
-
-def _execute_quick(task_id: str, stock_name: str, stock_code: str) -> dict:
-    """빠른 분석 (Quant + Chartist 병렬)"""
-    from src.agents import QuantAgent, ChartistAgent, RiskManagerAgent
-    from src.utils.parallel import run_agents_parallel, is_error
-
-    _publish_progress(task_id, "quant", "started", "재무 분석 중...", 0.2)
-    _publish_progress(task_id, "chartist", "started", "기술적 분석 중...", 0.2)
-
-    quant = QuantAgent()
-    chartist = ChartistAgent()
-
-    def run_quant():
-        try:
-            score = quant.full_analysis(stock_name, stock_code)
-            _publish_progress(task_id, "quant", "completed", f"재무: {score.grade}", 1.0)
-            return score
-        except Exception as exc:
-            _publish_progress(task_id, "quant", "failed", f"오류: {str(exc)[:200]}", 1.0)
-            raise
-
-    def run_chartist():
-        try:
-            score = chartist.full_analysis(stock_name, stock_code)
-            _publish_progress(task_id, "chartist", "completed", f"기술: {score.signal}", 1.0)
-            return score
-        except Exception as exc:
-            _publish_progress(task_id, "chartist", "failed", f"오류: {str(exc)[:200]}", 1.0)
-            raise
-
-    parallel_results = run_agents_parallel({
-        "quant": (run_quant, ()),
-        "chartist": (run_chartist, ()),
-    })
-
-    quant_score = parallel_results["quant"]
-    chartist_score = parallel_results["chartist"]
-
-    if is_error(quant_score):
-        quant_score = quant._default_score(stock_name, str(quant_score))
-    if is_error(chartist_score):
-        chartist_score = chartist._default_score(stock_code, str(chartist_score))
-
-    _publish_progress(task_id, "quick_decision", "started", "빠른 판단 중...", 0.8)
-
-    risk_manager = RiskManagerAgent()
-    quick_opinion = risk_manager.quick_decision(
-        analyst_total=35,
-        quant_total=int(getattr(quant_score, "total_score", 0)),
-        chartist_total=int(getattr(chartist_score, "total_score", 0)),
-    )
-    quick_decision = _quick_decision_to_dict(
-        stock_name,
-        stock_code,
-        quick_opinion,
-        int(getattr(quant_score, "total_score", 0)),
-        int(getattr(chartist_score, "total_score", 0)),
-    )
-    _publish_progress(task_id, "quick_decision", "completed", f"판단: {quick_decision['action']}", 1.0)
-
-    return {
-        "task_id": task_id,
-        "mode": "quick",
-        "stock": {"name": stock_name, "code": stock_code},
-        "scores": {
-            "quant": _score_to_dict(quant_score),
-            "chartist": _score_to_dict(chartist_score),
-            "quick_decision": _quick_score_to_dict(quick_decision, quick_opinion),
-        },
-        "final_decision": quick_decision,
-        "completed_at": datetime.now().isoformat(),
-    }
-
-
-def _execute_full(task_id: str, stock_name: str, stock_code: str, max_retries: int) -> dict:
-    """전체 분석 (LangGraph 워크플로우)"""
-    from src.agents.graph import run_stock_analysis
-
-    graph_completed_agents = set()
-
-    def publish_graph_progress(agent: str, status: str, message: str, progress: float):
-        _publish_progress(task_id, agent, status, message, progress)
-        if status in {"completed", "failed", "error"}:
-            graph_completed_agents.add(agent)
-
-    _publish_progress(task_id, "analyst", "started", "헤게모니 분석 중...", 0.1)
-    _publish_progress(task_id, "quant", "started", "재무 분석 중...", 0.1)
-    _publish_progress(task_id, "chartist", "started", "기술적 분석 중...", 0.1)
-
-    result = run_stock_analysis(
-        stock_name=stock_name,
-        stock_code=stock_code,
-        max_retries=max_retries,
-        progress_callback=publish_graph_progress,
-    )
-
-    scores = result.get("scores", {})
-    analyst_score = scores.get("analyst")
-    quant_score = scores.get("quant")
-    chartist_score = scores.get("chartist")
-    final_decision = result.get("final_decision")
-
-    if analyst_score and "analyst" not in graph_completed_agents:
-        _publish_progress(task_id, "analyst", "completed",
-                          f"헤게모니: {getattr(analyst_score, 'hegemony_grade', '?')}", 1.0)
-    if quant_score and "quant" not in graph_completed_agents:
-        _publish_progress(task_id, "quant", "completed", f"재무: {quant_score.grade}", 1.0)
-    if chartist_score and "chartist" not in graph_completed_agents:
-        _publish_progress(task_id, "chartist", "completed", f"기술: {chartist_score.signal}", 1.0)
-    if final_decision and "risk_manager" not in graph_completed_agents:
-        _publish_progress(task_id, "risk_manager", "completed",
-                          f"판단: {final_decision.action.value}", 1.0)
-
-    return {
-        "task_id": task_id,
-        "mode": "full",
-        "stock": {"name": stock_name, "code": stock_code},
-        "scores": {
-            "analyst": _score_to_dict(analyst_score) if analyst_score else None,
-            "quant": _score_to_dict(quant_score) if quant_score else None,
-            "chartist": _score_to_dict(chartist_score) if chartist_score else None,
-            "risk_manager": _risk_manager_score_to_dict(final_decision) if final_decision else None,
-        },
-        "final_decision": _decision_to_dict(final_decision) if final_decision else None,
-        "research_quality": result.get("research_quality"),
-        "quality_warnings": result.get("quality_warnings", []),
-        "completed_at": datetime.now().isoformat(),
-    }
-
-
-def _execute_theme(
-    task_id: str,
-    theme: str,
-    theme_key: str,
-    candidate_limit: int,
-    top_n: int,
-) -> dict:
-    """테마 전체 스캔 후 주도주 선별"""
-    from src.agents import ThemeLeaderOrchestrator
-
-    _publish_progress(task_id, "theme_orchestrator", "started", "후보군 추출 및 평가 중...", 0.1)
-
-    orchestrator = ThemeLeaderOrchestrator()
-    result = orchestrator.run(
-        theme=theme,
-        theme_key=theme_key,
-        candidate_limit=candidate_limit,
-        top_n=top_n,
-    )
-
-    if result.get("status") != "success":
-        return {
-            "task_id": task_id,
-            "mode": "theme",
-            "theme": theme,
-            "theme_key": theme_key,
-            "status": "failed",
-            "error": result.get("message", "테마 분석 실패"),
-            "completed_at": datetime.now().isoformat(),
-        }
-
-    _publish_progress(task_id, "theme_orchestrator", "completed", "주도주 선별 완료", 1.0)
-
-    leaders = []
-    for row in result.get("leaders", []):
-        candidate = row.get("candidate", {})
-        decision = row.get("final_decision", {})
-        leaders.append(
-            {
-                "stock_name": candidate.get("stock_name"),
-                "stock_code": candidate.get("stock_code"),
-                "leader_score": row.get("leader_score"),
-                "data_coverage": candidate.get("data_coverage"),
-                "action": decision.get("action"),
-                "confidence": decision.get("confidence"),
-                "summary": decision.get("summary"),
-                "risk_level": decision.get("risk_level"),
-                "key_catalysts": decision.get("key_catalysts", []),
-                "risk_factors": decision.get("risk_factors", []),
-            }
-        )
-
-    return {
-        "task_id": task_id,
-        "mode": "theme",
-        "theme": theme,
-        "theme_key": result.get("theme_key", theme_key),
-        "candidate_limit": candidate_limit,
-        "top_n": top_n,
-        "candidate_count": result.get("candidate_count", 0),
-        "evaluated_count": result.get("evaluated_count", 0),
-        "leaders": leaders,
-        "summary": result.get("summary", ""),
-        "completed_at": datetime.now().isoformat(),
-    }
-
-
-# ──────────────────────────────────────────────
-# 변환 헬퍼
-# ──────────────────────────────────────────────
-
-def _score_to_dict(score) -> dict:
-    if score is None:
-        return {}
-    if hasattr(score, "__dict__"):
-        return {k: v for k, v in score.__dict__.items() if not k.startswith("_")}
-    return {}
-
-
-def _decision_to_dict(decision) -> dict:
-    if decision is None:
-        return {}
-    return {
-        "action": decision.action.value if hasattr(decision.action, "value") else str(decision.action),
-        "action_code": decision.action.name if hasattr(decision.action, "name") else str(decision.action),
-        "confidence": getattr(decision, "confidence", 0),
-        "risk_level": decision.risk_level.value if hasattr(decision.risk_level, "value") else str(decision.risk_level),
-        "risk_level_code": decision.risk_level.name if hasattr(decision.risk_level, "name") else str(decision.risk_level),
-        "total_score": getattr(decision, "total_score", 0),
-        "summary": getattr(decision, "summary", ""),
-        "key_catalysts": getattr(decision, "key_catalysts", []),
-        "risk_factors": getattr(decision, "risk_factors", []),
-        "detailed_reasoning": getattr(decision, "detailed_reasoning", ""),
-    }
-
-
-def _quick_decision_to_dict(
-    stock_name: str,
-    stock_code: str,
-    quick_opinion: str,
-    quant_total: int,
-    chartist_total: int,
-) -> Dict[str, Any]:
-    score_match = re.search(r"점수:\s*(\d+)", quick_opinion)
-    total_score = int(score_match.group(1)) if score_match else int(round((quant_total * 0.55) + (chartist_total * 0.45)))
-    if "적극 매수" in quick_opinion:
-        action = "적극 매수"
-        action_code = "STRONG_BUY"
-    elif "매수" in quick_opinion:
-        action = "매수"
-        action_code = "BUY"
-    elif "매도" in quick_opinion:
-        action = "매도"
-        action_code = "SELL"
-    elif "축소" in quick_opinion:
-        action = "비중 축소"
-        action_code = "REDUCE"
-    else:
-        action = "보유/관망"
-        action_code = "HOLD"
-
-    risk_level = "낮음" if total_score >= 70 else "보통" if total_score >= 45 else "높음"
-    risk_code = "LOW" if total_score >= 70 else "MEDIUM" if total_score >= 45 else "HIGH"
-    return {
-        "stock_name": stock_name,
-        "stock_code": stock_code,
-        "total_score": total_score,
-        "action": action,
-        "action_code": action_code,
-        "confidence": min(95, max(35, total_score)),
-        "risk_level": risk_level,
-        "risk_level_code": risk_code,
-        "summary": quick_opinion,
-        "key_catalysts": [
-            f"재무 점수 {quant_total}/100",
-            f"기술 점수 {chartist_total}/100",
-        ],
-        "risk_factors": ["빠른 분석은 Analyst 정성 리서치를 생략합니다."],
-        "detailed_reasoning": "Quant와 Chartist 점수를 기반으로 빠른 판단을 생성했습니다.",
-    }
-
-
-def _quick_score_to_dict(decision: Dict[str, Any], opinion: str) -> Dict[str, Any]:
-    return {
-        "total_score": decision.get("total_score", 0),
-        "grade": decision.get("action", ""),
-        "opinion": opinion,
-        "confidence": decision.get("confidence", 0),
-        "risk_level": decision.get("risk_level", ""),
-    }
-
-
-def _risk_manager_score_to_dict(decision) -> Dict[str, Any]:
-    payload = _decision_to_dict(decision)
-    return {
-        **payload,
-        "grade": payload.get("action", ""),
-        "opinion": payload.get("summary", ""),
-    }
-
-
 # ──────────────────────────────────────────────
 # 엔드포인트
 # ──────────────────────────────────────────────
-
-
-def _load_watchlist_config() -> Dict[str, Any]:
-    settings = get_settings()
-    config_path = settings.project_root / "config" / "watchlist.yaml"
-    if not config_path.exists():
-        return {"config_path": str(config_path), "watchlist": [], "trading": {}}
-
-    try:
-        import yaml
-    except ImportError as exc:  # pragma: no cover
-        raise HTTPException(status_code=500, detail=f"PyYAML 미설치: {exc}") from exc
-
-    with config_path.open("r", encoding="utf-8") as f:
-        config = yaml.safe_load(f) or {}
-    config["config_path"] = str(config_path)
-    return config
-
-
-def _build_trade_executor(
-    *,
-    dry_run_override: Optional[bool] = None,
-    trading_enabled_override: Optional[bool] = None,
-):
-    from src.runner.trade_executor import TradeExecutor
-
-    config = _load_watchlist_config()
-    trading = dict(config.get("trading") or {})
-    if dry_run_override is not None:
-        trading["dry_run"] = dry_run_override
-    if trading_enabled_override is not None:
-        trading["enabled"] = trading_enabled_override
-    return TradeExecutor(trading), config
-
-
-def _coerce_enum(raw: str, enum_cls, field_name: str):
-    value = str(raw or "").strip()
-    if not value:
-        raise HTTPException(status_code=422, detail=f"{field_name} 값이 비어 있습니다.")
-
-    direct = enum_cls.__members__.get(value)
-    if direct is not None:
-        return direct
-
-    upper = enum_cls.__members__.get(value.upper())
-    if upper is not None:
-        return upper
-
-    for member in enum_cls:
-        if member.value == value:
-            return member
-
-    allowed = [member.name for member in enum_cls]
-    raise HTTPException(
-        status_code=422,
-        detail=f"{field_name} 값이 올바르지 않습니다: {value}. 허용값: {allowed}",
-    )
-
-
-def _build_final_decision(stock_name: str, stock_code: str, payload: TradeDecisionPayload):
-    from src.agents.risk_manager import FinalDecision, InvestmentAction, RiskLevel
-
-    action_raw = payload.action_code or payload.action
-    risk_level_raw = payload.risk_level_code or payload.risk_level
-
-    return FinalDecision(
-        stock_name=stock_name,
-        stock_code=stock_code,
-        total_score=max(0, min(100, int(payload.total_score))),
-        action=_coerce_enum(action_raw, InvestmentAction, "action"),
-        confidence=max(0, min(100, int(payload.confidence))),
-        risk_level=_coerce_enum(risk_level_raw, RiskLevel, "risk_level"),
-        risk_factors=list(payload.risk_factors),
-        position_size=payload.position_size,
-        entry_strategy=payload.entry_strategy,
-        exit_strategy=payload.exit_strategy,
-        stop_loss=payload.stop_loss,
-        signal_alignment=payload.signal_alignment,
-        key_catalysts=list(payload.key_catalysts),
-        contrarian_view=payload.contrarian_view,
-        summary=payload.summary,
-        detailed_reasoning=payload.detailed_reasoning,
-        validation_status=payload.validation_status,
-        validation_summary=payload.validation_summary,
-        validator_model=payload.validator_model,
-        primary_model=payload.primary_model,
-        validator_action=payload.validator_action,
-        validator_confidence=max(0, min(100, int(payload.validator_confidence))),
-    )
 
 
 def _load_order_logs(date: Optional[str], limit: int) -> List[Dict[str, Any]]:
@@ -916,83 +325,21 @@ def _load_order_logs(date: Optional[str], limit: int) -> List[Dict[str, Any]]:
     return rows[:limit]
 
 
-def _run_theme_trade(request: ThemeTradeRequest) -> Dict[str, Any]:
-    from src.runner import ThemeLeaderTradingRunner
-
-    overrides = _resolve_runner_overrides(
-        execute=request.execute,
-        paper=request.paper,
-        dry_run=request.dry_run,
-        dry_run_override=request.dry_run_override,
-        trading_enabled_override=request.trading_enabled_override,
-        account_type_override=request.account_type_override,
-    )
-    runner = ThemeLeaderTradingRunner(
-        config_path=request.config_path,
-        data_dir=request.data_dir,
-        **overrides,
-    )
-    return runner.run_once(
-        theme=request.theme,
-        theme_key=request.theme_key,
-        candidate_limit=max(1, int(request.candidate_limit)),
-        top_n=max(1, int(request.top_n)),
-        execute_top_n=max(0, int(request.execute_top_n)),
-        execute=bool(request.execute),
-        min_leader_score=request.min_leader_score,
-        strategy_profile=request.strategy_profile,
-        save_report=bool(request.save_report),
-        investor_profile=request.investor_profile,
-        user_id=request.user_id,
-    )
-
-
-def _run_theme_trade_report(request: ThemeTradeReportRequest) -> Dict[str, Any]:
-    from src.runner import ThemeLeaderTradingRunner
-
-    overrides = _resolve_runner_overrides(
-        execute=request.execute,
-        paper=request.paper,
-        dry_run=request.dry_run,
-        dry_run_override=request.dry_run_override,
-        trading_enabled_override=request.trading_enabled_override,
-        account_type_override=request.account_type_override,
-    )
-    runner = ThemeLeaderTradingRunner(
-        config_path=request.config_path,
-        data_dir=request.data_dir,
-        **overrides,
-    )
-    return runner.run_from_report(
-        report_path=request.report_path,
-        execute_top_n=request.execute_top_n,
-        execute=bool(request.execute),
-        save_report=bool(request.save_report),
-    )
-
-
 def _run_multi_theme_trade(request: MultiThemeTradeRequest) -> Dict[str, Any]:
     from src.runner import MultiThemeLeaderTradingRunner
+    from src.runner.shared_analysis import get_runtime_analysis_service
     from src.runner.trade_signal_submitter import submit_trade_signals
 
-    overrides = _resolve_runner_overrides(
-        execute=request.execute,
-        paper=request.paper,
-        dry_run=request.dry_run,
-        dry_run_override=request.dry_run_override,
-        trading_enabled_override=request.trading_enabled_override,
-        account_type_override=request.account_type_override,
-    )
     runner = MultiThemeLeaderTradingRunner(
         config_path=request.config_path,
         data_dir=request.data_dir,
-        **overrides,
+        analysis_service=get_runtime_analysis_service(request.config_path, request.data_dir),
     )
     result = runner.run_all(
         candidate_limit=max(1, int(request.candidate_limit)),
         per_theme_top_n=max(1, int(request.per_theme_top_n)),
         top_n=max(1, int(request.top_n)),
-        execute=bool(request.execute),
+        execute=False,
         min_leader_score=request.min_leader_score,
         min_confidence=request.min_confidence,
         max_risk_level=request.max_risk_level,
@@ -1005,98 +352,18 @@ def _run_multi_theme_trade(request: MultiThemeTradeRequest) -> Dict[str, Any]:
         user_id=request.user_id,
     )
     if request.user_id:
-        result["signal_submission"] = submit_trade_signals(
-            user_id=request.user_id,
-            result=result,
-        )
-    return result
-
-
-def _run_autonomous_once(request: AutonomousRunRequest) -> Dict[str, Any]:
-    if request.loop:
-        raise ValueError("autonomous loop mode is not controllable through this endpoint; use one-shot mode")
-
-    from src.runner.autonomous_runner import AutonomousRunner
-
-    runner = AutonomousRunner(
-        config_path=request.config_path,
-        dry_run_override=True if request.dry_run else None,
-    )
-    results = runner.run_once()
-    return {
-        "status": "success",
-        "mode": "once",
-        "config_path": request.config_path,
-        "dry_run": bool(request.dry_run),
-        "result_count": len(results),
-        "results": results,
-        "completed_at": datetime.now().isoformat(),
-    }
-
-
-def _run_multi_theme_loop(task_id: str, request: MultiThemeLoopStartRequest, stop_event: threading.Event) -> None:
-    global _runtime_loop_state
-    from src.runner import MultiThemeLeaderTradingRunner
-    from src.runner.multi_theme_scheduler import MultiThemeScheduler
-
-    try:
-        overrides = _resolve_runner_overrides(
-            execute=request.execute,
-            paper=request.paper,
-            dry_run=request.dry_run,
-            dry_run_override=request.dry_run_override,
-            trading_enabled_override=request.trading_enabled_override,
-            account_type_override=request.account_type_override,
-        )
-        trade_runner = MultiThemeLeaderTradingRunner(
-            config_path=request.config_path,
-            data_dir=request.data_dir,
-            **overrides,
-        )
-        scheduler = MultiThemeScheduler(
-            trade_runner=trade_runner,
-            short_interval_minutes=request.trade_interval_minutes,
-            short_market_hours_only=request.market_hours_only,
-            long_plan_time=request.long_plan_time,
-            long_plan_window_minutes=request.long_plan_window_minutes,
-            long_trigger_check_minutes=request.long_check_interval_minutes,
-            long_market_hours_only=request.market_hours_only,
-            collect_interval_minutes=request.collect_interval_minutes,
-            collect_command=request.collection_command,
-            poll_seconds=request.poll_seconds,
-            stop_event=stop_event,
-        )
-        with llm_task_priority(LLMTaskPriority.RUNTIME):
-            scheduler.run_loop(
-                candidate_limit=max(1, int(request.candidate_limit)),
-                per_theme_top_n=max(1, int(request.per_theme_top_n)),
-                short_top_n=max(1, int(request.top_n)),
-                long_top_n=max(1, int(request.top_n)),
-                execute=bool(request.execute),
-                min_leader_score=request.min_leader_score,
-                min_confidence=request.min_confidence,
-                max_risk_level=request.max_risk_level,
-                short_strategy_profile="short",
-                long_strategy_profile="long",
-                include_theme_keys=request.include_theme_keys,
-                exclude_theme_keys=request.exclude_theme_keys,
-                investor_profile=request.investor_profile,
+        if result.get("status") == "completed":
+            result["signal_submission"] = submit_trade_signals(
                 user_id=request.user_id,
+                result=result,
             )
-        with _runtime_loop_lock:
-            _runtime_loop_state.update({
-                "status": "stopped",
-                "stopped_at": datetime.now().isoformat(),
-                "error": None,
-            })
-    except Exception as exc:
-        logger.exception("multi-theme loop failed")
-        with _runtime_loop_lock:
-            _runtime_loop_state.update({
-                "status": "failed",
-                "stopped_at": datetime.now().isoformat(),
-                "error": str(exc),
-            })
+        else:
+            result["signal_submission"] = {
+                "submitted": 0,
+                "failed": 1,
+                "error": result.get("error") or "analysis_not_completed",
+            }
+    return result
 
 # ──────────────────────────────────────────────
 # 종목 자료 (뉴스 · 공시)
@@ -1246,72 +513,6 @@ async def health():
     }
 
 
-@app.get("/trading/status")
-async def trading_status():
-    executor, config = _build_trade_executor()
-    runtime = executor.get_runtime_config()
-    return {
-        "status": "ok",
-        "config_path": config.get("config_path"),
-        "watchlist_count": len(config.get("watchlist", [])),
-        "runtime": runtime,
-        "orders_dir": str(get_settings().orders_dir),
-    }
-
-
-@app.post("/trading/decision/preview")
-async def preview_trade_decision(request: TradeDecisionRequest):
-    executor, config = _build_trade_executor(
-        dry_run_override=request.dry_run_override,
-        trading_enabled_override=request.trading_enabled_override,
-    )
-    decision = _build_final_decision(
-        stock_name=request.stock_name,
-        stock_code=request.stock_code,
-        payload=request.final_decision,
-    )
-    preview = executor.preview_decision(
-        stock_name=request.stock_name,
-        stock_code=request.stock_code,
-        decision=decision,
-        quantity=request.quantity,
-        current_price=request.current_price,
-    )
-    return {
-        "stock": {"name": request.stock_name, "code": request.stock_code},
-        "decision": _decision_to_dict(decision),
-        "preview": preview,
-        "config_path": config.get("config_path"),
-    }
-
-
-@app.post("/trading/decision/execute")
-async def execute_trade_decision(request: TradeDecisionRequest):
-    executor, config = _build_trade_executor(
-        dry_run_override=request.dry_run_override,
-        trading_enabled_override=request.trading_enabled_override,
-    )
-    decision = _build_final_decision(
-        stock_name=request.stock_name,
-        stock_code=request.stock_code,
-        payload=request.final_decision,
-    )
-    result = executor.execute_decision(
-        stock_name=request.stock_name,
-        stock_code=request.stock_code,
-        decision=decision,
-        quantity=request.quantity,
-        current_price=request.current_price,
-    )
-    return {
-        "stock": {"name": request.stock_name, "code": request.stock_code},
-        "decision": _decision_to_dict(decision),
-        "trade": result,
-        "runtime": executor.get_runtime_config(),
-        "config_path": config.get("config_path"),
-    }
-
-
 @app.get("/trading/orders")
 async def list_trading_orders(
     date: Optional[str] = Query(default=None, description="YYYY-MM-DD 형식"),
@@ -1326,27 +527,17 @@ async def list_trading_orders(
     }
 
 
-@app.post("/runtime/theme-trade", status_code=202)
-async def runtime_theme_trade(request: ThemeTradeRequest):
-    return _submit_runtime_task("theme_trade", lambda: _run_theme_trade(request))
-
-
-@app.post("/runtime/theme-trade-report", status_code=202)
-async def runtime_theme_trade_report(request: ThemeTradeReportRequest):
-    return _submit_runtime_task("theme_trade_report", lambda: _run_theme_trade_report(request))
-
-
-@app.post("/runtime/multi-theme-trade", status_code=202)
+@app.post("/runtime/multi-theme-trade", status_code=202, dependencies=[Depends(_require_internal_runtime_token)])
 async def runtime_multi_theme_trade(request: MultiThemeTradeRequest):
     return _submit_runtime_task("multi_theme_trade", lambda: _run_multi_theme_trade(request))
 
 
-@app.post("/runtime/autonomous", status_code=202)
-async def runtime_autonomous(request: AutonomousRunRequest):
-    return _submit_runtime_task("autonomous", lambda: _run_autonomous_once(request))
+@app.post("/internal/runtime/analysis-cycle", status_code=202, dependencies=[Depends(_require_internal_runtime_token)])
+async def internal_analysis_cycle():
+    return _submit_runtime_task("analysis_cycle", lambda: _analysis_scheduler().run_once())
 
 
-@app.get("/runtime/tasks/{task_id}")
+@app.get("/runtime/tasks/{task_id}", dependencies=[Depends(_require_internal_runtime_token)])
 async def runtime_task(task_id: str):
     task = _runtime_tasks.get(task_id)
     if task is None:
@@ -1354,81 +545,7 @@ async def runtime_task(task_id: str):
     return task
 
 
-@app.post("/runtime/multi-theme-trade/loop/start", status_code=202)
-async def runtime_multi_theme_loop_start(request: MultiThemeLoopStartRequest):
-    global _runtime_loop_stop_event
-    with _runtime_loop_lock:
-        if _runtime_loop_state.get("status") in {"running", "stopping"}:
-            raise HTTPException(
-                status_code=409,
-                detail=f"multi-theme loop is already running: {_runtime_loop_state.get('task_id')}",
-            )
-        task_id = str(uuid.uuid4())
-        stop_event = threading.Event()
-        _runtime_loop_stop_event = stop_event
-        _runtime_loop_state.update({
-            "status": "running",
-            "task_id": task_id,
-            "operation": "multi_theme_trade_loop",
-            "started_at": datetime.now().isoformat(),
-            "stopped_at": None,
-            "error": None,
-        })
-        thread = threading.Thread(
-            target=_run_multi_theme_loop,
-            args=(task_id, request, stop_event),
-            name=f"hqa-runtime-loop-{task_id[:8]}",
-            daemon=True,
-        )
-        _runtime_loop_state["thread_name"] = thread.name
-        thread.start()
-        return dict(_runtime_loop_state)
-
-
-@app.post("/runtime/multi-theme-trade/loop/stop")
-async def runtime_multi_theme_loop_stop():
-    global _runtime_loop_stop_event
-    with _runtime_loop_lock:
-        if _runtime_loop_state.get("status") != "running":
-            return {**_runtime_loop_state, "message": "multi-theme loop is not running"}
-        if _runtime_loop_stop_event is not None:
-            _runtime_loop_stop_event.set()
-        _runtime_loop_state["status"] = "stopping"
-        _runtime_loop_state["stopped_at"] = datetime.now().isoformat()
-        return dict(_runtime_loop_state)
-
-
-@app.get("/runtime/multi-theme-trade/loop/status")
-async def runtime_multi_theme_loop_status():
-    with _runtime_loop_lock:
-        return dict(_runtime_loop_state)
-
-
-@app.post("/analyze", status_code=202)
-async def analyze(request: AnalyzeRequest):
-    """
-    분석 요청 (비동기)
-
-    즉시 task_id를 반환하고 백그라운드에서 분석을 실행합니다.
-    진행 상황은 Redis pub/sub `hqa:progress:{task_id}` 채널로 전달됩니다.
-    결과는 Redis `hqa:result:{task_id}` 키에 저장됩니다.
-    """
-    asyncio.create_task(
-        _run_analysis_background(
-            request.task_id,
-            request.stock_name,
-            request.stock_code,
-            request.mode,
-            request.max_retries,
-        )
-    )
-    return {"task_id": request.task_id, "status": "pending"}
-
-
-@app.get("/analyze/{task_id}")
-async def get_analyze_result(task_id: str):
-    """분석 결과 조회 (Redis → 인메모리 순서로 조회)"""
-    # Redis 우선 조회
+async def _get_stored_result(task_id: str):
     try:
         import redis
         r = redis.from_url(_get_redis_url())
@@ -1465,37 +582,11 @@ async def submit_backtest_result(request: BacktestResultRequest):
 
 @app.get("/backtest/results/{task_id}")
 async def get_backtest_result(task_id: str):
-    """Fetch a stored backtest result. Shares storage with /analyze/{task_id}."""
-    return await get_analyze_result(task_id)
+    """Fetch a stored backtest result."""
+    return await _get_stored_result(task_id)
 
 
-@app.post("/theme/analyze", status_code=202)
-async def analyze_theme(request: ThemeAnalyzeRequest):
-    """
-    테마 주도주 선별 요청 (비동기)
-
-    즉시 task_id를 반환하고 백그라운드에서 후보 추출 및 멀티 에이전트 평가를 실행합니다.
-    결과는 `GET /theme/analyze/{task_id}` 또는 `GET /analyze/{task_id}`로 조회할 수 있습니다.
-    """
-    asyncio.create_task(
-        _run_theme_analysis_background(
-            request.task_id,
-            request.theme,
-            request.theme_key,
-            request.candidate_limit,
-            request.top_n,
-        )
-    )
-    return {"task_id": request.task_id, "status": "pending", "mode": "theme"}
-
-
-@app.get("/theme/analyze/{task_id}")
-async def get_theme_analyze_result(task_id: str):
-    """테마 주도주 선별 결과 조회"""
-    return await get_analyze_result(task_id)
-
-
-@app.post("/chat")
+@app.post("/chat", dependencies=[Depends(_require_internal_runtime_token)])
 async def chat(request: ChatRequest):
     """대화형 질문 (SupervisorAgent)"""
     loop = asyncio.get_event_loop()
@@ -1518,14 +609,14 @@ async def chat(request: ChatRequest):
     return await loop.run_in_executor(None, _run)
 
 
-@app.post("/suggest")
+@app.post("/suggest", dependencies=[Depends(_require_internal_runtime_token)])
 async def suggest(request: SuggestRequest):
     """쿼리 제안 (Answerability Check)"""
     loop = asyncio.get_event_loop()
 
     def _run():
-        from src.agents.llm_config import get_instruct_llm
-        llm = get_instruct_llm()
+        from src.agents.llm_config import get_chartist_llm
+        llm = get_chartist_llm()
         prompt = f"""당신은 주식 분석 AI 시스템의 쿼리 검증 모듈입니다.
 
 사용자의 질문이 다음 기능 범위 내에 있는지 판단하세요:

@@ -37,26 +37,8 @@ def _load_module(name: str, relative_path: str):
 
 
 _charts_module = _load_module("charts_tools_for_test", "src/tools/charts_tools.py")
-_web_module = _load_module("web_search_tool_for_test", "src/tools/web_search_tool.py")
 
 TechnicalIndicators = _charts_module.TechnicalIndicators
-SearchResult = _web_module.SearchResult
-
-
-def test_search_result_supports_dict_style_access():
-    result = SearchResult(
-        title="삼성전자 실적",
-        url="https://example.com/report",
-        content="HBM 수요 증가",
-        score=0.87,
-        published_date="2026-03-30",
-    )
-
-    assert result.snippet == "HBM 수요 증가"
-    assert result.get("title") == "삼성전자 실적"
-    assert result.get("snippet") == "HBM 수요 증가"
-    assert result.get("url") == "https://example.com/report"
-    assert result.get("missing", "fallback") == "fallback"
 
 
 def test_technical_indicator_dict_exposes_raw_keys_for_agents():

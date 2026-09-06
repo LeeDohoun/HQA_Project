@@ -15,10 +15,10 @@
 
     with tracer.trace_agent("analyst", "삼성전자(005930)") as span:
         result = run_analyst()
-        span.set_output("A등급 (65/70)")
+        span.set_output("A등급 (85/100)")
         span.set_reasoning("반도체 지배력 확인", raw=full_reasoning_text)
 
-    tracer.finish_trace("매수 판단, 총 230/270점")
+    tracer.finish_trace("매수 판단, 총 260/300점")
 """
 
 import json
@@ -270,7 +270,7 @@ class AgentTracer:
             span.set_reasoning("요약", raw="전체 텍스트")
 
         tracer.add_event("quality_gate_passed", "품질 B등급 통과")
-        tracer.finish_trace("매수, 230/270점")
+        tracer.finish_trace("매수, 260/300점")
     """
 
     def __init__(
@@ -353,7 +353,7 @@ class AgentTracer:
         사용법:
             with tracer.trace_agent("analyst", "삼성전자(005930)") as span:
                 result = run_analyst()
-                span.set_output("A등급 65/70")
+                span.set_output("A등급 85/100")
                 span.set_reasoning("요약", raw="전체 텍스트")
 
         자동 처리:

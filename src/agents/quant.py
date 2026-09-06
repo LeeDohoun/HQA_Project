@@ -12,22 +12,17 @@ Quant Agent (퀀트 에이전트)
 점수 체계: 100점 만점 (밸류 25 + 수익성 25 + 성장성 25 + 안정성 25)
 """
 
+import json
+import re
 from typing import Any, Dict, Optional
 from dataclasses import dataclass, field
 
-from src.agents.llm_config import get_instruct_llm
-from src.agents.context import AgentContextPacket, EvidenceItem
+from src.agents.llm_config import get_quant_llm
 from src.tools.finance_tool import (
     QuantitativeAnalyzer,
     QuantitativeAnalysis,
 )
-
-# 웹 검색 폴백 (선택적)
-try:
-    from src.tools.web_search_tool import search_web
-    _WEB_SEARCH_AVAILABLE = True
-except ImportError:
-    _WEB_SEARCH_AVAILABLE = False
+from src.utils.prompt_loader import load_prompt
 
 
 @dataclass
@@ -49,13 +44,28 @@ class QuantScore:
     # 핵심 지표
     per: Optional[float] = None
     pbr: Optional[float] = None
+    eps: Optional[float] = None
+    bps: Optional[float] = None
     roe: Optional[float] = None
+    roa: Optional[float] = None
+    operating_margin: Optional[float] = None
+    net_margin: Optional[float] = None
     debt_ratio: Optional[float] = None
+    current_ratio: Optional[float] = None
+    revenue: Optional[float] = None
+    operating_profit: Optional[float] = None
+    net_income: Optional[float] = None
+    revenue_yoy_change: Optional[float] = None
+    operating_profit_yoy_change: Optional[float] = None
+    revenue_growth_3y: Optional[float] = None
+    operating_profit_growth_3y: Optional[float] = None
+    operating_margin_trend: Optional[float] = None
+    net_margin_trend: Optional[float] = None
+    financial_history_years: list[str] = field(default_factory=list)
     
     # 최종 의견
     opinion: str = ""
     grade: str = "C"  # A/B/C/D/F
-    analysis_packet: Dict = field(default_factory=dict)
     quality_flags: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -67,7 +77,7 @@ class QuantAgent:
     """
     
     def __init__(self):
-        self.llm = get_instruct_llm()
+        self.llm = get_quant_llm()
         self.analyzer = QuantitativeAnalyzer()
     
     def analyze_fundamentals(self, stock_name: str, stock_code: str) -> str:
@@ -87,7 +97,7 @@ class QuantAgent:
     def full_analysis(self, stock_name: str, stock_code: str) -> QuantScore:
         """
         전체 재무 분석 수행
-        Plan A: 네이버 금융 크롤링 → Plan B: 웹 검색 + LLM 추출
+        DART/KRX 기반 지표 계산 → LLM 해석
         
         Args:
             stock_name: 종목명
@@ -98,58 +108,16 @@ class QuantAgent:
         """
         print(f"📊 [Quant] {stock_name}({stock_code}) 재무 분석 중...")
         
-        # ── Plan A: 네이버 금융 크롤링 ──
         try:
             analysis: QuantitativeAnalysis = self.analyzer.analyze(stock_code)
             metrics = self._metrics_from_analysis(analysis)
-
-            if not analysis.has_sufficient_financial_data():
-                missing = analysis.missing_core_metrics()
-                reason = (
-                    "네이버 금융 핵심 재무 지표 부족: "
-                    + ", ".join(missing)
-                )
-                print(f"   ⚠️ {reason}")
-                fallback_score = self._web_search_fallback(stock_name, stock_code)
-                fallback_score.quality_flags.update(
-                    {
-                        "data_quality": "insufficient",
-                        "source": getattr(analysis, "financial_source", "naver_finance"),
-                        "fallback_used": fallback_score.grade != "F" or fallback_score.total_score != analysis.total_score,
-                        "missing_core_metrics": missing,
-                    }
-                )
-                return fallback_score
-            
-            return QuantScore(
-                valuation_score=analysis.valuation_score,
-                profitability_score=analysis.profitability_score,
-                growth_score=analysis.growth_score,
-                stability_score=analysis.stability_score,
-                total_score=analysis.total_score,
-                valuation_analysis=self._valuation_detail(analysis),
-                profitability_analysis=self._profitability_detail(analysis),
-                growth_analysis=self._growth_detail(analysis),
-                stability_analysis=self._stability_detail(analysis),
-                per=metrics.get("PER"),
-                pbr=metrics.get("PBR"),
-                roe=metrics.get("ROE"),
-                debt_ratio=metrics.get("부채비율"),
-                opinion=self._analysis_opinion(analysis),
-                grade=self._calculate_grade(analysis.total_score),
-                analysis_packet=self._build_packet_from_analysis(stock_name, stock_code, analysis).to_dict(),
-                quality_flags={
-                    "data_quality": "sufficient",
-                    "source": getattr(analysis, "financial_source", "naver_finance"),
-                    "missing_core_metrics": analysis.missing_core_metrics(),
-                },
-            )
+            score = self._interpret_with_llm(stock_name, stock_code, analysis, metrics)
+            print(f"   ✅ DART/KRX 기반 LLM 해석 완료: {score.total_score}/100점 (등급 {score.grade})")
+            return score
             
         except Exception as e:
-            print(f"   ⚠️ 네이버 금융 크롤링 실패: {e} → 웹 검색 폴백")
-        
-        # ── Plan B: 웹 검색 + LLM 추출 ──
-        return self._web_search_fallback(stock_name, stock_code)
+            print(f"   ❌ DART/KRX 기반 퀀트 분석 실패: {e}")
+            return self._default_score(stock_name, f"DART/KRX 기반 퀀트 분석 실패: {e}")
     
     def _calculate_grade(self, total_score: int) -> str:
         """점수에 따른 등급 계산"""
@@ -164,124 +132,119 @@ class QuantAgent:
         else:
             return "F"
     
-    def _web_search_fallback(self, stock_name: str, stock_code: str) -> QuantScore:
-        """
-        웹 검색 폴백: 검색 결과에서 LLM으로 재무 지표를 추출하여 분석.
-        네이버 금융 크롤링이 실패했을 때 Plan B로 사용.
-        """
-        if not _WEB_SEARCH_AVAILABLE:
-            print("   ⚠️ 웹 검색 도구 미설치 → 기본값 반환")
-            return self._default_score(stock_name, "네이버 금융 + 웹 검색 모두 불가")
-        
-        print(f"   🔄 [Quant Plan B] {stock_name} 웹 검색으로 재무 지표 수집 중...")
-        
-        try:
-            # 1. 여러 쿼리로 재무 지표 수집
-            queries = [
-                f"{stock_name} PER PBR ROE 2025",
-                f"{stock_name} 부채비율 영업이익률 매출 성장률",
-            ]
-            
-            all_snippets = []
-            for q in queries:
-                results = search_web(q, max_results=3)
-                if results:
-                    for r in results:
-                        snippet = r.get("snippet") or r.get("content", "")
-                        title = r.get("title", "")
-                        if snippet:
-                            all_snippets.append(f"[{title}] {snippet}")
-            
-            if not all_snippets:
-                print("   ⚠️ 웹 검색 결과 없음 → 기본값 반환")
-                return self._default_score(stock_name, "웹 검색 결과 없음")
-            
-            combined_text = "\n".join(all_snippets[:8])  # 상위 8개
-            
-            # 2. LLM으로 지표 추출 + 채점
-            extract_prompt = f"""
-다음은 '{stock_name}'({stock_code})에 대한 웹 검색 결과입니다.
-여기에서 재무 지표를 추출하고 점수를 매기세요.
+    def _interpret_with_llm(
+        self,
+        stock_name: str,
+        stock_code: str,
+        analysis: QuantitativeAnalysis,
+        metrics: Dict[str, Optional[float]],
+    ) -> QuantScore:
+        missing = analysis.missing_core_metrics()
+        quality_warnings = []
+        if missing:
+            quality_warnings.append("핵심 재무 지표 누락: " + ", ".join(missing))
+        if not analysis.has_sufficient_financial_data():
+            quality_warnings.append("정량 점수 신뢰도 제한: 밸류에이션 또는 수익성/안정성 지표 부족")
 
-[검색 결과]
-{combined_text[:3000]}
-
-아래 JSON 형식으로만 응답하세요:
-{{
-    "per": <숫자 또는 null>,
-    "pbr": <숫자 또는 null>,
-    "roe": <숫자(%) 또는 null>,
-    "debt_ratio": <숫자(%) 또는 null>,
-    "valuation_score": <0-25>,
-    "valuation_analysis": "<밸류에이션 분석 1-2문장>",
-    "profitability_score": <0-25>,
-    "profitability_analysis": "<수익성 분석 1-2문장>",
-    "growth_score": <0-25>,
-    "growth_analysis": "<성장성 분석 1-2문장>",
-    "stability_score": <0-25>,
-    "stability_analysis": "<안정성 분석 1-2문장>",
-    "opinion": "<종합 의견 1문장>"
-}}
-
-채점 기준:
-- 밸류에이션: PER 10배 이하 25점, 15배 이하 20점, 20배 이하 15점, 30배 이상 5점
-- 수익성: ROE 15%+ 25점, 10%+ 20점, 5%+ 15점, 이하 10점
-- 성장성: 매출 성장률 20%+ 25점, 10%+ 20점, 5%+ 15점, 이하 10점
-- 안정성: 부채비율 50% 이하 25점, 100% 이하 20점, 200% 이상 10점
-
-지표를 찾을 수 없으면 null로 두고, 해당 점수는 12점(중간값)으로 부여하세요.
-JSON만 출력하세요.
-"""
-            response = self.llm.invoke(extract_prompt)
-            
-            import json
-            import re
-            
-            json_match = re.search(r'\{[\s\S]*\}', response.content)
-            if not json_match:
-                raise ValueError("LLM이 JSON을 반환하지 않음")
-            
-            data = json.loads(json_match.group())
-            
-            # 점수 범위 보정
-            v = min(25, max(0, int(data.get("valuation_score", 12))))
-            p = min(25, max(0, int(data.get("profitability_score", 12))))
-            g = min(25, max(0, int(data.get("growth_score", 12))))
-            s = min(25, max(0, int(data.get("stability_score", 12))))
-            total = v + p + g + s
-            
-            disclaimer = "\n\n[데이터 출처: 웹 검색 — 네이버 금융 원본 대비 정확도 제한적]"
-            
-            score = QuantScore(
-                valuation_score=v,
-                profitability_score=p,
-                growth_score=g,
-                stability_score=s,
-                total_score=total,
-                valuation_analysis=data.get("valuation_analysis", "웹 검색 기반") + disclaimer,
-                profitability_analysis=data.get("profitability_analysis", "웹 검색 기반") + disclaimer,
-                growth_analysis=data.get("growth_analysis", "웹 검색 기반") + disclaimer,
-                stability_analysis=data.get("stability_analysis", "웹 검색 기반") + disclaimer,
-                per=data.get("per"),
-                pbr=data.get("pbr"),
-                roe=data.get("roe"),
-                debt_ratio=data.get("debt_ratio"),
-                opinion=data.get("opinion", "웹 검색 기반 분석") + disclaimer,
-                grade=self._calculate_grade(total),
-                analysis_packet=self._build_packet_from_web(stock_name, stock_code, data, combined_text, total).to_dict(),
-                quality_flags={
-                    "data_quality": "fallback",
-                    "source": "web_search",
-                    "fallback_used": True,
+        prompt = load_prompt(
+            "quant",
+            "quant",
+            stock_name=stock_name,
+            stock_code=stock_code,
+            quant_metrics=json.dumps(metrics, ensure_ascii=False, indent=2),
+            financial_source=analysis.financial_source,
+            python_scores=json.dumps(
+                {
+                    "valuation_score": analysis.valuation_score,
+                    "profitability_score": analysis.profitability_score,
+                    "growth_score": analysis.growth_score,
+                    "stability_score": analysis.stability_score,
+                    "total_score": analysis.total_score,
                 },
-            )
-            
-            print(f"   ✅ 웹 검색 폴백 성공: {total}/100점 (등급 {score.grade})")
-            return score
-            
-        except Exception as e:
-            print(f"   ❌ 웹 검색 폴백도 실패: {e}")
-            return self._default_score(stock_name, f"네이버 금융 + 웹 검색 모두 실패: {e}")
+                ensure_ascii=False,
+                indent=2,
+            ),
+            quality_warnings="\n".join(f"- {item}" for item in quality_warnings) or "- 특이 경고 없음",
+        )
+        response = self.llm.invoke(prompt)
+        data = self._extract_json(response)
+        return self._score_from_payload(stock_name, stock_code, analysis, metrics, data, quality_warnings)
+
+    def _extract_json(self, response: Any) -> Dict[str, Any]:
+        content = getattr(response, "content", response)
+        if not isinstance(content, str):
+            content = str(content)
+        json_match = re.search(r"\{[\s\S]*\}", content)
+        if not json_match:
+            raise ValueError("LLM이 JSON을 반환하지 않음")
+        payload = json.loads(json_match.group())
+        if not isinstance(payload, dict):
+            raise ValueError("LLM JSON 응답이 객체가 아님")
+        return payload
+
+    def _score_from_payload(
+        self,
+        stock_name: str,
+        stock_code: str,
+        analysis: QuantitativeAnalysis,
+        metrics: Dict[str, Optional[float]],
+        data: Dict[str, Any],
+        quality_warnings: list[str],
+    ) -> QuantScore:
+        v = self._bounded_score(data.get("valuation_score"), analysis.valuation_score)
+        p = self._bounded_score(data.get("profitability_score"), analysis.profitability_score)
+        g = self._bounded_score(data.get("growth_score"), analysis.growth_score)
+        s = self._bounded_score(data.get("stability_score"), analysis.stability_score)
+        total = v + p + g + s
+
+        score = QuantScore(
+            valuation_score=v,
+            profitability_score=p,
+            growth_score=g,
+            stability_score=s,
+            total_score=total,
+            valuation_analysis=str(data.get("valuation_analysis") or self._valuation_detail(analysis)),
+            profitability_analysis=str(data.get("profitability_analysis") or self._profitability_detail(analysis)),
+            growth_analysis=str(data.get("growth_analysis") or self._growth_detail(analysis)),
+            stability_analysis=str(data.get("stability_analysis") or self._stability_detail(analysis)),
+            per=metrics.get("per"),
+            pbr=metrics.get("pbr"),
+            eps=metrics.get("eps"),
+            bps=metrics.get("bps"),
+            roe=metrics.get("roe"),
+            roa=metrics.get("roa"),
+            operating_margin=metrics.get("operating_margin"),
+            net_margin=metrics.get("net_margin"),
+            debt_ratio=metrics.get("debt_ratio"),
+            current_ratio=metrics.get("current_ratio"),
+            revenue=metrics.get("revenue"),
+            operating_profit=metrics.get("operating_profit"),
+            net_income=metrics.get("net_income"),
+            revenue_yoy_change=metrics.get("revenue_yoy_change"),
+            operating_profit_yoy_change=metrics.get("operating_profit_yoy_change"),
+            revenue_growth_3y=metrics.get("revenue_growth_3y"),
+            operating_profit_growth_3y=metrics.get("operating_profit_growth_3y"),
+            operating_margin_trend=metrics.get("operating_margin_trend"),
+            net_margin_trend=metrics.get("net_margin_trend"),
+            financial_history_years=metrics.get("financial_history_years") or [],
+            opinion=str(data.get("opinion") or self._analysis_opinion(analysis)),
+            grade=self._calculate_grade(total),
+            quality_flags={
+                "data_quality": "sufficient" if analysis.has_sufficient_financial_data() else "limited",
+                "source": analysis.financial_source,
+                "missing_core_metrics": analysis.missing_core_metrics(),
+                "quality_warnings": quality_warnings,
+            },
+        )
+        return score
+
+    @staticmethod
+    def _bounded_score(value: Any, fallback: int) -> int:
+        try:
+            score = int(value)
+        except (TypeError, ValueError):
+            score = int(fallback)
+        return min(25, max(0, score))
     
     def _default_score(self, stock_name: str, error: str) -> QuantScore:
         """오류 시 기본 점수 반환"""
@@ -297,7 +260,6 @@ JSON만 출력하세요.
             stability_analysis="분석 불가",
             opinion="데이터 부족으로 중립 의견",
             grade="C",
-            analysis_packet=self._build_packet_from_error(stock_name, error).to_dict(),
             quality_flags={
                 "data_quality": "insufficient",
                 "source": "default_score",
@@ -343,8 +305,18 @@ JSON만 출력하세요.
 |------|-----|
 | PER | {score.per if score.per else 'N/A'} |
 | PBR | {score.pbr if score.pbr else 'N/A'} |
+| EPS | {score.eps if score.eps else 'N/A'} |
+| BPS | {score.bps if score.bps else 'N/A'} |
 | ROE | {score.roe if score.roe else 'N/A'}% |
+| ROA | {score.roa if score.roa else 'N/A'}% |
+| 영업이익률 | {score.operating_margin if score.operating_margin else 'N/A'}% |
+| 순이익률 | {score.net_margin if score.net_margin else 'N/A'}% |
 | 부채비율 | {score.debt_ratio if score.debt_ratio else 'N/A'}% |
+| 유동비율 | {score.current_ratio if score.current_ratio else 'N/A'}% |
+| 3년 매출 CAGR | {score.revenue_growth_3y if score.revenue_growth_3y else 'N/A'}% |
+| 3년 영업이익 CAGR | {score.operating_profit_growth_3y if score.operating_profit_growth_3y else 'N/A'}% |
+| 매출 YoY | {score.revenue_yoy_change if score.revenue_yoy_change else 'N/A'}% |
+| 영업이익 YoY | {score.operating_profit_yoy_change if score.operating_profit_yoy_change else 'N/A'}% |
 
 ## 2. 밸류에이션 분석 ({score.valuation_score}/25점)
 {score.valuation_analysis}
@@ -364,145 +336,31 @@ JSON만 출력하세요.
 > {score.opinion}
 """
 
-    def _build_packet_from_analysis(
-        self,
-        stock_name: str,
-        stock_code: str,
-        analysis: QuantitativeAnalysis,
-    ) -> AgentContextPacket:
-        metrics = self._metrics_from_analysis(analysis)
-        valuation_detail = self._valuation_detail(analysis)
-        profitability_detail = self._profitability_detail(analysis)
-        growth_detail = self._growth_detail(analysis)
-        stability_detail = self._stability_detail(analysis)
-        summary = self._analysis_opinion(analysis)
-        return AgentContextPacket(
-            agent_name="quant",
-            stock_name=stock_name,
-            stock_code=stock_code,
-            summary=summary,
-            key_points=[
-                valuation_detail[:120],
-                profitability_detail[:120],
-                growth_detail[:120],
-                stability_detail[:120],
-            ],
-            risks=[
-                f"PER={metrics.get('PER')}",
-                f"PBR={metrics.get('PBR')}",
-                f"ROE={metrics.get('ROE')}",
-                f"부채비율={metrics.get('부채비율')}",
-            ],
-            catalysts=[summary] if summary else [],
-            contrarian_view="재무 데이터는 후행 지표이므로 단기 변동성 반영이 제한됨",
-            evidence=[
-                EvidenceItem(
-                    source="finance",
-                    title="재무제표 분석",
-                    snippet=str(metrics),
-                )
-            ],
-            score=analysis.total_score,
-            confidence=min(100, max(0, analysis.total_score)),
-            grade=self._calculate_grade(analysis.total_score),
-            signal=summary,
-            next_action="risk_manager_review",
-            source_tags=["finance", "fundamental"],
-        )
-
-    def _build_packet_from_web(
-        self,
-        stock_name: str,
-        stock_code: str,
-        data: Dict,
-        combined_text: str,
-        total: int,
-    ) -> AgentContextPacket:
-        return AgentContextPacket(
-            agent_name="quant",
-            stock_name=stock_name,
-            stock_code=stock_code,
-            summary=data.get("opinion", ""),
-            key_points=[
-                data.get("valuation_analysis", ""),
-                data.get("profitability_analysis", ""),
-                data.get("growth_analysis", ""),
-                data.get("stability_analysis", ""),
-            ],
-            risks=[
-                f"PER={data.get('per')}",
-                f"PBR={data.get('pbr')}",
-                f"ROE={data.get('roe')}",
-                f"부채비율={data.get('debt_ratio')}",
-            ],
-            contrarian_view="웹 검색 기반 폴백이라 원본 재무제표 대비 정확도 제한",
-            evidence=[
-                EvidenceItem(
-                    source="web",
-                    title="검색 스니펫",
-                    snippet=combined_text[:240],
-                )
-            ],
-            score=total,
-            confidence=60,
-            grade=self._calculate_grade(total),
-            signal=data.get("opinion", ""),
-            next_action="risk_manager_review",
-            source_tags=["web_search", "llm_extract"],
-        )
-
-    def _build_packet_from_error(self, stock_name: str, error: str) -> AgentContextPacket:
-        return AgentContextPacket(
-            agent_name="quant",
-            stock_name=stock_name,
-            stock_code="",
-            summary=f"오류로 기본값 적용: {error}",
-            risks=[error],
-            contrarian_view="데이터 오류로 판단 신뢰도가 낮음",
-            score=48,
-            confidence=30,
-            grade="C",
-            next_action="manual_review",
-            source_tags=["error_recovery"],
-        )
-    
-    def quick_check(self, stock_code: str) -> Dict:
-        """
-        빠른 지표 확인 (점수 없이)
-        
-        Args:
-            stock_code: 종목코드
-            
-        Returns:
-            주요 지표 딕셔너리
-        """
-        try:
-            analysis = self.analyzer.analyze(stock_code)
-            return {
-                "stock_code": stock_code,
-                "total_score": analysis.total_score,
-                "grade": self._calculate_grade(analysis.total_score),
-                "metrics": self._metrics_from_analysis(analysis),
-                "summary": self._analysis_opinion(analysis),
-            }
-        except Exception as e:
-            return {
-                "stock_code": stock_code,
-                "error": str(e)
-            }
-
     def _metrics_from_analysis(self, analysis: QuantitativeAnalysis) -> Dict[str, Optional[float]]:
         return {
-            "PER": analysis.per,
-            "PBR": analysis.pbr,
-            "ROE": analysis.roe,
-            "ROA": analysis.roa,
-            "영업이익률": analysis.operating_margin,
-            "순이익률": analysis.net_margin,
-            "부채비율": analysis.debt_ratio,
-            "배당수익률": analysis.dividend_yield,
-            "EPS": analysis.eps,
-            "BPS": analysis.bps,
+            "per": analysis.per,
+            "pbr": analysis.pbr,
+            "eps": analysis.eps,
+            "bps": analysis.bps,
+            "roe": analysis.roe,
+            "roa": analysis.roa,
+            "operating_margin": analysis.operating_margin,
+            "net_margin": analysis.net_margin,
+            "debt_ratio": analysis.debt_ratio,
+            "current_ratio": analysis.current_ratio,
+            "current_assets": analysis.current_assets,
+            "current_liabilities": analysis.current_liabilities,
+            "revenue": analysis.revenue,
+            "operating_profit": analysis.operating_profit,
+            "net_income": analysis.net_income,
+            "revenue_yoy_change": analysis.revenue_yoy_change,
+            "operating_profit_yoy_change": analysis.operating_profit_yoy_change,
+            "revenue_growth_3y": analysis.revenue_growth_3y,
+            "operating_profit_growth_3y": analysis.operating_profit_growth_3y,
+            "operating_margin_trend": analysis.operating_margin_trend,
+            "net_margin_trend": analysis.net_margin_trend,
+            "financial_history_years": analysis.financial_history_years,
+            "dividend_yield": analysis.dividend_yield,
         }
 
     def _analysis_opinion(self, analysis: QuantitativeAnalysis) -> str:
@@ -528,6 +386,19 @@ JSON만 출력하세요.
         )
 
     def _growth_detail(self, analysis: QuantitativeAnalysis) -> str:
+        if (
+            analysis.revenue_growth_3y is not None
+            or analysis.operating_profit_growth_3y is not None
+            or analysis.revenue_yoy_change is not None
+        ):
+            return (
+                f"최근 {len(analysis.financial_history_years) or 3}개 연간 재무 스냅샷 기준 "
+                f"매출 3년 CAGR {self._fmt_metric(analysis.revenue_growth_3y)}%, "
+                f"영업이익 3년 CAGR {self._fmt_metric(analysis.operating_profit_growth_3y)}%, "
+                f"매출 YoY {self._fmt_metric(analysis.revenue_yoy_change)}%, "
+                f"영업이익률 변화 {self._fmt_metric(analysis.operating_margin_trend)}%p를 반영해 "
+                f"성장성 점수는 {analysis.growth_score}/25점입니다."
+            )
         return (
             f"성장성은 ROE 기반 재투자 수익률과 배당수익률 "
             f"{self._fmt_metric(analysis.dividend_yield)}%를 기준으로 추정했으며 "
@@ -537,7 +408,7 @@ JSON만 출력하세요.
     def _stability_detail(self, analysis: QuantitativeAnalysis) -> str:
         return (
             f"부채비율 {self._fmt_metric(analysis.debt_ratio)}% {analysis._debt_comment()}와 "
-            f"PBR/배당 정보를 반영한 재무 안정성 점수는 "
+            f"유동비율 {self._fmt_metric(analysis.current_ratio)}%, PBR/배당 정보를 반영한 재무 안정성 점수는 "
             f"{analysis.stability_score}/25점입니다."
         )
 

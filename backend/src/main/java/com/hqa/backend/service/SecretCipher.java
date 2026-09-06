@@ -86,4 +86,14 @@ public class SecretCipher {
             throw new IllegalStateException("Failed to decrypt KIS credential", e);
         }
     }
+
+    public String fingerprint(String plaintext) {
+        try {
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(keySpec.getEncoded(), "HmacSHA256"));
+            return java.util.HexFormat.of().formatHex(mac.doFinal(plaintext.getBytes(StandardCharsets.UTF_8)));
+        } catch (java.security.GeneralSecurityException ex) {
+            throw new IllegalStateException("Failed to fingerprint account identity", ex);
+        }
+    }
 }

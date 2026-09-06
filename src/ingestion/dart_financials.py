@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime
+import hashlib
+import json
+from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional
 
 from .base import BaseCollector
+from .dart_api import DartAPIError, read_dart_payload
 from .types import FinancialSnapshot
 
 
@@ -26,6 +29,8 @@ class DartFinancialStatementCollector(BaseCollector):
         "assets": ("자산총계", "자산 총계"),
         "liabilities": ("부채총계", "부채 총계"),
         "equity": ("자본총계", "자본 총계"),
+        "current_assets": ("유동자산", "유동 자산"),
+        "current_liabilities": ("유동부채", "유동 부채"),
     }
 
     def __init__(self, api_key: str | None = None, timeout: int = 20):
@@ -40,11 +45,35 @@ class DartFinancialStatementCollector(BaseCollector):
         from_date: str,
         to_date: str,
     ) -> Optional[FinancialSnapshot]:
-        if not self.api_key or not corp_code:
-            return None
+        snapshots = self.collect_annual_series(
+            stock_name=stock_name,
+            stock_code=stock_code,
+            corp_code=corp_code,
+            from_date=from_date,
+            to_date=to_date,
+            years=1,
+        )
+        return snapshots[0] if snapshots else None
 
-        from_year = self._year(from_date, default=datetime.utcnow().year - 2)
-        to_year = self._year(to_date, default=datetime.utcnow().year)
+    def collect_annual_series(
+        self,
+        stock_name: str,
+        stock_code: str,
+        corp_code: str,
+        from_date: str,
+        to_date: str,
+        years: int = 3,
+    ) -> List[FinancialSnapshot]:
+        if not self.api_key or not corp_code:
+            raise ValueError("DART API key and corporate code are required")
+
+        current_year = datetime.now(timezone.utc).year
+        to_year = min(self._year(to_date, default=current_year), current_year)
+        target_count = max(1, years)
+        # The event collection window is not a fiscal reporting window. Include
+        # one additional year because the newest annual report may be unavailable.
+        from_year = max(2015, to_year - target_count)
+        snapshots: List[FinancialSnapshot] = []
 
         for year in range(to_year, from_year - 1, -1):
             snapshot = self.collect_annual(
@@ -54,8 +83,10 @@ class DartFinancialStatementCollector(BaseCollector):
                 fiscal_year=str(year),
             )
             if snapshot is not None:
-                return snapshot
-        return None
+                snapshots.append(snapshot)
+                if len(snapshots) >= target_count:
+                    break
+        return snapshots
 
     def collect_annual(
         self,
@@ -77,6 +108,14 @@ class DartFinancialStatementCollector(BaseCollector):
         assets = account_values.get("assets")
         liabilities = account_values.get("liabilities")
         equity = account_values.get("equity")
+        current_assets = account_values.get("current_assets")
+        current_liabilities = account_values.get("current_liabilities")
+        receipts = sorted({str(row["rcept_no"]) for row in rows if row.get("rcept_no")})
+        divisions = sorted({str(row["fs_div"]) for row in rows if row.get("fs_div")})
+        currency = self._currency(rows)
+        version = hashlib.sha256(json.dumps({"accounts": account_values, "receipts": receipts,
+                                            "divisions": divisions, "currency": currency},
+                                           sort_keys=True, allow_nan=False).encode()).hexdigest()
 
         return FinancialSnapshot(
             source_type="financials",
@@ -93,13 +132,26 @@ class DartFinancialStatementCollector(BaseCollector):
             liabilities=liabilities,
             equity=equity,
             roe=self._ratio(net_income, equity),
+            roa=self._ratio(net_income, assets),
             operating_margin=self._ratio(operating_profit, revenue),
             net_margin=self._ratio(net_income, revenue),
             debt_ratio=self._ratio(liabilities, equity),
-            currency=self._currency(rows),
+            current_assets=current_assets,
+            current_liabilities=current_liabilities,
+            current_ratio=self._ratio(current_assets, current_liabilities),
+            currency=currency,
             as_of=self._as_of(rows),
             metadata={
                 "source": "dart",
+                "collected_at": datetime.now(timezone.utc).isoformat(),
+                "published_at": None,
+                "publication_precision": "unknown",
+                "rcept_no": receipts[0] if len(receipts) == 1 else None,
+                "source_url": f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={receipts[0]}" if len(receipts) == 1 else None,
+                "fs_div": divisions[0] if len(divisions) == 1 else None,
+                "amount_unit": currency,
+                "currency_verified": any(row.get("currency") for row in rows),
+                "version": version,
                 "report_code": self.ANNUAL_REPORT_CODE,
                 "quality_status": self._quality_status(account_values),
                 "missing_fields": ",".join(
@@ -109,22 +161,24 @@ class DartFinancialStatementCollector(BaseCollector):
         )
 
     def _fetch_rows(self, corp_code: str, fiscal_year: str, report_code: str) -> List[Dict[str, Any]]:
-        response = self.get_with_retry(
-            self.URL,
-            params={
-                "crtfc_key": self.api_key,
-                "corp_code": corp_code,
-                "bsns_year": fiscal_year,
-                "reprt_code": report_code,
-            },
-            timeout=self.timeout,
-            log_prefix=f"DART:FINANCIALS:{corp_code}:{fiscal_year}",
-        )
-        payload = response.json()
-        if payload.get("status") != "000":
+        if not self.api_key or not corp_code:
+            raise ValueError("DART API key and corporate code are required")
+        try:
+            response = self.get_with_retry(
+                self.URL,
+                params={"crtfc_key": self.api_key, "corp_code": corp_code,
+                        "bsns_year": fiscal_year, "reprt_code": report_code},
+                timeout=self.timeout, log_prefix=f"DART:FINANCIALS:{corp_code}:{fiscal_year}",
+            )
+        except Exception:
+            raise DartAPIError("DART financial transport failure") from None
+        payload = read_dart_payload(response)
+        if payload["status"] == "013":
             return []
-        rows = payload.get("list") or []
-        return rows if isinstance(rows, list) else []
+        rows = payload.get("list")
+        if not isinstance(rows, list) or not rows or any(not isinstance(row, dict) for row in rows):
+            raise DartAPIError("DART invalid financial account list")
+        return rows
 
     @staticmethod
     def _prefer_consolidated(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

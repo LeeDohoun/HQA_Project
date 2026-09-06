@@ -2,7 +2,7 @@ from __future__ import annotations
 
 # File role:
 # - Lightweight JSON vector store for data-pipeline artifacts.
-# - Keeps pipeline retrieval separate from ai-main's Chroma-based RAG stack.
+# - Keeps pipeline retrieval separate from ai-main's Chroma-based evidence stack.
 
 import hashlib
 import json
@@ -12,8 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
-from src.rag.dedupe import make_document_id
-from src.rag.source_registry import is_document_source
+from src.evidence.dedupe import make_document_id
+from src.evidence.source_registry import is_document_source
 
 
 _DIMENSION = 256
@@ -152,7 +152,7 @@ class SimpleVectorStore:
         return make_document_id(source_type=source_type, metadata=metadata or {}, text=text or "")
 
 
-class SourceRAGBuilder:
+class SourceevidenceBuilder:
     """Builds per-source JSON vector stores from layer-2 records."""
 
     def __init__(self, dimension: int = _DIMENSION):

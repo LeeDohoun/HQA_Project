@@ -484,7 +484,7 @@ def _default_periods() -> List[Dict[str, str]]:
     ]
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Sweep AI-theme leader backtest configs.")
     parser.add_argument("--data-dir", default=str(get_data_dir()))
     parser.add_argument("--theme", default="AI")
@@ -509,7 +509,7 @@ def main() -> int:
     parser.add_argument("--stop-loss-pct", type=float, default=0.0)
     parser.add_argument("--take-profit-pct", type=float, default=0.0)
     parser.add_argument("--trailing-stop-pct", type=float, default=0.0)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     output_dir = args.output_dir or str(Path(args.data_dir) / "backtest_results" / "sweeps")
     summary = run_sweep(

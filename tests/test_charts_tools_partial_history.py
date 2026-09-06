@@ -2,6 +2,7 @@ from datetime import date, timedelta
 import json
 
 from src.tools.charts_tools import TechnicalAnalyzer
+from src.data_pipeline.price_loader import PriceLoader
 
 
 def _write_chart_rows(path, stock_code: str, rows: int) -> None:
@@ -25,7 +26,8 @@ def _write_chart_rows(path, stock_code: str, rows: int) -> None:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
-def test_analyze_uses_available_history_when_at_least_sixty_rows(tmp_path):
+def test_analyze_uses_available_history_when_at_least_sixty_rows(tmp_path, monkeypatch):
+    monkeypatch.setattr(PriceLoader, "_load_krx_rows", lambda self, stock_code, days: [])
     _write_chart_rows(tmp_path / "market_data" / "theme" / "chart.jsonl", "005930", 60)
 
     result = TechnicalAnalyzer(data_dir=str(tmp_path)).analyze("005930", "삼성전자")

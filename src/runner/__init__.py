@@ -2,18 +2,17 @@
 """
 자율 에이전트 실행 모듈
 
-설정 파일 기반으로 감시 종목을 자동 분석하고,
-매매 조건 충족 시 KIS API로 주문을 실행합니다.
+백엔드 자동매매 대상 기반으로 테마 분석을 실행하고,
+TradeSignal 저장/조건 감시 파이프라인에 필요한 결과를 생성합니다.
 """
 
-from src.runner.autonomous_runner import AutonomousRunner
+from src.runner.analysis_scheduler import AnalysisScheduler, BackendAutoTradeTargetClient
 from src.runner.multi_theme_leader_trading_runner import MultiThemeLeaderTradingRunner
 from src.runner.theme_leader_trading_runner import ThemeLeaderTradingRunner
-from src.runner.trade_executor import TradeExecutor
 
 __all__ = [
-    "AutonomousRunner",
+    "AnalysisScheduler",
+    "BackendAutoTradeTargetClient",
     "ThemeLeaderTradingRunner",
     "MultiThemeLeaderTradingRunner",
-    "TradeExecutor",
 ]

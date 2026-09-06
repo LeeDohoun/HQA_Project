@@ -3,8 +3,7 @@ from src import tools
 
 def test_tools_public_api_is_limited_to_primary_facades():
     assert tools.__all__ == [
-        "rag",
-        "web_search",
+        "evidence",
         "finance",
         "chart",
         "realtime",

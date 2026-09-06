@@ -1,96 +1,28 @@
 package com.hqa.backend.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
+import static org.mockito.Mockito.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.hqa.backend.dto.InternalTradeSignalRequest;
 import com.hqa.backend.entity.TradeSignal;
 import com.hqa.backend.entity.TradeSignalExecution;
-import com.hqa.backend.entity.User;
 import com.hqa.backend.repository.TradeSignalExecutionRepository;
 import com.hqa.backend.repository.TradeSignalRepository;
-import com.hqa.backend.repository.UserRepository;
-import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 class TradeSignalServiceTest {
-
     private final TradeSignalRepository signalRepository = mock(TradeSignalRepository.class);
     private final TradeSignalExecutionRepository executionRepository = mock(TradeSignalExecutionRepository.class);
-    private final UserRepository userRepository = mock(UserRepository.class);
-    private final KisClient kisClient = mock(KisClient.class);
-    private final ErrorLogger errorLogger = mock(ErrorLogger.class);
-    private final TradeSignalService service = new TradeSignalService(
-            signalRepository,
-            executionRepository,
-            userRepository,
-            kisClient,
-            errorLogger,
-            new ObjectMapper()
-    );
+    private final PaperTradeLifecycle lifecycle = mock(PaperTradeLifecycle.class);
+    private final TradeSignalService service = new TradeSignalService(signalRepository, executionRepository, new ObjectMapper(), lifecycle);
 
     @Test
-    void saveSignalStoresPendingSignal() {
-        when(signalRepository.save(any(TradeSignal.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        InternalTradeSignalRequest request = new InternalTradeSignalRequest(
-                "user-1",
-                "multi_theme_leader",
-                "short",
-                "ai",
-                "AI",
-                "005930",
-                "삼성전자",
-                "BUY",
-                82,
-                76,
-                "LOW",
-                "10%",
-                72000L,
-                "-5%",
-                "조건부 매수",
-                OffsetDateTime.now().plusMinutes(15),
-                Map.of("leader", Map.of("leader_score", 82))
-        );
-
-        TradeSignal saved = service.saveSignal(request);
-
-        assertThat(saved.getStatus()).isEqualTo("PENDING");
-        assertThat(saved.getUserId()).isEqualTo("user-1");
-        assertThat(saved.getStockCode()).isEqualTo("005930");
-        assertThat(saved.getRawPayload()).contains("leader_score");
-    }
-
-    @Test
-    void processPendingRejectsWhenUserAutoTradeIsOff() {
-        TradeSignal signal = new TradeSignal();
-        signal.setUserId("user-1");
-        signal.setStockCode("005930");
-        signal.setStockName("삼성전자");
-        signal.setAction("BUY");
-        signal.setStatus("PENDING");
-        signal.setExpiresAt(OffsetDateTime.now().plusMinutes(10));
-        User user = new User();
-        user.setUserId("user-1");
-        user.setAutoTradeEnabled(false);
-
-        when(signalRepository.findTop100ByStatusOrderByCreatedAtAsc("PENDING")).thenReturn(List.of(signal));
-        when(userRepository.findByUserId("user-1")).thenReturn(Optional.of(user));
-        when(signalRepository.save(any(TradeSignal.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(executionRepository.save(any(TradeSignalExecution.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
-        service.processPendingSignals();
-
-        assertThat(signal.getStatus()).isEqualTo("REJECTED");
-        assertThat(signal.getRejectReason()).isEqualTo("AUTO_TRADE_DISABLED");
-        verify(executionRepository).save(any(TradeSignalExecution.class));
+    void historicPlanReceiptIsUsedAfterReplacement() {
+        when(lifecycle.hasReceipt("analysis-a")).thenReturn(true);
+        assertThat(service.hasSignalWithIdempotencyKey("analysis-a")).isTrue();
+        assertThat(service.hasSignalWithIdempotencyKey("")).isFalse();
     }
 
     @Test
@@ -136,8 +68,13 @@ class TradeSignalServiceTest {
         execution.setUserId("user-1");
         execution.setStatus("REJECTED");
         execution.setRejectReason("PRICE_DRIFT_EXCEEDED");
+        execution.setOrderId("order-1");
+        execution.setOrderType("LIMIT");
         execution.setQuantity(1);
+        execution.setSubmittedQuantity(1);
+        execution.setFilledQuantity(0);
         execution.setOrderPrice(74200L);
+        execution.setAverageFillPrice(0L);
         execution.setCurrentPrice(74200L);
         execution.setPriceDriftPct(3.05);
 
@@ -154,6 +91,11 @@ class TradeSignalServiceTest {
         assertThat(item).containsEntry("reason", "업황 회복과 수급 개선으로 조건부 매수");
         assertThat(item).containsEntry("executionStatus", "REJECTED");
         assertThat(item).containsEntry("executionRejectReason", "PRICE_DRIFT_EXCEEDED");
+        assertThat(item).containsEntry("orderId", "order-1");
+        assertThat(item).containsEntry("orderType", "LIMIT");
+        assertThat(item).containsEntry("submittedQuantity", 1);
+        assertThat(item).containsEntry("filledQuantity", 0);
+        assertThat(item).containsEntry("averageFillPrice", 0L);
         assertThat(item).containsEntry("currentPrice", 74200L);
         assertThat(item).containsEntry("priceDriftPct", 3.05);
         assertThat(item).containsEntry("explanationSummary", "업황 회복과 수급 개선으로 조건부 매수");

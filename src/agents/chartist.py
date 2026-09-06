@@ -1,25 +1,16 @@
 # 파일: src/agents/chartist.py
 """
-Chartist Agent - 기술적 분석 전문 에이전트
-
-역할:
-- 기술적 지표(RSI, MACD, 볼린저밴드 등) 기반 분석
-- 추세 및 모멘텀 판단
-- 매매 타이밍 제안
-
-모델: Instruct (빠름)
-점수 체계: 100점 만점 (추세 30 + 모멘텀 30 + 변동성 20 + 거래량 20)
+Chartist Agent - KRX 차트 데이터 기반 기술적 분석 LLM 에이전트
 """
 
-from typing import Any, Dict, Optional
-from dataclasses import dataclass, field
+import json
+import re
+from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
 
-from src.agents.llm_config import get_instruct_llm
-from src.agents.context import AgentContextPacket, EvidenceItem
-from src.tools.charts_tools import (
-    TechnicalAnalyzer,
-    analyze_stock
-)
+from src.agents.llm_config import get_chartist_llm
+from src.tools.charts_tools import TechnicalAnalyzer
+from src.utils.prompt_loader import load_prompt
 
 
 @dataclass
@@ -60,158 +51,18 @@ class ChartistScore:
     mid_term_opinion: str = ""  # 중기 의견
     stop_loss: str = ""  # 손절가
     target_price: str = ""  # 목표가
-    analysis_packet: Dict = field(default_factory=dict)
 
 
 class ChartistAgent:
     """기술적 분석 에이전트"""
-    
-    def __init__(self):
-        self.llm = get_instruct_llm()
-        self.analyzer = TechnicalAnalyzer()
-    
-    def analyze_technicals(self, stock_name: str, stock_code: str) -> str:
-        """
-        종목의 기술적 분석 수행
 
-        Primary path:
-        - direct technical analyzer
-        - no CrewAI tool wrapper orchestration
-        
-        Args:
-            stock_name: 종목명
-            stock_code: 종목 코드
-            
-        Returns:
-            기술적 분석 리포트 (문자열)
-        """
-        result = self.analyzer.analyze(stock_code, stock_name=stock_name)
-        return result.summary()
-    
-    def quick_check(self, stock_code: str) -> dict:
-        """
-        빠른 기술적 상태 확인 (에이전트 없이 직접 계산)
-        
-        Args:
-            stock_code: 종목 코드
-            
-        Returns:
-            기술적 상태 딕셔너리
-        """
-        try:
-            result = analyze_stock(stock_code)
-            
-            # 세부 점수 계산
-            trend_score = 0
-            momentum_score = 0
-            volatility_score = 0
-            volume_score = 0
-            
-            trend_signals = []
-            momentum_signals = []
-            volatility_signals = []
-            volume_signals = []
-            
-            # 추세 점수 (30점)
-            if result.above_ma150:
-                trend_score += 18
-                trend_signals.append("✅ 150일선 위 (상승추세)")
-            else:
-                trend_signals.append("❌ 150일선 아래 (하락추세)")
-            
-            if result.ma5 > result.ma20 > result.ma60:
-                trend_score += 12
-                trend_signals.append("✅ 이평선 정배열")
-            elif result.ma5 < result.ma20 < result.ma60:
-                trend_signals.append("❌ 이평선 역배열")
-            else:
-                trend_score += 6
-                trend_signals.append("➖ 이평선 혼조")
-            
-            # 모멘텀 점수 (30점)
-            if result.rsi_signal == "과매도":
-                momentum_score += 18
-                momentum_signals.append("✅ RSI 과매도 (반등 기대)")
-            elif result.rsi_signal == "과매수":
-                momentum_score += 3
-                momentum_signals.append("⚠️ RSI 과매수 (조정 주의)")
-            else:
-                momentum_score += 12
-                momentum_signals.append("➖ RSI 중립")
-            
-            if result.macd_histogram > 0:
-                momentum_score += 12
-                momentum_signals.append("✅ MACD 상승 모멘텀")
-            else:
-                momentum_signals.append("❌ MACD 하락 모멘텀")
-            
-            # 변동성 점수 (20점)
-            if result.bb_position == "하단돌파":
-                volatility_score += 12
-                volatility_signals.append("✅ 볼린저 하단 (반등 기대)")
-            elif result.bb_position == "상단돌파":
-                volatility_score += 4
-                volatility_signals.append("⚠️ 볼린저 상단 (과열)")
-            else:
-                volatility_score += 8
-                volatility_signals.append("➖ 볼린저 밴드 내")
-            
-            if result.bb_width < 10:
-                volatility_score += 4
-                volatility_signals.append("🔥 밴드 수축 (변동성 확대 예상)")
-            else:
-                volatility_score += 8
-            
-            # 거래량 점수 (20점)
-            if result.volume_ratio > 2:
-                volume_score += 14
-                volume_signals.append("🔥 거래량 급증")
-            elif result.volume_ratio > 1:
-                volume_score += 10
-                volume_signals.append("✅ 거래량 양호")
-            else:
-                volume_score += 4
-                volume_signals.append("➖ 거래량 부족")
-            
-            volume_score += 6  # 기본 점수
-            
-            # 총점 계산
-            total_score = trend_score + momentum_score + volatility_score + volume_score
-            
-            # 매매 의견
-            if total_score >= 75:
-                signal = "적극 매수"
-            elif total_score >= 60:
-                signal = "매수"
-            elif total_score >= 45:
-                signal = "중립"
-            elif total_score >= 30:
-                signal = "매도"
-            else:
-                signal = "적극 매도"
-            
-            return {
-                "stock_code": stock_code,
-                "date": result.date,
-                "price": result.current_price,
-                "trend_score": trend_score,
-                "momentum_score": momentum_score,
-                "volatility_score": volatility_score,
-                "volume_score": volume_score,
-                "total_score": total_score,
-                "signal": signal,
-                "trend_signals": trend_signals,
-                "momentum_signals": momentum_signals,
-                "volatility_signals": volatility_signals,
-                "volume_signals": volume_signals,
-                "indicators": result.to_dict()
-            }
-            
-        except Exception as e:
-            return {
-                "error": str(e),
-                "stock_code": stock_code
-            }
+    def __init__(self, data_dir: Optional[str] = None, theme_key: Optional[str] = None):
+        self.llm = get_chartist_llm()
+        self.analyzer = TechnicalAnalyzer(data_dir=data_dir, theme_key=theme_key)
+
+    def analyze_technicals(self, stock_name: str, stock_code: str) -> str:
+        """종목의 기술적 분석 수행 후 보고서 문자열 반환"""
+        return self.generate_report(self.full_analysis(stock_name, stock_code), stock_name)
     
     def full_analysis(
         self,
@@ -220,62 +71,29 @@ class ChartistAgent:
         price_snapshot: Optional[Dict[str, Any]] = None,
     ) -> ChartistScore:
         """
-        전체 기술적 분석 수행 (Risk Manager 호환)
-        
-        Args:
-            stock_name: 종목명
-            stock_code: 종목코드
-            
-        Returns:
-            ChartistScore 데이터클래스
+        KRX 차트 데이터와 Python 계산 지표를 LLM에 전달해 기술적 분석을 수행합니다.
         """
         print(f"📊 [Chartist] {stock_name}({stock_code}) 기술적 분석 중...")
-        
+
         try:
-            # 빠른 체크로 데이터 수집
-            check_result = self.quick_check(stock_code)
-            
-            if "error" in check_result:
-                return self._default_score(stock_code, check_result["error"])
-            
+            indicators = self.analyzer.analyze(stock_code, stock_name=stock_name)
+            recent_candles = self._load_recent_candles(stock_code, days=30)
             snapshot_context = self._build_price_snapshot_context(
-                daily_close=check_result["price"],
+                daily_close=indicators.current_price,
                 price_snapshot=price_snapshot,
             )
-            packet = self._build_packet(stock_name, stock_code, check_result, snapshot_context).to_dict()
-            if snapshot_context:
-                packet["price_snapshot"] = snapshot_context
-
-            return ChartistScore(
-                trend_score=check_result["trend_score"],
-                momentum_score=check_result["momentum_score"],
-                volatility_score=check_result["volatility_score"],
-                volume_score=check_result["volume_score"],
-                total_score=check_result["total_score"],
-                signal=check_result["signal"],
-                trend_analysis=", ".join(check_result["trend_signals"]),
-                momentum_analysis=", ".join(check_result["momentum_signals"]),
-                volatility_analysis=", ".join(check_result["volatility_signals"]),
-                volume_analysis=", ".join(check_result["volume_signals"]),
-                current_price=check_result["price"],
-                live_current_price=snapshot_context.get("current_price", 0) or 0,
-                price_snapshot_source=snapshot_context.get("source", ""),
-                price_snapshot_at=snapshot_context.get("snapshot_at", ""),
-                live_vs_daily_close_pct=snapshot_context.get("live_vs_daily_close_pct", 0) or 0,
-                entry_timing=snapshot_context.get("entry_timing", ""),
-                overheat_risk=snapshot_context.get("overheat_risk", ""),
-                technical_invalid_price=snapshot_context.get("technical_invalid_price", ""),
-                rsi=check_result["indicators"].get("rsi", 0),
-                macd_histogram=check_result["indicators"].get("macd_histogram", 0),
-                bb_position=check_result["indicators"].get("bb_position", ""),
-                volume_ratio=check_result["indicators"].get("volume_ratio", 0),
-                short_term_opinion=check_result["signal"],
-                mid_term_opinion=check_result["signal"],
-                stop_loss=f"-{check_result['indicators'].get('atr', 0) * 2:.0f}원 (2ATR)",
-                target_price=f"+{check_result['indicators'].get('atr', 0) * 3:.0f}원 (3ATR)",
-                analysis_packet=packet,
+            prompt = self._build_analysis_prompt(
+                stock_name=stock_name,
+                stock_code=stock_code,
+                indicators=indicators,
+                recent_candles=recent_candles,
+                price_snapshot_context=snapshot_context,
             )
-            
+            payload = self._invoke_llm_json(prompt)
+            score = self._score_from_payload(payload, indicators, snapshot_context)
+
+            return score
+
         except Exception as e:
             print(f"❌ 기술적 분석 오류: {e}")
             return self._default_score(stock_code, str(e))
@@ -297,7 +115,103 @@ class ChartistAgent:
             mid_term_opinion="관망",
             stop_loss="N/A",
             target_price="N/A",
-            analysis_packet=self._build_error_packet(stock_code, error).to_dict(),
+        )
+
+    def _build_analysis_prompt(
+        self,
+        *,
+        stock_name: str,
+        stock_code: str,
+        indicators: Any,
+        recent_candles: List[Dict[str, Any]],
+        price_snapshot_context: Dict[str, Any],
+    ) -> str:
+        return load_prompt(
+            "chartist",
+            "chartist",
+            stock_name=stock_name,
+            stock_code=stock_code,
+            technical_indicators=json.dumps(
+                {"technical_indicators": indicators.to_dict()},
+                ensure_ascii=False,
+                indent=2,
+            ),
+            recent_candles=json.dumps(
+                {"recent_candles": recent_candles},
+                ensure_ascii=False,
+                indent=2,
+            ),
+            price_snapshot_context=json.dumps(
+                {"price_snapshot": price_snapshot_context or None},
+                ensure_ascii=False,
+                indent=2,
+            ),
+        )
+
+    def _load_recent_candles(self, stock_code: str, days: int = 30) -> List[Dict[str, Any]]:
+        df = self.analyzer.price_loader.get_stock_data(stock_code, days=max(days, 60))
+        rows: List[Dict[str, Any]] = []
+        for index, row in df.tail(days).iterrows():
+            rows.append(
+                {
+                    "date": index.strftime("%Y-%m-%d") if hasattr(index, "strftime") else str(index),
+                    "open": self._to_float(row.get("Open")),
+                    "high": self._to_float(row.get("High")),
+                    "low": self._to_float(row.get("Low")),
+                    "close": self._to_float(row.get("Close")),
+                    "volume": self._to_float(row.get("Volume")),
+                }
+            )
+        return rows
+
+    def _invoke_llm_json(self, prompt: str) -> Dict[str, Any]:
+        response = self.llm.invoke(prompt)
+        response_text = str(getattr(response, "content", response)).strip()
+        match = re.search(r"\{[\s\S]*\}", response_text)
+        if not match:
+            raise ValueError("JSON 형식 응답 없음")
+        return json.loads(match.group())
+
+    def _score_from_payload(
+        self,
+        payload: Dict[str, Any],
+        indicators: Any,
+        price_snapshot_context: Dict[str, Any],
+    ) -> ChartistScore:
+        trend_score = self._clamp_int(payload.get("trend_score", 15), 0, 30)
+        momentum_score = self._clamp_int(payload.get("momentum_score", 15), 0, 30)
+        volatility_score = self._clamp_int(payload.get("volatility_score", 10), 0, 20)
+        volume_score = self._clamp_int(payload.get("volume_score", 10), 0, 20)
+        total_score = trend_score + momentum_score + volatility_score + volume_score
+        signal = str(payload.get("signal") or self._signal_from_total(total_score))
+
+        return ChartistScore(
+            trend_score=trend_score,
+            momentum_score=momentum_score,
+            volatility_score=volatility_score,
+            volume_score=volume_score,
+            total_score=total_score,
+            signal=signal,
+            trend_analysis=str(payload.get("trend_reason", "")),
+            momentum_analysis=str(payload.get("momentum_reason", "")),
+            volatility_analysis=str(payload.get("volatility_reason", "")),
+            volume_analysis=str(payload.get("volume_reason", "")),
+            current_price=float(getattr(indicators, "current_price", 0) or 0),
+            live_current_price=price_snapshot_context.get("current_price", 0) or 0,
+            price_snapshot_source=price_snapshot_context.get("source", ""),
+            price_snapshot_at=price_snapshot_context.get("snapshot_at", ""),
+            live_vs_daily_close_pct=price_snapshot_context.get("live_vs_daily_close_pct", 0) or 0,
+            entry_timing=str(payload.get("entry_timing", "")),
+            overheat_risk=str(payload.get("overheat_risk", "")),
+            technical_invalid_price=str(payload.get("technical_invalid_price", "")),
+            rsi=float(getattr(indicators, "rsi_14", 0) or 0),
+            macd_histogram=float(getattr(indicators, "macd_histogram", 0) or 0),
+            bb_position=str(getattr(indicators, "bb_position", "")),
+            volume_ratio=float(getattr(indicators, "volume_ratio", 0) or 0),
+            short_term_opinion=str(payload.get("trade_zone") or signal),
+            mid_term_opinion=str(payload.get("final_opinion") or signal),
+            stop_loss=str(payload.get("stop_loss") or self._default_stop_loss(indicators)),
+            target_price=str(payload.get("target_price") or self._default_target_price(indicators)),
         )
     
     def generate_report(self, score: ChartistScore, stock_name: str) -> str:
@@ -402,79 +316,42 @@ class ChartistAgent:
             "technical_invalid_price": f"{invalid_price:,}원",
         }
 
-    def _build_packet(
-        self,
-        stock_name: str,
-        stock_code: str,
-        check_result: dict,
-        price_snapshot_context: Optional[Dict[str, Any]] = None,
-    ) -> AgentContextPacket:
-        indicators = check_result.get("indicators", {})
-        risks = [
-            f"RSI={indicators.get('rsi', 0):.1f}",
-            f"MACD={indicators.get('macd_histogram', 0):.2f}",
-            f"거래량비율={indicators.get('volume_ratio', 0):.2f}",
-        ]
-        if price_snapshot_context:
-            risks.append(
-                "현재가 괴리="
-                f"{price_snapshot_context.get('live_vs_daily_close_pct', 0):+.2f}%"
-            )
-            risks.append(f"진입타이밍={price_snapshot_context.get('entry_timing', '')}")
-            risks.append(f"과열위험={price_snapshot_context.get('overheat_risk', '')}")
+    @staticmethod
+    def _clamp_int(value: Any, low: int, high: int) -> int:
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            number = low
+        return min(high, max(low, number))
 
-        return AgentContextPacket(
-            agent_name="chartist",
-            stock_name=stock_name,
-            stock_code=stock_code,
-            summary=check_result.get("signal", ""),
-            key_points=[
-                s for s in [
-                    ", ".join(check_result.get("trend_signals", [])[:2]),
-                    ", ".join(check_result.get("momentum_signals", [])[:2]),
-                    ", ".join(check_result.get("volatility_signals", [])[:2]),
-                    ", ".join(check_result.get("volume_signals", [])[:2]),
-                ] if s
-            ],
-            risks=risks,
-            contrarian_view="기술적 신호는 단기 구간에 민감하므로 펀더멘털과 충돌할 수 있음",
-            evidence=[
-                EvidenceItem(source="chart", title="기술 지표", snippet=str(indicators)),
-                *(
-                    [
-                        EvidenceItem(
-                            source="price_snapshot",
-                            title="KIS 현재가 스냅샷",
-                            snippet=str(price_snapshot_context),
-                        )
-                    ]
-                    if price_snapshot_context
-                    else []
-                ),
-            ],
-            score=check_result.get("total_score", 0),
-            confidence=min(100, max(0, check_result.get("total_score", 0))),
-            grade=check_result.get("signal", ""),
-            signal=check_result.get("signal", ""),
-            next_action="risk_manager_review",
-            source_tags=["charts", "technical"]
-            + (["kis_price_snapshot"] if price_snapshot_context else []),
-        )
+    @staticmethod
+    def _to_float(value: Any) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
 
-    def _build_error_packet(self, stock_code: str, error: str) -> AgentContextPacket:
-        return AgentContextPacket(
-            agent_name="chartist",
-            stock_name="",
-            stock_code=stock_code,
-            summary=f"오류로 기본값 반환: {error}",
-            risks=[error],
-            contrarian_view="데이터 오류로 판단 신뢰도가 낮음",
-            score=50,
-            confidence=30,
-            grade="중립",
-            next_action="manual_review",
-            source_tags=["error_recovery"],
-        )
+    @staticmethod
+    def _signal_from_total(total_score: int) -> str:
+        if total_score >= 75:
+            return "적극 매수"
+        if total_score >= 60:
+            return "매수"
+        if total_score >= 45:
+            return "중립"
+        if total_score >= 30:
+            return "매도"
+        return "적극 매도"
+
+    @staticmethod
+    def _default_stop_loss(indicators: Any) -> str:
+        atr = float(getattr(indicators, "atr_14", 0) or 0)
+        return f"-{atr * 2:.0f}원 (2ATR)" if atr else "N/A"
+
+    @staticmethod
+    def _default_target_price(indicators: Any) -> str:
+        atr = float(getattr(indicators, "atr_14", 0) or 0)
+        return f"+{atr * 3:.0f}원 (3ATR)" if atr else "N/A"
 
 
 # 테스트

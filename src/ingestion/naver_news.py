@@ -4,11 +4,12 @@ from __future__ import annotations
 # - Search Naver news and extract article bodies.
 # - Filters placeholder or too-short content before saving raw results.
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import re
 import time
-from typing import Any, List
+from typing import Any, Iterator, List
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
 try:
     from bs4 import BeautifulSoup
@@ -17,6 +18,23 @@ except ImportError:
 
 from .base import BaseCollector
 from .types import DocumentRecord
+
+_KST = ZoneInfo("Asia/Seoul")
+
+
+def match_news_entity(document: DocumentRecord, stock_code: str, company_name: str) -> dict[str, Any]:
+    """Require an explicit ticker or the full company name, never the search query alone."""
+    text = re.sub(r"\s+", " ", f"{document.title} {document.content}")
+    if re.fullmatch(r"\d{6}", stock_code or "") and re.search(
+        rf"(?:\(\s*{stock_code}\s*\)|(?:종목\s*코드|티커)\s*[:：]?\s*{stock_code}(?!\d))", text
+    ):
+        return {"matched": True, "method": "explicit_stock_code"}
+    name = re.sub(r"^(?:주식회사\s*|\(주\)\s*)|(?:\s*주식회사|\s*\(주\))$", "", company_name or "").strip()
+    if len(name) >= 2:
+        particles = r"(?:으로|에서|에게|보다|부터|까지|은|는|이|가|을|를|의|와|과|도|에|로|만)?"
+        if re.search(rf"(?<![\w]){re.escape(name)}{particles}(?![\w])", text, re.IGNORECASE):
+            return {"matched": True, "method": "canonical_name"}
+    return {"matched": False, "method": "none"}
 
 
 class NaverNewsCollector(BaseCollector):
@@ -48,6 +66,12 @@ class NaverNewsCollector(BaseCollector):
     ) -> List[DocumentRecord]:
         if BeautifulSoup is None:
             raise ImportError("beautifulsoup4가 필요합니다. pip install beautifulsoup4")
+        if type(max_items) is not int or max_items < 0:
+            raise ValueError("max_items must be a nonnegative integer")
+        if type(max_pages) is not int or max_pages < 1:
+            raise ValueError("max_pages must be a positive integer")
+        if max_items == 0:
+            return []
 
         docs: List[DocumentRecord] = []
         seen_urls = set()
@@ -58,16 +82,28 @@ class NaverNewsCollector(BaseCollector):
             to_date=to_date,
             max_pages=max_pages,
         ):
-            if len(docs) >= max_items:
-                break
-
             url = candidate["url"]
             if url in seen_urls:
                 continue
+            seen_urls.add(url)
 
             article = self._fetch_article_detail(url)
             final_title = article["title"] or candidate["title"]
             final_content = article["content"]
+            publication = article["publication"]
+            if publication["publication_time_status"] == "missing":
+                confirmed = bool(candidate["published_at"]) and not candidate["date_is_estimated"]
+                publication = {
+                    "published_at": candidate["published_at"] if confirmed else "",
+                    "published_at_precision": "date" if confirmed else "unknown",
+                    "published_at_source": "search_absolute" if confirmed else "search_relative" if candidate["date_is_estimated"] else "none",
+                    "publication_time_status": "confirmed" if confirmed else "estimated" if candidate["date_is_estimated"] else "missing",
+                }
+            published_at = publication["published_at"]
+            if published_at:
+                compact = datetime.fromisoformat(published_at).astimezone(_KST).strftime("%Y%m%d")
+                if (from_date and compact < from_date) or (to_date and compact > to_date):
+                    continue
 
             is_valid, invalid_reason = self._is_valid_news_document(final_title, final_content)
             if not is_valid:
@@ -77,14 +113,13 @@ class NaverNewsCollector(BaseCollector):
                 )
                 continue
 
-            seen_urls.add(url)
             docs.append(
                 DocumentRecord(
                     source_type="news",
                     title=final_title,
                     content=final_content,
                     url=url,
-                    published_at=candidate["published_at"],
+                    published_at=published_at,
                     metadata={
                         "keyword": keyword,
                         "press": candidate["press"],
@@ -92,9 +127,15 @@ class NaverNewsCollector(BaseCollector):
                         "summary": candidate["summary"],
                         "domain": urlparse(url).netloc,
                         "invalid": False,
+                        "collected_at": datetime.now(timezone.utc).isoformat(),
+                        "published_at_estimate": candidate["published_at"] if candidate["date_is_estimated"] else "",
+                        **{key: value for key, value in publication.items() if key != "published_at"},
+                        **{key: article[key] for key in ("evidence_scope", "body_source", "body_extracted")},
                     },
                 )
             )
+            if len(docs) >= max_items:
+                return docs
 
         return docs
 
@@ -105,10 +146,10 @@ class NaverNewsCollector(BaseCollector):
         from_date: str,
         to_date: str,
         max_pages: int,
-    ) -> List[dict[str, str]]:
-        candidates: List[dict[str, str]] = []
+    ) -> Iterator[dict[str, Any]]:
         start = 1
         page_no = 0
+        seen_urls = set()
 
         while page_no < max_pages:
             page_no += 1
@@ -122,35 +163,39 @@ class NaverNewsCollector(BaseCollector):
                     log_prefix=f"NEWS:SEARCH:{keyword}",
                 )
             except Exception as exc:
-                print(f"[WARN][NEWS:SEARCH] stop keyword={keyword} page={page_no} error={exc}")
-                break
+                raise RuntimeError(f"news_search_failed:page={page_no}:{type(exc).__name__}") from None
 
             items = self._extract_search_items(response.text)
             if not items:
                 break
 
             page_dates: List[str] = []
-            page_seen_any_date = False
+            all_dates_confirmed = True
+            new_urls = 0
             for item in items:
                 parsed = self._parse_search_item(item)
                 if parsed is None:
                     continue
+                if parsed["url"] in seen_urls:
+                    continue
+                seen_urls.add(parsed["url"])
+                new_urls += 1
                 compact = parsed["published_at"][:10].replace("-", "")
-                page_dates.append(compact)
-                page_seen_any_date = True
-                if from_date and compact < from_date:
-                    continue
-                if to_date and compact > to_date:
-                    continue
-                candidates.append(parsed)
+                if not compact or parsed["date_is_estimated"]:
+                    all_dates_confirmed = False
+                else:
+                    page_dates.append(compact)
+                    if from_date and compact < from_date:
+                        continue
+                    if to_date and compact > to_date:
+                        continue
+                yield parsed
 
-            if page_seen_any_date and from_date and page_dates and all(d < from_date for d in page_dates):
+            if not new_urls or (all_dates_confirmed and from_date and page_dates and all(d < from_date for d in page_dates)):
                 break
 
             start += 10
             time.sleep(0.8)
-
-        return candidates
 
     def _extract_search_items(self, html: str) -> List[Any]:
         if BeautifulSoup is None:
@@ -164,7 +209,7 @@ class NaverNewsCollector(BaseCollector):
             items = [node.find_parent("div") for node in link_nodes if node.find_parent("div") is not None]
         return items
 
-    def _parse_search_item(self, item: Any) -> dict[str, str] | None:
+    def _parse_search_item(self, item: Any) -> dict[str, Any] | None:
         title_el = (
             item.select_one("a.news_tit")
             or item.select_one("a[href*='news.naver.com']")
@@ -195,9 +240,6 @@ class NaverNewsCollector(BaseCollector):
             raw_date_text = self._extract_news_date_text_from_text(press_el.get_text(" ", strip=True))
 
         normalized_date = self._normalize_news_date(raw_date_text)
-        if not normalized_date:
-            return None
-
         return {
             "url": url,
             "title": title,
@@ -205,9 +247,10 @@ class NaverNewsCollector(BaseCollector):
             "press": self._clean_text(press_el.get_text(" ", strip=True) if press_el else ""),
             "raw_date_text": raw_date_text,
             "published_at": normalized_date,
+            "date_is_estimated": bool(re.search(r"(?:분|시간|일|주)\s*전", raw_date_text)),
         }
 
-    def _fetch_article_detail(self, url: str) -> dict[str, str]:
+    def _fetch_article_detail(self, url: str) -> dict[str, Any]:
         try:
             response = self.get_with_retry(
                 url,
@@ -219,16 +262,42 @@ class NaverNewsCollector(BaseCollector):
                 log_prefix="NEWS:ARTICLE",
             )
         except Exception as exc:
-            print(f"[SKIP][NEWS] reason=article_fetch_failed url={url} error={exc}")
-            return {"title": "", "content": ""}
+            raise RuntimeError(f"news_article_fetch_failed:{type(exc).__name__}") from None
 
         if BeautifulSoup is None:
-            return {"title": "", "content": ""}
+            raise ImportError("beautifulsoup4 is required for article extraction")
 
         soup = BeautifulSoup(response.text, "html.parser")
         title = self._extract_article_title(soup)
-        content = self._extract_article_body(soup)
-        return {"title": title, "content": content}
+        return {"title": title, **self._extract_article_content(soup), "publication": self._extract_publication(soup)}
+
+    def _extract_publication(self, soup: Any) -> dict[str, str]:
+        selectors = (
+            ("meta[property='article:published_time']", "content"),
+            ("meta[itemprop='datePublished']", "content"),
+            ("time[itemprop='datePublished']", "datetime"),
+            ("meta[name='datePublished']", "content"),
+            ("span.media_end_head_info_datestamp_time._ARTICLE_DATE_TIME", "data-date-time"),
+        )
+        invalid = False
+        for selector, attribute in selectors:
+            node = soup.select_one(selector)
+            if node is None:
+                continue
+            value = str(node.get(attribute, "")).strip()
+            try:
+                if not re.fullmatch(r"\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?", value):
+                    raise ValueError("unsupported publisher timestamp")
+                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=_KST)
+                return {"published_at": parsed.isoformat(), "published_at_source": selector,
+                        "published_at_precision": "date" if len(value) == 10 else "datetime",
+                        "publication_time_status": "confirmed"}
+            except ValueError:
+                invalid = True
+        return {"published_at": "", "published_at_source": "publisher" if invalid else "none",
+                "published_at_precision": "unknown", "publication_time_status": "invalid" if invalid else "missing"}
 
     def _extract_article_title(self, soup: Any) -> str:
         selectors = [
@@ -254,6 +323,9 @@ class NaverNewsCollector(BaseCollector):
         return ""
 
     def _extract_article_body(self, soup: Any) -> str:
+        return self._extract_article_content(soup)["content"]
+
+    def _extract_article_content(self, soup: Any) -> dict[str, Any]:
         selectors = [
             "#dic_area",
             "#newsct_article",
@@ -267,21 +339,21 @@ class NaverNewsCollector(BaseCollector):
             if node:
                 text = self._clean_text(node.get_text(" ", strip=True))
                 if len(text) >= self.MIN_CONTENT_LENGTH:
-                    return text
+                    return {"content": text, "evidence_scope": "document", "body_source": selector, "body_extracted": True}
 
         meta_desc = soup.select_one("meta[property='og:description'], meta[name='description']")
         if meta_desc and meta_desc.get("content"):
             text = self._clean_text(str(meta_desc["content"]))
             if len(text) >= self.MIN_CONTENT_LENGTH:
-                return text
+                return {"content": text, "evidence_scope": "summary", "body_source": "meta_description", "body_extracted": False}
 
         paragraphs = [self._clean_text(p.get_text(" ", strip=True)) for p in soup.select("p")]
         paragraphs = [p for p in paragraphs if len(p) >= 20]
         if paragraphs:
             text = self._clean_text(" ".join(paragraphs[:6]))
             if len(text) >= self.MIN_CONTENT_LENGTH:
-                return text
-        return ""
+                return {"content": text, "evidence_scope": "available_fragments", "body_source": "page_paragraphs", "body_extracted": False}
+        return {"content": "", "evidence_scope": "available_fragments", "body_source": "missing", "body_extracted": False}
 
     def _is_valid_news_document(self, title: str, content: str) -> tuple[bool, str]:
         t = self._clean_text(title)
@@ -325,17 +397,17 @@ class NaverNewsCollector(BaseCollector):
         if not raw:
             return ""
         raw = raw.strip().rstrip(",")
-        now = datetime.now()
+        now = datetime.now(_KST)
 
         m = re.search(r"(\d{4})\.(\d{1,2})\.(\d{1,2})\.?", raw)
         if m:
             y, mo, d = m.groups()
-            return datetime(int(y), int(mo), int(d), 0, 0, 0).strftime("%Y-%m-%dT%H:%M:%S")
+            return datetime(int(y), int(mo), int(d), tzinfo=_KST).isoformat()
         for unit, delta in [("분", "minutes"), ("시간", "hours"), ("일", "days"), ("주", "weeks")]:
             m = re.search(rf"(\d+)\s*{unit}\s*전", raw)
             if m:
                 kwargs = {delta: int(m.group(1))}
-                return (now - timedelta(**kwargs)).strftime("%Y-%m-%dT%H:%M:%S")
+                return (now - timedelta(**kwargs)).isoformat()
         return ""
 
     @staticmethod

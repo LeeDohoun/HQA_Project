@@ -2,11 +2,11 @@ from __future__ import annotations
 
 # File role:
 # - Shared dataclasses for request/response payloads across the pipeline.
-# - Canonical metadata schema for the unified RAG corpus.
+# - Canonical metadata schema for the unified evidence corpus.
 
 import hashlib
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Any, List, Optional
 
 from src.config.settings import get_data_dir
 
@@ -54,7 +54,7 @@ class DocumentRecord:
     stock_name: Optional[str] = None
     stock_code: Optional[str] = None
     published_at: Optional[str] = None
-    metadata: Dict[str, str] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def ensure_doc_id(self) -> str:
         """Auto-generate doc_id if missing."""
@@ -79,10 +79,11 @@ class CollectRequest:
     to_date: str
     dart_api_key: str
     theme_key: str
-    enabled_sources: List[str] = field(default_factory=lambda: ["news", "dart", "financials", "forum"])
+    enabled_sources: List[str] = field(default_factory=lambda: ["news", "dart", "financials", "chart"])
     general_news_keywords: Optional[List[str]] = None
     max_general_news: int = 20
     raw_output_dir: str = field(default_factory=lambda: str(get_data_dir() / "raw"))
+    incremental: bool = False
 
 
 @dataclass
@@ -96,7 +97,7 @@ class MarketRecord:
     low: str
     close: str
     volume: str
-    metadata: Dict[str, str] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -108,16 +109,20 @@ class FinancialSnapshot:
     fiscal_year: str
     report_code: str
     report_name: str
-    revenue: Optional[float]
-    operating_profit: Optional[float]
-    net_income: Optional[float]
-    assets: Optional[float]
-    liabilities: Optional[float]
-    equity: Optional[float]
-    roe: Optional[float]
-    operating_margin: Optional[float]
-    net_margin: Optional[float]
-    debt_ratio: Optional[float]
+    revenue: Optional[float] = None
+    operating_profit: Optional[float] = None
+    net_income: Optional[float] = None
+    assets: Optional[float] = None
+    liabilities: Optional[float] = None
+    equity: Optional[float] = None
+    roe: Optional[float] = None
+    roa: Optional[float] = None
+    operating_margin: Optional[float] = None
+    net_margin: Optional[float] = None
+    debt_ratio: Optional[float] = None
+    current_assets: Optional[float] = None
+    current_liabilities: Optional[float] = None
+    current_ratio: Optional[float] = None
     currency: str = "KRW"
     as_of: Optional[str] = None
-    metadata: Dict[str, str] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)

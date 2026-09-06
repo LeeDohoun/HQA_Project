@@ -1,5 +1,10 @@
 from types import SimpleNamespace
 
+import pytest
+
+from src.agents.analyst import AnalystScore
+from src.agents.chartist import ChartistScore
+from src.agents.quant import QuantScore
 from src.agents.risk_manager import (
     AgentScores,
     InvestmentAction,
@@ -9,16 +14,18 @@ from src.agents.risk_manager import (
 
 
 class FakeLLM:
-    def __init__(self, payload: str, should_fail: bool = False):
+    def __init__(self, payload: str):
         self.payload = payload
-        self.should_fail = should_fail
         self.last_prompt = ""
 
     def invoke(self, prompt: str):
         self.last_prompt = prompt
-        if self.should_fail:
-            raise RuntimeError("validator unavailable")
         return SimpleNamespace(content=self.payload)
+
+
+@pytest.fixture(autouse=True)
+def offline_risk_factory(monkeypatch):
+    monkeypatch.setattr("src.agents.risk_manager.get_risk_manager_llm", lambda: FakeLLM("{}"))
 
 
 class StructuredRunner:
@@ -62,6 +69,71 @@ def make_scores() -> AgentScores:
     )
 
 
+def make_raw_scores() -> AgentScores:
+    analyst = AnalystScore(
+        moat_score=32,
+        growth_score=22,
+        total_score=54,
+        hegemony_grade="B",
+        moat_reason="HBM 경쟁력과 고객 락인이 강하다.",
+        growth_reason="AI 서버 수요로 중기 성장성이 있다.",
+        evidence_summary="DART와 뉴스에서 투자 확대 근거가 확인된다.",
+        final_opinion="헤게모니는 양호하지만 가격 부담은 점검이 필요하다.",
+        competitive_advantage="HBM 공급 경쟁력",
+        risk_factors="메모리 업황 변동성, 경쟁 심화",
+        detailed_reasoning="산업 수요와 기업 경쟁력을 함께 고려하면 중기 우위가 있다.",
+    )
+    quant = QuantScore(
+        valuation_score=16,
+        profitability_score=19,
+        growth_score=17,
+        stability_score=20,
+        total_score=72,
+        valuation_analysis="PER/PBR은 과도하지 않다.",
+        profitability_analysis="ROE와 영업이익률이 양호하다.",
+        growth_analysis="성장성은 중립 이상이다.",
+        stability_analysis="부채비율과 유동비율이 안정적이다.",
+        per=12.0,
+        pbr=1.2,
+        eps=5800,
+        bps=58000,
+        roe=10.87,
+        roa=8.22,
+        operating_margin=13.07,
+        net_margin=13.55,
+        debt_ratio=29.81,
+        current_ratio=200.0,
+        opinion="재무 체력은 양호하다.",
+        grade="B",
+        quality_flags={"source": "dart_financial_snapshot+krx_fundamental"},
+    )
+    chartist = ChartistScore(
+        trend_score=20,
+        momentum_score=18,
+        volatility_score=13,
+        volume_score=14,
+        total_score=65,
+        signal="중립",
+        trend_analysis="중기 추세는 유지된다.",
+        momentum_analysis="모멘텀은 중립이다.",
+        volatility_analysis="변동성은 보통이다.",
+        volume_analysis="거래량 확인이 필요하다.",
+        rsi=58.0,
+        macd_histogram=12.5,
+        volume_ratio=1.3,
+        entry_timing="confirm_support",
+        overheat_risk="medium",
+        stop_loss="9,595원",
+        target_price="10,850원",
+        mid_term_opinion="지지 확인 후 접근",
+    )
+    return AgentScores(
+        analyst_result=analyst,
+        quant_result=quant,
+        chartist_result=chartist,
+    )
+
+
 def build_response(action: str, total_score: int = 68, confidence: int = 72) -> str:
     return f"""
 {{
@@ -83,52 +155,22 @@ def build_response(action: str, total_score: int = 68, confidence: int = 72) -> 
 """
 
 
-def test_cross_validation_passes_when_models_align():
-    agent = RiskManagerAgent()
-    agent.llm = FakeLLM(build_response("BUY", total_score=74, confidence=78))
-    agent.validator_llm = FakeLLM(build_response("BUY", total_score=70, confidence=74))
-    agent.primary_model_name = "primary-test"
-    agent.validator_model_name = "validator-test"
-
-    decision = agent.make_decision("삼성전자", "005930", make_scores())
-
-    assert decision.action == InvestmentAction.BUY
-    assert decision.validation_status == "passed"
-    assert decision.primary_model == "primary-test"
-    assert decision.validator_model == "validator-test"
-    assert decision.validator_action == InvestmentAction.BUY.value
-
-
-def test_cross_validation_uses_conservative_result_on_large_disagreement():
+def test_make_decision_uses_single_risk_manager_model_result():
     agent = RiskManagerAgent()
     agent.llm = FakeLLM(build_response("STRONG_BUY", total_score=92, confidence=88))
-    agent.validator_llm = FakeLLM(build_response("REDUCE", total_score=42, confidence=61))
 
     decision = agent.make_decision("삼성전자", "005930", make_scores())
 
-    assert decision.action == InvestmentAction.REDUCE
-    assert decision.validation_status == "warning"
-    assert decision.total_score == 42
-    assert decision.confidence < 61
-
-
-def test_cross_validation_falls_back_when_validator_fails():
-    agent = RiskManagerAgent()
-    agent.llm = FakeLLM(build_response("HOLD", total_score=58, confidence=66))
-    agent.validator_llm = FakeLLM("", should_fail=True)
-
-    decision = agent.make_decision("삼성전자", "005930", make_scores())
-
-    assert decision.action == InvestmentAction.HOLD
-    assert decision.validation_status == "unavailable"
-    assert "보조 모델 검증 실패" in decision.validation_summary
-    assert decision.risk_level == RiskLevel.MEDIUM
+    assert decision.action == InvestmentAction.STRONG_BUY
+    assert decision.total_score == 92
+    assert decision.confidence == 88
+    assert not hasattr(decision, "validation_status")
+    assert not hasattr(decision, "validator_model")
 
 
 def test_decision_parser_recovers_when_response_has_trailing_extra_data():
     agent = RiskManagerAgent()
     agent.llm = FakeLLM(build_response("BUY", total_score=74, confidence=78) + "\n{\"extra\": true}")
-    agent.validator_llm = None
 
     decision = agent.make_decision("삼성전자", "005930", make_scores())
 
@@ -148,7 +190,6 @@ def test_decision_parser_prefers_structured_output():
             "summary": "구조화 응답",
         }
     )
-    agent.validator_llm = None
 
     decision = agent.make_decision("삼성전자", "005930", make_scores())
 
@@ -158,10 +199,17 @@ def test_decision_parser_prefers_structured_output():
     assert decision.summary == "구조화 응답"
 
 
+def test_make_decision_raises_when_llm_cannot_return_decision_json():
+    agent = RiskManagerAgent()
+    agent.llm = FakeLLM("JSON 응답을 만들 수 없습니다.")
+
+    with pytest.raises(ValueError, match="JSON 형식 응답 없음"):
+        agent.make_decision("삼성전자", "005930", make_scores())
+
+
 def test_decision_prompt_includes_portfolio_position_context():
     agent = RiskManagerAgent()
     agent.llm = FakeLLM(build_response("HOLD", total_score=52, confidence=64))
-    agent.validator_llm = None
 
     portfolio_context = {
         "available": True,
@@ -197,7 +245,6 @@ def test_decision_prompt_includes_portfolio_position_context():
 def test_decision_prompt_includes_investor_profile_context():
     agent = RiskManagerAgent()
     agent.llm = FakeLLM(build_response("HOLD", total_score=52, confidence=64))
-    agent.validator_llm = None
 
     investor_profile = {
         "total_assets": 50_000_000,
@@ -226,3 +273,51 @@ def test_decision_prompt_includes_investor_profile_context():
     assert "- investment_type: STABLE" in agent.llm.last_prompt
     assert "- volatility_tolerance: LOW" in agent.llm.last_prompt
     assert "RiskManager만 사용자 적합성을 반영" in agent.llm.last_prompt
+
+
+def test_decision_prompt_uses_raw_agent_results_without_context_packet():
+    agent = RiskManagerAgent()
+    agent.llm = FakeLLM(build_response("HOLD", total_score=60, confidence=70))
+
+    decision = agent.make_decision("삼성전자", "005930", make_raw_scores())
+
+    assert decision.action == InvestmentAction.HOLD
+    assert "## Analyst Result" in agent.llm.last_prompt
+    assert "헤게모니 총점: 54 / 100" in agent.llm.last_prompt
+    assert "독점력 점수: 32 / 50" in agent.llm.last_prompt
+    assert "성장성 점수: 22 / 50" in agent.llm.last_prompt
+    assert "HBM 경쟁력과 고객 락인이 강하다." in agent.llm.last_prompt
+    assert "## Quant Result" in agent.llm.last_prompt
+    assert "PER: 12.0" in agent.llm.last_prompt
+    assert "유동비율: 200.0" in agent.llm.last_prompt
+    assert "## Chartist Result" in agent.llm.last_prompt
+    assert "RSI: 58.0" in agent.llm.last_prompt
+    assert "손절가: 9,595원" in agent.llm.last_prompt
+    assert "AgentContextPacket" not in agent.llm.last_prompt
+    assert "Packet" not in agent.llm.last_prompt
+
+
+def test_risk_manager_exposes_only_make_decision_as_decision_entrypoint():
+    agent = RiskManagerAgent()
+
+    assert callable(agent.make_decision)
+    assert not hasattr(agent, "quick_decision")
+    assert not hasattr(agent, "validator_llm")
+    assert not hasattr(agent, "_reconcile_decisions")
+    assert not hasattr(agent, "_action_rank")
+    assert not hasattr(agent, "_risk_rank")
+    assert not hasattr(agent, "_max_risk_level")
+    assert not hasattr(agent, "_more_conservative_position")
+    assert not hasattr(agent, "_merge_unique")
+    assert not hasattr(agent, "_merge_text")
+    assert not hasattr(agent, "_default_decision")
+    assert not hasattr(agent, "generate_report")
+
+
+def test_risk_manager_uses_required_prompt_file_without_code_fallback():
+    import src.agents.risk_manager as risk_manager_module
+
+    agent = RiskManagerAgent()
+
+    assert not hasattr(agent, "_decision_fallback_prompt")
+    assert not hasattr(risk_manager_module, "load_prompt_optional")

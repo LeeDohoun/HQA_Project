@@ -71,11 +71,8 @@ public class TradingController {
                                               HttpSession session) {
         User user = authService.requireUser(session);
         boolean requestedEnabled = Boolean.TRUE.equals(request.getEnabled());
-        Map<String, Object> aiStatus = requestedEnabled
-                ? aiServerClient.startPaperTradingLoop(user.getUserId())
-                : aiServerClient.stopPaperTradingLoop();
         boolean enabled = autoTradeService.setEnabled(user, requestedEnabled);
-        return new AutoTradeStatusResponse(enabled, aiStatus);
+        return new AutoTradeStatusResponse(enabled, Map.of("autoTradeEnabled", enabled, "accountMode", "PAPER"));
     }
 
     @Operation(summary = "매매 판단 미리보기", description = "분석 결과 기반 매매 판단을 미리 계산한다. 실제 주문은 발생하지 않는다.")
@@ -208,12 +205,6 @@ public class TradingController {
         decision.put("stop_loss", d.getStopLoss());
         decision.put("signal_alignment", d.getSignalAlignment());
         decision.put("contrarian_view", d.getContrarianView());
-        decision.put("validation_status", d.getValidationStatus());
-        decision.put("validation_summary", d.getValidationSummary());
-        decision.put("validator_model", d.getValidatorModel());
-        decision.put("primary_model", d.getPrimaryModel());
-        decision.put("validator_action", d.getValidatorAction());
-        decision.put("validator_confidence", d.getValidatorConfidence());
 
         Map<String, Object> payload = new HashMap<>();
         payload.put("stock_name", request.getStockName());

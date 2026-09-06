@@ -6,6 +6,7 @@ from __future__ import annotations
 from datetime import datetime
 import time
 from typing import Dict, List, Optional
+from urllib.parse import urlsplit
 
 import requests
 
@@ -40,6 +41,8 @@ class BaseCollector:
         timeout: Optional[int] = None,
         log_prefix: str = "COLLECT",
     ) -> requests.Response:
+        parsed = urlsplit(url)
+        safe_url = f"{parsed.scheme}://{parsed.hostname}{parsed.path}"
         response = None
         for attempt in range(self.max_retries):
             try:
@@ -54,12 +57,12 @@ class BaseCollector:
             except requests.RequestException as e:
                 print(
                     f"[WARN][{log_prefix}] GET failed "
-                    f"attempt={attempt + 1}/{self.max_retries} url={url} error={e}"
+                    f"attempt={attempt + 1}/{self.max_retries} url={safe_url} error={type(e).__name__}"
                 )
                 if attempt < self.max_retries - 1:
                     time.sleep(self.backoff_seconds * (attempt + 1))
 
-        raise requests.RequestException(f"[{log_prefix}] GET failed after retries: {url}")
+        raise requests.RequestException(f"[{log_prefix}] GET failed after retries: {safe_url}") from None
 
     @staticmethod
     def to_iso_datetime(

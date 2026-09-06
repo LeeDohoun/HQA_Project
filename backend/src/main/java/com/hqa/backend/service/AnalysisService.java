@@ -52,45 +52,10 @@ public class AnalysisService {
     }
 
     public BulkAnalysisResponse submitBulkFromWatchlist(AnalysisMode mode, int maxRetries) {
-        Map<String, Object> tradingStatus;
-        try {
-            tradingStatus = aiServerClient.getTradingStatus();
-        } catch (Exception e) {
-            throw new ApiException(ErrorCode.SERVICE_UNAVAILABLE, 503,
-                    "AI 서버에서 워치리스트를 가져오지 못했습니다", e.getMessage());
-        }
-
-        List<Map<String, Object>> watchlist = extractWatchlist(tradingStatus);
-        List<AnalysisTaskResponse> submitted = new ArrayList<>();
-        List<BulkAnalysisResponse.BulkAnalysisFailure> failures = new ArrayList<>();
-
-        for (Map<String, Object> entry : watchlist) {
-            String code = String.valueOf(entry.getOrDefault("code", entry.get("stock_code")));
-            String name = String.valueOf(entry.getOrDefault("name",
-                    entry.getOrDefault("stock_name", code)));
-            if (code == null || code.isBlank() || "null".equals(code)) {
-                failures.add(new BulkAnalysisResponse.BulkAnalysisFailure(name, code,
-                        "stock code missing"));
-                continue;
-            }
-            AnalysisRequest req = new AnalysisRequest();
-            req.setStockName(name);
-            req.setStockCode(code);
-            req.setMode(mode);
-            req.setMaxRetries(maxRetries);
-            try {
-                submitted.add(submit(req));
-            } catch (Exception e) {
-                failures.add(new BulkAnalysisResponse.BulkAnalysisFailure(name, code,
-                        e.getMessage()));
-            }
-        }
-        return new BulkAnalysisResponse(
-                watchlist.size(), submitted.size(), failures.size(), submitted, failures);
+        throw legacyAnalysisRemoved();
     }
 
     public BulkAnalysisResponse submitBulkFromItems(List<? extends Map<String, ?>> items, AnalysisMode mode, int maxRetries) {
-        List<AnalysisTaskResponse> submitted = new ArrayList<>();
         List<BulkAnalysisResponse.BulkAnalysisFailure> failures = new ArrayList<>();
 
         for (Map<String, ?> entry : items) {
@@ -104,19 +69,10 @@ public class AnalysisService {
                         "stock code missing"));
                 continue;
             }
-            AnalysisRequest req = new AnalysisRequest();
-            req.setStockName(name);
-            req.setStockCode(code);
-            req.setMode(mode);
-            req.setMaxRetries(maxRetries);
-            try {
-                submitted.add(submit(req));
-            } catch (Exception e) {
-                failures.add(new BulkAnalysisResponse.BulkAnalysisFailure(name, code,
-                        e.getMessage()));
-            }
+            failures.add(new BulkAnalysisResponse.BulkAnalysisFailure(name, code,
+                    "legacy analysis flow removed"));
         }
-        return new BulkAnalysisResponse(items.size(), submitted.size(), failures.size(), submitted, failures);
+        return new BulkAnalysisResponse(items.size(), 0, failures.size(), List.of(), failures);
     }
 
     @SuppressWarnings("unchecked")
@@ -136,147 +92,25 @@ public class AnalysisService {
     }
 
     public AnalysisTaskResponse submit(AnalysisRequest request) {
-        String taskId = UUID.randomUUID().toString();
-        TaskMeta meta = new TaskMeta(taskId, request.getStockName(), request.getStockCode(), request.getMode(), request.getMaxRetries());
-        tasks.put(taskId, meta);
-        startProgressCapture(taskId);
-        aiServerClient.submitAnalysis(new AiAnalyzeRequest(
-                taskId,
-                request.getStockName(),
-                request.getStockCode(),
-                request.getMode().name(),
-                request.getMaxRetries()
-        ));
-        meta.status = AnalysisStatus.running;
-        return new AnalysisTaskResponse(taskId, AnalysisStatus.pending,
-                request.getStockName() + "(" + request.getStockCode() + ") analysis queued",
-                request.getMode() == AnalysisMode.full ? 180 : 60);
+        throw legacyAnalysisRemoved();
+    }
+
+    private ApiException legacyAnalysisRemoved() {
+        return new ApiException(ErrorCode.ANALYSIS_FAILED, 410,
+                "기존 단일 종목 분석 API는 제거되었습니다",
+                "새 분석 파이프라인으로 대체 예정입니다");
     }
 
     public Map<String, Object> getProgress(String taskId) {
-        TaskMeta meta = tasks.get(taskId);
-        if (meta == null) {
-            throw new ApiException(ErrorCode.ANALYSIS_NOT_FOUND, 404, "Analysis not found", taskId);
-        }
-
-        try {
-            Map<String, Object> aiData = aiServerClient.getAnalysis(taskId);
-            String status = String.valueOf(aiData.getOrDefault("status", meta.status.name()));
-            if ("completed".equalsIgnoreCase(status)) {
-                meta.status = AnalysisStatus.completed;
-                stopProgressCapture(taskId);
-            } else if ("failed".equalsIgnoreCase(status)) {
-                meta.status = AnalysisStatus.failed;
-                stopProgressCapture(taskId);
-            }
-            updateMetaFromAiData(meta, aiData);
-        } catch (Exception ignored) {
-            // Running AI tasks may not have a final result yet. Cached progress remains useful.
-        }
-
-        List<Map<String, Object>> storedEvents = progressEvents.getOrDefault(taskId, List.of());
-        List<Map<String, Object>> events;
-        synchronized (storedEvents) {
-            events = List.copyOf(storedEvents);
-        }
-        return Map.of(
-                "task_id", taskId,
-                "status", meta.status.name(),
-                "events", events
-        );
+        throw legacyAnalysisRemoved();
     }
 
     public AnalysisResultResponse getResult(String taskId) {
-        TaskMeta meta = tasks.get(taskId);
-        if (meta == null) {
-            throw new ApiException(ErrorCode.ANALYSIS_NOT_FOUND, 404, "Analysis not found", taskId);
-        }
-        Map<String, Object> aiData = aiServerClient.getAnalysis(taskId);
-        String status = String.valueOf(aiData.getOrDefault("status", meta.status.name()));
-        if ("completed".equalsIgnoreCase(status)) {
-            meta.status = AnalysisStatus.completed;
-            stopProgressCapture(taskId);
-        } else if ("failed".equalsIgnoreCase(status)) {
-            meta.status = AnalysisStatus.failed;
-            stopProgressCapture(taskId);
-        }
-        updateMetaFromAiData(meta, aiData);
-        return toResult(meta, aiData);
+        throw legacyAnalysisRemoved();
     }
 
     public SseEmitter stream(String taskId) {
-        if (!tasks.containsKey(taskId)) {
-            throw new ApiException(ErrorCode.ANALYSIS_NOT_FOUND, 404, "Analysis not found", taskId);
-        }
-        SseEmitter emitter = new SseEmitter(600_000L);
-        emitters.computeIfAbsent(taskId, ignored -> new ArrayList<>()).add(emitter);
-        AtomicBoolean done = new AtomicBoolean(false);
-        AtomicReference<RedisMessageListenerContainer> progressContainer = new AtomicReference<>();
-        Runnable cleanup = () -> {
-            done.set(true);
-            stopRedis(progressContainer);
-            List<SseEmitter> taskEmitters = emitters.get(taskId);
-            if (taskEmitters != null) {
-                taskEmitters.remove(emitter);
-            }
-        };
-        emitter.onCompletion(cleanup);
-        emitter.onTimeout(cleanup);
-        emitter.onError(ignored -> cleanup.run());
-
-        Thread progressWorker = new Thread(() -> subscribeProgress(taskId, emitter, done, progressContainer));
-        progressWorker.setDaemon(true);
-        progressWorker.start();
-
-        Thread worker = new Thread(() -> {
-            try {
-                TaskMeta meta = tasks.get(taskId);
-                Set<String> emittedAgents = new LinkedHashSet<>();
-                Set<String> emittedStartedAgents = new LinkedHashSet<>();
-                while (true) {
-                    Map<String, Object> data = aiServerClient.getAnalysis(taskId);
-                    String status = String.valueOf(data.getOrDefault("status", "running"));
-                    for (Map<String, Object> event : collectAgentResultEvents(data, emittedAgents)) {
-                        emitter.send(SseEmitter.event().name("agent_result").data(event));
-                    }
-                    String nextAgent = nextAgentKey(data, status, meta.mode);
-                    if (!"system".equals(nextAgent) && emittedStartedAgents.add(nextAgent)) {
-                        emitter.send(SseEmitter.event().name("agent_result").data(agentProgressEvent(
-                                nextAgent,
-                                "running",
-                                agentLabel(nextAgent) + " 단계 진행 중",
-                                OffsetDateTime.now(ZoneOffset.UTC).toString()
-                        )));
-                    }
-                    emitter.send(SseEmitter.event()
-                            .name("progress")
-                            .data(Map.of(
-                                    "agent", agentLabel(nextAgent),
-                                    "status", status,
-                                    "message", progressMessage(data, status, meta.mode),
-                                    "progress", progressValue(data, status, meta.mode),
-                                    "timestamp", OffsetDateTime.now(ZoneOffset.UTC).toString()
-                            )));
-                    if ("completed".equals(status) || "failed".equals(status)) {
-                        emitter.send(SseEmitter.event().name("completed").data(Map.of("task_id", taskId, "status", status)));
-                        emitter.complete();
-                        cleanup.run();
-                        break;
-                    }
-                    Thread.sleep(2000L);
-                }
-            } catch (Exception exception) {
-                cleanup.run();
-                try {
-                    emitter.complete();
-                } catch (Exception ignored) {
-                    // Client disconnects should not keep the worker or Redis listener alive.
-                }
-            }
-        });
-        worker.setDaemon(true);
-        worker.start();
-        return emitter;
+        throw legacyAnalysisRemoved();
     }
 
     private void subscribeProgress(String taskId, SseEmitter emitter, AtomicBoolean done,
@@ -610,22 +444,6 @@ public class AnalysisService {
     }
 
     public AnalysisHistoryResponse getHistory(int page, int pageSize) {
-        tasks.values().forEach(meta -> {
-            if (meta.status != AnalysisStatus.completed && meta.status != AnalysisStatus.failed) {
-                try {
-                    Map<String, Object> aiData = aiServerClient.getAnalysis(meta.taskId);
-                    String status = String.valueOf(aiData.getOrDefault("status", meta.status.name()));
-                    if ("completed".equalsIgnoreCase(status)) {
-                        meta.status = AnalysisStatus.completed;
-                    } else if ("failed".equalsIgnoreCase(status)) {
-                        meta.status = AnalysisStatus.failed;
-                    }
-                    updateMetaFromAiData(meta, aiData);
-                } catch (Exception ignored) {
-                    // Keep the existing in-memory status when the AI server cannot be reached.
-                }
-            }
-        });
         List<TaskMeta> all = tasks.values().stream().toList();
         int from = Math.min((page - 1) * pageSize, all.size());
         int to = Math.min(from + pageSize, all.size());

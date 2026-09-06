@@ -7,7 +7,7 @@ from .collectors import (
     NaverStockChartCollector,
     NaverThemeStockCollector,
 )
-from .rag_builder import RAGCorpusBuilder
+from .evidence_corpus_builder import EvidenceCorpusBuilder
 
 # File role:
 # - Compatibility package surface for older data_pipeline references.
@@ -20,5 +20,5 @@ __all__ = [
     "NaverStockForumCollector",
     "NaverStockChartCollector",
     "NaverThemeStockCollector",
-    "RAGCorpusBuilder",
+    "EvidenceCorpusBuilder",
 ]

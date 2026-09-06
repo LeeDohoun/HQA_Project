@@ -18,8 +18,13 @@ import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.LinkedHashMap;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.function.Function;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
@@ -158,6 +163,140 @@ public class KisClient {
         return order(userId, secret, token, stockCode, quantity, limitPrice, /* isBuy = */ false);
     }
 
+    public Map<String, Object> paperOrder(String userId, UserSecret secret, String token,
+            String stockCode, int quantity, long limitPrice, String side) {
+        requirePaper(secret);
+        if (!Set.of("BUY", "SELL").contains(side) || quantity <= 0 || limitPrice <= 0) {
+            throw new IllegalArgumentException("Invalid PAPER order");
+        }
+        return order(userId, secret, token, stockCode, quantity, limitPrice, side.equals("BUY"));
+    }
+
+    public Map<String, Object> paperPurchasingPower(String userId, UserSecret secret, String token,
+            String stockCode, long price) {
+        requirePaper(secret);
+        Map<String, String> query = accountQuery(secret);
+        query.putAll(Map.of("PDNO", stockCode, "ORD_UNPR", Long.toString(price), "ORD_DVSN", "01",
+                "CMA_EVLU_AMT_ICLD_YN", "N", "OVRS_ICLD_YN", "N"));
+        Map<String, Object> body = accountGet(secret, token,
+                "/uapi/domestic-stock/v1/trading/inquire-psbl-order", "VTTC8908R", query, "").getBody();
+        requireSuccess(body);
+        Map<?, ?> output = PaperAccountSnapshotService.requireMap(body.get("output"));
+        return Map.of("cash", strictLong(output.get("nrcvb_buy_amt")), "quantity", strictLong(output.get("nrcvb_buy_qty")));
+    }
+
+    public List<Map<String, Object>> paperOrders(String userId, UserSecret secret, String token,
+            LocalDate from, LocalDate to) {
+        requirePaper(secret);
+        Map<String, String> query = accountQuery(secret);
+        query.putAll(Map.of("INQR_STRT_DT", from.format(YYYYMMDD), "INQR_END_DT", to.format(YYYYMMDD),
+                "SLL_BUY_DVSN_CD", "00", "CCLD_DVSN", "00", "INQR_DVSN", "00", "INQR_DVSN_3", "00"));
+        query.putAll(Map.of("PDNO", "", "ORD_GNO_BRNO", "", "ODNO", "", "INQR_DVSN_1", "", "EXCG_ID_DVSN_CD", "KRX"));
+        return accountPages(secret, token, "/uapi/domestic-stock/v1/trading/inquire-daily-ccld",
+                "VTTC0081R", query, body -> rows(body.get("output1")));
+    }
+
+    public Map<String, Object> cancelPaperOrder(String userId, UserSecret secret, String token,
+            String orderId, String organization, int remainingQuantity) {
+        requirePaper(secret);
+        if (orderId == null || orderId.isBlank() || organization == null || organization.isBlank() || remainingQuantity <= 0) {
+            throw new IllegalArgumentException("Fresh order identity and remaining quantity are required for cancellation");
+        }
+        Map<String, String> body = accountQuery(secret);
+        body.putAll(Map.of("KRX_FWDG_ORD_ORGNO", organization, "ORGN_ODNO", orderId,
+                "ORD_DVSN", "00", "RVSE_CNCL_DVSN_CD", "02", "ORD_QTY", Integer.toString(remainingQuantity),
+                "ORD_UNPR", "0", "QTY_ALL_ORD_YN", "Y", "EXCG_ID_DVSN_CD", "KRX"));
+        try {
+            String response = webClient.post().uri(KIS_BASE_URL_SANDBOX + "/uapi/domestic-stock/v1/trading/order-rvsecncl")
+                    .contentType(MediaType.APPLICATION_JSON).header("authorization", "Bearer " + token)
+                    .header("appkey", secretCipher.decrypt(secret.getKisAppKey()))
+                    .header("appsecret", secretCipher.decrypt(secret.getKisAppSecret()))
+                    .header("tr_id", "VTTC0013U").header("custtype", "P").bodyValue(body)
+                    .retrieve().bodyToMono(String.class).block(Duration.ofSeconds(20));
+            Map<String, Object> payload = objectMapper.readValue(response, new TypeReference<>() { });
+            return Map.of("success", "0".equals(String.valueOf(payload.get("rt_cd"))), "response", payload);
+        } catch (Exception ex) {
+            return Map.of("success", false, "unknown", true, "error", ex.getClass().getSimpleName());
+        }
+    }
+
+    private static void requirePaper(UserSecret secret) {
+        if (secret == null || secret.isKisIsReal()) throw new IllegalArgumentException("PAPER_ACCOUNT_REQUIRED");
+    }
+
+    private Map<String, String> accountQuery(UserSecret secret) {
+        Map<String, String> query = new LinkedHashMap<>();
+        query.put("CANO", secretCipher.decrypt(secret.getKisAccountNo()));
+        query.put("ACNT_PRDT_CD", secret.getKisAccountProductCode());
+        return query;
+    }
+
+    private ResponseEntity<Map<String, Object>> accountGet(UserSecret secret, String token,
+            String path, String trId, Map<String, String> query, String continuation) {
+        String base = secret.isKisIsReal() ? KIS_BASE_URL_REAL : KIS_BASE_URL_SANDBOX;
+        ResponseEntity<String> response = webClient.get().uri(base + path, builder -> {
+                    query.forEach(builder::queryParam);
+                    return builder.build();
+                }).header("authorization", "Bearer " + token)
+                .header("appkey", secretCipher.decrypt(secret.getKisAppKey()))
+                .header("appsecret", secretCipher.decrypt(secret.getKisAppSecret()))
+                .header("tr_id", trId).header("tr_cont", continuation).header("custtype", "P")
+                .retrieve().toEntity(String.class).block(Duration.ofSeconds(20));
+        if (response == null || response.getBody() == null) throw new IllegalStateException("KIS_RESPONSE_EMPTY");
+        try {
+            Map<String, Object> payload = objectMapper.readValue(response.getBody(), new TypeReference<>() { });
+            return new ResponseEntity<>(payload, response.getHeaders(), response.getStatusCode());
+        } catch (java.io.IOException ex) {
+            throw new IllegalStateException("KIS_RESPONSE_INVALID", ex);
+        }
+    }
+
+    private <T> List<T> accountPages(UserSecret secret, String token, String path, String trId,
+            Map<String, String> query, Function<Map<String, Object>, List<T>> parsePage) {
+        List<T> result = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        String continuation = "";
+        query.put("CTX_AREA_FK100", "");
+        query.put("CTX_AREA_NK100", "");
+        for (int page = 0; page < 100; page++) {
+            ResponseEntity<Map<String, Object>> response = accountGet(secret, token, path, trId, query, continuation);
+            Map<String, Object> body = response.getBody();
+            requireSuccess(body);
+            result.addAll(parsePage.apply(body));
+            String more = response.getHeaders().getFirst("tr_cont");
+            if (!"M".equals(more) && !"F".equals(more)) return result;
+            String fk = asString(body.get("ctx_area_fk100"));
+            String nk = asString(body.get("ctx_area_nk100"));
+            if ((fk.isBlank() && nk.isBlank()) || !seen.add(fk + ":" + nk)) {
+                throw new IllegalStateException("KIS_PAGINATION_INVALID");
+            }
+            query.put("CTX_AREA_FK100", fk);
+            query.put("CTX_AREA_NK100", nk);
+            continuation = "N";
+        }
+        throw new IllegalStateException("KIS_PAGINATION_LIMIT_EXCEEDED");
+    }
+
+    private static void requireSuccess(Map<String, Object> body) {
+        if (body == null || !"0".equals(String.valueOf(body.get("rt_cd")))) {
+            throw new IllegalStateException("KIS_REQUEST_REJECTED");
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> rows(Object raw) {
+        if (!(raw instanceof List<?> list) || list.stream().anyMatch(item -> !(item instanceof Map<?, ?>))) {
+            throw new IllegalStateException("KIS_ROWS_INVALID");
+        }
+        return (List<Map<String, Object>>) raw;
+    }
+
+    private static long strictLong(Object raw) {
+        if (raw == null || String.valueOf(raw).isBlank()) throw new IllegalStateException("KIS_NUMBER_MISSING");
+        try { return new java.math.BigDecimal(String.valueOf(raw).trim()).longValueExact(); }
+        catch (ArithmeticException | NumberFormatException ex) { throw new IllegalStateException("KIS_NUMBER_INVALID", ex); }
+    }
+
     private Map<String, Object> order(String userId, UserSecret secret, String token,
                                       String stockCode, int quantity, long limitPrice, boolean isBuy) {
         try {
@@ -167,8 +306,7 @@ public class KisClient {
             String accountNo = secretCipher.decrypt(secret.getKisAccountNo());
             boolean isReal = secret.isKisIsReal();
             String baseUrl = isReal ? KIS_BASE_URL_REAL : KIS_BASE_URL_SANDBOX;
-            // tr_id: 실전 매수 TTTC0802U / 매도 TTTC0801U, 모의 매수 VTTC0802U / 매도 VTTC0801U
-            String trId = (isReal ? "TTTC" : "VTTC") + (isBuy ? "0802U" : "0801U");
+            String trId = isReal ? (isBuy ? "TTTC0802U" : "TTTC0801U") : (isBuy ? "VTTC0012U" : "VTTC0011U");
             String response = webClient.post()
                     .uri(baseUrl + ORDER_PATH)
                     .contentType(MediaType.APPLICATION_JSON)
@@ -186,7 +324,7 @@ public class KisClient {
                     ))
                     .retrieve()
                     .bodyToMono(String.class)
-                    .block();
+                    .block(Duration.ofSeconds(20));
             Map<String, Object> body = objectMapper.readValue(response, new TypeReference<>() {});
             String rtCd = String.valueOf(body.getOrDefault("rt_cd", ""));
             boolean success = "0".equals(rtCd);
@@ -300,90 +438,51 @@ public class KisClient {
      */
     public Map<String, Object> inquireBalance(String userId, UserSecret secret, String token) {
         try {
-            String appKey = secretCipher.decrypt(secret.getKisAppKey());
-            String appSecret = secretCipher.decrypt(secret.getKisAppSecret());
-            String accountNo = secretCipher.decrypt(secret.getKisAccountNo());
-            boolean isReal = secret.isKisIsReal();
-            String balanceTr = isReal ? "TTTC8434R" : "VTTC8434R";
-
-            String response = webClient.get()
-                    .uri(uriBuilder -> uriBuilder.scheme("https")
-                            .host(isReal ? "openapi.koreainvestment.com" : "openapivts.koreainvestment.com")
-                            .port(isReal ? 9443 : 29443)
-                            .path(BALANCE_PATH)
-                            .queryParam("CANO", accountNo)
-                            .queryParam("ACNT_PRDT_CD", secret.getKisAccountProductCode())
-                            .queryParam("AFHR_FLPR_YN", "N")
-                            .queryParam("OFL_YN", "")
-                            .queryParam("INQR_DVSN", "02")
-                            .queryParam("UNPR_DVSN", "01")
-                            .queryParam("FUND_STTL_ICLD_YN", "N")
-                            .queryParam("FNCG_AMT_AUTO_RDPT_YN", "N")
-                            .queryParam("PRCS_DVSN", "01")
-                            .queryParam("CTX_AREA_FK100", "")
-                            .queryParam("CTX_AREA_NK100", "")
-                            .build())
-                    .header("authorization", "Bearer " + token)
-                    .header("appkey", appKey)
-                    .header("appsecret", appSecret)
-                    .header("tr_id", balanceTr)
-                    .header("custtype", "P")
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .block();
-
-            Map<String, Object> body = objectMapper.readValue(response, new TypeReference<>() {});
-            String rtCd = String.valueOf(body.getOrDefault("rt_cd", ""));
-            if (!"0".equals(rtCd)) {
-                errorLogger.log("KisClient", userId, null,
-                        "inquire-balance rejected: " + body.get("msg1"), response);
-                return Map.of("success", false, "error", String.valueOf(body.getOrDefault("msg1", "조회 실패")));
-            }
-
+            Map<String, String> query = accountQuery(secret);
+            query.putAll(Map.of("AFHR_FLPR_YN", "N", "OFL_YN", "", "INQR_DVSN", "02", "UNPR_DVSN", "01",
+                    "FUND_STTL_ICLD_YN", "N", "FNCG_AMT_AUTO_RDPT_YN", "N", "PRCS_DVSN", "00"));
+            List<Map<String, Object>> summaries = new ArrayList<>();
+            List<Map<String, Object>> rawHoldings = accountPages(secret, token, BALANCE_PATH,
+                    secret.isKisIsReal() ? "TTTC8434R" : "VTTC8434R", query, body -> {
+                        if (summaries.isEmpty()) summaries.addAll(rows(body.get("output2")));
+                        return rows(body.get("output1"));
+                    });
+            if (summaries.isEmpty()) throw new IllegalStateException("KIS_SUMMARY_MISSING");
             List<Map<String, Object>> holdings = new ArrayList<>();
-            Object output1 = body.get("output1");
-            if (output1 instanceof List<?> rows) {
-                for (Object row : rows) {
-                    if (!(row instanceof Map<?, ?> r)) continue;
-                    long quantity = parseLong(r.get("hldg_qty"));
-                    if (quantity <= 0) continue; // 보유수량 0인 정리행 제외
-                    Map<String, Object> h = new java.util.LinkedHashMap<>();
-                    h.put("stockCode", asString(r.get("pdno")));
-                    h.put("stockName", asString(r.get("prdt_name")));
-                    h.put("quantity", quantity);
-                    h.put("avgPrice", parseDouble(r.get("pchs_avg_pric")));
-                    h.put("currentPrice", parseLong(r.get("prpr")));
-                    h.put("evalAmount", parseLong(r.get("evlu_amt")));
-                    h.put("purchaseAmount", parseLong(r.get("pchs_amt")));
-                    h.put("evalProfit", parseLong(r.get("evlu_pfls_amt")));
-                    h.put("evalProfitRate", parseDouble(r.get("evlu_pfls_rt")));
-                    holdings.add(h);
-                }
+            for (Map<String, Object> row : rawHoldings) {
+                long quantity = strictLong(row.get("hldg_qty"));
+                if (quantity <= 0) continue;
+                Map<String, Object> holding = new LinkedHashMap<>();
+                holding.put("stockCode", asString(row.get("pdno")));
+                holding.put("stockName", asString(row.get("prdt_name")));
+                holding.put("quantity", quantity);
+                holding.put("sellableQuantity", strictLong(row.get("ord_psbl_qty")));
+                holding.put("avgPrice", Double.valueOf(String.valueOf(row.get("pchs_avg_pric"))));
+                holding.put("currentPrice", strictLong(row.get("prpr")));
+                holding.put("evalAmount", strictLong(row.get("evlu_amt")));
+                holding.put("purchaseAmount", strictLong(row.get("pchs_amt")));
+                holding.put("evalProfit", strictLong(row.get("evlu_pfls_amt")));
+                holding.put("evalProfitRate", Double.valueOf(String.valueOf(row.get("evlu_pfls_rt"))));
+                holdings.add(holding);
             }
-
-            Map<String, Object> summary = new java.util.LinkedHashMap<>();
-            Object output2 = body.get("output2");
-            if (output2 instanceof List<?> sumRows && !sumRows.isEmpty()
-                    && sumRows.get(0) instanceof Map<?, ?> s) {
-                summary.put("deposit", parseLong(s.get("dnca_tot_amt"))); // 예수금
-                summary.put("totalEvalAmount", parseLong(s.get("tot_evlu_amt"))); // 총평가
-                summary.put("totalPurchaseAmount", parseLong(s.get("pchs_amt_smtl_amt"))); // 매입금액 합
-                summary.put("totalEvalProfit", parseLong(s.get("evlu_pfls_smtl_amt"))); // 총평가손익
-                summary.put("stockEvalAmount", parseLong(s.get("scts_evlu_amt"))); // 유가증권 평가
-                summary.put("netAssetAmount", parseLong(s.get("nass_amt"))); // 순자산
+            Map<String, Object> raw = summaries.get(0);
+            Map<String, Object> summary = new LinkedHashMap<>();
+            summary.put("deposit", strictLong(raw.get("dnca_tot_amt")));
+            summary.put("totalEvalAmount", strictLong(raw.get("tot_evlu_amt")));
+            summary.put("totalPurchaseAmount", strictLong(raw.get("pchs_amt_smtl_amt")));
+            summary.put("totalEvalProfit", strictLong(raw.get("evlu_pfls_smtl_amt")));
+            summary.put("stockEvalAmount", strictLong(raw.get("scts_evlu_amt")));
+            summary.put("netAssetAmount", strictLong(raw.get("nass_amt")));
+            Object previous = raw.get("bfdy_tot_asst_evlu_amt");
+            if (previous != null && !String.valueOf(previous).isBlank()) {
+                summary.put("previousDayTotalAssets", strictLong(previous));
             }
-
-            Map<String, Object> result = new java.util.LinkedHashMap<>();
-            result.put("success", true);
-            result.put("holdings", holdings);
-            result.put("summary", summary);
-            return result;
-        } catch (Exception e) {
-            errorLogger.log("KisClient", userId, null, "inquire-balance failed", e.getMessage());
-            return Map.of("success", false, "error", String.valueOf(e.getMessage()));
+            return Map.of("success", true, "holdings", holdings, "summary", summary);
+        } catch (Exception ex) {
+            errorLogger.log("KisClient", userId, null, "inquire-balance failed", ex.getMessage());
+            return Map.of("success", false, "error", ex.getClass().getSimpleName());
         }
     }
-
     /**
      * 일/주/월/년봉 조회. KIS는 한 번에 최대 100건을 반환.
      *
