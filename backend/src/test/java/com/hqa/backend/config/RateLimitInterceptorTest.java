@@ -47,4 +47,22 @@ class RateLimitInterceptorTest {
         request.setRemoteAddr("127.0.0.1");
         return request;
     }
+
+    @Test
+    void onlyAuthenticatedInternalRequestsBypassThePublicIpQuota() throws Exception {
+        HqaProperties properties = new HqaProperties();
+        properties.setEnv("production"); properties.setInternalToken("internal-test"); properties.setRateLimitPerMinute(1);
+        RateLimitInterceptor interceptor = new RateLimitInterceptor(properties);
+        for (int i = 0; i < 60; i++) {
+            var internal = new MockHttpServletRequest("POST", "/api/v1/internal/trading/account-snapshots");
+            internal.addHeader("X-HQA-Internal-Token", "internal-test");
+            assertThat(interceptor.preHandle(internal, new MockHttpServletResponse(), new Object())).isTrue();
+        }
+        var publicRequest = request(); publicRequest.addHeader("X-HQA-Internal-Token", "internal-test");
+        assertThat(interceptor.preHandle(publicRequest, new MockHttpServletResponse(), new Object())).isTrue();
+        assertThat(interceptor.preHandle(publicRequest, new MockHttpServletResponse(), new Object())).isFalse();
+        var invalid = new MockHttpServletRequest("POST", "/api/v1/internal/trading/account-snapshots");
+        invalid.setRemoteAddr("127.0.0.1"); invalid.addHeader("X-HQA-Internal-Token", "wrong");
+        assertThat(interceptor.preHandle(invalid, new MockHttpServletResponse(), new Object())).isFalse();
+    }
 }

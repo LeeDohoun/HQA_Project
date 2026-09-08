@@ -1,102 +1,134 @@
 package com.hqa.backend.service;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.mock;
-
-import com.hqa.backend.dto.AnalysisMode;
-import com.hqa.backend.dto.AnalysisRequest;
-import com.hqa.backend.dto.BulkAnalysisResponse;
-import com.hqa.backend.exception.ApiException;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.hqa.backend.dto.*;
+import com.hqa.backend.entity.*;
+import com.hqa.backend.repository.AnalysisRecordRepository;
+import java.util.*;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class AnalysisServiceTest {
+    final AiServerClient ai = mock(AiServerClient.class);
+    final AnalysisRecordRepository records = mock(AnalysisRecordRepository.class);
+    final WatchlistService watchlist = mock(WatchlistService.class);
+    final ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
+    final AnalysisService service = new AnalysisService(ai, records, watchlist, mapper);
+    final User user = new User();
+    final String id = "083f6f45-19fa-4d2b-8f12-e12975649227";
+    AnalysisRecord saved;
 
-    private final AiServerClient aiServerClient = mock(AiServerClient.class);
-    private final StockCatalogService stockCatalogService = mock(StockCatalogService.class);
-    private final AnalysisService service = new AnalysisService(aiServerClient, stockCatalogService);
-
-    @Test
-    void submitRejectsLegacySingleStockAnalysisFlow() {
-        AnalysisRequest request = request("삼성전자", "005930", AnalysisMode.full);
-
-        assertThatThrownBy(() -> service.submit(request))
-                .isInstanceOf(ApiException.class)
-                .hasMessageContaining("기존 단일 종목 분석 API는 제거되었습니다")
-                .extracting("status")
-                .isEqualTo(410);
+    @BeforeEach
+    void setup() {
+        ReflectionTestUtils.setField(user, "id", "u1");
+        when(ai.submitStockPreview("005930")).thenReturn(Map.of("task_id", id, "status", "queued"));
+        when(records.save(any())).thenAnswer(inv -> {
+            saved = inv.getArgument(0);
+            when(records.findByTaskIdAndUser_Id(id, "u1")).thenReturn(Optional.of(saved));
+            return saved;
+        });
     }
 
     @Test
-    void submitBulkFromItemsReturnsFailuresWithoutCallingLegacyAiAnalyze() {
-        BulkAnalysisResponse response = service.submitBulkFromItems(
-                List.of(
-                        Map.of("stockName", "삼성전자", "stockCode", "005930"),
-                        Map.of("stockName", "SK하이닉스", "stockCode", "000660")
-                ),
-                AnalysisMode.quick,
-                0
-        );
-
-        assertThat(response.total()).isEqualTo(2);
-        assertThat(response.submitted()).isZero();
-        assertThat(response.failed()).isEqualTo(2);
-        assertThat(response.failures())
-                .extracting(BulkAnalysisResponse.BulkAnalysisFailure::reason)
-                .containsOnly("legacy analysis flow removed");
+    void submitUsesCurrentPreviewAndPersistsOwner() {
+        assertThat(service.submit(request(), user).taskId()).isEqualTo(id);
+        assertThat(saved.getUser()).isSameAs(user);
+        assertThat(saved.getMaxRetries()).isZero();
+        verify(ai).submitStockPreview("005930");
     }
 
     @Test
-    void collectAgentResultEventsEmitsOnlyNewAgentScores() {
-        Set<String> emitted = new HashSet<>(Set.of("quant"));
-        Map<String, Object> aiData = Map.of(
-                "scores", Map.of(
-                        "quant", Map.of("total_score", 80, "grade", "A", "opinion", "재무 우수"),
-                        "chartist", Map.of("total_score", 65, "signal", "매수")
-                )
-        );
-
-        List<Map<String, Object>> events = service.collectAgentResultEvents(aiData, emitted);
-
-        assertThat(events).hasSize(1);
-        assertThat(events.get(0))
-                .containsEntry("agent", "chartist")
-                .containsEntry("status", "completed")
-                .containsEntry("total_score", 65.0)
-                .containsEntry("grade", "매수");
-        assertThat(String.valueOf(events.get(0).get("message"))).contains("Chartist");
-        assertThat(emitted).containsExactlyInAnyOrder("quant", "chartist");
+    void completedResultsSurviveServiceRestartWithoutCallingTheAiServerAgain() {
+        service.submit(request(), user);
+        Map<String, Object> specialists = new LinkedHashMap<>();
+        for (String role : List.of("analyst", "quant", "chartist")) {
+            specialists.put(role, Map.of("role", role, "stock_code", "005930", "score", 75.0, "thesis", "근거",
+                    "citations", List.of(Map.of("source_id", "doc:1", "claim", "공시"))));
+        }
+        when(ai.getRuntimeTask(id)).thenReturn(Map.of("task_id", id, "status", "completed", "result", Map.of(
+                "stock_code", "005930", "stock_name", "삼성전자", "status", "completed",
+                "specialists", specialists, "data_gaps", List.of(), "errors", Map.of()),
+                "completed_at", saved.getCreatedAt().plusSeconds(2).toString()));
+        var result = service.getResult(id, user);
+        assertThat(result.status()).isEqualTo(AnalysisStatus.completed);
+        assertThat(result.scores()).hasSize(3).allSatisfy(s -> assertThat(s.maxScore()).isEqualTo(100));
+        assertThat(result.finalDecision()).isNull();
+        assertThat(result.durationSeconds()).isEqualTo(2.0);
+        assertThat(saved.getResultJson()).isNotBlank();
+        var restarted = new AnalysisService(ai, records, watchlist, mapper);
+        assertThat(restarted.getResult(id, user)).usingRecursiveComparison()
+                .withComparatorForType(Comparator.comparing(java.time.OffsetDateTime::toInstant), java.time.OffsetDateTime.class)
+                .isEqualTo(result);
+        when(records.findByUser_IdOrderByCreatedAtDesc(eq("u1"), any()))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(saved)));
+        assertThat(restarted.getHistory(1, 20, user).items().get(0).totalScore()).isEqualTo(75.0);
+        verify(ai, times(1)).getRuntimeTask(id);
     }
 
     @Test
-    void progressEventCanBecomeAgentResultWhenAgentCompletes() {
-        Map<String, Object> progress = Map.of(
-                "agent", "quant",
-                "status", "completed",
-                "message", "재무: F",
-                "progress", 1.0,
-                "timestamp", "2026-06-13T02:10:00"
-        );
-
-        Map<String, Object> event = service.agentResultFromProgress(progress);
-
-        assertThat(event)
-                .containsEntry("agent", "quant")
-                .containsEntry("label", "Quant")
-                .containsEntry("status", "completed")
-                .containsEntry("message", "Quant 완료: 재무: F");
+    void otherUsersCannotReadOrPollATask() {
+        service.submit(request(), user);
+        var other = new User(); ReflectionTestUtils.setField(other, "id", "u2");
+        assertThatThrownBy(() -> service.getResult(id, other)).hasMessageContaining("찾지 못했습니다");
+        assertThatThrownBy(() -> service.getProgress(id, other)).hasMessageContaining("찾지 못했습니다");
+        verify(ai, never()).getRuntimeTask(anyString());
     }
 
-    private AnalysisRequest request(String name, String code, AnalysisMode mode) {
-        AnalysisRequest request = new AnalysisRequest();
-        request.setStockName(name);
-        request.setStockCode(code);
-        request.setMode(mode);
-        request.setMaxRetries(mode == AnalysisMode.full ? 1 : 0);
+    @Test
+    void failuresArePersistedAsFailuresWithoutInventingScores() {
+        service.submit(request(), user);
+        when(ai.getRuntimeTask(id)).thenReturn(Map.of("task_id", id, "status", "failed", "error", "missing_price_history",
+                "failed_at", saved.getCreatedAt().plusSeconds(1).toString()));
+        var result = service.getResult(id, user);
+        assertThat(result.status()).isEqualTo(AnalysisStatus.failed);
+        assertThat(result.errors()).containsEntry("runtime", "missing_price_history");
+        assertThat(result.scores()).isEmpty();
+    }
+
+    @Test
+    void staleQueuedResponseCannotRegressRunningState() {
+        service.submit(request(), user);
+        saved.setStatus("running");
+        when(ai.getRuntimeTask(id)).thenReturn(Map.of("task_id", id, "status", "queued"));
+        assertThat(service.getResult(id, user).status()).isEqualTo(AnalysisStatus.running);
+        verify(records, times(1)).save(any()); // Submission only; polling never merges stale entities.
+    }
+
+    @Test
+    void missingRuntimeTaskIsSavedAsAnExplicitFailure() {
+        service.submit(request(), user);
+        when(ai.getRuntimeTask(id)).thenThrow(new com.hqa.backend.exception.ApiException(
+                ErrorCode.ANALYSIS_NOT_FOUND, 404, "expired", null));
+        assertThat(service.getResult(id, user).errors().get("runtime")).contains("소실");
+        assertThat(service.getResult(id, user).status()).isEqualTo(AnalysisStatus.failed);
+        verify(ai, times(1)).getRuntimeTask(id);
+    }
+
+    @Test
+    void pendingJobsDoNotMakeStoredHistoryDependOnAiAvailability() {
+        service.submit(request(), user);
+        when(records.findByUser_IdOrderByCreatedAtDesc(eq("u1"), any()))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(saved)));
+        assertThat(service.getHistory(1, 20, user).items().get(0).status()).isEqualTo(AnalysisStatus.pending);
+        verify(ai, never()).getRuntimeTask(anyString());
+    }
+
+    @Test
+    void rejectsUnsupportedModesAndInvalidCodesBeforePaidWork() {
+        var request = request(); request.setMode(AnalysisMode.quick);
+        assertThatThrownBy(() -> service.submit(request, user)).hasMessageContaining("full");
+        request.setMode(AnalysisMode.full); request.setStockCode(null);
+        assertThatThrownBy(() -> service.submit(request, user)).hasMessageContaining("6자리");
+        verifyNoInteractions(ai);
+    }
+
+    private AnalysisRequest request() {
+        var request = new AnalysisRequest(); request.setStockName("삼성전자"); request.setStockCode("005930");
         return request;
     }
 }

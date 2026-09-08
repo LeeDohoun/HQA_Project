@@ -131,6 +131,32 @@ Start the AI service after installing requirements:
 Runtime jobs, task lookup, chat and query suggestions require the internal token;
 the backend forwards it. Do not expose this token in browser configuration.
 
+The dashboard submits selected stocks through authenticated `POST /api/v1/analysis`
+or `/api/v1/analysis/bulk` (`mode=full`, `maxRetries=0`, at most 20 stocks).
+An omitted bulk body selects the user's watchlist; an explicit empty list selects
+no stocks. The backend invokes `POST /runtime/stock-preview` with `stock_code`.
+This uses the current shared Analyst/Quant/Chartist pipeline and cache, without
+account snapshots, RiskManager or orders. Stocks still need valid local price
+history; missing inputs or failed specialists are reported explicitly.
+
+Poll `GET /api/v1/analysis/{taskId}` for status and results. The frontend polls every
+five seconds after the preceding request finishes; it does not use the removed
+analysis SSE endpoints. Only the submitting user can read the task and history.
+History lists the last stored state without depending on AI-server availability;
+opening a task refreshes its runtime state.
+Flyway V10 adds durable terminal-result storage to `analysis_records`. Runtime
+jobs awaiting their first terminal poll remain in AI-server memory: if that server
+restarts or evicts a finished job before it is stored, the backend records an
+explicit failure. It does not rerun paid work automatically. Running jobs are
+never evicted to admit new work; a full active queue returns HTTP 503.
+
+Authenticated `/api/v1/internal/` requests bypass the public IP rate limit. KIS
+per-account pacing and capacity limits continue to apply. Broker cancellation
+rejection restores an order's open state, allowing the next fresh reconciliation
+to reassess cancellation; an uncertain response keeps its reservation and pending
+cancellation state. Dashboard order history lists each persisted execution,
+including separate BUY, REDUCE and EXIT orders, with requested and filled quantity.
+
 ```bash
 venv/bin/python -m uvicorn ai_server.app:app --host 127.0.0.1 --port 8001 --workers 1
 ```
@@ -160,6 +186,12 @@ venv/bin/python -m pytest -q
 mvn -f backend/pom.xml test
 venv/bin/python -m backtesting paper-runtime --audit data/paper_audit.sqlite3 --budget data/llm_budget.sqlite3
 ```
+
+`AnalysisRecordRepositoryTest` additionally checks terminal-result writes and owner
+isolation against PostgreSQL. Set `HQA_TEST_DATABASE_URL` (a JDBC URL),
+`HQA_TEST_DATABASE_USERNAME` and `HQA_TEST_DATABASE_PASSWORD` to an isolated test
+database when running Maven. Flyway runs before these tests; test rows roll back.
+Without that URL, the two PostgreSQL tests are skipped.
 
 The evaluator reads SQLite in read-only mode and does not call any API. Supply
 `--baseline-audit` to compare identically collected baseline observations. Report

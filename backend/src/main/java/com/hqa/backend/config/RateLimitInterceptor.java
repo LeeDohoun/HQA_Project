@@ -26,6 +26,11 @@ public class RateLimitInterceptor implements HandlerInterceptor {
             return true;
         }
         String path = request.getRequestURI();
+        String internalToken = properties.getInternalToken();
+        if (path.startsWith("/api/v1/internal/") && internalToken != null && !internalToken.isBlank()
+                && internalToken.equals(request.getHeader("X-HQA-Internal-Token"))) {
+            return true;
+        }
         if (path.startsWith("/health") || path.startsWith("/actuator")
                 || path.startsWith("/swagger-ui") || path.startsWith("/v3/api-docs")) {
             return true;

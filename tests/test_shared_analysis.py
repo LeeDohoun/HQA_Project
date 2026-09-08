@@ -704,3 +704,33 @@ def test_remote_scheduler_only_posts_and_polls_authorized_ai_task(monkeypatch):
     assert calls[0][0] == "http://ai/internal/runtime/analysis-cycle"
     assert calls[1][0] == f"http://ai/runtime/tasks/{task_id}"
     assert all(call[1]["headers"] == {"X-HQA-Internal-Token": "token"} for call in calls)
+
+
+def test_manual_preview_analyzes_requested_low_ranked_stock_without_account_or_orders():
+    engine, calls = service()
+    result = engine.preview_stock("000001")
+    assert result["status"] == "completed"
+    assert result["stock_code"] == "000001"
+    assert set(result["specialists"]) == {"analyst", "quant", "chartist"}
+    assert len(calls) == 3
+    assert all(payload["stock_code"] == "000001" for _, payload in calls)
+    assert engine.accounts.calls == []
+    assert result["plans"] == []
+    engine.preview_stock("000001")
+    assert len(calls) == 3  # Same bounded evidence reuses specialist cache.
+
+
+def test_manual_preview_exposes_partial_failure_and_never_invents_a_missing_score():
+    engine, calls = service(invalid_role="analyst")
+    result = engine.preview_stock("000001")
+    assert result["status"] == "failed"
+    assert "analyst" not in result["specialists"]
+    assert "analyst" in result["errors"]
+    assert not any(role == "risk_manager" for role, _ in calls)
+
+
+def test_manual_preview_missing_prices_fails_before_model_work():
+    engine, calls = service()
+    with pytest.raises(ValueError, match="preview_price_history_unavailable"):
+        engine.preview_stock("999999")
+    assert calls == []

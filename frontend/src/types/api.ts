@@ -142,20 +142,20 @@ export type Balance = {
 
 export type AiActivityLeader = {
   rank: number;
-  theme: string;
-  themeKey: string;
+  theme: string | null;
+  themeKey: string | null;
   stockName: string;
   stockCode: string;
   action: string;
   actionCode: string;
-  confidence: number;
-  score: number;
-  riskLevel: string;
+  confidence: number | null;
+  score: number | null;
+  riskLevel: string | null;
   summary: string;
-  analystSummary: string;
-  quantScore: number;
-  chartSignal: string;
-  catalysts: string[];
+  analystSummary?: string;
+  quantScore?: number;
+  chartSignal?: string;
+  catalysts?: string[];
   returnPct?: number;
 };
 
@@ -165,7 +165,7 @@ export type AiActivityResponse = {
   sourceReport?: string;
   mode?: string;
   executedAt?: string;
-  bestTheme?: string;
+  bestTheme?: string | null;
   themeCount?: number;
   leaderCount?: number;
   leaders: AiActivityLeader[];
@@ -284,7 +284,7 @@ export type AnalysisTaskResponse = {
   taskId: string;
   status: AnalysisStatus;
   message: string;
-  estimatedTimeSeconds: number;
+  estimatedTimeSeconds: number | null;
 };
 
 export type StockInfo = {
@@ -339,18 +339,6 @@ export type AnalysisProgressEvent = {
   status: string;
   message: string;
   progress: number;
-  timestamp: string;
-};
-
-export type AnalysisAgentResultEvent = {
-  agent: string;
-  label: string;
-  status: string;
-  message: string;
-  totalScore: number | null;
-  grade: string | null;
-  opinion: string | null;
-  details: Record<string, unknown>;
   timestamp: string;
 };
 

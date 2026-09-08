@@ -1,11 +1,14 @@
 package com.hqa.backend.dto;
 
 import com.fasterxml.jackson.annotation.JsonAlias;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import java.util.List;
 
 public class BulkAnalysisRequest {
 
-    private List<BulkAnalysisItem> items = List.of();
+    @Size(max = 20)
+    private List<@NotNull BulkAnalysisItem> items = List.of();
 
     public List<BulkAnalysisItem> getItems() {
         return items;

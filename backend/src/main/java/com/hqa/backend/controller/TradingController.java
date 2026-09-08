@@ -125,25 +125,30 @@ public class TradingController {
         UserSecret secret = user.getSecret();
         if (secret == null || isBlank(secret.getKisAppKey()) || isBlank(secret.getKisAppSecret())
                 || isBlank(secret.getKisAccountNo())) {
-            return historicalTradingSnapshotService.balance(user.getUserId());
+            throw new ApiException(ErrorCode.KIS_SECRET_NOT_CONFIGURED, 400, "KIS 계좌가 설정되지 않았습니다", null);
         }
         String token = kisClient.fetchAccessToken(user.getUserId(), secret);
-        if (token == null) {
-            return historicalTradingSnapshotService.balance(user.getUserId());
+        if (token == null || token.isBlank()) {
+            throw new ApiException(ErrorCode.SERVICE_UNAVAILABLE, 503, "KIS 토큰 발급 실패", null);
         }
+        Map<String, Object> result;
         try {
-            return kisClient.inquireBalance(user.getUserId(), secret, token);
-        } catch (RuntimeException ignored) {
-            return historicalTradingSnapshotService.balance(user.getUserId());
+            result = kisClient.inquireBalance(user.getUserId(), secret, token);
+        } catch (RuntimeException ex) {
+            throw new ApiException(ErrorCode.SERVICE_UNAVAILABLE, 503, "KIS 잔고를 조회하지 못했습니다", null);
         }
+        if (!Boolean.TRUE.equals(result.get("success"))) {
+            throw new ApiException(ErrorCode.SERVICE_UNAVAILABLE, 503, "KIS 잔고를 조회하지 못했습니다", null);
+        }
+        return result;
     }
 
     @Operation(summary = "AI 운용 요약", description = "최근 multi-theme 주도주 선별과 에이전트 판단 요약을 조회한다.")
     @GetMapping("/ai-activity")
     public Map<String, Object> aiActivity(@RequestParam(defaultValue = "6") int limit,
                                           HttpSession session) {
-        authService.requireUser(session);
-        return historicalTradingSnapshotService.aiActivity(Math.max(1, Math.min(20, limit)));
+        User user = authService.requireUser(session);
+        return historicalTradingSnapshotService.aiActivity(user.getUserId(), Math.max(1, Math.min(20, limit)));
     }
 
     @Operation(summary = "직접 매수 주문", description = "KIS로 직접 매수 주문을 낸다. limit_price=0이면 시장가 주문.")

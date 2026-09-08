@@ -17,7 +17,7 @@ import uuid
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 from contextvars import copy_context
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -136,6 +136,11 @@ class SuggestRequest(BaseModel):
     query: str
 
 
+class StockPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    stock_code: str = Field(pattern=r"^[0-9]{6}$")
+
+
 class BacktestResultRequest(BaseModel):
     """Precomputed backtest result submitted by a CLI/worker/backend caller."""
 
@@ -238,8 +243,14 @@ def _trim_runtime_tasks() -> None:
 
 
 def _new_runtime_task(operation: str) -> str:
+    if len(_runtime_tasks) >= _MAX_CACHE:
+        finished = next((key for key, task in _runtime_tasks.items()
+                         if task["status"] in {"completed", "failed"}), None)
+        if finished is None:
+            raise HTTPException(status_code=503, detail="Runtime task capacity exceeded")
+        del _runtime_tasks[finished]
     task_id = str(uuid.uuid4())
-    now = datetime.now().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     _runtime_tasks[task_id] = {
         "task_id": task_id,
         "operation": operation,
@@ -258,19 +269,19 @@ def _new_runtime_task(operation: str) -> str:
 async def _run_runtime_task(task_id: str, fn) -> None:
     task = _runtime_tasks[task_id]
     task["status"] = "running"
-    task["started_at"] = datetime.now().isoformat()
+    task["started_at"] = datetime.now(timezone.utc).isoformat()
     loop = asyncio.get_event_loop()
     try:
         with llm_task_priority(LLMTaskPriority.RUNTIME):
             context = copy_context()
             result = await loop.run_in_executor(None, context.run, fn)
         task["status"] = "completed"
-        task["completed_at"] = datetime.now().isoformat()
+        task["completed_at"] = datetime.now(timezone.utc).isoformat()
         task["result"] = result
     except Exception as exc:
         logger.exception("runtime task failed: %s", task_id)
         task["status"] = "failed"
-        task["failed_at"] = datetime.now().isoformat()
+        task["failed_at"] = datetime.now(timezone.utc).isoformat()
         task["error"] = str(exc)
 
 
@@ -530,6 +541,14 @@ async def list_trading_orders(
 @app.post("/runtime/multi-theme-trade", status_code=202, dependencies=[Depends(_require_internal_runtime_token)])
 async def runtime_multi_theme_trade(request: MultiThemeTradeRequest):
     return _submit_runtime_task("multi_theme_trade", lambda: _run_multi_theme_trade(request))
+
+
+@app.post("/runtime/stock-preview", status_code=202, dependencies=[Depends(_require_internal_runtime_token)])
+async def runtime_stock_preview(request: StockPreviewRequest):
+    def run():
+        from src.runner.shared_analysis import get_runtime_analysis_service
+        return get_runtime_analysis_service().preview_stock(request.stock_code)
+    return _submit_runtime_task("stock_preview", run)
 
 
 @app.post("/internal/runtime/analysis-cycle", status_code=202, dependencies=[Depends(_require_internal_runtime_token)])

@@ -82,11 +82,21 @@ public class AiServerClient {
         return postForMap("/runtime/multi-theme-trade", payload, "AI 서버가 주도주 신호 생성을 처리하지 못했습니다");
     }
 
+    public Map<String, Object> submitStockPreview(String stockCode) {
+        return postForMap("/runtime/stock-preview", Map.of("stock_code", stockCode), "종목 분석을 시작하지 못했습니다");
+    }
+
     public Map<String, Object> getRuntimeTask(String taskId) {
         if (taskId == null || !taskId.matches("[A-Za-z0-9_-]+")) {
             throw new IllegalArgumentException("Invalid runtime task ID");
         }
-        return getForMap("/runtime/tasks/" + taskId);
+        String path = "/runtime/tasks/" + taskId;
+        HttpResponse<String> response = send(requestBuilder(path).GET().build());
+        if (response.statusCode() == 404) {
+            throw new ApiException(ErrorCode.ANALYSIS_NOT_FOUND, 404, "AI runtime task is no longer available", null);
+        }
+        ensureSuccess(path, response, "AI runtime request failed");
+        return parseMap(response.body());
     }
 
 

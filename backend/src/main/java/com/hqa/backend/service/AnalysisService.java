@@ -1,614 +1,191 @@
 package com.hqa.backend.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hqa.backend.dto.*;
+import com.hqa.backend.entity.AnalysisRecord;
+import com.hqa.backend.entity.User;
 import com.hqa.backend.exception.ApiException;
+import com.hqa.backend.repository.AnalysisRecordRepository;
 import java.time.Duration;
-import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.stream.Collectors;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.connection.RedisConnectionFactory;
-import org.springframework.data.redis.connection.Message;
-import org.springframework.data.redis.connection.MessageListener;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.listener.ChannelTopic;
-import org.springframework.data.redis.listener.RedisMessageListenerContainer;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+/** Adapts the current company-analysis runtime to authenticated dashboard tasks. */
 @Service
 public class AnalysisService {
+    private final AiServerClient ai;
+    private final AnalysisRecordRepository records;
+    private final WatchlistService watchlist;
+    private final ObjectMapper mapper;
 
-    private final AiServerClient aiServerClient;
-    private final StockCatalogService stockCatalogService;
-    private final StringRedisTemplate redisTemplate;
-    private final Map<String, TaskMeta> tasks = new LinkedHashMap<>();
-    private final Map<String, List<SseEmitter>> emitters = new ConcurrentHashMap<>();
-    private final Map<String, List<Map<String, Object>>> progressEvents = new ConcurrentHashMap<>();
-    private final Map<String, RedisMessageListenerContainer> progressCaptureContainers = new ConcurrentHashMap<>();
-
-    public AnalysisService(AiServerClient aiServerClient, StockCatalogService stockCatalogService) {
-        this(aiServerClient, stockCatalogService, null);
+    public AnalysisService(AiServerClient ai, AnalysisRecordRepository records, WatchlistService watchlist, ObjectMapper mapper) {
+        this.ai = ai;
+        this.records = records;
+        this.watchlist = watchlist;
+        this.mapper = mapper;
     }
 
-    @Autowired
-    public AnalysisService(AiServerClient aiServerClient, StockCatalogService stockCatalogService,
-                           StringRedisTemplate redisTemplate) {
-        this.aiServerClient = aiServerClient;
-        this.stockCatalogService = stockCatalogService;
-        this.redisTemplate = redisTemplate;
+    public AnalysisTaskResponse submit(AnalysisRequest request, User user) {
+        requireMode(request.getMode(), request.getMaxRetries());
+        String code = request.getStockCode();
+        if (code == null || !code.matches("[0-9]{6}") || request.getStockName() == null || request.getStockName().isBlank()) {
+            throw new ApiException(ErrorCode.INVALID_REQUEST, 400, "종목 이름과 6자리 코드가 필요합니다", null);
+        }
+        AnalysisRecord record = new AnalysisRecord();
+        Map<String, Object> task = ai.submitStockPreview(code);
+        String taskId = UUID.fromString(String.valueOf(task.get("task_id"))).toString();
+        record.setUser(user);
+        record.setTaskId(taskId);
+        record.setStockCode(code);
+        record.setStockName(request.getStockName().trim());
+        record.setMode("full");
+        record.setMaxRetries(0);
+        record.setStatus("pending");
+        records.save(record);
+        return new AnalysisTaskResponse(taskId, AnalysisStatus.pending, record.getStockName() + " 공통 종목 분석을 시작했습니다", null);
     }
 
-    public BulkAnalysisResponse submitBulkFromWatchlist(AnalysisMode mode, int maxRetries) {
-        throw legacyAnalysisRemoved();
+    public BulkAnalysisResponse submitBulkFromWatchlist(AnalysisMode mode, int maxRetries, User user) {
+        var items = watchlist.list(user).items().stream()
+                .map(item -> Map.of("stockName", item.stockName(), "stockCode", item.stockCode())).toList();
+        return submitBulkFromItems(items, mode, maxRetries, user);
     }
 
-    public BulkAnalysisResponse submitBulkFromItems(List<? extends Map<String, ?>> items, AnalysisMode mode, int maxRetries) {
+    public BulkAnalysisResponse submitBulkFromItems(List<? extends Map<String, ?>> items,
+            AnalysisMode mode, int maxRetries, User user) {
+        requireMode(mode, maxRetries);
+        if (items.size() > 20) throw new ApiException(ErrorCode.INVALID_REQUEST, 400, "한 번에 최대 20개 종목을 분석할 수 있습니다", null);
+        List<AnalysisTaskResponse> tasks = new ArrayList<>();
         List<BulkAnalysisResponse.BulkAnalysisFailure> failures = new ArrayList<>();
-
-        for (Map<String, ?> entry : items) {
-            String code = firstString(entry, "stockCode", "stock_code", "code");
-            String name = firstString(entry, "stockName", "stock_name", "name");
-            if (name == null || name.isBlank()) {
-                name = code;
-            }
-            if (code == null || code.isBlank() || "null".equals(code)) {
-                failures.add(new BulkAnalysisResponse.BulkAnalysisFailure(name, code,
-                        "stock code missing"));
-                continue;
-            }
-            failures.add(new BulkAnalysisResponse.BulkAnalysisFailure(name, code,
-                    "legacy analysis flow removed"));
-        }
-        return new BulkAnalysisResponse(items.size(), 0, failures.size(), List.of(), failures);
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> extractWatchlist(Map<String, Object> status) {
-        Object runtime = status.get("runtime");
-        if (runtime instanceof Map<?, ?> runtimeMap) {
-            Object wl = ((Map<String, Object>) runtimeMap).get("watchlist");
-            if (wl instanceof List<?> list) {
-                return (List<Map<String, Object>>) list;
-            }
-        }
-        Object wl = status.get("watchlist");
-        if (wl instanceof List<?> list) {
-            return (List<Map<String, Object>>) list;
-        }
-        return List.of();
-    }
-
-    public AnalysisTaskResponse submit(AnalysisRequest request) {
-        throw legacyAnalysisRemoved();
-    }
-
-    private ApiException legacyAnalysisRemoved() {
-        return new ApiException(ErrorCode.ANALYSIS_FAILED, 410,
-                "기존 단일 종목 분석 API는 제거되었습니다",
-                "새 분석 파이프라인으로 대체 예정입니다");
-    }
-
-    public Map<String, Object> getProgress(String taskId) {
-        throw legacyAnalysisRemoved();
-    }
-
-    public AnalysisResultResponse getResult(String taskId) {
-        throw legacyAnalysisRemoved();
-    }
-
-    public SseEmitter stream(String taskId) {
-        throw legacyAnalysisRemoved();
-    }
-
-    private void subscribeProgress(String taskId, SseEmitter emitter, AtomicBoolean done,
-                                   AtomicReference<RedisMessageListenerContainer> progressContainer) {
-        if (redisTemplate == null || redisTemplate.getConnectionFactory() == null) {
-            return;
-        }
-        RedisConnectionFactory factory = redisTemplate.getConnectionFactory();
-        RedisMessageListenerContainer container = new RedisMessageListenerContainer();
-        try {
-            container.setConnectionFactory(factory);
-            MessageListener listener = (Message message, byte[] pattern) -> {
-                if (done.get()) return;
-                try {
-                    Map<String, Object> event = parseProgressMessage(message);
-                    if (event.isEmpty()) return;
-                    Map<String, Object> normalized = normalizeProgressEvent(taskId, event);
-                    recordProgressEvent(taskId, "progress", normalized);
-                    emitter.send(SseEmitter.event().name("progress").data(normalized));
-                    Map<String, Object> agentResult = agentResultFromProgress(normalized);
-                    if (!agentResult.isEmpty()) {
-                        recordProgressEvent(taskId, "agent_result", agentResult);
-                        emitter.send(SseEmitter.event().name("agent_result").data(agentResult));
-                    }
-                } catch (Exception ignored) {
-                    // The polling worker still owns final completion/error handling.
-                }
-            };
-            container.addMessageListener(listener, new ChannelTopic("hqa:progress:" + taskId));
-            container.afterPropertiesSet();
-            container.start();
-            progressContainer.set(container);
-        } catch (Exception ignored) {
-            stopRedis(progressContainer);
-            // Redis progress is optional. Polling still returns final results.
-        }
-    }
-
-    private Map<String, Object> parseProgressMessage(Message message) {
-        try {
-            String body = new String(message.getBody(), java.nio.charset.StandardCharsets.UTF_8);
-            return new com.fasterxml.jackson.databind.ObjectMapper().readValue(body, new com.fasterxml.jackson.core.type.TypeReference<>() {});
-        } catch (Exception e) {
-            return Map.of();
-        }
-    }
-
-    private void stopRedis(AtomicReference<RedisMessageListenerContainer> containerRef) {
-        RedisMessageListenerContainer container = containerRef.getAndSet(null);
-        if (container != null) {
+        for (Map<String, ?> item : items) {
+            String name = (String) item.get("stockName");
+            String code = (String) item.get("stockCode");
+            AnalysisRequest request = new AnalysisRequest();
+            request.setStockName(name);
+            request.setStockCode(code);
             try {
-                container.stop();
-                container.destroy();
-            } catch (Exception ignored) {
-                // best effort
+                tasks.add(submit(request, user));
+            } catch (RuntimeException ex) {
+                failures.add(new BulkAnalysisResponse.BulkAnalysisFailure(name, code, ex.getMessage()));
             }
         }
+        return new BulkAnalysisResponse(items.size(), tasks.size(), failures.size(), tasks, failures);
     }
 
-    private void startProgressCapture(String taskId) {
-        if (redisTemplate == null || redisTemplate.getConnectionFactory() == null) {
-            return;
-        }
-        progressCaptureContainers.computeIfAbsent(taskId, ignored -> {
-            RedisMessageListenerContainer container = new RedisMessageListenerContainer();
-            container.setConnectionFactory(redisTemplate.getConnectionFactory());
-            MessageListener listener = (message, pattern) -> {
-                Map<String, Object> event = parseProgressMessage(message);
-                if (event.isEmpty()) return;
-                Map<String, Object> normalized = normalizeProgressEvent(taskId, event);
-                recordProgressEvent(taskId, "progress", normalized);
-                Map<String, Object> agentResult = agentResultFromProgress(normalized);
-                if (!agentResult.isEmpty()) {
-                    recordProgressEvent(taskId, "agent_result", agentResult);
-                }
-            };
-            container.addMessageListener(listener, new ChannelTopic("hqa:progress:" + taskId));
-            container.afterPropertiesSet();
-            container.start();
-            return container;
-        });
-    }
-
-    private void stopProgressCapture(String taskId) {
-        RedisMessageListenerContainer container = progressCaptureContainers.remove(taskId);
-        if (container == null) return;
+    public AnalysisResultResponse getResult(String taskId, User user) {
+        AnalysisRecord record = findRecord(taskId, user);
+        if (record.getResultJson() != null) return decode(record.getResultJson());
+        Map<String, Object> task;
         try {
-            container.stop();
-            container.destroy();
-        } catch (Exception ignored) {
-            // best effort
+            task = ai.getRuntimeTask(taskId);
+        } catch (ApiException ex) {
+            if (ex.getStatus() != 404) throw ex;
+            task = Map.of("task_id", taskId, "status", "failed", "failed_at", OffsetDateTime.now().toString(),
+                    "error", "AI 작업이 만료되었거나 서버 재시작으로 소실되었습니다");
         }
-    }
-
-    void recordProgressEvent(String taskId, String type, Map<String, Object> data) {
-        Map<String, Object> event = new LinkedHashMap<>();
-        event.put("type", type);
-        event.put("data", "progress".equals(type) ? normalizeProgressEvent(taskId, data) : data);
-        List<Map<String, Object>> events = progressEvents.computeIfAbsent(
-                taskId,
-                ignored -> java.util.Collections.synchronizedList(new ArrayList<>())
-        );
-        synchronized (events) {
-            if (!events.isEmpty() && events.get(events.size() - 1).equals(event)) {
-                return;
+        if (!taskId.equals(task.get("task_id"))) throw new IllegalStateException("AI_TASK_ID_MISMATCH");
+        String state = String.valueOf(task.get("status"));
+        if (state.equals("queued") || state.equals("running")) {
+            if (state.equals("running")) records.markRunning(taskId, user.getId());
+            AnalysisRecord current = findRecord(taskId, user);
+            return current.getResultJson() == null ? response(current, List.of(), List.of(), Map.of())
+                    : decode(current.getResultJson());
+        }
+        if (!state.equals("completed") && !state.equals("failed")) throw new IllegalStateException("AI_TASK_STATUS_INVALID");
+        OffsetDateTime completedAt = OffsetDateTime.parse((String) task.get(state.equals("failed") ? "failed_at" : "completed_at"));
+        List<ScoreDetail> scores = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
+        Map<String, String> errors;
+        if (state.equals("failed")) {
+            errors = Map.of("runtime", String.valueOf(task.get("error")));
+        } else {
+            Map<String, Object> result = mapper.convertValue(task.get("result"), new TypeReference<>() { });
+            if (!record.getStockCode().equals(result.get("stock_code"))) throw new IllegalStateException("AI_STOCK_MISMATCH");
+            state = String.valueOf(result.get("status"));
+            if (!List.of("completed", "failed").contains(state)) throw new IllegalStateException("AI_RESULT_STATUS_INVALID");
+            record.setStockName(String.valueOf(result.get("stock_name")));
+            Map<String, Map<String, Object>> specialists = mapper.convertValue(result.get("specialists"), new TypeReference<>() { });
+            if (state.equals("completed") && !specialists.keySet().equals(java.util.Set.of("analyst", "quant", "chartist"))) {
+                throw new IllegalStateException("AI_SPECIALISTS_INCOMPLETE");
             }
-            events.add(event);
-            if (events.size() > 120) {
-                events.remove(0);
-            }
-        }
-    }
-
-    private Map<String, Object> normalizeProgressEvent(String taskId, Map<String, Object> data) {
-        TaskMeta meta = tasks.get(taskId);
-        if (meta == null) {
-            return data;
-        }
-
-        String agent = stringOrNull(data.get("agent"));
-        String status = stringOrNull(data.get("status"));
-        if (agent == null || status == null) {
-            return data;
-        }
-
-        double normalized = overallProgress(agent, status, meta.mode);
-        double previous = latestProgress(taskId);
-        Map<String, Object> next = new LinkedHashMap<>(data);
-        next.put("progress", Math.max(previous, normalized));
-        return next;
-    }
-
-    private double latestProgress(String taskId) {
-        List<Map<String, Object>> events = progressEvents.get(taskId);
-        if (events == null) {
-            return 0.0;
-        }
-        synchronized (events) {
-            for (int index = events.size() - 1; index >= 0; index--) {
-                Map<String, Object> event = events.get(index);
-                if (!"progress".equals(event.get("type"))) continue;
-                Map<String, Object> data = castMap(event.get("data"));
-                Object progress = data.get("progress");
-                if (progress instanceof Number number) {
-                    return number.doubleValue();
+            for (String role : List.of("analyst", "quant", "chartist")) {
+                Map<String, Object> row = specialists.get(role);
+                if (row == null) continue;
+                if (!role.equals(row.get("role")) || !record.getStockCode().equals(row.get("stock_code"))) {
+                    throw new IllegalStateException("AI_SPECIALIST_IDENTITY_MISMATCH");
                 }
+                double score = ((Number) row.get("score")).doubleValue();
+                if (!Double.isFinite(score) || score < 0 || score > 100) throw new IllegalStateException("AI_SCORE_INVALID");
+                scores.add(new ScoreDetail(role, score, 100, null, (String) row.get("thesis"), row));
             }
+            warnings.addAll(mapper.convertValue(result.get("data_gaps"), new TypeReference<List<String>>() { }));
+            errors = mapper.convertValue(result.get("errors"), new TypeReference<>() { });
         }
-        return 0.0;
+        record.setStatus(state);
+        record.setCompletedAt(completedAt);
+        warnings.add("계좌별 매매 판단과 주문을 포함하지 않는 공통 종목 분석입니다.");
+        AnalysisResultResponse response = response(record, scores, warnings, errors);
+        try { record.setResultJson(mapper.writeValueAsString(response)); }
+        catch (com.fasterxml.jackson.core.JsonProcessingException ex) { throw new IllegalStateException("ANALYSIS_SERIALIZATION_FAILED", ex); }
+        records.storeResultIfAbsent(taskId, user.getId(), record.getStatus(), record.getStockName(),
+                record.getCompletedAt(), record.getResultJson());
+        return decode(findRecord(taskId, user).getResultJson());
     }
 
-    private double overallProgress(String agent, String status, AnalysisMode mode) {
-        if ("system".equals(agent) && "completed".equalsIgnoreCase(status)) {
-            return 1.0;
-        }
-        if ("failed".equalsIgnoreCase(status) || "error".equalsIgnoreCase(status)) {
-            return 0.95;
-        }
-        if (mode == AnalysisMode.quick) {
-            return quickOverallProgress(agent, status);
-        }
-        return fullOverallProgress(agent, status);
+    public Map<String, Object> getProgress(String taskId, User user) {
+        AnalysisResultResponse result = getResult(taskId, user);
+        boolean complete = result.status() == AnalysisStatus.completed || result.status() == AnalysisStatus.failed;
+        Map<String, Object> event = Map.of("agent", "analysis", "status", result.status().name(),
+                "message", complete ? "분석 작업이 종료되었습니다" : "공통 종목 분석을 진행 중입니다", "progress", complete ? 1.0 : 0.0,
+                "timestamp", (complete ? result.completedAt() : result.createdAt()).toString());
+        return Map.of("task_id", taskId, "status", result.status(), "events", List.of(Map.of("type", "progress", "data", event)));
     }
 
-    private double quickOverallProgress(String agent, String status) {
-        boolean completed = "completed".equalsIgnoreCase(status);
-        return switch (agent) {
-            case "system" -> 0.02;
-            case "quant", "chartist" -> completed ? 0.45 : 0.12;
-            case "quick_decision" -> completed ? 0.95 : 0.8;
-            default -> completed ? 0.75 : 0.1;
-        };
-    }
-
-    private double fullOverallProgress(String agent, String status) {
-        boolean completed = "completed".equalsIgnoreCase(status);
-        return switch (agent) {
-            case "system" -> 0.02;
-            case "analyst" -> completed ? 0.65 : 0.1;
-            case "quant" -> completed ? 0.25 : 0.1;
-            case "chartist" -> completed ? 0.5 : 0.1;
-            case "quality_gate" -> completed ? 0.72 : 0.65;
-            case "analyst_retry" -> completed ? 0.78 : 0.7;
-            case "risk_manager" -> completed ? 0.95 : 0.82;
-            default -> completed ? 0.75 : 0.1;
-        };
-    }
-
-    List<Map<String, Object>> collectAgentResultEvents(Map<String, Object> aiData, Set<String> emittedAgents) {
-        Map<String, Object> scores = castMap(aiData.get("scores"));
-        if (scores.isEmpty()) return List.of();
-
-        List<Map<String, Object>> events = new ArrayList<>();
-        for (String agent : agentOrder()) {
-            Map<String, Object> details = castMap(scores.get(agent));
-            if (details.isEmpty() || emittedAgents.contains(agent)) continue;
-            emittedAgents.add(agent);
-
-            Map<String, Object> event = new LinkedHashMap<>();
-            event.put("agent", agent);
-            event.put("label", agentLabel(agent));
-            event.put("status", "completed");
-            event.put("message", agentSummary(agent, details));
-            event.put("total_score", number(details.get("total_score")));
-            event.put("grade", firstString(details, "grade", "signal", "action", "hegemony_grade"));
-            event.put("opinion", firstString(details, "opinion", "summary", "final_opinion"));
-            event.put("details", details);
-            event.put("timestamp", OffsetDateTime.now(ZoneOffset.UTC).toString());
-            events.add(event);
-        }
-        return events;
-    }
-
-    Map<String, Object> agentResultFromProgress(Map<String, Object> progress) {
-        String agent = stringOrNull(progress.get("agent"));
-        String status = stringOrNull(progress.get("status"));
-        if (agent == null || agent.isBlank() || "system".equals(agent) || status == null || status.isBlank()) {
-            return Map.of();
-        }
-        String message = stringOrNull(progress.get("message"));
-        return agentProgressEvent(agent, status, message, String.valueOf(progress.getOrDefault(
-                "timestamp", OffsetDateTime.now(ZoneOffset.UTC).toString())), progress);
-    }
-
-    private Map<String, Object> agentProgressEvent(String agent, String status, String message, String timestamp) {
-        return agentProgressEvent(agent, status, message, timestamp, Map.of());
-    }
-
-    private Map<String, Object> agentProgressEvent(String agent, String status, String message, String timestamp,
-                                                  Map<String, Object> details) {
-        boolean completed = "completed".equalsIgnoreCase(status);
-        Map<String, Object> event = new LinkedHashMap<>();
-        event.put("agent", agent);
-        event.put("label", agentLabel(agent));
-        event.put("status", status);
-        event.put("message", agentLabel(agent) + " " + progressStatusLabel(status)
-                + (message == null || message.isBlank() ? "" : ": " + message));
-        event.put("total_score", completed ? 0.0 : null);
-        event.put("grade", null);
-        event.put("opinion", message);
-        event.put("details", details);
-        event.put("timestamp", timestamp);
-        return event;
-    }
-
-    private String progressStatusLabel(String status) {
-        if ("completed".equalsIgnoreCase(status)) return "완료";
-        if ("failed".equalsIgnoreCase(status) || "error".equalsIgnoreCase(status)) return "실패";
-        if ("started".equalsIgnoreCase(status) || "running".equalsIgnoreCase(status)) return "진행 중";
-        return status;
-    }
-
-    private double progressValue(Map<String, Object> aiData, String status, AnalysisMode mode) {
-        if ("completed".equalsIgnoreCase(status) || "failed".equalsIgnoreCase(status)) {
-            return 1.0;
-        }
-        Map<String, Object> scores = castMap(aiData.get("scores"));
-        int completed = 0;
-        for (String agent : agentOrder(mode)) {
-            if (!castMap(scores.get(agent)).isEmpty()) completed++;
-        }
-        return Math.max(0.08, Math.min(0.95, completed / (double) agentOrder(mode).size()));
-    }
-
-    private String progressMessage(Map<String, Object> aiData, String status, AnalysisMode mode) {
-        if ("completed".equalsIgnoreCase(status)) return "분석이 완료되었습니다.";
-        if ("failed".equalsIgnoreCase(status)) return "분석이 실패했습니다.";
-        return agentLabel(nextAgentKey(aiData, status, mode)) + " 단계 진행 중";
-    }
-
-    private String nextAgentKey(Map<String, Object> aiData, String status, AnalysisMode mode) {
-        if ("completed".equalsIgnoreCase(status) || "failed".equalsIgnoreCase(status)) {
-            return "system";
-        }
-        Map<String, Object> scores = castMap(aiData.get("scores"));
-        for (String agent : agentOrder(mode)) {
-            if (castMap(scores.get(agent)).isEmpty()) {
-                return agent;
-            }
-        }
-        return mode == AnalysisMode.quick ? "quick_decision" : "risk_manager";
-    }
-
-    private List<String> agentOrder() {
-        return List.of("analyst", "quant", "chartist", "risk_manager", "quick_decision");
-    }
-
-    private List<String> agentOrder(AnalysisMode mode) {
-        if (mode == AnalysisMode.quick) {
-            return List.of("quant", "chartist", "quick_decision");
-        }
-        return List.of("analyst", "quant", "chartist", "risk_manager");
-    }
-
-    private String agentLabel(String agent) {
-        return switch (agent) {
-            case "analyst" -> "Analyst";
-            case "quant" -> "Quant";
-            case "chartist" -> "Chartist";
-            case "quality_gate" -> "Quality Gate";
-            case "analyst_retry" -> "Analyst Retry";
-            case "risk_manager" -> "Risk Manager";
-            case "quick_decision" -> "Quick Decision";
-            default -> agent;
-        };
-    }
-
-    private String agentSummary(String agent, Map<String, Object> details) {
-        String label = agentLabel(agent);
-        double score = number(details.get("total_score"));
-        String grade = firstString(details, "grade", "signal", "action", "hegemony_grade");
-        String opinion = firstString(details, "opinion", "summary", "final_opinion");
-        List<String> parts = new ArrayList<>();
-        if (score > 0) parts.add("점수 " + Math.round(score));
-        if (grade != null) parts.add(grade);
-        if (opinion != null) parts.add(opinion);
-        return parts.isEmpty()
-                ? label + " 결과가 도착했습니다."
-                : label + " 완료: " + String.join(" · ", parts);
+    public AnalysisHistoryResponse getHistory(int page, int pageSize, User user) {
+        if (page < 1 || pageSize < 1 || pageSize > 100) throw new ApiException(ErrorCode.INVALID_REQUEST, 400, "잘못된 페이지 범위입니다", null);
+        var history = records.findByUser_IdOrderByCreatedAtDesc(user.getId(), PageRequest.of(page - 1, pageSize));
+        List<AnalysisHistoryItem> items = history.getContent().stream().map(record -> {
+            AnalysisResultResponse result = record.getResultJson() == null
+                    ? response(record, List.of(), List.of(), Map.of()) : decode(record.getResultJson());
+            Double score = result.scores().size() == 3 ? result.scores().stream().mapToDouble(ScoreDetail::totalScore).average().orElseThrow() : null;
+            return new AnalysisHistoryItem(result.taskId(), result.stock(), result.mode(), result.status(), score,
+                    null, result.createdAt(), result.completedAt());
+        }).toList();
+        return new AnalysisHistoryResponse(items, Math.toIntExact(history.getTotalElements()), page, pageSize);
     }
 
     public QuerySuggestionResponse suggest(QuerySuggestionRequest request) {
-        Map<String, Object> response = aiServerClient.suggest(Map.of("query", request.getQuery()));
-        return new QuerySuggestionResponse(
-                String.valueOf(response.getOrDefault("original_query", request.getQuery())),
-                Boolean.TRUE.equals(response.getOrDefault("is_answerable", true)),
-                stringOrNull(response.get("corrected_query")),
-                castStringList(response.get("suggestions")),
-                stringOrNull(response.get("reason"))
-        );
+        Map<String, Object> result = ai.suggest(Map.of("query", request.getQuery()));
+        return mapper.convertValue(result, QuerySuggestionResponse.class);
     }
 
-    public AnalysisHistoryResponse getHistory(int page, int pageSize) {
-        List<TaskMeta> all = tasks.values().stream().toList();
-        int from = Math.min((page - 1) * pageSize, all.size());
-        int to = Math.min(from + pageSize, all.size());
-        List<AnalysisHistoryItem> items = all.subList(from, to).stream()
-                .map(meta -> new AnalysisHistoryItem(meta.taskId,
-                        new StockInfo(meta.stockName, meta.stockCode),
-                        meta.mode,
-                        meta.status,
-                        meta.totalScore,
-                        meta.action,
-                        meta.createdAt,
-                        meta.completedAt))
-                .collect(Collectors.toList());
-        return new AnalysisHistoryResponse(items, all.size(), page, pageSize);
+    private AnalysisResultResponse response(AnalysisRecord record, List<ScoreDetail> scores,
+            List<String> warnings, Map<String, String> errors) {
+        return new AnalysisResultResponse(record.getTaskId(), AnalysisStatus.valueOf(record.getStatus()),
+                new StockInfo(record.getStockName(), record.getStockCode()), AnalysisMode.full, scores, null,
+                null, warnings, record.getCreatedAt(), record.getCompletedAt(), record.getCompletedAt() == null ? null
+                    : Duration.between(record.getCreatedAt(), record.getCompletedAt()).toMillis() / 1000.0, errors);
     }
 
-    private AnalysisResultResponse toResult(TaskMeta meta, Map<String, Object> aiData) {
-        Map<String, Object> scores = castMap(aiData.get("scores"));
-        List<ScoreDetail> scoreDetails = new ArrayList<>();
-        if (scores.containsKey("analyst") && !castMap(scores.get("analyst")).isEmpty()) {
-            Map<String, Object> analyst = castMap(scores.get("analyst"));
-            scoreDetails.add(new ScoreDetail("analyst",
-                    number(analyst.get("total_score")),
-                    70.0,
-                    stringOrNull(analyst.get("hegemony_grade")),
-                    stringOrNull(analyst.get("final_opinion")),
-                    analyst));
-        }
-        if (scores.containsKey("quant") && !castMap(scores.get("quant")).isEmpty()) {
-            Map<String, Object> quant = castMap(scores.get("quant"));
-            scoreDetails.add(new ScoreDetail("quant",
-                    number(quant.get("total_score")),
-                    100.0,
-                    stringOrNull(quant.get("grade")),
-                    stringOrNull(quant.get("opinion")),
-                    quant));
-        }
-        if (scores.containsKey("chartist") && !castMap(scores.get("chartist")).isEmpty()) {
-            Map<String, Object> chartist = castMap(scores.get("chartist"));
-            scoreDetails.add(new ScoreDetail("chartist",
-                    number(chartist.get("total_score")),
-                    100.0,
-                    stringOrNull(chartist.get("signal")),
-                    null,
-                    chartist));
-        }
-        if (scores.containsKey("risk_manager") && !castMap(scores.get("risk_manager")).isEmpty()) {
-            Map<String, Object> risk = castMap(scores.get("risk_manager"));
-            scoreDetails.add(new ScoreDetail("risk_manager",
-                    number(risk.get("total_score")),
-                    100.0,
-                    firstString(risk, "grade", "action"),
-                    firstString(risk, "opinion", "summary"),
-                    risk));
-        }
-        if (scores.containsKey("quick_decision") && !castMap(scores.get("quick_decision")).isEmpty()) {
-            Map<String, Object> quick = castMap(scores.get("quick_decision"));
-            scoreDetails.add(new ScoreDetail("quick_decision",
-                    number(quick.get("total_score")),
-                    100.0,
-                    firstString(quick, "grade", "action"),
-                    firstString(quick, "opinion", "summary"),
-                    quick));
-        }
-
-        OffsetDateTime completedAt = parseCompletedAt(aiData.get("completed_at"));
-        Double duration = completedAt == null ? null : (double) Duration.between(meta.createdAt, completedAt).toSeconds();
-        return new AnalysisResultResponse(
-                meta.taskId,
-                meta.status,
-                stockCatalogService.getStockInfo(meta.stockCode),
-                meta.mode,
-                scoreDetails,
-                castMap(aiData.get("final_decision")),
-                stringOrNull(aiData.get("research_quality")),
-                castStringList(aiData.get("quality_warnings")),
-                meta.createdAt,
-                completedAt,
-                duration,
-                castStringMap(aiData.get("errors"))
-        );
+    private AnalysisResultResponse decode(String json) {
+        try { return mapper.readValue(json, AnalysisResultResponse.class); }
+        catch (java.io.IOException ex) { throw new IllegalStateException("INVALID_STORED_ANALYSIS", ex); }
     }
 
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> castMap(Object value) {
-        return value instanceof Map<?, ?> map ? (Map<String, Object>) map : Map.of();
+    private AnalysisRecord findRecord(String taskId, User user) {
+        return records.findByTaskIdAndUser_Id(taskId, user.getId())
+                .orElseThrow(() -> new ApiException(ErrorCode.ANALYSIS_NOT_FOUND, 404, "분석 작업을 찾지 못했습니다", null));
     }
 
-    @SuppressWarnings("unchecked")
-    private Map<String, String> castStringMap(Object value) {
-        return value instanceof Map<?, ?> map ? (Map<String, String>) map : Map.of();
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<String> castStringList(Object value) {
-        return value instanceof List<?> list ? (List<String>) list : List.of();
-    }
-
-    private String stringOrNull(Object value) {
-        return value == null ? null : String.valueOf(value);
-    }
-
-    private String firstString(Map<String, ?> map, String... keys) {
-        for (String key : keys) {
-            Object value = map.get(key);
-            if (value != null && !String.valueOf(value).isBlank() && !"null".equals(String.valueOf(value))) {
-                return String.valueOf(value);
-            }
-        }
-        return null;
-    }
-
-    private double number(Object value) {
-        return value instanceof Number number ? number.doubleValue() : 0.0;
-    }
-
-    private OffsetDateTime parseCompletedAt(Object value) {
-        if (value == null) {
-            return null;
-        }
-        String raw = String.valueOf(value);
-        try {
-            return OffsetDateTime.parse(raw);
-        } catch (Exception ignored) {
-            try {
-                return LocalDateTime.parse(raw).atZone(ZoneId.systemDefault()).toOffsetDateTime();
-            } catch (Exception alsoIgnored) {
-                return null;
-            }
-        }
-    }
-
-    private void updateMetaFromAiData(TaskMeta meta, Map<String, Object> aiData) {
-        OffsetDateTime completedAt = parseCompletedAt(aiData.get("completed_at"));
-        if (completedAt != null) {
-            meta.completedAt = completedAt;
-        }
-        Map<String, Object> decision = castMap(aiData.get("final_decision"));
-        if (!decision.isEmpty()) {
-            Object score = decision.get("total_score");
-            if (score instanceof Number number) {
-                meta.totalScore = number.doubleValue();
-            }
-            meta.action = firstString(decision, "action", "action_code");
-        }
-    }
-
-    private static class TaskMeta {
-        private final String taskId;
-        private final String stockName;
-        private final String stockCode;
-        private final AnalysisMode mode;
-        private final int maxRetries;
-        private final OffsetDateTime createdAt = OffsetDateTime.now();
-        private AnalysisStatus status = AnalysisStatus.pending;
-        private Double totalScore;
-        private String action;
-        private OffsetDateTime completedAt;
-
-        private TaskMeta(String taskId, String stockName, String stockCode, AnalysisMode mode, int maxRetries) {
-            this.taskId = taskId;
-            this.stockName = stockName;
-            this.stockCode = stockCode;
-            this.mode = mode;
-            this.maxRetries = maxRetries;
+    private static void requireMode(AnalysisMode mode, int retries) {
+        if (mode != AnalysisMode.full || retries != 0) {
+            throw new ApiException(ErrorCode.INVALID_REQUEST, 400, "현재 엔진은 재시도 없는 공통 종목 분석(full)만 지원합니다", null);
         }
     }
 }
