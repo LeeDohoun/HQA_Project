@@ -338,6 +338,26 @@ public class PaperTradeStore {
     }
 
     @Transactional
+    public void acknowledgeCancellation(String executionId, Map<String, Object> response) {
+        lock(executions.ownerOf(executionId).orElseThrow());
+        TradeSignalExecution execution = executions.findById(executionId).orElseThrow();
+        if (!"CANCEL_REQUESTED".equals(execution.getStatus())) return;
+        if (Boolean.TRUE.equals(response.get("success"))) return; // Still requires broker confirmation.
+        Object raw = response.get("response");
+        boolean rejected = !Boolean.TRUE.equals(response.get("unknown")) && raw instanceof Map<?, ?> body
+                && body.get("rt_cd") != null && !"0".equals(String.valueOf(body.get("rt_cd")));
+        if (rejected) {
+            execution.setStatus(execution.getFilledQuantity() > 0 ? "PARTIALLY_FILLED" : "ORDER_SUBMITTED");
+        }
+        String reason = rejected ? "KIS_CANCEL_REJECTED" : "CANCEL_CONFIRMATION_REQUIRED";
+        execution.setRejectReason(reason);
+        executions.saveAndFlush(execution);
+        TradeSignal signal = signals.findById(execution.getSignalId()).orElseThrow();
+        signal.setRejectReason(reason);
+        signals.save(signal);
+    }
+
+    @Transactional
     public void markUnknown(String executionId) {
         lock(executions.ownerOf(executionId).orElseThrow());
         TradeSignalExecution execution = executions.findById(executionId).orElseThrow();

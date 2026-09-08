@@ -265,4 +265,35 @@ class PaperTradeStoreTest {
                 null, null, "MEDIUM", target + "%", 100L, Double.toString(stop), "reason", now.plusMinutes(10), Map.of(), Map.of("stop_loss_price", stop), payload, id,
                 version, now.plusMinutes(10), now.plusDays(3), target, "PAPER", id, asOf);
     }
+
+    @Test
+    void explicitCancelRejectionCanBeRetriedAfterFreshBrokerObservation() {
+        TradeSignal signal = store.save(request("BUY", 20, 1, "a", now), account(0), now);
+        var intent = store.claim(signal.getId(), 1, TradeConditions.TriggerType.ENTRY, "entry", account(0),
+                100, 10000, 100, null, now);
+        store.acknowledge(intent.getId(), Map.of("success", true, "response", Map.of("rt_cd", "0", "output", Map.of("ODNO", "order1"))));
+        store.observeFill(intent.getId(), 2, 100, intent.getSubmittedQuantity() - 2, false, "org", now);
+        long reserved = intent.getReservedCash();
+        assertThat(store.markCancelRequested(intent.getId())).isTrue();
+        store.acknowledgeCancellation(intent.getId(), Map.of("success", false, "response", Map.of("rt_cd", "1")));
+        assertThat(intent.getStatus()).isEqualTo("PARTIALLY_FILLED");
+        assertThat(intent.getReservedCash()).isEqualTo(reserved);
+        store.observeFill(intent.getId(), 2, 100, intent.getSubmittedQuantity() - 2, false, "org", now);
+        assertThat(store.markCancelRequested(intent.getId())).isTrue();
+    }
+
+    @Test
+    void unknownCancellationNeverAuthorizesBlindResubmission() {
+        TradeSignal signal = store.save(request("BUY", 20, 1, "a", now), account(0), now);
+        var intent = store.claim(signal.getId(), 1, TradeConditions.TriggerType.ENTRY, "entry", account(0),
+                100, 10000, 100, null, now);
+        store.acknowledge(intent.getId(), Map.of("success", true, "response", Map.of("rt_cd", "0", "output", Map.of("ODNO", "order1"))));
+        store.markCancelRequested(intent.getId());
+        store.acknowledgeCancellation(intent.getId(), Map.of("success", false, "unknown", true));
+        assertThat(store.markCancelRequested(intent.getId())).isFalse();
+        assertThat(intent.getReservedCash()).isPositive();
+        store.observeFill(intent.getId(), 0, 0, 0, true, "org", now);
+        store.acknowledgeCancellation(intent.getId(), Map.of("success", false, "response", Map.of("rt_cd", "1")));
+        assertThat(intent.getStatus()).isEqualTo("CANCELLED");
+    }
 }

@@ -270,7 +270,12 @@ class SharedAnalysisService:
         key = content_hash({"targets": targets, "slot": int(now.timestamp()) // 900})
         return self._cycles.get_or_compute(key, lambda: self._run_cycle(targets, now), retain=False)
 
-    def _run_cycle(self, targets: list[dict], as_of: datetime) -> dict:
+    def preview_stock(self, stock_code: str) -> dict:
+        if len(stock_code) != 6 or not stock_code.isascii() or not stock_code.isdigit():
+            raise ValueError("stock_code must contain six digits")
+        return self._run_cycle([], self.clock(), preview_code=stock_code)["stock_preview"]
+
+    def _run_cycle(self, targets: list[dict], as_of: datetime, *, preview_code: str | None = None) -> dict:
         started = time.monotonic()
         ids = [str(t["userId"]) for t in targets if t.get("userId")]
         if len(ids) != len(set(ids)):
@@ -306,6 +311,10 @@ class SharedAnalysisService:
         prefiltered = ranked[:100]
         selected = prefiltered[:20]
         selected_codes = {row["stock_code"] for row in selected} | held
+        if preview_code is not None:
+            if preview_code not in by_code:
+                raise ValueError(f"preview_price_history_unavailable:{preview_code}")
+            selected_codes = {preview_code}
         common, payloads = {}, {}
         for code in sorted(selected_codes, key=lambda item: (item not in held, item)):
             if code not in by_code:
@@ -446,6 +455,16 @@ class SharedAnalysisService:
                                "specialists": round((specialists_finished - data_finished) * 1000),
                                "accounts": round((time.monotonic() - specialists_finished) * 1000),
                                "total": round((time.monotonic() - started) * 1000)}}
+        if preview_code is not None:
+            analysis = common[preview_code]
+            missing = [role for role in ROLE_INSTRUCTIONS if role not in analysis["specialists"]]
+            cycle["stock_preview"] = {
+                "stock_code": preview_code, "stock_name": analysis["candidate"]["stock_name"],
+                "status": "failed" if missing else "completed", "as_of": as_of.isoformat(),
+                "specialists": analysis["specialists"], "data_gaps": analysis["specialist_errors"],
+                "errors": {role: "specialist_result_unavailable" for role in missing},
+                "mode": "company_analysis", "plans": [],
+            }
         if self.audit:
             self.audit.append("analysis", cycle)
         return cycle

@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/v1/internal/trading/account-snapshots")
 public class InternalAccountSnapshotController {
+    @com.fasterxml.jackson.databind.annotation.JsonNaming(com.fasterxml.jackson.databind.PropertyNamingStrategies.LowerCamelCaseStrategy.class)
     public record Request(@NotEmpty @Size(max = 10) List<@NotBlank String> userIds) { }
     private final PaperAccountSnapshotService service;
     private final HqaProperties properties;

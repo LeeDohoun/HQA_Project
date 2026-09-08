@@ -8,6 +8,12 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
 public interface TradeSignalExecutionRepository extends JpaRepository<TradeSignalExecution, String> {
+    @Query("SELECT e FROM TradeSignalExecution e WHERE e.userId = :userId AND "
+            + "(:allDates = true OR (COALESCE(e.submittedAt, e.executedAt) >= :from "
+            + "AND COALESCE(e.submittedAt, e.executedAt) < :until)) "
+            + "ORDER BY COALESCE(e.submittedAt, e.executedAt) DESC, e.id DESC")
+    List<TradeSignalExecution> historyForUser(String userId, boolean allDates, OffsetDateTime from,
+            OffsetDateTime until, org.springframework.data.domain.Pageable pageable);
     List<TradeSignalExecution> findBySignalId(String signalId);
     List<TradeSignalExecution> findBySignalIdOrderByExecutedAtDesc(String signalId);
     List<TradeSignalExecution> findTop100ByStatusAndOrderExpiresAtBeforeOrderByOrderExpiresAtAsc(String status, OffsetDateTime now);

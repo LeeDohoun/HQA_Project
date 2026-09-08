@@ -7,11 +7,9 @@
 import { useRouter } from "next/navigation";
 import { Dispatch, FormEvent, SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentDetailSections, AnalysisSummaryCard } from "@/components/common/analysis-report";
-import { analysisApi, authApi, eventStreamUrl, parseAgentResultEvent, parseProgressEvent, stockApi, tradingApi, watchlistApi } from "@/lib/api";
+import { analysisApi, authApi, stockApi, tradingApi, watchlistApi } from "@/lib/api";
 import type {
-  AnalysisAgentResultEvent,
   AnalysisHistoryItem,
-  AnalysisMode,
   AnalysisProgressEvent,
   AnalysisResult,
   AnalysisTaskResponse,
@@ -428,7 +426,6 @@ export default function DashboardPage() {
   const [watchlistLoading, setWatchlistLoading] = useState(false);
   const [selectedAnalysisCodes, setSelectedAnalysisCodes] = useState<string[]>([]);
   const [selected, setSelected] = useState<StockSearchResult | null>(null);
-  const [mode, setMode] = useState<AnalysisMode>("full");
   const [tab, setTab] = useState<WorkspaceTab>("home");
   const [balance, setBalance] = useState<Balance | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
@@ -449,12 +446,10 @@ export default function DashboardPage() {
   const [task, setTask] = useState<AnalysisTaskResponse | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgressEvent | null>(null);
-  const [analysisAgentEvents, setAnalysisAgentEvents] = useState<AnalysisAgentResultEvent[]>([]);
   const [analysisError, setAnalysisError] = useState("");
   const [bulkTasks, setBulkTasks] = useState<AnalysisTaskResponse[]>([]);
-  const analysisStreamRef = useRef<EventSource | null>(null);
   const analysisProgressPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const analysisProgressCursorRef = useRef<{ taskId: string; count: number }>({ taskId: "", count: 0 });
+  const activeAnalysisTaskRef = useRef<{ taskId: string } | null>(null);
   const [autoTradeEnabled, setAutoTradeEnabled] = useState(false);
   const [autoTradeConfirmOpen, setAutoTradeConfirmOpen] = useState(false);
   const [autoTradeSaving, setAutoTradeSaving] = useState(false);
@@ -543,11 +538,10 @@ export default function DashboardPage() {
 
   // 종목 클릭 → 상세 페이지로 이동.
   function pickStock(stock: StockSearchResult) {
+    closeAnalysisProgressPoll();
     if (selected?.code !== stock.code) {
-      closeAnalysisStream();
       setAnalysisResult(null);
       setAnalysisProgress(null);
-      setAnalysisAgentEvents([]);
       setAnalysisError("");
       setTask(null);
     }
@@ -606,125 +600,45 @@ export default function DashboardPage() {
     }
   }
 
-  const closeAnalysisStream = useCallback(() => {
-    analysisStreamRef.current?.close();
-    analysisStreamRef.current = null;
-  }, []);
-
   const closeAnalysisProgressPoll = useCallback(() => {
+    activeAnalysisTaskRef.current = null;
     if (analysisProgressPollRef.current) {
-      clearInterval(analysisProgressPollRef.current);
+      clearTimeout(analysisProgressPollRef.current);
       analysisProgressPollRef.current = null;
     }
   }, []);
 
-  const applyAnalysisProgressEvent = useCallback((type: string, data: Record<string, unknown>) => {
-    try {
-      if (type === "progress") {
-        setAnalysisProgress(parseProgressEvent(JSON.stringify(data)));
-        return;
-      }
-      if (type === "agent_result") {
-        const next = parseAgentResultEvent(JSON.stringify(data));
-        setAnalysisAgentEvents((prev) => {
-          const withoutDuplicate = prev.filter((item) => item.agent !== next.agent);
-          return [...withoutDuplicate, next];
-        });
-      }
-    } catch {
-      /* ignore malformed progress payloads */
-    }
-  }, []);
-
-  const pollAnalysisProgress = useCallback(async (taskId: string) => {
-    try {
-      const snapshot = await analysisApi.progress(taskId);
-      if (analysisProgressCursorRef.current.taskId !== taskId) {
-        analysisProgressCursorRef.current = { taskId, count: 0 };
-      }
-      const cursor = analysisProgressCursorRef.current.count;
-      snapshot.events.slice(cursor).forEach((event) => applyAnalysisProgressEvent(event.type, event.data));
-      analysisProgressCursorRef.current.count = snapshot.events.length;
-
-      if (snapshot.status === "completed" || snapshot.status === "failed") {
-        try {
-          setAnalysisResult(await analysisApi.result(taskId));
-        } catch (e) {
-          setAnalysisError(e instanceof Error ? e.message : "분석 결과를 불러오지 못했습니다.");
-        } finally {
-          closeAnalysisProgressPoll();
-          closeAnalysisStream();
-        }
-      }
-    } catch {
-      /* polling is a fallback; keep trying while the task is active */
-    }
-  }, [applyAnalysisProgressEvent, closeAnalysisProgressPoll, closeAnalysisStream]);
-
-  const startAnalysisStream = useCallback((taskId: string) => {
-    closeAnalysisStream();
+  const startAnalysisPolling = useCallback((taskId: string) => {
     closeAnalysisProgressPoll();
-    analysisProgressCursorRef.current = { taskId, count: 0 };
-    void pollAnalysisProgress(taskId);
-    analysisProgressPollRef.current = setInterval(() => {
-      void pollAnalysisProgress(taskId);
-    }, 2500);
-
-    const source = new EventSource(eventStreamUrl(`/api/v1/analysis/${taskId}/stream`), {
-      withCredentials: true
-    });
-    analysisStreamRef.current = source;
-
-    source.addEventListener("progress", (event) => {
+    const tracking = { taskId };
+    activeAnalysisTaskRef.current = tracking;
+    async function poll() {
       try {
-        setAnalysisProgress(parseProgressEvent((event as MessageEvent<string>).data));
-      } catch {
-        /* ignore malformed progress payloads */
-      }
-    });
-
-    source.addEventListener("agent_result", (event) => {
-      try {
-        const next = parseAgentResultEvent((event as MessageEvent<string>).data);
-        setAnalysisAgentEvents((prev) => {
-          const withoutDuplicate = prev.filter((item) => item.agent !== next.agent);
-          return [...withoutDuplicate, next];
-        });
-      } catch {
-        /* ignore malformed agent payloads */
-      }
-    });
-
-    source.addEventListener("completed", async () => {
-      try {
-        const latest = await analysisApi.result(taskId);
-        setAnalysisResult(latest);
-      } catch (e) {
-        setAnalysisError(e instanceof Error ? e.message : "분석 결과를 불러오지 못했습니다.");
-      } finally {
+        const result = await analysisApi.result(taskId);
+        if (activeAnalysisTaskRef.current !== tracking) return;
+        setAnalysisError("");
+        setAnalysisResult(result);
+        setTask((current) => current?.taskId === taskId ? { ...current, status: result.status } : current);
+        setBulkTasks((current) => current.map((item) => item.taskId === taskId ? { ...item, status: result.status } : item));
+        const complete = result.status === "completed" || result.status === "failed";
+        setAnalysisProgress({ agent: "analysis", status: result.status,
+          message: complete ? "공통 종목 분석이 종료되었습니다" : "공통 종목 분석을 진행 중입니다",
+          progress: complete ? 1 : 0, timestamp: result.completedAt ?? result.createdAt });
+        if (complete) {
+          closeAnalysisProgressPoll();
+          return;
+        }
+        analysisProgressPollRef.current = setTimeout(poll, 5000);
+      } catch (error) {
+        if (activeAnalysisTaskRef.current !== tracking) return;
+        setAnalysisError(error instanceof Error ? error.message : "분석 결과를 불러오지 못했습니다.");
         closeAnalysisProgressPoll();
-        closeAnalysisStream();
       }
-    });
+    }
+    void poll();
+  }, [closeAnalysisProgressPoll]);
 
-    source.onerror = async () => {
-      try {
-        const latest = await analysisApi.result(taskId);
-        setAnalysisResult(latest);
-        if (latest.status === "completed" || latest.status === "failed") {
-          closeAnalysisProgressPoll();
-          closeAnalysisStream();
-        }
-      } catch {
-        /* keep the connection open for retries unless the result is final */
-      }
-    };
-  }, [closeAnalysisProgressPoll, closeAnalysisStream, pollAnalysisProgress]);
-
-  useEffect(() => () => {
-    closeAnalysisProgressPoll();
-    closeAnalysisStream();
-  }, [closeAnalysisProgressPoll, closeAnalysisStream]);
+  useEffect(() => () => closeAnalysisProgressPoll(), [closeAnalysisProgressPoll]);
 
   const loadOrders = useCallback(async () => {
     setOrdersLoading(true);
@@ -823,12 +737,12 @@ export default function DashboardPage() {
     setMessage("");
     try {
       const result = await analysisApi.bulk(
-        mode,
-        mode === "full" ? 1 : 0,
+        "full",
+        0,
         selectedStocks.map((stock) => ({ stockName: stock.name, stockCode: stock.code }))
       );
       if (result.submitted === 0) {
-        setMessage("분석할 종목이 없습니다. (워치리스트 비어 있음)");
+        setMessage(result.failures.map((failure) => `${failure.stockName}: ${failure.reason}`).join(" · ") || "분석할 종목이 없습니다.");
         setBulkTasks([]);
       } else {
         const failedNote = result.failed > 0 ? ` (실패 ${result.failed}건)` : "";
@@ -836,13 +750,12 @@ export default function DashboardPage() {
         setTask(firstTask);
         setAnalysisResult(null);
         setAnalysisProgress(null);
-        setAnalysisAgentEvents([]);
         setAnalysisError("");
         setBulkTasks(result.tasks);
         if (firstTask) {
-          startAnalysisStream(firstTask.taskId);
+          startAnalysisPolling(firstTask.taskId);
         }
-        setMessage(`${result.submitted}개 종목 분석을 시작했습니다${failedNote}. 첫 번째 종목의 진행 로그를 바로 표시합니다.`);
+        setMessage(`${result.submitted}개 종목 분석을 시작했습니다${failedNote}. 첫 번째 종목의 작업 상태를 표시합니다.`);
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "분석 요청에 실패했습니다.");
@@ -855,9 +768,8 @@ export default function DashboardPage() {
     setTask(nextTask);
     setAnalysisResult(null);
     setAnalysisProgress(null);
-    setAnalysisAgentEvents([]);
     setAnalysisError("");
-    startAnalysisStream(nextTask.taskId);
+    startAnalysisPolling(nextTask.taskId);
   }
 
   async function handleAutoTrade() {
@@ -1014,7 +926,6 @@ export default function DashboardPage() {
         {tab === "home" && (
           <HomeTab
             user={user}
-            preference={preference}
             balance={balance}
             balanceLoading={balanceLoading}
             balanceError={balanceError}
@@ -1059,8 +970,6 @@ export default function DashboardPage() {
             watchlistLoading={watchlistLoading}
             selectedAnalysisCodes={selectedAnalysisCodes}
             setSelectedAnalysisCodes={setSelectedAnalysisCodes}
-            mode={mode}
-            setMode={setMode}
             bulkAnalyzing={bulkAnalyzing}
             bulkConfirmOpen={bulkConfirmOpen}
             requestBulkAnalyze={requestBulkAnalyze}
@@ -1072,7 +981,6 @@ export default function DashboardPage() {
             onTrackTask={trackAnalysisTask}
             result={analysisResult}
             progress={analysisProgress}
-            agentEvents={analysisAgentEvents}
             error={analysisError}
           />
         )}
@@ -1094,6 +1002,8 @@ export default function DashboardPage() {
             preference={preference}
             user={user}
             balance={balance}
+            balanceLoading={balanceLoading}
+            balanceError={balanceError}
             totalAssetsText={totalAssetsText}
             monthlyInvestmentText={monthlyInvestmentText}
             onGoKis={() => router.push("/settings/kis")}
@@ -1268,8 +1178,6 @@ function AnalysisTab(props: {
   watchlistLoading: boolean;
   selectedAnalysisCodes: string[];
   setSelectedAnalysisCodes: Dispatch<SetStateAction<string[]>>;
-  mode: AnalysisMode;
-  setMode: (m: AnalysisMode) => void;
   bulkAnalyzing: boolean;
   bulkConfirmOpen: boolean;
   requestBulkAnalyze: () => void;
@@ -1281,14 +1189,13 @@ function AnalysisTab(props: {
   onTrackTask: (task: AnalysisTaskResponse) => void;
   result: AnalysisResult | null;
   progress: AnalysisProgressEvent | null;
-  agentEvents: AnalysisAgentResultEvent[];
   error: string;
 }) {
   const {
     watchlist, watchlistLoading, selectedAnalysisCodes, setSelectedAnalysisCodes,
-    mode, setMode, bulkAnalyzing, bulkConfirmOpen,
+    bulkAnalyzing, bulkConfirmOpen,
     requestBulkAnalyze, confirmBulkAnalyze, cancelBulkAnalyze,
-    autoTradeEnabled, task, bulkTasks, onTrackTask, result, progress, agentEvents, error
+    autoTradeEnabled, task, bulkTasks, onTrackTask, result, progress, error
   } = props;
   const selectedSet = new Set(selectedAnalysisCodes);
   const selectedCount = watchlist.filter((stock) => selectedSet.has(stock.code)).length;
@@ -1298,7 +1205,6 @@ function AnalysisTab(props: {
     );
   };
   const currentTaskLabel = task?.message.replace(/\s*analysis queued\s*$/i, "");
-  const modeEstimate = mode === "full" ? "약 3-6분" : "약 1분";
 
   return (
     <>
@@ -1318,29 +1224,13 @@ function AnalysisTab(props: {
           </h2>
           <p className="ed-console-sub">
             {task
-              ? `${task.taskId.slice(0, 8)} 작업의 에이전트 진행상황을 실시간으로 표시합니다.`
+              ? `${task.taskId.slice(0, 8)} 작업의 상태와 완료된 분석 결과를 표시합니다.`
               : selectedCount > 0
-                ? `${selectedCount}개 종목이 선택됐습니다. ${mode === "full" ? "전체 분석" : "빠른 분석"}으로 실행할 수 있습니다.`
+                ? `${selectedCount}개 종목이 선택됐습니다. 공통 종목 분석으로 실행할 수 있습니다.`
                 : "워치리스트에서 분석할 종목을 체크한 뒤 선택 종목 실행을 누르세요."}
           </p>
 
           <div className="ed-console-actions">
-            <div className="ed-seg">
-              <button
-                type="button"
-                className={`ed-seg-btn${mode === "full" ? " ed-seg-btn--on" : ""}`}
-                onClick={() => setMode("full")}
-              >
-                전체 분석
-              </button>
-              <button
-                type="button"
-                className={`ed-seg-btn${mode === "quick" ? " ed-seg-btn--on" : ""}`}
-                onClick={() => setMode("quick")}
-              >
-                빠른 분석
-              </button>
-            </div>
             <button
               type="button"
               className="ed-btn ed-btn--moss"
@@ -1355,12 +1245,10 @@ function AnalysisTab(props: {
             <div className="ed-confirm-panel">
               <div>
                 <div className="ed-confirm-title">
-                  {selectedCount}개 종목을 {mode === "full" ? "전체 분석" : "빠른 분석"}으로 실행합니다
+                  {selectedCount}개 종목을 공통 종목 분석으로 실행합니다
                 </div>
                 <p className="ed-confirm-copy">
-                  {mode === "full"
-                    ? "전체 분석은 종목당 수 분이 걸릴 수 있고, 첫 번째 작업의 진행 로그가 즉시 표시됩니다."
-                    : "빠른 분석은 Quant와 Chartist 중심으로 먼저 판단합니다."}
+                  Analyst, Quant, Chartist가 공시·재무·가격을 분석합니다. 완료 시간은 데이터와 요청 대기 상황에 따라 달라집니다.
                 </p>
               </div>
               <div className="ed-confirm-actions">
@@ -1385,8 +1273,7 @@ function AnalysisTab(props: {
           ) : null}
 
           <div className="ed-pillbar">
-            <span className="ed-pill ed-pill--live">모드 {mode === "full" ? "전체" : "빠른"}</span>
-            <span className="ed-pill">예상 {modeEstimate}</span>
+            <span className="ed-pill ed-pill--live">공통 종목 분석</span>
             <span className="ed-pill">선택 {selectedCount}종목</span>
             {autoTradeEnabled ? <span className="ed-pill ed-pill--live">자동매매 ON</span> : null}
           </div>
@@ -1409,14 +1296,14 @@ function AnalysisTab(props: {
             </div>
           </div>
           <p className="ed-console-sub" style={{ marginTop: 12 }}>
-            전체 분석은 Analyst, Quant, Chartist, Risk Manager를 순차적으로 확인하므로 완료까지 시간이 걸릴 수 있습니다.
+            선택 종목의 세 전문가 결과를 조회합니다. 이 화면의 분석 실행으로 주문이 제출되지는 않습니다.
           </p>
         </div>
       </div>
 
       {autoTradeEnabled ? (
         <p className="ed-msg" style={{ marginTop: 14 }}>
-          자동매매가 켜져 있어 분석 작업은 GPU 큐에서 대기할 수 있습니다.
+          자동매매 분석과 공통 종목 분석은 동일한 모델 호출 한도를 사용합니다.
         </p>
       ) : null}
 
@@ -1487,8 +1374,8 @@ function AnalysisTab(props: {
         </div>
 
         <div className="ed-console-col">
-          {(task || result || progress || agentEvents.length > 0 || error) ? (
-            <AnalysisPanel task={task} result={result} progress={progress} agentEvents={agentEvents} error={error} />
+          {(task || result || progress || error) ? (
+            <AnalysisPanel task={task} result={result} progress={progress} error={error} />
           ) : (
             <section className="ed-console-panel">
               <div className="ed-panel-head">
@@ -1499,7 +1386,7 @@ function AnalysisTab(props: {
                 <span className="ed-tag ed-tag--neutral">IDLE</span>
               </div>
               <div className="ed-empty-panel" style={{ marginTop: 14 }}>
-                분석을 실행하면 이 영역에 에이전트 진행 로그, 진행률, 최종 판단이 표시됩니다.
+                분석을 실행하면 이 영역에 작업 상태와 세 전문가의 분석 결과가 표시됩니다.
               </div>
             </section>
           )}
@@ -1528,7 +1415,7 @@ function BulkAnalysisPanel({
         <span className="ed-tag ed-tag--warn">QUEUE</span>
       </div>
       <p className="ed-hint" style={{ marginTop: 12 }}>
-        항목을 선택하면 위 분석 결과 영역에서 해당 종목의 진행 로그와 결과를 확인할 수 있습니다.
+        항목을 선택하면 위 분석 결과 영역에서 해당 종목의 최신 상태와 결과를 확인할 수 있습니다.
       </p>
       <div className="ed-task-list">
         {tasks.map((item) => {
@@ -1542,16 +1429,17 @@ function BulkAnalysisPanel({
               onClick={() => onTrackTask(item)}
             >
               <span className="ed-task-badge">
-                {active ? "LIVE" : "AI"}
+                {active ? "선택" : "AI"}
               </span>
               <span className="ed-row-main">
                 <span className="ed-row-name">{stockLabel}</span>
                 <span className="ed-row-meta">
-                  {item.taskId.slice(0, 8)} · 예상 {Math.ceil(item.estimatedTimeSeconds / 60)}분
+                  {item.taskId.slice(0, 8)}
+                  {item.estimatedTimeSeconds != null ? ` · 예상 ${Math.ceil(item.estimatedTimeSeconds / 60)}분` : ""}
                 </span>
               </span>
-              <span className={`ed-tag ed-tag--${active ? "good" : analysisStatusTone(item.status)}`}>
-                {active ? "추적 중" : translateAnalysisStatus(item.status)}
+              <span className={`ed-tag ed-tag--${analysisStatusTone(item.status)}`}>
+                {translateAnalysisStatus(item.status)}
               </span>
             </button>
           );
@@ -1579,30 +1467,22 @@ function analysisStatusTone(status?: string | null): "good" | "warn" | "bad" {
   return "warn";
 }
 
-function agentStepClass(status?: string | null) {
-  if (status === "completed") return "ed-agent-step ed-agent-step--done";
-  if (status === "failed" || status === "error") return "ed-agent-step ed-agent-step--running";
-  return "ed-agent-step ed-agent-step--running";
-}
-
 function AnalysisPanel({
   task,
   result,
   progress,
-  agentEvents,
   error
 }: {
   task: AnalysisTaskResponse | null;
   result: AnalysisResult | null;
   progress: AnalysisProgressEvent | null;
-  agentEvents: AnalysisAgentResultEvent[];
   error: string;
 }) {
   const status = result?.status ?? task?.status ?? "pending";
   const isFinished = status === "completed" || status === "failed";
   const percent = progress ? Math.round(progress.progress * 100) : null;
   const taskLabel = task?.message.replace(/\s*analysis queued\s*$/i, "");
-  const modeLabel = result?.mode === "quick" ? "빠른 분석" : result?.mode === "full" ? "전체 분석" : "진행 중";
+  const modeLabel = result?.mode === "quick" ? "빠른 분석" : "공통 종목 분석";
 
   return (
     <section className="ed-console-panel">
@@ -1632,33 +1512,6 @@ function AnalysisPanel({
       ) : null}
 
       {error ? <p className="ed-msg" style={{ borderLeftColor: "var(--up)" }}>{error}</p> : null}
-
-      {agentEvents.length > 0 ? (
-        <div style={{ marginTop: 18 }}>
-          <p className="ed-label" style={{ marginBottom: 8 }}>에이전트 진행 로그</p>
-          <div className="ed-agent-timeline">
-            {agentEvents.map((event) => (
-              <div className={agentStepClass(event.status)} key={event.agent}>
-                <span className="ed-agent-step-mark">
-                  {event.label.slice(0, 2).toUpperCase()}
-                </span>
-                <span>
-                  <span className="ed-agent-name">{event.label}</span>
-                  <span className="ed-agent-msg">{event.message}</span>
-                  {event.opinion ? (
-                    <span className="ed-agent-msg" style={{ color: "var(--ink-2)" }}>{event.opinion}</span>
-                  ) : null}
-                </span>
-                <span className={`ed-tag ed-tag--${analysisStatusTone(event.status)}`}>
-                  {typeof event.totalScore === "number" && event.totalScore > 0
-                    ? `${Math.round(event.totalScore)}점`
-                    : event.grade ?? translateAnalysisStatus(event.status)}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
 
       {result ? <AnalysisSummaryCard result={result} /> : null}
       {result?.scores?.length ? <AgentDetailSections scores={result.scores} /> : null}
@@ -1834,6 +1687,8 @@ function AssetsTab({
   preference,
   user,
   balance,
+  balanceLoading,
+  balanceError,
   totalAssetsText,
   monthlyInvestmentText,
   onGoKis,
@@ -1842,16 +1697,18 @@ function AssetsTab({
   preference: UserPreference | null;
   user: AuthUser | null;
   balance: Balance | null;
+  balanceLoading: boolean;
+  balanceError: string;
   totalAssetsText: string;
   monthlyInvestmentText: string;
   onGoKis: () => void;
   onGoPreference: () => void;
 }) {
-  // KIS 계좌가 연결되어 실잔고가 있으면 설문 입력값(totalAssets) 대신 실평가금액을
-  // 계정 전체 잔고로 사용한다.
   const summary = balance?.summary;
-  const kisLinked = !!user?.kisConfigured && summary?.totalEvalAmount != null;
-  const totalAssetDisplay = kisLinked ? formatPrice(summary!.totalEvalAmount) : totalAssetsText;
+  const kisLinked = !!user?.kisConfigured;
+  const totalAssetDisplay = kisLinked
+    ? balanceLoading ? "불러오는 중..." : summary?.totalEvalAmount != null ? formatPrice(summary.totalEvalAmount) : "-"
+    : totalAssetsText;
 
   return (
     <>
@@ -1864,7 +1721,7 @@ function AssetsTab({
 
       <div className="ed-figrow" style={{ marginTop: 8 }}>
         <div className="ed-fig ed-fig--xl">
-          <small>{kisLinked ? "계정 전체 잔고 (KIS 실계좌)" : "보유 자산"}</small>
+          <small>{kisLinked ? "연결된 KIS 계좌 잔고" : "설문에 입력한 자산"}</small>
           <b>{totalAssetDisplay}</b>
         </div>
         {kisLinked ? (
@@ -1885,6 +1742,8 @@ function AssetsTab({
           </div>
         )}
       </div>
+
+      {kisLinked && balanceError ? <p className="ed-msg">{balanceError}</p> : null}
 
       <section className="ed-sec">
         <div className="ed-sec-head">
@@ -1910,8 +1769,8 @@ function AssetsTab({
         </div>
         <p className="ed-fine" style={{ marginTop: 12 }}>
           {kisLinked
-            ? "KIS 실계좌 잔고를 실시간으로 불러와 계정 전체 잔고로 표시하고 있어요."
-            : "더 정확한 평가 자산은 KIS 계좌를 연결한 뒤 확인할 수 있어요."}
+            ? "연결된 KIS 계좌에서 조회한 잔고를 표시합니다."
+            : "설문 입력값입니다. 증권 계좌 잔고는 KIS 계좌 연결 후 조회할 수 있습니다."}
         </p>
       </section>
 
@@ -1948,7 +1807,6 @@ function AssetsTab({
    ============================================================ */
 function HomeTab(props: {
   user: AuthUser | null;
-  preference: UserPreference | null;
   balance: Balance | null;
   balanceLoading: boolean;
   balanceError: string;
@@ -1969,14 +1827,13 @@ function HomeTab(props: {
   onSelectStock: (code: string) => void;
 }) {
   const {
-    user, preference, balance, balanceLoading, balanceError,
+    user, balance, balanceLoading, balanceError,
     ordersData, autoTradeEnabled, recentAnalyses, recentAnalysesLoading, aiActivity, aiActivityLoading,
     autoTradeExplanations, autoTradeExplanationsLoading, indices,
     onRefresh, onGoTab, onGoKis, onGoBacktest, onSelectStock
   } = props;
 
-  const hasSnapshotBalance = balance?.source === "historical_runtime_snapshot" || balance?.source === "database_trade_signals";
-  const kisConfigured = !!user?.kisConfigured || hasSnapshotBalance;
+  const kisConfigured = !!user?.kisConfigured;
   const summary = balance?.summary;
   const holdings = balance?.holdings ?? [];
   const topHoldings = useMemo(
@@ -1995,8 +1852,6 @@ function HomeTab(props: {
   const [expandedAnalysisId, setExpandedAnalysisId] = useState<string | null>(null);
   const [analysisDetails, setAnalysisDetails] = useState<Record<string, AnalysisResult>>({});
   const [analysisDetailLoading, setAnalysisDetailLoading] = useState<string | null>(null);
-
-  const fallbackAssets = preference?.totalAssets ?? null;
 
   return (
     <>
@@ -2068,6 +1923,8 @@ function HomeTab(props: {
               </button>
             </div>
           </div>
+        ) : balanceLoading ? (
+          <p className="ed-hint" style={{ marginTop: 14 }}>잔고를 불러오는 중...</p>
         ) : balanceError ? (
           <p className="ed-msg" style={{ borderLeftColor: "var(--up)", marginTop: 14 }}>
             {balanceError}
@@ -2077,11 +1934,7 @@ function HomeTab(props: {
             <div className="ed-fig ed-fig--xl">
               <small>총 평가자산</small>
               <b>
-                {totalEval != null
-                  ? formatPrice(totalEval)
-                  : fallbackAssets != null
-                    ? formatPrice(fallbackAssets)
-                    : "-"}
+                {totalEval != null ? formatPrice(totalEval) : "-"}
               </b>
               {profitRate != null ? (
                 <span className={`ed-fig-delta ${profitPositive ? "ed-up" : "ed-down"}`}>
@@ -2157,7 +2010,7 @@ function HomeTab(props: {
                       </span>
                     </div>
                     <p className="ed-scard-score" style={{ color: "var(--moss)", fontWeight: 800 }}>
-                      {leader.score}점 · 신뢰도 {leader.confidence}%
+                      {leader.score == null ? "점수 없음" : `${leader.score}점`} · 신뢰도 {leader.confidence == null ? "없음" : `${leader.confidence}%`}
                       {returnPct != null ? ` · 수익률 ${formatSignedRate(returnPct)}` : ""}
                     </p>
                     <p className="ed-scard-text">

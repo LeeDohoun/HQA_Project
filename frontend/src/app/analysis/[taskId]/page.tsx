@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AgentDetailSections, AnalysisSummaryCard } from "@/components/common/analysis-report";
 import { AppShell } from "@/components/common/app-shell";
 import { StatusPill } from "@/components/common/status-pill";
-import { analysisApi, eventStreamUrl } from "@/lib/api";
+import { analysisApi } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import type { AnalysisProgressEvent, AnalysisResult } from "@/types/api";
 
@@ -20,70 +20,30 @@ export default function AnalysisPage() {
 
   useEffect(() => {
     let active = true;
-    let eventSource: EventSource | null = null;
-
-    async function loadResult() {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    setLoading(true);
+    setResult(null);
+    setProgress(null);
+    setError("");
+    async function poll() {
       try {
         const response = await analysisApi.result(taskId);
         if (!active) return;
         setResult(response);
-        if (response.status === "completed" || response.status === "failed") {
-          setLoading(false);
-          return;
-        }
-      } catch (loadError) {
-        if (active) {
-          setError(loadError instanceof Error ? loadError.message : "분석 결과를 불러오지 못했습니다.");
-          setLoading(false);
-        }
-        return;
-      }
-
-      try {
-        eventSource = new EventSource(eventStreamUrl(`/api/v1/analysis/${taskId}/stream`), {
-          withCredentials: true
-        });
-
-        eventSource.addEventListener("progress", (event) => {
-          if (!active) return;
-          setProgress(JSON.parse((event as MessageEvent<string>).data) as AnalysisProgressEvent);
-        });
-
-        eventSource.addEventListener("completed", async () => {
-          const latest = await analysisApi.result(taskId);
-          if (!active) return;
-          setResult(latest);
-          setLoading(false);
-          eventSource?.close();
-        });
-
-        eventSource.onerror = async () => {
-          try {
-            const latest = await analysisApi.result(taskId);
-            if (active) {
-              setResult(latest);
-              if (latest.status === "completed" || latest.status === "failed") {
-                setLoading(false);
-                eventSource?.close();
-              }
-            }
-          } catch {
-            if (active) setLoading(false);
-          }
-        };
-      } catch {
+        const complete = response.status === "completed" || response.status === "failed";
+        setProgress({ agent: "analysis", status: response.status,
+          message: complete ? "공통 종목 분석이 종료되었습니다" : "공통 종목 분석을 진행 중입니다",
+          progress: complete ? 1 : 0, timestamp: response.completedAt ?? response.createdAt });
+        setLoading(!complete);
+        if (!complete) timer = setTimeout(poll, 5000);
+      } catch (error) {
+        if (!active) return;
+        setError(error instanceof Error ? error.message : "분석 결과를 불러오지 못했습니다.");
         setLoading(false);
       }
     }
-
-    loadResult().finally(() => {
-      if (active && !eventSource) setLoading(false);
-    });
-
-    return () => {
-      active = false;
-      eventSource?.close();
-    };
+    void poll();
+    return () => { active = false; clearTimeout(timer); };
   }, [taskId]);
 
   const statusTone = useMemo(() => {
@@ -105,11 +65,11 @@ export default function AnalysisPage() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
             <div>
               <h2 style={{ margin: "0 0 4px", fontSize: "1.1rem", fontWeight: 700, color: "var(--text-bright)" }}>
-                {result?.stock?.name ?? "로딩 중..."}
+                {result?.stock?.name ?? (error ? "조회 실패" : "로딩 중...")}
               </h2>
               <p className="meta mono" style={{ margin: 0 }}>{result?.stock?.code ?? taskId}</p>
             </div>
-            <StatusPill label={translateStatus(result?.status ?? "running")} tone={statusTone as "good" | "warn" | "bad"} />
+            <StatusPill label={error ? "조회 실패" : translateStatus(result?.status ?? "pending")} tone={error ? "bad" : statusTone} />
           </div>
 
           {progress ? (
@@ -202,7 +162,7 @@ function translateStatus(status: string) {
 }
 
 function translateMode(mode?: string | null) {
-  if (mode === "full") return "전체 분석";
+  if (mode === "full") return "공통 종목 분석";
   if (mode === "quick") return "빠른 분석";
   return mode;
 }

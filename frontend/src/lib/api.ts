@@ -1,12 +1,10 @@
 import type {
-  AnalysisAgentResultEvent,
   AnalysisHistoryItem,
   AnalysisHistoryResponse,
   AnalysisProgressPollResponse,
   AnalysisRequest,
   AnalysisResult,
   AnalysisTaskResponse,
-  AnalysisProgressEvent,
   AiActivityResponse,
   AutoTradeExplanationResponse,
   ApiError,
@@ -155,7 +153,7 @@ type AnalysisTaskResponseWire = {
   task_id: string;
   status: AnalysisTaskResponse["status"];
   message: string;
-  estimated_time_seconds: number;
+  estimated_time_seconds: number | null;
 };
 
 type ScoreDetailWire = {
@@ -383,48 +381,11 @@ function mapCandleHistory(response: CandleHistoryWire): CandleHistory {
   };
 }
 
-export function parseProgressEvent(data: string): AnalysisProgressEvent {
-  const parsed = JSON.parse(data) as {
-    agent: string;
-    status: string;
-    message: string;
-    progress: number;
-    timestamp: string;
-  };
-  return parsed;
-}
-
 function mapProgressPoll(wire: AnalysisProgressPollWire): AnalysisProgressPollResponse {
   return {
     taskId: wire.taskId ?? wire.task_id ?? "",
     status: wire.status,
     events: wire.events ?? []
-  };
-}
-
-export function parseAgentResultEvent(data: string): AnalysisAgentResultEvent {
-  const parsed = JSON.parse(data) as {
-    agent: string;
-    label?: string;
-    status: string;
-    message: string;
-    total_score?: number | null;
-    totalScore?: number | null;
-    grade?: string | null;
-    opinion?: string | null;
-    details?: Record<string, unknown>;
-    timestamp: string;
-  };
-  return {
-    agent: parsed.agent,
-    label: parsed.label ?? parsed.agent,
-    status: parsed.status,
-    message: parsed.message,
-    totalScore: parsed.totalScore ?? parsed.total_score ?? null,
-    grade: parsed.grade ?? null,
-    opinion: parsed.opinion ?? null,
-    details: parsed.details ?? {},
-    timestamp: parsed.timestamp
   };
 }
 
@@ -625,12 +586,12 @@ export const analysisApi = {
         max_retries: payload.maxRetries
       })
     })),
-  bulk: async (mode: "full" | "quick" = "quick", maxRetries = 0, items?: BulkAnalysisItem[]) =>
+  bulk: async (mode: "full" | "quick" = "full", maxRetries = 0, items?: BulkAnalysisItem[]) =>
     mapBulk(await api<BulkAnalysisWire>(
       `/api/v1/analysis/bulk?mode=${mode}&maxRetries=${maxRetries}`,
       {
         method: "POST",
-        body: items?.length ? JSON.stringify({ items }) : undefined
+        body: items !== undefined ? JSON.stringify({ items }) : undefined
       }
     )),
   result: async (taskId: string) =>
@@ -683,20 +644,20 @@ export const tradingApi = {
     api<DirectBuyResult>("/api/v1/trading/buy", {
       method: "POST",
       body: JSON.stringify({
-        stockName: payload.stockName,
-        stockCode: payload.stockCode,
+        stock_name: payload.stockName,
+        stock_code: payload.stockCode,
         quantity: payload.quantity,
-        limitPrice: payload.limitPrice
+        limit_price: payload.limitPrice
       })
     }),
   sell: (payload: { stockName: string; stockCode: string; quantity: number; limitPrice: number }) =>
     api<DirectBuyResult>("/api/v1/trading/sell", {
       method: "POST",
       body: JSON.stringify({
-        stockName: payload.stockName,
-        stockCode: payload.stockCode,
+        stock_name: payload.stockName,
+        stock_code: payload.stockCode,
         quantity: payload.quantity,
-        limitPrice: payload.limitPrice
+        limit_price: payload.limitPrice
       })
     }),
   orders: (params?: { date?: string; limit?: number }) => {
@@ -715,7 +676,7 @@ export const chatApi = {
   send: (message: string, sessionId?: string) =>
     api<Record<string, unknown>>("/api/v1/chat", {
       method: "POST",
-      body: JSON.stringify({ message, sessionId })
+      body: JSON.stringify({ message, session_id: sessionId })
     })
 };
 

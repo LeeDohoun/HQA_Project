@@ -181,4 +181,37 @@ class TradingControllerTest {
         Assertions.assertThrows(IllegalStateException.class, () -> controller.toggleAuto(request, session));
         verifyNoInteractions(aiServerClient);
     }
+
+    @Test
+    void balanceFailuresNeverReturnFabricatedCash() {
+        AuthService auth = mock(AuthService.class);
+        KisClient kis = mock(KisClient.class);
+        HistoricalTradingSnapshotService history = mock(HistoricalTradingSnapshotService.class);
+        HttpSession session = mock(HttpSession.class);
+        User user = new User(); user.setUserId("u1");
+        when(auth.requireUser(session)).thenReturn(user);
+        TradingController controller = new TradingController(mock(AiServerClient.class), mock(AutoTradeService.class),
+                auth, kis, mock(TradeSignalService.class), history);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> controller.balance(session))
+                .isInstanceOf(com.hqa.backend.exception.ApiException.class).hasMessageContaining("설정되지");
+        var secret = new com.hqa.backend.entity.UserSecret();
+        secret.setKisAppKey("test"); secret.setKisAppSecret("test"); secret.setKisAccountNo("test"); user.setSecret(secret);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> controller.balance(session)).hasMessageContaining("토큰");
+        when(kis.fetchAccessToken("u1", secret)).thenReturn("test-token");
+        when(kis.inquireBalance("u1", secret, "test-token")).thenReturn(Map.of("success", false, "error", "unavailable"));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> controller.balance(session)).hasMessageContaining("잔고");
+        verifyNoInteractions(history);
+    }
+
+    @Test
+    void activityPassesTheAuthenticatedUserToTheScopedQuery() {
+        AuthService auth = mock(AuthService.class);
+        HistoricalTradingSnapshotService history = mock(HistoricalTradingSnapshotService.class);
+        HttpSession session = mock(HttpSession.class); User user = new User(); user.setUserId("u1");
+        when(auth.requireUser(session)).thenReturn(user);
+        TradingController controller = new TradingController(mock(AiServerClient.class), mock(AutoTradeService.class),
+                auth, mock(KisClient.class), mock(TradeSignalService.class), history);
+        controller.aiActivity(6, session);
+        verify(history).aiActivity("u1", 6);
+    }
 }

@@ -1,9 +1,13 @@
 package com.hqa.backend.dto;
 
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
+import com.fasterxml.jackson.databind.annotation.JsonNaming;
+
 import jakarta.validation.constraints.NotBlank;
 import java.time.OffsetDateTime;
 import java.util.Map;
 
+@JsonNaming(PropertyNamingStrategies.LowerCamelCaseStrategy.class)
 public record InternalTradeSignalRequest(
         @NotBlank String userId,
         @NotBlank String source,

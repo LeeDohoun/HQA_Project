@@ -17,7 +17,7 @@ public class AnalysisRequest {
 
     @Min(0)
     @Max(3)
-    private int maxRetries = 1;
+    private int maxRetries = 0;
 
     public String getStockName() {
         return stockName;

@@ -4,6 +4,6 @@ public record AnalysisTaskResponse(
         String taskId,
         AnalysisStatus status,
         String message,
-        int estimatedTimeSeconds
+        Integer estimatedTimeSeconds
 ) {
 }

@@ -55,6 +55,9 @@ public class AnalysisRecord {
     private OffsetDateTime completedAt;
     private Double durationSeconds;
 
+    @Column(columnDefinition = "TEXT")
+    private String resultJson;
+
     @PrePersist
     public void onCreate() {
         if (id == null) {
@@ -64,4 +67,25 @@ public class AnalysisRecord {
             createdAt = OffsetDateTime.now();
         }
     }
+
+    public String getId() { return id; }
+    public User getUser() { return user; }
+    public void setUser(User value) { user = value; }
+    public String getTaskId() { return taskId; }
+    public void setTaskId(String value) { taskId = value; }
+    public String getStockName() { return stockName; }
+    public void setStockName(String value) { stockName = value; }
+    public String getStockCode() { return stockCode; }
+    public void setStockCode(String value) { stockCode = value; }
+    public String getMode() { return mode; }
+    public void setMode(String value) { mode = value; }
+    public int getMaxRetries() { return maxRetries; }
+    public void setMaxRetries(int value) { maxRetries = value; }
+    public String getStatus() { return status; }
+    public void setStatus(String value) { status = value; }
+    public OffsetDateTime getCreatedAt() { return createdAt; }
+    public OffsetDateTime getCompletedAt() { return completedAt; }
+    public void setCompletedAt(OffsetDateTime value) { completedAt = value; }
+    public String getResultJson() { return resultJson; }
+    public void setResultJson(String value) { resultJson = value; }
 }

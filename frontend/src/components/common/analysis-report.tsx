@@ -27,6 +27,15 @@ function decisionValue(decision: Record<string, unknown>, keys: string[]) {
 }
 
 export function AnalysisSummaryCard({ result }: { result: AnalysisResult }) {
+  if (result.finalDecision == null) {
+    const average = result.scores.length === 3
+      ? result.scores.reduce((sum, score) => sum + score.totalScore, 0) / 3 : null;
+    return <div style={{ marginTop: 16 }}>
+      <strong>공통 종목 분석</strong>
+      {average != null ? <p>전문가 평균 점수 {average.toFixed(1)} / 100</p> : null}
+      <p>각 전문가의 근거와 위험 요인을 아래에서 확인하세요. 계좌별 매매 판단은 자동매매 분석에서 별도로 수행합니다.</p>
+    </div>;
+  }
   const decision = result.finalDecision ?? {};
   const score = decisionValue(decision, ["total_score", "totalScore"]);
   const action = decisionValue(decision, ["action", "action_code", "actionCode"]);

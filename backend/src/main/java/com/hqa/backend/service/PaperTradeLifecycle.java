@@ -261,7 +261,7 @@ public class PaperTradeLifecycle {
                 if (store.markCancelRequested(execution.getId())) {
                     Map<String, Object> response = kis.cancelPaperOrder(userId, user.getSecret(), token,
                             execution.getOrderId(), organization, remaining);
-                    if (!Boolean.TRUE.equals(response.get("success"))) store.block(execution.getSignalId(), "CANCEL_CONFIRMATION_REQUIRED");
+                    store.acknowledgeCancellation(execution.getId(), response);
                 }
             }
         }
