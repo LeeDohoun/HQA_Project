@@ -27,16 +27,16 @@ const FAQ_ITEMS: FaqItem[] = [
     id: "what-is-hqa",
     question: "HQA는 어떤 서비스인가요?",
     answer: [
-      "HQA는 AI 멀티에이전트가 종목을 분석하고, 그 판단을 바탕으로 매매 전략을 제안·검증하는 퀀트 서비스입니다.",
-      "Analyst, Quant, Chartist, RiskManager 네 개의 전문 에이전트가 각자의 관점으로 분석한 뒤 Supervisor가 의견을 종합합니다."
+      "HQA는 한국 주식의 공시·뉴스·가격을 분석하고, 모의투자로 판단을 검증하는 AI 리서치 워크스페이스입니다.",
+      "수동 종목 분석은 Analyst·Quant·Chartist 세 전문가가 담당합니다. 계좌별 RiskManager 판단과 주문은 별도의 모의 자동매매 흐름에서 수행합니다."
     ]
   },
   {
     id: "why-4-agent",
-    question: "왜 4-agent(멀티에이전트) 구조를 쓰나요?",
+    question: "종목 분석과 매매 판단은 어떻게 다른가요?",
     answer: [
-      "단일 에이전트나 일부 에이전트를 제거한 구조보다, 4개 에이전트 + Supervisor 합의 구조가 더 안정적인 성과를 냈기 때문입니다.",
-      "아래는 2024년 validation 구간에서 대표 4-Agent 구조와 여러 변형(단일 에이전트, 특정 에이전트 제거, 에이전트 추가)을 같은 조건으로 비교한 결과입니다. 대표 4-Agent는 단타에서 모든 변형 중 가장 높은 초과수익률을 기록했고, 어느 에이전트 하나라도 빼면 성과가 눈에 띄게 떨어집니다."
+      "종목 분석은 기업에 대한 공통 근거를 만들고, 계좌별 매매 판단은 보유 자산과 위험 한도를 함께 고려합니다. 분석을 실행하는 것만으로 주문이 나가지는 않습니다.",
+      "아래 구조 비교는 과거 2024년 validation 연구 결과입니다. 현재 HQA 엔진의 수익률이나 운영 성능을 나타내지 않습니다."
     ]
   },
   {
@@ -44,8 +44,8 @@ const FAQ_ITEMS: FaqItem[] = [
     question: "각 에이전트는 무슨 역할을 하나요?",
     answer: [
       "Analyst는 기업·테마의 펀더멘털과 뉴스 흐름을, Quant는 재무·가격 지표 기반의 정량 신호를 분석합니다.",
-      "Chartist는 차트·기술적 패턴을, RiskManager는 변동성과 하방 위험을 점검합니다. Supervisor가 이들의 의견을 종합해 최종 판단을 만듭니다.",
-      "비교 실험에서 Chartist를 제거하면 성과가 가장 크게 무너졌고, RiskManager를 빼면 최대낙폭(MDD) 관리가 약해졌습니다."
+      "Chartist는 가격·거래량의 기술적 패턴을 분석합니다. RiskManager는 자동매매 흐름에서 계좌별 위험을 별도로 판단하며, 백엔드가 주문 조건과 위험 한도를 검증합니다.",
+      "데이터가 누락되거나 분석이 실패하면 해당 상태와 근거 부족을 표시합니다. 빈 데이터를 중립 점수로 바꾸지 않습니다."
     ]
   },
   {
@@ -98,7 +98,7 @@ export default function FaqPage() {
   return (
     <AppShell
       title="자주 묻는 질문"
-      subtitle="HQA의 동작 방식과 왜 4-agent 구조를 선택했는지 설명합니다."
+      subtitle="현재 HQA의 분석·모의투자 흐름과 과거 연구 결과를 설명합니다."
       actions={
         <>
           <Link className="button-ghost" href="/dashboard">대시보드</Link>

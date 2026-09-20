@@ -32,11 +32,11 @@ export default function KisSettingsPage() {
         setForm((prev) => ({
           ...prev,
           kisAccountProductCode: current.kisAccountProductCode ?? prev.kisAccountProductCode,
-          kisIsReal: current.kisIsReal
+          kisIsReal: false
         }));
       })
-      .catch(() => {
-        // not configured yet — that's fine
+      .catch((cause) => {
+        if (active) setError(cause instanceof Error ? cause.message : "계좌 설정을 불러오지 못했습니다.");
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -58,7 +58,7 @@ export default function KisSettingsPage() {
     setError("");
     setSavedMessage("");
     try {
-      const updated = await authApi.saveKis(form);
+      const updated = await authApi.saveKis({ ...form, kisIsReal: false });
       setStatus(updated);
       setForm((prev) => ({ ...prev, kisAppKey: "", kisAppSecret: "", kisAccountNo: "" }));
       setSavedMessage("저장되었어요.");
@@ -126,36 +126,13 @@ export default function KisSettingsPage() {
         <form onSubmit={submit}>
           <div className="field">
             <label>투자 환경</label>
-            <div className="env-toggle" role="tablist" aria-label="투자 환경">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={!form.kisIsReal}
-                className={`env-toggle-btn ${!form.kisIsReal ? "active sandbox" : ""}`}
-                onClick={() => setForm({ ...form, kisIsReal: false })}
-              >
-                모의투자
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={form.kisIsReal}
-                className={`env-toggle-btn ${form.kisIsReal ? "active real" : ""}`}
-                onClick={() => setForm({ ...form, kisIsReal: true })}
-              >
-                실전투자
-              </button>
-            </div>
-            <p className="field-hint">
-              {form.kisIsReal
-                ? "⚠️ 실제 자금이 사용돼요. 발급받은 키가 실전용인지 확인해주세요."
-                : "안전한 모의투자로 먼저 테스트해볼 수 있어요."}
-            </p>
+            <div className="paper-environment"><span className="paper-environment-dot" />모의투자 · PAPER</div>
+            <p className="field-hint">현재 HQA는 모의투자 전용입니다. 한국투자증권 모의투자용 키와 계좌를 연결해 주세요.</p>
           </div>
 
           <div className="field">
-            <label>App Key</label>
-            <input
+            <label htmlFor="kisAppKey">App Key</label>
+            <input id="kisAppKey"
               className="wiz-input"
               type="password"
               autoComplete="off"
@@ -167,8 +144,8 @@ export default function KisSettingsPage() {
           </div>
 
           <div className="field">
-            <label>App Secret</label>
-            <input
+            <label htmlFor="kisAppSecret">App Secret</label>
+            <input id="kisAppSecret"
               className="wiz-input"
               type="password"
               autoComplete="off"
@@ -180,8 +157,8 @@ export default function KisSettingsPage() {
           </div>
 
           <div className="field">
-            <label>계좌번호 (CANO)</label>
-            <input
+            <label htmlFor="kisAccountNo">계좌번호 (CANO)</label>
+            <input id="kisAccountNo"
               className="wiz-input"
               type="password"
               inputMode="numeric"
@@ -193,8 +170,8 @@ export default function KisSettingsPage() {
           </div>
 
           <div className="field">
-            <label>계좌상품코드 (ACNT_PRDT_CD)</label>
-            <input
+            <label htmlFor="kisAccountProductCode">계좌상품코드 (ACNT_PRDT_CD)</label>
+            <input id="kisAccountProductCode"
               className="wiz-input"
               type="text"
               inputMode="numeric"
@@ -205,8 +182,8 @@ export default function KisSettingsPage() {
             />
           </div>
 
-          {error ? <p className="error-text">{error}</p> : null}
-          {savedMessage ? <p className="meta">{savedMessage}</p> : null}
+          {error ? <p role="alert" className="error-text">{error}</p> : null}
+          {savedMessage ? <p role="status" className="meta">{savedMessage}</p> : null}
 
           <button type="submit" className="wiz-cta" disabled={!valid || saving}>
             {saving ? "KIS 연결 확인 중..." : "연결 확인하고 저장"}

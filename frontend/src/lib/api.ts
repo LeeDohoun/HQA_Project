@@ -27,7 +27,7 @@ import type {
   UserPreference
 } from "@/types/api";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "").replace(/\/$/, "");
 const isLocalApiBase = API_BASE.startsWith("http://localhost") || API_BASE.startsWith("http://127.0.0.1");
 
 if (process.env.NODE_ENV === "production" && API_BASE.startsWith("http://") && !isLocalApiBase) {
@@ -64,12 +64,23 @@ function extractErrorMessage(body: unknown): string {
 
 async function parseResponse<T>(response: Response): Promise<T> {
   const contentType = response.headers.get("content-type") ?? "";
-  const body = contentType.includes("application/json")
-    ? await response.json()
-    : await response.text();
+  if (response.status === 204) return undefined as T;
+  const raw = await response.text();
+  let body: unknown = raw;
+  if (contentType.includes("json") && raw) {
+    try { body = JSON.parse(raw); }
+    catch {
+      const error = new Error("서버 응답을 읽을 수 없습니다. 잠시 후 다시 시도해 주세요.") as ApiError;
+      error.status = response.status;
+      throw error;
+    }
+  }
 
   if (!response.ok) {
-    const error = new Error(extractErrorMessage(body)) as ApiError;
+    const message = typeof body === "object" && body !== null
+      ? extractErrorMessage(body)
+      : `요청을 처리하지 못했습니다 (${response.status}). 잠시 후 다시 시도해 주세요.`;
+    const error = new Error(message) as ApiError;
     error.status = response.status;
     error.payload = body;
     throw error;
@@ -395,14 +406,32 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     headers.set("Content-Type", "application/json");
   }
 
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers,
-    credentials: "include",
-    cache: "no-store"
-  });
-
-  return parseResponse<T>(response);
+  const controller = new AbortController();
+  const abort = () => controller.abort(init?.signal?.reason);
+  if (init?.signal?.aborted) abort();
+  else init?.signal?.addEventListener("abort", abort, { once: true });
+  const timeout = setTimeout(() => controller.abort(new DOMException("Request timed out", "TimeoutError")), 45_000);
+  try {
+    const response = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      signal: controller.signal,
+      headers,
+      credentials: "include",
+      cache: "no-store"
+    });
+    return await parseResponse<T>(response);
+  } catch (error) {
+    if (controller.signal.aborted && !init?.signal?.aborted) {
+      throw new Error("응답 시간이 길어지고 있습니다. 분석·주문 내역을 확인한 뒤 다시 시도해 주세요.");
+    }
+    if (error instanceof TypeError) {
+      throw new Error("서버에 연결하지 못했습니다. 연결 상태를 확인해 주세요.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    init?.signal?.removeEventListener("abort", abort);
+  }
 }
 
 export const authApi = {
