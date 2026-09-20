@@ -43,6 +43,15 @@ class AnalysisServiceTest {
     }
 
     @Test
+    void malformedUpstreamTaskIdIsAnUpstreamErrorAndIsNotPersisted() {
+        when(ai.submitStockPreview("005930")).thenReturn(Map.of("status", "queued"));
+        assertThatThrownBy(() -> service.submit(request(), user))
+                .isInstanceOfSatisfying(com.hqa.backend.exception.ApiException.class,
+                        error -> assertThat(error.getStatus()).isEqualTo(502));
+        verify(records, never()).save(any());
+    }
+
+    @Test
     void completedResultsSurviveServiceRestartWithoutCallingTheAiServerAgain() {
         service.submit(request(), user);
         Map<String, Object> specialists = new LinkedHashMap<>();

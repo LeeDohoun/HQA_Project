@@ -214,4 +214,28 @@ class TradingControllerTest {
         controller.aiActivity(6, session);
         verify(history).aiActivity("u1", 6);
     }
+
+    @Test
+    void statusUsesCurrentHealthAndRetiredDecisionsNeverReachAi() {
+        var ai = mock(AiServerClient.class);
+        var auth = mock(AuthService.class);
+        var auto = mock(AutoTradeService.class);
+        var session = mock(HttpSession.class);
+        var user = new User();
+        when(auth.requireUser(session)).thenReturn(user);
+        when(ai.isAvailable()).thenReturn(true);
+        when(auto.isEnabled(user)).thenReturn(true);
+        var controller = new TradingController(ai, auto, auth, mock(KisClient.class),
+                mock(TradeSignalService.class), mock(HistoricalTradingSnapshotService.class));
+        var status = controller.status(session);
+        Assertions.assertTrue(status.enabled());
+        Assertions.assertEquals(true, status.aiStatus().get("available"));
+        var request = new com.hqa.backend.dto.TradeDecisionRequest();
+        Assertions.assertEquals(410, Assertions.assertThrows(com.hqa.backend.exception.ApiException.class,
+                () -> controller.preview(request, session)).getStatus());
+        Assertions.assertEquals(410, Assertions.assertThrows(com.hqa.backend.exception.ApiException.class,
+                () -> controller.execute(request, session)).getStatus());
+        verify(ai).isAvailable();
+        org.mockito.Mockito.verifyNoMoreInteractions(ai);
+    }
 }

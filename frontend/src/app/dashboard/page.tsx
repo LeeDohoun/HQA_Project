@@ -25,297 +25,6 @@ import type {
 /* ============================================================
    디자인 시스템 (에디토리얼 · 다크)
    ============================================================ */
-const CSS = `
-.ed{
-  --paper:#14130d; --paper-2:#1d1b12; --ink:#ece6d3; --ink-2:#a39c84; --ink-3:#6d6753;
-  --card:#1f1c12; --forest:#1c5040; --forest-ink:#e9e4cf;
-  --moss:#36b079; --moss-2:#43c489; --spark:#e0a341;
-  --rule:#322d1f;
-  --up:#d2554a; --down:#5d83d6;
-  --serif:Georgia,"Times New Roman",serif;
-  --sans:-apple-system,BlinkMacSystemFont,"Pretendard","Apple SD Gothic Neo","Noto Sans KR","Segoe UI",sans-serif;
-  --ease:cubic-bezier(.22,1,.36,1);
-  background:var(--paper); color:var(--ink); font-family:var(--sans);
-  font-size:16px; line-height:1.6; -webkit-font-smoothing:antialiased; min-height:100vh;
-}
-.ed *{box-sizing:border-box;}
-.ed-up{color:var(--up);} .ed-down{color:var(--down);}
-.ed-tnum{font-variant-numeric:tabular-nums;}
-.ed-serif{font-family:var(--serif);}
-
-.ed-wrap{max-width:1180px; margin:0 auto; padding:0 clamp(18px,4vw,52px);}
-.ed-rule{height:1px; background:var(--rule); border:0; margin:0;}
-.ed-fine{font-size:.78rem; color:var(--ink-3); line-height:1.7;}
-.ed-hint{color:var(--ink-3); font-size:.92rem; line-height:1.6;}
-.ed-label{font-size:.74rem; font-weight:800; letter-spacing:.16em; text-transform:uppercase; color:var(--moss);}
-.ed-eyebrow{display:inline-flex; align-items:center; gap:8px; font-size:.78rem; font-weight:800; letter-spacing:.04em; color:var(--ink-2);}
-.ed-dot{width:7px; height:7px; border-radius:50%; background:var(--ink-3);}
-.ed-dot--live{background:var(--moss); animation:ed-pulse 2s infinite;}
-@keyframes ed-pulse{0%{box-shadow:0 0 0 0 rgba(54,176,121,.5);}70%{box-shadow:0 0 0 8px rgba(54,176,121,0);}100%{box-shadow:0 0 0 0 rgba(54,176,121,0);}}
-
-/* 버튼 */
-.ed-btn{
-  display:inline-flex; align-items:center; justify-content:center; gap:8px; cursor:pointer;
-  font-family:var(--sans); font-size:.94rem; font-weight:800; letter-spacing:-.01em;
-  padding:12px 20px; border:1px solid transparent; border-radius:5px; white-space:nowrap;
-  transition:transform .14s var(--ease),background .15s,opacity .15s;
-}
-.ed-btn:active{transform:translateY(1px);}
-.ed-btn:disabled{opacity:.4; cursor:not-allowed;}
-.ed-btn--moss{background:var(--moss); color:#0b2417;}
-.ed-btn--moss:hover:not(:disabled){background:var(--moss-2);}
-.ed-btn--ink{background:var(--ink); color:var(--paper);}
-.ed-btn--line{background:transparent; color:var(--ink); border-color:var(--rule);}
-.ed-btn--line:hover:not(:disabled){border-color:var(--ink-2);}
-.ed-btn--buy{background:var(--up); color:#fff;}
-.ed-btn--sell{background:var(--down); color:#fff;}
-.ed-btn--block{width:100%;}
-.ed-btn--sm{padding:9px 14px; font-size:.86rem;}
-.ed-tlink{background:none; border:none; cursor:pointer; padding:0; font:inherit; color:var(--ink-2); font-weight:800; text-decoration:underline; text-underline-offset:4px;}
-.ed-tlink:hover{color:var(--ink);}
-
-/* 네비 */
-.ed-nav{position:sticky; top:0; z-index:40; background:rgba(20,19,13,.92); backdrop-filter:saturate(150%) blur(12px); -webkit-backdrop-filter:saturate(150%) blur(12px); border-bottom:1px solid var(--rule);}
-.ed-nav-in{max-width:1180px; margin:0 auto; padding:0 clamp(18px,4vw,52px); height:64px; display:flex; align-items:center; gap:10px;}
-.ed-mark{display:inline-flex; align-items:baseline;}
-.ed-mark b{font-family:var(--serif); font-style:italic; font-weight:700; font-size:1.42rem; letter-spacing:-.02em;}
-.ed-mark i{width:6px; height:6px; border-radius:50%; background:var(--moss); margin-left:3px; align-self:flex-end; margin-bottom:5px;}
-.ed-nav-links{display:flex; gap:2px; margin-left:20px; flex-wrap:wrap;}
-.ed-nav-link{
-  background:none; border:none; cursor:pointer; font-family:var(--sans);
-  font-size:.9rem; font-weight:700; color:var(--ink-3); padding:8px 11px;
-  border-bottom:2px solid transparent; transition:color .14s,border-color .14s;
-}
-.ed-nav-link:hover{color:var(--ink);}
-.ed-nav-link--on{color:var(--ink); border-bottom-color:var(--moss);}
-.ed-nav-right{margin-left:auto; display:flex; align-items:center; gap:10px;}
-.ed-statuschip{
-  display:inline-flex; align-items:center; gap:7px; height:36px; padding:0 13px;
-  border:1px solid var(--rule); border-radius:5px; cursor:pointer; background:transparent;
-  font-size:.79rem; font-weight:800; color:var(--ink-2);
-}
-.ed-statuschip:hover{border-color:var(--ink-3);}
-.ed-statuschip:disabled{opacity:.55; cursor:not-allowed;}
-.ed-statuschip--on{border-color:var(--moss); color:var(--moss);}
-.ed-navbal{
-  display:inline-flex; flex-direction:column; align-items:flex-end; justify-content:center;
-  height:36px; padding:0 13px; border:1px solid var(--rule); border-radius:5px;
-  background:transparent; cursor:pointer; line-height:1.05; text-align:right;
-}
-.ed-navbal:hover{border-color:var(--ink-3);}
-.ed-navbal small{font-size:.62rem; font-weight:800; letter-spacing:.04em; color:var(--ink-3);}
-.ed-navbal b{font-size:.86rem; font-weight:800; color:var(--ink); font-family:var(--serif);}
-.ed-navbal--loading b{color:var(--ink-3);}
-@media (max-width:560px){ .ed-navbal small{display:none;} }
-
-/* 앱 본문 */
-.ed-app{padding:clamp(24px,4vw,44px) 0 110px;}
-.ed-app-head{margin-bottom:20px;}
-.ed-kicker{font-family:var(--serif); font-style:italic; font-size:1.1rem; color:var(--ink-3);}
-.ed-app-h{font-size:clamp(1.5rem,3vw,2.2rem); font-weight:800; letter-spacing:-.03em; margin:3px 0 0;}
-.ed-greet{font-family:var(--serif); font-style:italic; color:var(--ink-3); font-size:.95rem;}
-
-/* 섹션 */
-.ed-sec{margin-top:34px;}
-.ed-sec-head{display:flex; align-items:baseline; justify-content:space-between; gap:12px; padding-bottom:11px; border-bottom:1.5px solid var(--ink); margin-bottom:2px;}
-.ed-sec-title{font-size:1.1rem; font-weight:800; letter-spacing:-.02em;}
-.ed-sec-meta{font-size:.8rem; color:var(--ink-3); font-weight:700;}
-
-/* 큰 숫자 */
-.ed-figrow{display:flex; gap:clamp(22px,5vw,60px); flex-wrap:wrap;}
-.ed-fig small{font-size:.78rem; font-weight:700; color:var(--ink-2); letter-spacing:.02em;}
-.ed-fig b{display:block; font-family:var(--serif); font-weight:700; letter-spacing:-.02em; line-height:1.1; margin-top:5px;}
-.ed-fig--xl b{font-size:clamp(2rem,4.5vw,3rem);}
-.ed-fig--md b{font-size:clamp(1.4rem,2.6vw,1.9rem);}
-.ed-fig-delta{font-size:.9rem; font-weight:800; margin-top:5px;}
-
-/* 리스트 행 */
-.ed-list{display:flex; flex-direction:column;}
-.ed-row{
-  display:flex; align-items:center; gap:14px; padding:14px 4px; width:100%; text-align:left;
-  border:0; border-bottom:1px solid var(--rule); background:none; color:inherit; cursor:pointer;
-  transition:background .12s;
-}
-.ed-row:hover{background:var(--card);}
-.ed-row--static{cursor:default;}
-.ed-row--static:hover{background:none;}
-.ed-row--on{background:var(--card);}
-.ed-row:last-child{border-bottom:0;}
-.ed-row-mk{
-  width:40px; height:40px; flex-shrink:0; border:1px solid var(--rule); background:var(--paper-2);
-  display:inline-flex; align-items:center; justify-content:center; font-family:var(--serif);
-  font-weight:700; font-size:.92rem; color:var(--ink-2);
-}
-.ed-row-main{flex:1; min-width:0;}
-.ed-row-name{font-weight:800; font-size:.98rem;}
-.ed-row-meta{font-size:.8rem; color:var(--ink-3); font-weight:600; margin-top:1px; font-variant-numeric:tabular-nums;}
-.ed-row-num{text-align:right; flex-shrink:0;}
-.ed-row-val{font-family:var(--serif); font-size:1.05rem; font-weight:700;}
-.ed-row-pl{font-size:.8rem; font-weight:800; margin-top:1px; font-variant-numeric:tabular-nums;}
-
-/* 폼 */
-.ed-field{display:flex; flex-direction:column; gap:7px;}
-.ed-flabel{font-size:.78rem; font-weight:800; color:var(--ink-2); letter-spacing:.02em;}
-.ed-input{
-  width:100%; background:var(--card); border:1px solid var(--rule); color:var(--ink);
-  font-family:var(--sans); font-size:.95rem; padding:11px 13px; border-radius:5px; outline:none;
-  transition:border-color .14s;
-}
-.ed-input:focus{border-color:var(--moss);}
-.ed-input::placeholder{color:var(--ink-3);}
-.ed-searchbar{display:flex; gap:8px;}
-.ed-searchbar .ed-input{flex:1;}
-.ed-seg{display:inline-flex; border:1px solid var(--rule); border-radius:5px; overflow:hidden;}
-.ed-seg-btn{
-  background:none; border:0; cursor:pointer; font:inherit; font-weight:800; font-size:.86rem;
-  color:var(--ink-3); padding:9px 16px;
-}
-.ed-seg-btn + .ed-seg-btn{border-left:1px solid var(--rule);}
-.ed-seg-btn--on{background:var(--ink); color:var(--paper);}
-.ed-seg-btn--buy.ed-seg-btn--on{background:var(--up); color:#fff;}
-.ed-seg-btn--sell.ed-seg-btn--on{background:var(--down); color:#fff;}
-
-/* 차트 / 시세 */
-.ed-pricebar{display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; margin:8px 0 0;}
-.ed-price-now{font-family:var(--serif); font-size:2rem; font-weight:700;}
-.ed-price-d{font-size:1rem; font-weight:800; font-variant-numeric:tabular-nums;}
-.ed-chart-frame{height:380px; border:1px solid var(--rule); background:var(--card); padding:8px; margin-top:14px;}
-.ed-chart-empty{height:100%; display:flex; align-items:center; justify-content:center; color:var(--ink-3); font-size:.9rem;}
-.ed-quotegrid{display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:var(--rule); border:1px solid var(--rule); margin-top:14px;}
-.ed-quote-cell{background:var(--card); padding:11px 13px;}
-.ed-quote-cell small{display:block; font-size:.72rem; color:var(--ink-3); font-weight:700;}
-.ed-quote-cell b{font-family:var(--serif); font-size:1.02rem; font-weight:700;}
-
-/* 태그 / 진행 / 메시지 */
-.ed-tag{display:inline-flex; align-items:center; font-size:.71rem; font-weight:800; padding:3px 9px; border-radius:3px;}
-.ed-tag--good{background:rgba(54,176,121,.18); color:var(--moss);}
-.ed-tag--warn{background:rgba(224,163,65,.2); color:var(--spark);}
-.ed-tag--bad{background:rgba(210,85,74,.2); color:var(--up);}
-.ed-tag--neutral{background:var(--rule); color:var(--ink-2);}
-.ed-progress{height:6px; background:var(--rule); border-radius:3px; overflow:hidden;}
-.ed-progress > span{display:block; height:100%; background:var(--moss); transition:width .35s var(--ease);}
-.ed-msg{margin-top:16px; padding:12px 14px; border-left:3px solid var(--moss); background:var(--card); font-size:.9rem; color:var(--ink-2);}
-
-/* 확인 모달 */
-.ed-modal-backdrop{
-  position:fixed; inset:0; z-index:80; display:flex; align-items:center; justify-content:center;
-  padding:20px; background:rgba(7,7,5,.68); backdrop-filter:blur(10px);
-}
-.ed-modal{
-  width:min(480px,100%); border:1px solid rgba(236,230,211,.16); background:linear-gradient(180deg,#211f15,#17160f);
-  box-shadow:0 24px 80px rgba(0,0,0,.42); padding:20px;
-}
-.ed-modal-kicker{display:flex; align-items:center; gap:8px; color:var(--moss); font-size:.78rem; font-weight:900; letter-spacing:.08em;}
-.ed-modal-title{margin:12px 0 0; font-size:1.28rem; line-height:1.3; font-weight:900; letter-spacing:-.02em;}
-.ed-modal-copy{margin:9px 0 0; color:var(--ink-2); font-size:.92rem; line-height:1.65;}
-.ed-modal-list{display:grid; gap:7px; margin:15px 0 0; padding:0; list-style:none;}
-.ed-modal-list li{display:flex; align-items:flex-start; gap:9px; color:var(--ink-2); font-size:.84rem;}
-.ed-modal-list li::before{content:""; width:6px; height:6px; margin-top:8px; border-radius:50%; background:var(--spark); flex:0 0 auto;}
-.ed-modal-actions{display:flex; justify-content:flex-end; gap:8px; margin-top:20px; flex-wrap:wrap;}
-
-/* AI 분석 콘솔 */
-.ed-console-hero{
-  display:grid; grid-template-columns:minmax(0,1.45fr) minmax(280px,.75fr); gap:14px;
-  margin-top:18px; align-items:stretch;
-}
-.ed-console-card{
-  border:1px solid var(--rule); background:linear-gradient(180deg,rgba(31,28,18,.96),rgba(26,24,16,.96));
-  padding:18px; min-width:0;
-}
-.ed-console-card--primary{border-color:rgba(54,176,121,.22); box-shadow:inset 0 1px 0 rgba(236,230,211,.04);}
-.ed-console-title{font-size:1.05rem; font-weight:800; letter-spacing:-.01em; margin:0;}
-.ed-console-sub{margin:5px 0 0; color:var(--ink-3); font-size:.88rem; line-height:1.55;}
-.ed-console-actions{display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin-top:16px;}
-.ed-console-stats{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1px; background:var(--rule); border:1px solid var(--rule); margin-top:16px;}
-.ed-console-stat{background:rgba(20,19,13,.88); padding:12px;}
-.ed-console-stat small{display:block; color:var(--ink-3); font-size:.7rem; font-weight:800; letter-spacing:.04em;}
-.ed-console-stat b{display:block; margin-top:4px; font-family:var(--serif); font-size:1.15rem; font-weight:700;}
-.ed-pillbar{display:flex; flex-wrap:wrap; gap:7px; margin-top:12px;}
-.ed-pill{display:inline-flex; align-items:center; gap:7px; border:1px solid var(--rule); padding:6px 9px; color:var(--ink-2); font-size:.77rem; font-weight:800;}
-.ed-pill--live{border-color:rgba(54,176,121,.38); color:var(--moss); background:rgba(54,176,121,.08);}
-.ed-confirm-panel{
-  margin-top:14px; border:1px solid rgba(224,163,65,.34); background:rgba(224,163,65,.08);
-  padding:14px; display:grid; gap:12px;
-}
-.ed-confirm-title{font-weight:800; letter-spacing:-.01em;}
-.ed-confirm-copy{margin:3px 0 0; color:var(--ink-2); font-size:.86rem; line-height:1.55;}
-.ed-confirm-actions{display:flex; gap:8px; flex-wrap:wrap;}
-.ed-console-grid{display:grid; grid-template-columns:minmax(280px,.9fr) minmax(0,1.45fr); gap:18px; margin-top:18px; align-items:start;}
-.ed-console-col{min-width:0;}
-.ed-console-panel{border:1px solid var(--rule); background:rgba(31,28,18,.62); padding:16px;}
-.ed-panel-head{display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding-bottom:12px; border-bottom:1px solid var(--rule);}
-.ed-panel-title{font-weight:800; letter-spacing:-.01em;}
-.ed-panel-meta{font-size:.78rem; color:var(--ink-3); font-weight:800;}
-.ed-watch-tools{display:flex; gap:8px; margin:12px 0; flex-wrap:wrap;}
-.ed-stock-grid{display:grid; grid-template-columns:1fr; gap:7px; margin-top:10px; max-height:430px; overflow:auto; padding-right:3px;}
-.ed-stock-pick{
-  display:flex; align-items:center; gap:11px; width:100%; border:1px solid var(--rule); background:rgba(20,19,13,.62);
-  color:inherit; font:inherit; padding:10px; text-align:left; cursor:pointer; transition:border-color .14s,background .14s;
-}
-.ed-stock-pick:hover{border-color:var(--ink-3); background:rgba(236,230,211,.035);}
-.ed-stock-pick--on{border-color:rgba(54,176,121,.45); background:rgba(54,176,121,.08);}
-.ed-check{
-  width:20px; height:20px; flex:0 0 20px; display:inline-flex; align-items:center; justify-content:center;
-  border:1px solid var(--rule); color:transparent; font-size:.78rem; font-weight:900;
-}
-.ed-stock-pick--on .ed-check{border-color:var(--moss); background:var(--moss); color:#0b2417;}
-.ed-workbench{display:grid; gap:14px;}
-.ed-live-head{display:flex; align-items:flex-start; justify-content:space-between; gap:14px;}
-.ed-live-name{font-weight:800; font-size:1.05rem; margin:0;}
-.ed-live-id{color:var(--ink-3); font-size:.78rem; font-weight:800; margin-top:3px; font-variant-numeric:tabular-nums;}
-.ed-live-progress{margin-top:14px; display:grid; gap:8px;}
-.ed-agent-timeline{display:grid; gap:8px; margin-top:12px;}
-.ed-agent-step{
-  display:grid; grid-template-columns:32px minmax(0,1fr) auto; gap:11px; align-items:center;
-  border:1px solid var(--rule); background:rgba(20,19,13,.55); padding:10px;
-}
-.ed-agent-step-mark{
-  width:32px; height:32px; display:inline-flex; align-items:center; justify-content:center;
-  border:1px solid var(--rule); color:var(--ink-3); font-size:.68rem; font-weight:900;
-}
-.ed-agent-step--running{border-color:rgba(224,163,65,.35);}
-.ed-agent-step--running .ed-agent-step-mark{border-color:rgba(224,163,65,.5); color:var(--spark); background:rgba(224,163,65,.08);}
-.ed-agent-step--done{border-color:rgba(54,176,121,.35);}
-.ed-agent-step--done .ed-agent-step-mark{border-color:rgba(54,176,121,.45); color:var(--moss); background:rgba(54,176,121,.08);}
-.ed-agent-name{display:block; font-weight:800; font-size:.9rem;}
-.ed-agent-msg{display:block; color:var(--ink-3); font-size:.78rem; line-height:1.45; margin-top:1px;}
-.ed-task-list{display:grid; gap:7px; margin-top:12px; max-height:360px; overflow:auto; padding-right:3px;}
-.ed-task-item{
-  display:grid; grid-template-columns:34px minmax(0,1fr) auto; align-items:center; gap:10px; width:100%;
-  border:1px solid var(--rule); background:rgba(20,19,13,.52); color:inherit; font:inherit; padding:10px; text-align:left; cursor:pointer;
-}
-.ed-task-item:hover{border-color:var(--ink-3);}
-.ed-task-item--on{border-color:rgba(54,176,121,.45); background:rgba(54,176,121,.08);}
-.ed-task-badge{width:34px; height:34px; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--rule); font-size:.68rem; font-weight:900; color:var(--ink-2);}
-.ed-empty-panel{border:1px dashed var(--rule); padding:18px; color:var(--ink-3); font-size:.88rem; line-height:1.6;}
-
-/* 카드 그리드 (점수 등) */
-.ed-cardgrid{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px;}
-.ed-scard{border:1px solid var(--rule); background:var(--card); padding:15px;}
-.ed-scard-head{display:flex; align-items:center; justify-content:space-between; gap:8px;}
-.ed-scard-name{font-weight:800; font-size:.92rem;}
-.ed-scard-score{font-family:var(--serif); font-size:.85rem; color:var(--ink-3); margin:7px 0 0;}
-.ed-scard-text{font-size:.85rem; color:var(--ink-2); line-height:1.55; margin:7px 0 0;}
-.ed-kv{display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:1px; background:var(--rule); border:1px solid var(--rule);}
-.ed-kv-cell{background:var(--card); padding:11px 13px;}
-.ed-kv-cell small{display:block; font-size:.72rem; color:var(--ink-3); font-weight:700;}
-.ed-kv-cell span{font-size:.9rem; font-weight:700;}
-
-.ed-fade{animation:ed-fade .4s var(--ease) both;}
-@keyframes ed-fade{from{opacity:0; transform:translateY(10px);}to{opacity:1; transform:translateY(0);}}
-
-@media (max-width:680px){
-  .ed-nav-in{height:auto; padding-top:10px; padding-bottom:10px; flex-wrap:wrap;}
-  .ed-nav-links{margin-left:0; width:100%; order:3;}
-  .ed-quotegrid{grid-template-columns:repeat(2,1fr);}
-  .ed-console-hero,.ed-console-grid{grid-template-columns:1fr;}
-  .ed-console-stats{grid-template-columns:1fr;}
-  .ed-live-head{display:grid;}
-}
-@media (prefers-reduced-motion:reduce){
-  .ed *{animation-duration:.001ms !important; transition-duration:.001ms !important;}
-}
-`;
 
 /* ============================================================
    타입 · 상수 · 포맷 헬퍼 (기존 로직 그대로)
@@ -509,7 +218,7 @@ export default function DashboardPage() {
           return;
         }
 
-        // KIS 계좌가 연결된 사용자는 로그인 직후 곧바로 실계좌 잔고를 불러와
+        // KIS 계좌가 연결된 사용자는 로그인 직후 곧바로 모의계좌 잔고를 불러와
         // 앱 전역(상단 네비)에 계정 전체 잔고로 표시한다.
         if (responseUser.kisConfigured) {
           void loadBalance();
@@ -808,8 +517,7 @@ export default function DashboardPage() {
 
   if (loadingUser) {
     return (
-      <div className="ed">
-        <style dangerouslySetInnerHTML={{ __html: CSS }} />
+      <div className="workspace">
         <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
           <p style={{ color: "var(--ink-3)", fontSize: "0.9rem" }}>불러오는 중...</p>
         </div>
@@ -818,11 +526,10 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="ed">
-      <style dangerouslySetInnerHTML={{ __html: CSS }} />
+    <div className="workspace">
 
       {/* ── 네비 ── */}
-      <nav className="ed-nav">
+      <nav className="ed-nav" aria-label="워크스페이스 메뉴">
         <div className="ed-nav-in">
           <span className="ed-mark" aria-label="HQA">
             <b>HQA</b>
@@ -834,6 +541,7 @@ export default function DashboardPage() {
                 key={t.id}
                 type="button"
                 className={`ed-nav-link${tab === t.id ? " ed-nav-link--on" : ""}`}
+                aria-current={tab === t.id ? "page" : undefined}
                 onClick={() => setTab(t.id)}
               >
                 {t.label}
@@ -865,7 +573,7 @@ export default function DashboardPage() {
               disabled={autoTradeSaving}
             >
               <span className={`ed-dot${autoTradeEnabled ? " ed-dot--live" : ""}`} />
-              {autoTradeSaving ? "변경 중..." : `자동매매 ${autoTradeEnabled ? "ON" : "OFF"}`}
+              {autoTradeSaving ? "변경 중..." : `모의 자동매매 ${autoTradeEnabled ? "ON" : "OFF"}`}
             </button>
             <button type="button" className="ed-tlink" style={{ fontSize: ".84rem" }} onClick={logout}>
               로그아웃
@@ -1854,16 +1562,16 @@ function HomeTab(props: {
   const [analysisDetailLoading, setAnalysisDetailLoading] = useState<string | null>(null);
 
   return (
-    <>
+    <div className="workspace-overview">
       <div className="ed-app-head">
-        <div className="ed-kicker">홈</div>
+        <div className="ed-kicker">MY INVESTMENT SPACE / PAPER</div>
         <h1 className="ed-app-h">
           {user ? `${user.firstName}님, 환영합니다` : "환영합니다"}
         </h1>
         <p className="ed-greet" style={{ marginTop: 6 }}>
           {autoTradeEnabled
-            ? "AI가 오늘도 자산을 돌보고 있어요."
-            : "자동매매가 꺼져 있어요. 직접 운용 중입니다."}
+            ? "모의 자동매매가 켜져 있어요. 최근 판단과 주문 상태를 확인하세요."
+            : "오늘의 관심 종목부터, 차근차근 살펴볼까요?"}
         </p>
 
         {indices.length > 0 ? (
@@ -1900,6 +1608,11 @@ function HomeTab(props: {
         ) : null}
       </div>
 
+      <section className="workspace-welcome">
+        <div><p className="luna-eyebrow">A FRESH PERSPECTIVE</p><h2>투자의 다음 장, 근거부터 읽어보세요.</h2><p>공시를 읽는 Analyst, 숫자를 보는 Quant, 흐름을 찾는 Chartist.<br />세 전문가의 시선을 모아 나의 판단을 더 선명하게.</p>
+        <button type="button" className="ed-btn ed-btn--moss ed-btn--sm" style={{ marginTop: 16 }} onClick={() => onGoTab("analysis")}>AI 리서치 시작하기 ↗</button></div>
+        <span className="workspace-welcome-art" aria-hidden="true">✳</span>
+      </section>
       {/* 자산 요약 */}
       <section className="ed-sec">
         <div className="ed-sec-head">
@@ -1916,7 +1629,7 @@ function HomeTab(props: {
 
         {!kisConfigured ? (
           <div className="ed-msg" style={{ marginTop: 14 }}>
-            증권 계좌를 연결하면 실제 평가금액과 보유 종목을 여기에 보여드려요.
+            모의투자 계좌를 연결하면 평가금액과 보유 종목을 확인할 수 있어요.
             <div style={{ marginTop: 10 }}>
               <button type="button" className="ed-btn ed-btn--moss ed-btn--sm" onClick={onGoKis}>
                 KIS 계좌 연결
@@ -2091,7 +1804,7 @@ function HomeTab(props: {
         ) : (
           <>
             <p className="ed-hint" style={{ marginTop: 12, marginBottom: 10 }}>
-              최근 {recentAnalyses.length}건의 분석 결과 — 점수가 높을수록 매수 신호가 강합니다.
+              최근 {recentAnalyses.length}건의 분석 결과 — 전문가별 근거와 데이터 품질을 함께 확인하세요.
             </p>
             <div
               style={{
@@ -2275,7 +1988,7 @@ function HomeTab(props: {
           </button>
         </div>
       </section>
-    </>
+    </div>
   );
 }
 

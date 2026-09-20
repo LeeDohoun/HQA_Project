@@ -19,7 +19,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -56,13 +55,8 @@ public class TradingController {
     @GetMapping("/status")
     public AutoTradeStatusResponse status(HttpSession session) {
         User user = authService.requireUser(session);
-        Map<String, Object> aiStatus;
-        try {
-            aiStatus = aiServerClient.getTradingStatus();
-        } catch (Exception ignored) {
-            aiStatus = Map.of();
-        }
-        return new AutoTradeStatusResponse(autoTradeService.isEnabled(user), aiStatus);
+        return new AutoTradeStatusResponse(autoTradeService.isEnabled(user),
+                Map.of("available", aiServerClient.isAvailable(), "accountMode", "PAPER"));
     }
 
     @Operation(summary = "자동매매 토글", description = "사용자의 자동매매를 켜거나 끈다.")
@@ -75,20 +69,20 @@ public class TradingController {
         return new AutoTradeStatusResponse(enabled, Map.of("autoTradeEnabled", enabled, "accountMode", "PAPER"));
     }
 
-    @Operation(summary = "매매 판단 미리보기", description = "분석 결과 기반 매매 판단을 미리 계산한다. 실제 주문은 발생하지 않는다.")
+    @Operation(summary = "이전 매매 판단 미리보기 (종료)", deprecated = true, description = "현재 엔진에서 지원하지 않는 이전 경로. 410을 반환한다.")
     @PostMapping("/decision/preview")
     public Map<String, Object> preview(@Valid @RequestBody TradeDecisionRequest request,
                                        HttpSession session) {
-        User user = authService.requireUser(session);
-        return aiServerClient.previewTradeDecision(buildAiPayload(request, false, user));
+        authService.requireUser(session);
+        throw retiredDecisionEndpoint();
     }
 
-    @Operation(summary = "매매 판단 실행", description = "매매 판단을 실행한다. 자동매매 설정에 따라 실제 KIS 주문이 발생할 수 있다.")
+    @Operation(summary = "이전 매매 판단 실행 (종료)", deprecated = true, description = "현재 엔진에서 지원하지 않는 이전 경로. 410을 반환한다.")
     @PostMapping("/decision/execute")
     public Map<String, Object> execute(@Valid @RequestBody TradeDecisionRequest request,
                                        HttpSession session) {
-        User user = authService.requireUser(session);
-        return aiServerClient.executeTradeDecision(buildAiPayload(request, true, user));
+        authService.requireUser(session);
+        throw retiredDecisionEndpoint();
     }
 
     @Operation(summary = "주문 내역", description = "주문 체결/접수 내역을 조회한다. date(yyyymmdd) 선택, limit 1~500(기본 50).")
@@ -191,39 +185,9 @@ public class TradingController {
         return response;
     }
 
-    private Map<String, Object> buildAiPayload(TradeDecisionRequest request, boolean execute, User user) {
-        Map<String, Object> decision = new HashMap<>();
-        var d = request.getFinalDecision();
-        decision.put("total_score", d.getTotalScore());
-        decision.put("action", d.getAction());
-        decision.put("action_code", d.getActionCode());
-        decision.put("confidence", d.getConfidence());
-        decision.put("risk_level", d.getRiskLevel());
-        decision.put("risk_level_code", d.getRiskLevelCode());
-        decision.put("summary", d.getSummary());
-        decision.put("key_catalysts", d.getKeyCatalysts() == null ? List.of() : d.getKeyCatalysts());
-        decision.put("risk_factors", d.getRiskFactors() == null ? List.of() : d.getRiskFactors());
-        decision.put("detailed_reasoning", d.getDetailedReasoning());
-        decision.put("position_size", d.getPositionSize());
-        decision.put("entry_strategy", d.getEntryStrategy());
-        decision.put("exit_strategy", d.getExitStrategy());
-        decision.put("stop_loss", d.getStopLoss());
-        decision.put("signal_alignment", d.getSignalAlignment());
-        decision.put("contrarian_view", d.getContrarianView());
-
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("stock_name", request.getStockName());
-        payload.put("stock_code", request.getStockCode());
-        payload.put("final_decision", decision);
-        payload.put("quantity", request.getQuantity());
-        if (request.getCurrentPrice() != null) payload.put("current_price", request.getCurrentPrice());
-        if (request.getDryRunOverride() != null) payload.put("dry_run_override", request.getDryRunOverride());
-        Boolean tradingOverride = request.getTradingEnabledOverride();
-        if (tradingOverride == null && execute) {
-            tradingOverride = autoTradeService.isEnabled(user);
-        }
-        if (tradingOverride != null) payload.put("trading_enabled_override", tradingOverride);
-        return payload;
+    private ApiException retiredDecisionEndpoint() {
+        return new ApiException(ErrorCode.INVALID_REQUEST, 410,
+                "이전 매매 판단 API는 종료되었습니다. 종목 분석은 /api/v1/analysis, 모의 자동매매 설정은 /api/v1/trading/auto를 사용하세요", null);
     }
 
     private boolean isBlank(String s) {
