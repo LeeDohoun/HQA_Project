@@ -39,6 +39,7 @@ LLM, 데이터 공급자, 증권사 API를 호출하지 않습니다.
 | `research/backtesting/` | 보존한 과거 실험 산출물과 보고서 |
 
 과거 결과는 [연구 산출물 안내](../research/backtesting/results/README.md)를 참고합니다.
+에이전트 구성 실험(ablation, 비오염 4-agent 재실행)의 원본은 [에이전트 구성 실험 보관](../research/backtesting/agent_architecture_validation/README.md)에 있습니다.
 운영 데이터와 예산/주문 원장은 정리 목적으로 삭제하거나 덮어쓰지 않습니다.
 
 ## 수치 전략
@@ -115,6 +116,30 @@ venv/bin/python -m backtesting validate \
 ```
 
 mock 결과는 투자 성능의 근거가 아닙니다. 실제 LLM 실험에는 별도의 비용 승인이 필요합니다.
+
+### 에이전트 구성 실험 옵션
+
+`run`은 결과 JSON 옆에 `<task_id>-summary.csv`, `<task_id>-positions.csv`, `<task_id>-periods.csv`를
+함께 저장합니다. 스프레드시트나 화면에서 바로 읽기 위한 사본이며 JSON이 원본입니다.
+
+`python -m backtesting technical-baseline`은 RSI·볼린저·모멘텀 기준선을 주도주 전략과 같은
+위험 필터·비용 규칙으로 실행합니다. 가격은 로컬 파일에서 읽고 LLM을 호출하지 않습니다.
+`python -m backtesting validation-status`는 저장된 멀티 에이전트 검증 결과를 집계만 하며 API를 호출하지 않습니다.
+
+멀티 에이전트 점수화는 환경변수로 구성 실험을 할 수 있습니다. 모두 기본값은 꺼져 있고, 꺼진 상태의 동작은 이전과 같습니다.
+
+| 환경변수 | 효과 |
+| --- | --- |
+| `AGENT_SCORE_PROFILE` | 저장된 역할별 점수를 다른 조합으로 다시 가중합니다. `current_hybrid_4agent`(기본), `three_agent_no_risk_manager`, `four_agent_supervisor_final`, `four_agent_raw_blend`, `four_agent_risk_adjusted`, `four_agent_plus_liquidity`, `risk_manager_raw_only`, `remove_analyst`, `remove_quant`, `remove_chartist`, `analyst_only`, `quant_only`, `chartist_only`. 결과에 `llm_original_score`, `llm_score_profile`을 남깁니다. |
+| `AGENT_SCORE_CACHE_ONLY=1` | 캐시 미스가 나면 LLM을 호출하지 않고 오류로 중단합니다. 새 비용 없이 프로필만 비교할 때 사용합니다. |
+| `AGENT_PURE_FEATURES=1` | 프롬프트에서 수치 `deterministic_leader_score`를 제거합니다. |
+| `AGENT_FREE_RISK_MANAGER=1` | RiskManager가 권장 가중 점수 대신 자체 `final_score`를 산출하고, 그 값을 최종 점수로 사용합니다. |
+| `AGENT_DISABLE_SHORT_CHARTIST_FLOOR=1` | short 구간의 Chartist 하한 보정을 해제합니다. |
+| `AGENT_FAIL_ON_AGENT_FALLBACK=1`, `AGENT_FAIL_ON_LLM_ERROR=1` | 역할 실패나 LLM 오류를 규칙 점수로 대체하지 않고 중단합니다. fallback이 섞인 결과는 플래그와 무관하게 캐시에 저장하지 않습니다. |
+| `LLM_SCHEMA_RETRIES`, `LLM_SCHEMA_TIMEOUT_SECONDS` | 구조화 출력 재시도 횟수(기본 1)와 호출 제한 시간(초, 기본 없음)입니다. 제한 시간은 메인 스레드에서만 적용됩니다. |
+
+이 옵션으로 만든 결과는 [에이전트 구성 실험 보관](../research/backtesting/agent_architecture_validation/README.md)의
+실험과 같은 해석 경계를 가집니다. 반복 실행 스크립트는 [scripts/research](../scripts/research/README.md)를 참고합니다.
 
 ## PAPER 관측 평가
 
