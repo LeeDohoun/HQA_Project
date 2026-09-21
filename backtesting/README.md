@@ -39,7 +39,7 @@ LLM, 데이터 공급자, 증권사 API를 호출하지 않습니다.
 | `research/backtesting/` | 보존한 과거 실험 산출물과 보고서 |
 
 과거 결과는 [연구 산출물 안내](../research/backtesting/results/README.md)를 참고합니다.
-에이전트 구성 실험(ablation, 비오염 4-agent 재실행)의 원본은 [에이전트 구성 실험 보관](../research/backtesting/agent_architecture_validation/README.md)에 있습니다.
+에이전트 구성 실험(ablation, 비오염 4-agent 재실행)의 원본 산출물은 저장소에 없고 실험 컴퓨터의 `experiment_results/backtesting/agent_architecture_validation/`에 있습니다.
 운영 데이터와 예산/주문 원장은 정리 목적으로 삭제하거나 덮어쓰지 않습니다.
 
 ## 수치 전략
@@ -138,8 +138,7 @@ mock 결과는 투자 성능의 근거가 아닙니다. 실제 LLM 실험에는 
 | `AGENT_FAIL_ON_AGENT_FALLBACK=1`, `AGENT_FAIL_ON_LLM_ERROR=1` | 역할 실패나 LLM 오류를 규칙 점수로 대체하지 않고 중단합니다. fallback이 섞인 결과는 플래그와 무관하게 캐시에 저장하지 않습니다. |
 | `LLM_SCHEMA_RETRIES`, `LLM_SCHEMA_TIMEOUT_SECONDS` | 구조화 출력 재시도 횟수(기본 1)와 호출 제한 시간(초, 기본 없음)입니다. 제한 시간은 메인 스레드에서만 적용됩니다. |
 
-이 옵션으로 만든 결과는 [에이전트 구성 실험 보관](../research/backtesting/agent_architecture_validation/README.md)의
-실험과 같은 해석 경계를 가집니다. 반복 실행 스크립트는 [scripts/research](../scripts/research/README.md)를 참고합니다.
+이 옵션으로 만든 결과는 과거 연구 실험이며 현재 PAPER 성능의 근거가 아닙니다. 반복 실행 스크립트는 [scripts/research](../scripts/research/README.md)를 참고합니다.
 
 ## PAPER 관측 평가
 

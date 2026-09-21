@@ -2,7 +2,7 @@
 
 2026년 5~6월 `ai-data-main`에서 수행한 멀티 에이전트 구성 실험을 다시 실행하거나 집계하는 도구입니다. 모두 프로젝트 루트에서 `venv/bin/python scripts/research/<이름>.py --help`로 옵션을 확인할 수 있습니다. 주문이나 계좌 코드를 호출하지 않으며, `backtesting/proof_validation.py`와 `backtesting/technical_baseline.py`를 하위 프로세스로 반복 실행합니다.
 
-원본 실험 결과는 [research/backtesting/agent_architecture_validation](../../research/backtesting/agent_architecture_validation/README.md)에 있습니다. 이 스크립트는 연구용이며 현재 Luna PAPER 운영 흐름의 일부가 아닙니다.
+원본 실험 결과(`experiment_results/backtesting/agent_architecture_validation/`, 약 730MB)는 실험을 수행한 컴퓨터에만 있으며 저장소에 넣지 않습니다. 이 스크립트는 연구용이며 현재 Luna PAPER 운영 흐름의 일부가 아닙니다.
 
 ## 비용과 전제
 
