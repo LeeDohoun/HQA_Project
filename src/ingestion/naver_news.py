@@ -154,6 +154,9 @@ class NaverNewsCollector(BaseCollector):
         while page_no < max_pages:
             page_no += 1
             params = {"where": "news", "query": keyword, "start": start, "sort": 1}
+            date_params = self._build_search_date_params(from_date, to_date)
+            if date_params:
+                params.update(date_params)
             try:
                 response = self.get_with_retry(
                     self.SEARCH_URL,
@@ -196,6 +199,19 @@ class NaverNewsCollector(BaseCollector):
 
             start += 10
             time.sleep(0.8)
+
+    @staticmethod
+    def _build_search_date_params(from_date: str, to_date: str) -> dict[str, str]:
+        """Naver news search accepts an explicit date range (pd=3, ds/de as YYYY.MM.DD).
+
+        Both bounds must be present; otherwise the request stays unbounded and the
+        collector keeps relying on per-item date filtering.
+        """
+        start = _format_naver_search_date(from_date)
+        end = _format_naver_search_date(to_date)
+        if not start or not end:
+            return {}
+        return {"pd": "3", "ds": start, "de": end}
 
     def _extract_search_items(self, html: str) -> List[Any]:
         if BeautifulSoup is None:
@@ -421,3 +437,14 @@ def truncate_for_log(text: str, limit: int = 60) -> str:
     if len(compact) <= limit:
         return compact
     return compact[: limit - 3] + "..."
+
+
+def _format_naver_search_date(raw: str) -> str:
+    """Convert YYYYMMDD or YYYY-MM-DD into the YYYY.MM.DD form used by Naver search."""
+    value = (raw or "").strip()
+    if not value:
+        return ""
+    digits = re.sub(r"\D", "", value)
+    if len(digits) != 8:
+        return ""
+    return f"{digits[:4]}.{digits[4:6]}.{digits[6:8]}"

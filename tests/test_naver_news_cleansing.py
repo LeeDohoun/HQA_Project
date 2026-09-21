@@ -155,3 +155,48 @@ def test_entity_match_requires_full_name_or_explicit_ticker(text, matched, metho
 def test_corporate_legal_prefix_does_not_require_it_in_article():
     document = DocumentRecord(source_type="news", title="삼성전자 계약", content=BODY, url="https://example.test/1")
     assert match_news_entity(document, "005930", "주식회사 삼성전자")["matched"] is True
+
+
+def _collector_capturing_search_params(monkeypatch):
+    collector = NaverNewsCollector()
+    seen = []
+
+    def get(url, **kwargs):
+        if url == collector.SEARCH_URL:
+            seen.append(dict(kwargs.get("params") or {}))
+        return SimpleNamespace(text=search_item() if url == collector.SEARCH_URL else article())
+
+    monkeypatch.setattr(collector, "get_with_retry", get)
+    monkeypatch.setattr("src.ingestion.naver_news.time.sleep", lambda _: None)
+    return collector, seen
+
+
+def test_search_requests_carry_naver_date_range_when_both_bounds_are_given(monkeypatch):
+    collector, seen = _collector_capturing_search_params(monkeypatch)
+    collector.collect("삼성전자", from_date="20260901", to_date="2026-09-05", max_items=1)
+    assert seen
+    assert seen[0]["where"] == "news"
+    assert seen[0]["pd"] == "3"
+    assert seen[0]["ds"] == "2026.09.01"
+    assert seen[0]["de"] == "2026.09.05"
+
+
+def test_search_requests_stay_unbounded_without_a_complete_date_range(monkeypatch):
+    collector, seen = _collector_capturing_search_params(monkeypatch)
+    collector.collect("삼성전자", from_date="20260901", max_items=1)
+    assert seen
+    assert not {"pd", "ds", "de"} & set(seen[0])
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ("20260905", "2026.09.05"),
+    ("2026-09-05", "2026.09.05"),
+    (" 2026.09.05 ", "2026.09.05"),
+    ("", ""),
+    ("2026/9/5", ""),
+    ("2026-09-05T10:00:00", ""),
+])
+def test_format_naver_search_date(raw, expected):
+    from src.ingestion.naver_news import _format_naver_search_date
+
+    assert _format_naver_search_date(raw) == expected
