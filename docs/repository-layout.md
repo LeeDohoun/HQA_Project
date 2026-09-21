@@ -37,6 +37,8 @@
 
 새 백테스트 출력과 재사용 LLM 캐시의 기본 위치는 `data/backtest_results/`입니다. 기존 실험 결과는 `research/backtesting/results/`에 보관되어 예전 작업 ID의 운영 결과 조회 경로와 구분됩니다. 이력 안의 원래 경로 문자열은 연구 기록이므로 바꾸지 않았습니다. 현재 Luna 분석 입력의 관측 시점 계약이 과거 엔진 전체에 적용되었다고 가정하면 안 됩니다.
 
+`scripts/research/`에는 2026년 5~6월 `ai-data-main`에서 수행한 에이전트 구성 실험의 재현·집계 스크립트가 있습니다. `backtesting/proof_validation.py`와 `backtesting/technical_baseline.py`를 반복 호출하는 연구용 도구이며 주문 코드를 호출하지 않습니다. `AGENT_SCORE_CACHE_ONLY=1`이 아니면 LLM 호출 비용이 발생합니다. 이전 위치 `scripts/run_agent_architecture_*.py`, `scripts/run_uncontaminated_4agent_backtests.py`, `scripts/supervise_uncontaminated_4agent_run.py`, `scripts/build_agent_architecture_validation.py`, `scripts/run_remaining_theme_backtests.py`, `scripts/audit_theme_data.py`, `scripts/build_combined_theme_universe.py`는 `scripts/research/` 아래 같은 이름으로 옮겼습니다. 이 실험의 원본 결과는 `research/backtesting/agent_architecture_validation/`에 보관합니다.
+
 ## 제거한 부분
 
 - 사용하지 않는 `src/database/` raw PostgreSQL 어댑터. 실제 계좌 DB는 `backend/`와 Flyway에서 관리합니다.
