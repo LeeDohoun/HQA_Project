@@ -180,3 +180,16 @@ def test_one_unpublished_theme_generation_does_not_stop_other_themes(tmp_path, m
     assert "unpublished_analysis_generation:broken" in by_theme["broken"]["error"]
     assert "invalid theme target" in by_theme["malformed"]["error"]
     assert all(row["stock_code"] not in {"000660", "035420"} for row in candidates)
+
+
+def test_structured_raw_sources_are_not_indexed_as_documents(tmp_path):
+    now = datetime.now(timezone.utc)
+    write_inputs(tmp_path, now)
+    write_rows(tmp_path / "raw/financials/theme.jsonl", [{"source_type": "financials", "stock_code": "005930",
+        "fiscal_year": "2025", "revenue": 1.0, "metadata": {"collected_at": now.isoformat()}}])
+    write_rows(tmp_path / "raw/theme_membership/theme.jsonl", [{"stock_code": "005930", "theme_key": "theme",
+        "first_seen": "2025-01-01"}])
+    EvidenceIndexBuilder(str(tmp_path)).rebuild_theme("theme")
+    documents = read_rows(tmp_path / "canonical_index/theme/documents.jsonl")
+    assert documents and all(row["source_type"] == "news" for row in documents)
+    assert all((row.get("title") or row.get("content")) for row in documents)

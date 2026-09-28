@@ -14,12 +14,9 @@ def is_market_source(source_type: str) -> bool:
 
 
 def is_document_source(source_type: str) -> bool:
-    source = (source_type or "").strip().lower()
-    if not source:
-        return False
-    if source in DEFAULT_MARKET_SOURCES:
-        return False
-    return True
+    # Allowlist: raw directories such as financials, theme_membership or quarantine
+    # hold structured rows, not text, and must never be indexed as empty documents.
+    return (source_type or "").strip().lower() in DEFAULT_DOCUMENT_SOURCES
 
 
 def split_sources(source_types: Iterable[str]) -> tuple[List[str], List[str]]:

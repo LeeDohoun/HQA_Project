@@ -292,7 +292,7 @@ class EvidenceIndexBuilder:
                 continue
 
             source = source_dir.name
-            if source == "theme_targets" or source in DEFAULT_MARKET_SOURCES:
+            if not is_document_source(source):
                 continue
 
             file_path = source_dir / f"{theme_key}.jsonl"
