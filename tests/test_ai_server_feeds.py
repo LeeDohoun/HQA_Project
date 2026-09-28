@@ -79,3 +79,35 @@ def test_internal_status_requires_token_and_reports_operations(client, monkeypat
     assert not (root / "llm_budget.sqlite3").exists()  # status never creates a ledger
     assert body["themes"]["반도체"]["generation"] == "a" * 32
     assert isinstance(body["calendar_warnings"], list) and isinstance(body["runtime_tasks"], dict)
+
+
+def test_feeds_and_status_answer_while_runtime_tasks_hold_every_default_thread(tmp_path, monkeypatch):
+    import threading
+    import time
+    import src.runner.shared_analysis as shared
+
+    monkeypatch.setattr(app_module, "_hqa_get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr(app_module, "_feed_index_cache", app_module.OrderedDict())
+    monkeypatch.setattr(app_module, "_runtime_tasks", app_module.OrderedDict())
+    monkeypatch.setenv("HQA_INTERNAL_TOKEN", "fixture-token")
+    write(tmp_path / "raw/news/반도체.jsonl", [news("005930", 1, 11)])
+    release = threading.Event()
+
+    class BlockedPreview:  # stands in for previews waiting on LLM calls
+        def preview_stock(self, code):
+            release.wait(10)
+            return {"stock_code": code, "status": "completed"}
+
+    monkeypatch.setattr(shared, "get_runtime_analysis_service", lambda *args, **kwargs: BlockedPreview())
+    headers = {"X-HQA-Internal-Token": "fixture-token"}
+    with TestClient(app_module.app) as http:
+        try:
+            for index in range(40):  # more than the default executor ever has (at most 32 threads)
+                response = http.post("/runtime/stock-preview", json={"stock_code": f"{index:06d}"}, headers=headers)
+                assert response.status_code == 202
+            started = time.monotonic()
+            assert http.get("/stocks/005930/news").json()["items"]
+            assert http.get("/internal/status", headers=headers).json()["runtime_tasks"]["running"] > 0
+            assert time.monotonic() - started < 5
+        finally:
+            release.set()

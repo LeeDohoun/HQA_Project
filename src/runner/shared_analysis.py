@@ -270,27 +270,32 @@ class SingleFlightCache:
         self.max_entries = max_entries
         self._lock = threading.Lock()
         self._values: OrderedDict[str, Any] = OrderedDict()
-        self._inflight: dict[str, Future] = {}
+        self._inflight: dict[str, tuple[Future, int]] = {}
 
-    def get_or_compute(self, key: str, compute: Callable[[], Any], *, retain: bool = True) -> Any:
+    def get_or_compute(self, key: str, compute: Callable[[], Any], *, retain: bool = True, rank: int = 0) -> Any:
+        """Share one computation per key. ``rank`` orders callers like LLMTaskPriority
+        (lower is more urgent): a caller waits only for an owner of the same or a more
+        urgent rank, so holdings never inherit a preview's queue position or budget class."""
         with self._lock:
             if key in self._values:
                 self._values.move_to_end(key)
                 return self._values[key]
-            future = self._inflight.get(key)
-            owner = future is None
+            entry = self._inflight.get(key)
+            owner = entry is None or entry[1] > rank
             if owner:
-                if len(self._inflight) >= self.max_entries:
+                if entry is None and len(self._inflight) >= self.max_entries:
                     raise RuntimeError("analysis singleflight capacity exceeded")
                 future = Future()
-                self._inflight[key] = future
+                self._inflight[key] = (future, rank)
+            else:
+                future = entry[0]
         if not owner:
             return future.result()
         try:
             result = compute()
         except BaseException as exc:
             with self._lock:
-                self._inflight.pop(key)
+                self._release(key, future)
                 future.set_exception(exc)
             raise
         with self._lock:
@@ -298,9 +303,14 @@ class SingleFlightCache:
                 self._values[key] = result
                 while len(self._values) > self.max_entries:
                     self._values.popitem(last=False)
-            self._inflight.pop(key)
+            self._release(key, future)
             future.set_result(result)
         return result
+
+    def _release(self, key: str, future: Future) -> None:
+        # A more urgent owner may have taken over the key while this one was running.
+        if self._inflight.get(key, (None,))[0] is future:
+            del self._inflight[key]
 
 
 def _role_models() -> dict[str, Any]:
@@ -391,7 +401,8 @@ class SharedAnalysisService:
             if any(c.source_id not in allowed for c in result.citations):
                 raise ValueError("specialist output contains an unknown citation")
             return result
-        return self.cache.get_or_compute(key, calculate)
+        return self.cache.get_or_compute(key, calculate,
+                                         rank=int(LLMTaskPriority.RUNTIME if critical else priority))
 
     @staticmethod
     def _eligible_for_target(candidate: dict, target: dict) -> bool:

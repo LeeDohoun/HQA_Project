@@ -458,6 +458,62 @@ def test_singleflight_shares_inflight_work_and_does_not_cache_errors():
     assert cache.get_or_compute("failed", lambda: 42) == 42
 
 
+def test_singleflight_never_makes_an_urgent_caller_wait_for_a_less_urgent_owner():
+    cache = SingleFlightCache(4)
+    started, release = threading.Event(), threading.Event()
+    runs = []
+
+    def slow(label):
+        def work():
+            runs.append(label)
+            started.set()
+            release.wait(5)
+            return label
+        return work
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        preview = pool.submit(cache.get_or_compute, "same", slow("preview"), rank=10)
+        assert started.wait(5)
+        # A held stock computes itself instead of inheriting the preview's queue slot and budget class.
+        assert cache.get_or_compute("same", lambda: runs.append("held") or "held", rank=0) == "held"
+        release.set()
+        assert preview.result(5) == "preview"
+    assert runs == ["preview", "held"]
+    assert cache.get_or_compute("same", lambda: pytest.fail("cached"), rank=0) in {"held", "preview"}
+    assert not cache._inflight
+
+
+def test_held_stock_specialists_keep_runtime_priority_while_a_preview_is_in_flight():
+    from src.utils.llm_queue import current_llm_priority
+
+    gate, seen = threading.Event(), []
+
+    class Recording(Model):
+        def invoke(self, messages):
+            payload = json.loads(messages[-1][1])
+            seen.append((self.role, payload.get("stock_code"), current_llm_priority().name))
+            if self.role != "risk_manager" and payload.get("stock_code") == "000001":
+                gate.wait(5)  # the preview's calls for the held stock are still running
+            return super().invoke(messages)
+
+    engine, calls = service()  # Accounts holds 000001 for every user
+    engine.models = {role: Recording(role, calls) for role in ("analyst", "quant", "chartist", "risk_manager")}
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        preview = pool.submit(engine.preview_stock, "000001")
+        deadline = time.monotonic() + 5
+        while len([row for row in seen if row[1] == "000001"]) < 3 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        cycle = pool.submit(engine.run_cycle, [{"userId": "u1"}])
+        deadline = time.monotonic() + 5
+        while len([row for row in seen if row[1] == "000001"]) < 6 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        gate.set()
+        preview.result(10), cycle.result(10)
+    held = sorted((role, priority) for role, code, priority in seen if code == "000001" and role != "risk_manager")
+    assert held == sorted([(role, "UI_ANALYSIS") for role in ("analyst", "quant", "chartist")]
+                          + [(role, "RUNTIME") for role in ("analyst", "quant", "chartist")])
+
+
 def test_price_features_use_backtest_ma150_annualized_vol_and_pit_close():
     from src.runner.trading_calendar import completed_daily_sessions
     rows = []

@@ -14,8 +14,10 @@ import os
 import re
 import secrets
 import sys
+import threading
 import uuid
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from contextvars import copy_context
 from datetime import datetime, timedelta, timezone
@@ -394,9 +396,16 @@ from src.config.settings import get_data_dir as _hqa_get_data_dir
 _FEED_FILE_CACHE_LIMIT = 256
 # path -> (mtime_ns, size, {stock_code: [compact display rows]}); bounded LRU
 _feed_index_cache: "OrderedDict[str, tuple[int, int, Dict[str, List[Dict[str, Any]]]]]" = OrderedDict()
-_feed_index_lock = __import__("threading").Lock()
+_feed_index_lock = threading.Lock()
 _FEED_META_FIELDS = ("stock_code", "stock_name", "summary", "press", "rcept_no", "report_nm", "flr_nm",
                      "corp_name", "collected_at")
+# Feed and status reads are short file reads. They get their own threads because
+# runtime tasks hold default-executor threads for as long as their LLM calls take.
+_READ_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="hqa-read")
+
+
+async def _run_read(fn, *args):
+    return await asyncio.get_running_loop().run_in_executor(_READ_EXECUTOR, fn, *args)
 
 
 def _require_stock_code(stock_code: str) -> None:
@@ -478,7 +487,7 @@ def _record_sort_key(record: Dict[str, Any]) -> str:
 async def stock_news(stock_code: str, limit: int = Query(20, ge=1, le=100)):
     _require_stock_code(stock_code)
     try:
-        records = await asyncio.to_thread(_collect_records_for_stock, "news", stock_code)
+        records = await _run_read(_collect_records_for_stock, "news", stock_code)
     except Exception as exc:
         logger.warning("stock_news failed for %s: %s", stock_code, exc)
         return {"items": [], "error": str(exc)}
@@ -510,7 +519,7 @@ async def stock_news(stock_code: str, limit: int = Query(20, ge=1, le=100)):
 async def stock_disclosures(stock_code: str, limit: int = Query(20, ge=1, le=100)):
     _require_stock_code(stock_code)
     try:
-        records = await asyncio.to_thread(_collect_records_for_stock, "dart", stock_code)
+        records = await _run_read(_collect_records_for_stock, "dart", stock_code)
     except Exception as exc:
         logger.warning("stock_disclosures failed for %s: %s", stock_code, exc)
         return {"items": [], "error": str(exc)}
@@ -541,7 +550,7 @@ async def stock_disclosures(stock_code: str, limit: int = Query(20, ge=1, le=100
 @app.get("/internal/status", dependencies=[Depends(_require_internal_runtime_token)])
 async def internal_status():
     """Operator view: budget, pending calendar reviews, runtime tasks and published data generations."""
-    return await asyncio.to_thread(_internal_status)
+    return await _run_read(_internal_status)
 
 
 def _internal_status() -> Dict[str, Any]:
