@@ -11,13 +11,14 @@ import asyncio
 import json
 import logging
 import os
+import re
 import secrets
 import sys
 import uuid
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 from contextvars import copy_context
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -26,7 +27,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 # 프로젝트 루트를 sys.path에 추가 (src/ 패키지 접근용)
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -99,12 +100,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# No browser calls this server directly (the Spring backend proxies every request),
+# so cross-origin access is off unless explicitly configured.
+_cors_origins = [origin.strip() for origin in os.getenv("HQA_AI_CORS_ORIGINS", "").split(",") if origin.strip()]
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type", "X-HQA-Internal-Token"],
+    )
 
 
 @app.exception_handler(RequestValidationError)
@@ -118,7 +123,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         request.method,
         request.url.path,
         exc.errors(),
-        raw_body,
+        raw_body[:2000] + ("…(truncated)" if len(raw_body) > 2000 else ""),
     )
     return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
@@ -521,7 +526,16 @@ async def health():
         "env_loaded": env_status.loaded,
         "env_file": str(env_status.path) if env_status.path else None,
         "env_message": env_status.message,
+        "calendar_warnings": _calendar_warnings(),
     }
+
+
+def _calendar_warnings() -> list[str]:
+    try:
+        from src.runner.trading_calendar import calendar_review_warnings
+        return calendar_review_warnings(datetime.now(timezone(timedelta(hours=9))).date())
+    except Exception as exc:  # health must answer even if the calendar dependency is broken
+        return [f"calendar_check_failed:{type(exc).__name__}"]
 
 
 @app.get("/trading/orders")
@@ -581,12 +595,49 @@ async def _get_stored_result(task_id: str):
     return result
 
 
-@app.post("/backtest/results", status_code=201)
-async def submit_backtest_result(request: BacktestResultRequest):
+_BACKTEST_TASK_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+
+
+def _max_backtest_result_bytes() -> int:
+    try:
+        value = int(os.getenv("HQA_MAX_BACKTEST_RESULT_BYTES", str(16 * 1024 * 1024)))
+    except ValueError:
+        value = 16 * 1024 * 1024
+    return max(1024, value)
+
+
+async def _read_limited_body(request: Request, limit: int) -> bytes:
+    declared = request.headers.get("content-length")
+    if declared is not None:
+        if not declared.isdigit():
+            raise HTTPException(status_code=400, detail="Invalid Content-Length")
+        if int(declared) > limit:
+            raise HTTPException(status_code=413, detail=f"Backtest result exceeds {limit} bytes")
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > limit:
+            raise HTTPException(status_code=413, detail=f"Backtest result exceeds {limit} bytes")
+    return bytes(body)
+
+
+def _valid_backtest_task_id(task_id: str) -> str:
+    task_id = task_id.strip()
+    if not _BACKTEST_TASK_ID.fullmatch(task_id):
+        raise HTTPException(status_code=400, detail="task_id must be 1-128 letters, digits, '.', '_', ':' or '-'")
+    return task_id
+
+
+@app.post("/backtest/results", status_code=201, dependencies=[Depends(_require_internal_runtime_token)])
+async def submit_backtest_result(http_request: Request):
     """Store a completed backtest result submitted by a runner or backend job."""
-    task_id = request.task_id.strip()
-    if not task_id:
-        raise HTTPException(status_code=400, detail="task_id는 비어 있을 수 없습니다.")
+    raw = await _read_limited_body(http_request, _max_backtest_result_bytes())
+    try:
+        request = BacktestResultRequest.model_validate_json(raw)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors(include_url=False, include_context=False,
+                                                                include_input=False)) from None
+    task_id = _valid_backtest_task_id(request.task_id)
 
     result = _normalize_backtest_result(request)
     _store_result(task_id, result)
@@ -599,10 +650,10 @@ async def submit_backtest_result(request: BacktestResultRequest):
     }
 
 
-@app.get("/backtest/results/{task_id}")
+@app.get("/backtest/results/{task_id}", dependencies=[Depends(_require_internal_runtime_token)])
 async def get_backtest_result(task_id: str):
     """Fetch a stored backtest result."""
-    return await _get_stored_result(task_id)
+    return await _get_stored_result(_valid_backtest_task_id(task_id))
 
 
 @app.post("/chat", dependencies=[Depends(_require_internal_runtime_token)])

@@ -48,7 +48,8 @@ def test_backtest_result_submit_and_fetch(monkeypatch):
     store = MemoryRedis()
     monkeypatch.setattr("redis.from_url", lambda url: store)
     monkeypatch.setattr("ai_server.app._results", OrderedDict())
-    client = TestClient(app)
+    monkeypatch.setenv("HQA_INTERNAL_TOKEN", "backtest-test-token")
+    client = TestClient(app, headers={"X-HQA-Internal-Token": "backtest-test-token"})
     payload = {
         "task_id": "bt-ai-2025-smoke",
         "theme": "AI",
@@ -111,3 +112,30 @@ def test_ai_server_direct_order_endpoints_are_removed():
 
     execute_response = client.post("/trading/decision/execute", json=payload)
     assert execute_response.status_code == 404
+
+
+def test_backtest_results_require_token_size_limit_and_valid_task_id(monkeypatch):
+    monkeypatch.setattr("redis.from_url", lambda url: (_ for _ in ()).throw(RuntimeError("no redis")))
+    monkeypatch.setattr("ai_server.app._results", OrderedDict())
+    monkeypatch.setenv("HQA_INTERNAL_TOKEN", "backtest-test-token")
+    monkeypatch.setenv("HQA_MAX_BACKTEST_RESULT_BYTES", "2048")
+    anonymous = TestClient(app)
+    assert anonymous.post("/backtest/results", json={"task_id": "bt-1"}).status_code == 401
+    assert anonymous.get("/backtest/results/bt-1").status_code == 401
+    assert anonymous.post("/backtest/results", json={"task_id": "bt-1"},
+                          headers={"X-HQA-Internal-Token": "wrong"}).status_code == 403
+
+    client = TestClient(app, headers={"X-HQA-Internal-Token": "backtest-test-token"})
+    oversized = client.post("/backtest/results", json={"task_id": "bt-big", "warnings": ["x" * 4096]})
+    assert oversized.status_code == 413
+    assert client.post("/backtest/results", json={"task_id": "../../etc"}).status_code == 400
+    assert client.post("/backtest/results", content=b"{not json", headers={"Content-Type": "application/json"}).status_code == 422
+    assert client.post("/backtest/results", json={"task_id": "bt-ok"}).status_code == 201
+    assert client.get("/backtest/results/bt-ok").status_code == 200
+    assert client.get("/backtest/results/bad id").status_code == 400
+
+
+def test_ai_server_sends_no_cors_headers_by_default():
+    response = TestClient(app).get("/health", headers={"Origin": "https://evil.example"})
+    assert "access-control-allow-origin" not in {key.lower() for key in response.headers}
+    assert isinstance(response.json()["calendar_warnings"], list)
