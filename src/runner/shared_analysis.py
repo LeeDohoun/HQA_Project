@@ -322,7 +322,8 @@ class SharedAnalysisService:
         self.clock = clock or (lambda: datetime.now(UTC))
         self.audit = audit
 
-    def _invoke(self, role: str, schema: Any, payload: dict, *, critical: bool = False):
+    def _invoke(self, role: str, schema: Any, payload: dict, *, critical: bool = False,
+                priority: LLMTaskPriority = LLMTaskPriority.SCHEDULED):
         prompt = ROLE_INSTRUCTIONS.get(role, (
             "You are the single account RiskManager. Return one validated plan for every requested stock, including ALL holdings. "
             "Use only supplied source IDs. BUY position_size_pct is target portfolio equity percentage, never above maxPositionPct. "
@@ -354,7 +355,8 @@ class SharedAnalysisService:
             "holding_priority": critical,
             "instructions": messages[0][1], "payload": payload, "schema": schema.model_json_schema()}) if self.audit else None
         try:
-            with llm_task_priority(LLMTaskPriority.RUNTIME if critical else LLMTaskPriority.BACKGROUND):
+            # Holdings first, then scheduled trading cycles, then previews and chat.
+            with llm_task_priority(LLMTaskPriority.RUNTIME if critical else priority):
                 output = self.models[role].with_structured_output(schema, method="json_schema", strict=True).invoke(messages)
             result = output if isinstance(output, schema) else schema.model_validate(output)
         except Exception as exc:
@@ -371,7 +373,8 @@ class SharedAnalysisService:
         limit = getattr(self.models.get(role), "hqa_input_limit", None) or DEFAULT_SPECIALIST_INPUT_TOKENS
         return max(1_000, int(limit) - SPECIALIST_PROMPT_RESERVE_TOKENS)
 
-    def _specialist(self, role: str, payload: dict, critical: bool) -> SpecialistResult:
+    def _specialist(self, role: str, payload: dict, critical: bool,
+                    priority: LLMTaskPriority = LLMTaskPriority.SCHEDULED) -> SpecialistResult:
         model = self.models[role]
         config = {"model": getattr(model, "model_name", MODEL_VERSION),
                   "reasoning": getattr(model, "reasoning", None) or getattr(model, "reasoning_effort", "low"),
@@ -381,7 +384,7 @@ class SharedAnalysisService:
                             "factors": FACTOR_VERSION, "model_config": config})
 
         def calculate():
-            result = self._invoke(role, SpecialistResult, payload, critical=critical)
+            result = self._invoke(role, SpecialistResult, payload, critical=critical, priority=priority)
             if result.role != role or result.stock_code != payload["stock_code"]:
                 raise ValueError("specialist output role/stock mismatch")
             allowed = set(payload["source_ids"])
@@ -449,7 +452,9 @@ class SharedAnalysisService:
         selected_codes = {row["stock_code"] for row in selected} | held
         if preview_code is not None:
             if preview_code not in by_code:
-                raise ValueError(f"preview_price_history_unavailable:{preview_code}")
+                reason = next((error["error"] for error in errors if error.get("stock_code") == preview_code),
+                              "not_in_theme_universe")
+                raise ValueError(f"preview_price_history_unavailable:{preview_code}:{reason}")
             selected_codes = {preview_code}
         common, payloads = {}, {}
         for code in sorted(selected_codes, key=lambda item: (item not in held, item)):
@@ -544,7 +549,8 @@ class SharedAnalysisService:
                 common[code]["specialist_errors"].append(f"{role}_input:{exc}")
         data_finished = time.monotonic()
         with ThreadPoolExecutor(max_workers=self.max_workers) as pool:
-            futures = {pool.submit(self._specialist, role, payload, code in held): (code, role)
+            priority = LLMTaskPriority.UI_ANALYSIS if preview_code is not None else LLMTaskPriority.SCHEDULED
+            futures = {pool.submit(self._specialist, role, payload, code in held, priority): (code, role)
                        for (code, role), payload in payloads.items()}
             for future in as_completed(futures):
                 code, role = futures[future]
@@ -733,9 +739,23 @@ def get_runtime_analysis_service(config_path: str = "config/watchlist.yaml", dat
     return _cached_runtime_analysis_service(str(Path(config_path).resolve()), str(Path(data_dir).resolve() if data_dir else get_data_dir().resolve()))
 
 
+class _LazyBackendAccounts:
+    """Account-free previews must not require backend configuration."""
+
+    def __init__(self):
+        self._client = None
+        self._lock = threading.Lock()
+
+    def __getattr__(self, name: str):
+        with self._lock:
+            if self._client is None:
+                self._client = BackendAccountClient()
+        return getattr(self._client, name)
+
+
 @lru_cache(maxsize=4)
 def _cached_runtime_analysis_service(config_path: str, data_dir: str) -> SharedAnalysisService:
     from src.tracing.paper_audit import PaperAudit
     data = LocalAnalysisData(config_path=config_path, data_dir=data_dir)
-    return SharedAnalysisService(data=data, accounts=BackendAccountClient(),
+    return SharedAnalysisService(data=data, accounts=_LazyBackendAccounts(),
                                  audit=PaperAudit(os.getenv("HQA_PAPER_AUDIT_PATH", str(data.data_dir / "paper_audit.sqlite3"))))

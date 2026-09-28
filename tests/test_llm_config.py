@@ -161,3 +161,16 @@ def test_ollama_context_window_is_configurable_for_long_specialist_inputs(monkey
     monkeypatch.setenv("OLLAMA_NUM_CTX", "1024")
     with pytest.raises(ValueError, match="OLLAMA_NUM_CTX"):
         llm_config._create_ollama_llm("qwen3:14b", base_url="http://127.0.0.1:9")
+
+
+def test_long_output_roles_get_their_own_timeout(monkeypatch):
+    from src.agents import llm_config
+
+    monkeypatch.setenv("HQA_LLM_TIMEOUT_SECONDS", "45")
+    monkeypatch.delenv("HQA_LLM_RISK_MANAGER_TIMEOUT_SECONDS", raising=False)
+    assert llm_config._role_timeout("analyst") == 45
+    assert llm_config._role_timeout("risk_manager") == 180
+    monkeypatch.setenv("HQA_LLM_RISK_MANAGER_TIMEOUT_SECONDS", "240")
+    monkeypatch.setenv("HQA_LLM_ANALYST_TIMEOUT_SECONDS", "60")
+    assert llm_config._role_timeout("risk_manager") == 240
+    assert llm_config._role_timeout("analyst") == 60

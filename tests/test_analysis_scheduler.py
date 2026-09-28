@@ -228,3 +228,13 @@ def test_scheduled_cycle_failure_is_reported_and_the_loop_continues(monkeypatch)
     with pytest.raises(Stop):
         scheduler.run_forever()
     assert len(runs) == 2
+
+
+@pytest.mark.parametrize("at", ["2026-10-05T01:00:00+00:00",   # substitute holiday for National Foundation Day
+                                "2026-06-03T01:00:00+00:00",   # local elections (calendar override)
+                                "2026-09-24T01:00:00+00:00"])  # Chuseok
+def test_scheduler_skips_exchange_holidays(at):
+    from datetime import datetime
+    from src.runner.analysis_scheduler import within_analysis_session
+
+    assert within_analysis_session(datetime.fromisoformat(at)) is False

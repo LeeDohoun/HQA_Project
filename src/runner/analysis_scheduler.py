@@ -185,11 +185,18 @@ def seconds_until_next_slot(timestamp: float, interval: int = 900) -> float:
 
 
 def within_analysis_session(at: datetime) -> bool:
-    """Weekday session gate only; the broker remains authoritative for holidays."""
+    """KRX trading day between 09:00 and 15:30 KST; exchange holidays spend no LLM budget."""
     if at.tzinfo is None:
         raise ValueError("schedule clock requires an aware timestamp")
     local = at.astimezone(timezone(timedelta(hours=9)))
-    return local.weekday() < 5 and wall_time(9) <= local.time() < wall_time(15, 30)
+    if local.weekday() >= 5 or not wall_time(9) <= local.time() < wall_time(15, 30):
+        return False
+    try:
+        from src.runner.trading_calendar import is_trading_day
+        return is_trading_day(local.date().isoformat())
+    except Exception:
+        logger.exception("analysis session calendar check failed; skipping this slot")
+        return False
 
 
 class RemoteAnalysisClient:

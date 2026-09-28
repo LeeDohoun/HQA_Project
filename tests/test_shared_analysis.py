@@ -783,3 +783,54 @@ def test_chartist_factors_cite_the_price_source():
     chartist = next(payload for role, payload in calls if role == "chartist")
     price_id = next(source for source in chartist["source_ids"] if source.startswith("price:000001:"))
     assert chartist["factors"]["source_id"] == price_id
+
+
+def test_llm_priorities_put_holdings_first_then_scheduled_cycles_then_previews():
+    from src.utils.llm_queue import LLMTaskPriority, current_llm_priority
+
+    seen = []
+
+    class PriorityModel(Model):
+        def invoke(self, messages):
+            payload = json.loads(messages[-1][1])
+            seen.append((self.role, payload.get("stock_code"), current_llm_priority()))
+            return super().invoke(messages)
+
+    engine, calls = service()
+    engine.models = {role: PriorityModel(role, calls) for role in ("analyst", "quant", "chartist", "risk_manager")}
+    engine.run_cycle([{"userId": "u1"}])
+    specialist = {(code, priority) for role, code, priority in seen if role != "risk_manager"}
+    assert ("000001", LLMTaskPriority.RUNTIME) in specialist  # the held stock
+    assert ("000020", LLMTaskPriority.SCHEDULED) in specialist
+    seen.clear()
+    engine.cache = type(engine.cache)(16)
+    engine.preview_stock("000020")
+    assert {priority for role, code, priority in seen} == {LLMTaskPriority.UI_ANALYSIS}
+
+
+def test_runtime_service_builds_without_backend_configuration(monkeypatch, tmp_path):
+    import pytest
+    from src.runner import shared_analysis
+
+    for name in ("BACKEND_INTERNAL_BASE_URL", "BACKEND_BASE_URL"):
+        monkeypatch.delenv(name, raising=False)
+    shared_analysis._cached_runtime_analysis_service.cache_clear()
+    engine = shared_analysis.get_runtime_analysis_service(data_dir=str(tmp_path))
+    with pytest.raises(ValueError, match="BACKEND_INTERNAL_BASE_URL is required"):
+        engine.accounts.fetch_accounts(["u1"])
+    shared_analysis._cached_runtime_analysis_service.cache_clear()
+
+
+def test_preview_failure_explains_why_the_price_history_is_unusable():
+    import pytest
+
+    class Stale(Data):
+        def load_universe(self, as_of):
+            return [], [{"stock_code": "000007", "stage": "price_data",
+                         "error": "stale_daily_prices:latest=2026-09-23:expected=2026-09-28"}]
+
+    engine, _ = service(data=Stale())
+    with pytest.raises(ValueError, match="preview_price_history_unavailable:000007:stale_daily_prices"):
+        engine.preview_stock("000007")
+    with pytest.raises(ValueError, match="preview_price_history_unavailable:000008:not_in_theme_universe"):
+        engine.preview_stock("000008")

@@ -92,6 +92,12 @@ def _calendar(year: int):
                                   end=f"{min(2050, year + 1)}-12-31")
 
 
+def is_trading_day(day: str) -> bool:
+    """True when XKRX holds a regular or special session on this KST date."""
+    parsed = date.fromisoformat(day)
+    return bool(_calendar(parsed.year).is_session(day)) and day not in EXCHANGE_HOLIDAY_OVERRIDES
+
+
 @lru_cache(maxsize=2048)
 def daily_session_close(day: str) -> datetime:
     parsed = date.fromisoformat(day)

@@ -15,8 +15,9 @@ T = TypeVar("T")
 
 
 class LLMTaskPriority(IntEnum):
-    RUNTIME = 0
-    UI_ANALYSIS = 10
+    RUNTIME = 0        # holding protection
+    SCHEDULED = 5      # scheduled trading-cycle candidates
+    UI_ANALYSIS = 10   # dashboard previews and chat
     BACKGROUND = 20
 
 

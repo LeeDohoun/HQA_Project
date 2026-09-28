@@ -439,8 +439,11 @@ class LocalAnalysisData:
 
 class BackendAccountClient:
     def __init__(self, base_url: str | None = None, internal_token: str | None = None, timeout: int = 10):
-        self.base_url = (base_url or os.getenv("BACKEND_INTERNAL_BASE_URL") or os.environ["BACKEND_BASE_URL"]).rstrip("/")
-        self.token = internal_token if internal_token is not None else os.environ["HQA_INTERNAL_TOKEN"]
+        url = base_url or os.getenv("BACKEND_INTERNAL_BASE_URL") or os.getenv("BACKEND_BASE_URL")
+        if not url:
+            raise ValueError("BACKEND_INTERNAL_BASE_URL is required for account snapshots")
+        self.base_url = url.rstrip("/")
+        self.token = internal_token if internal_token is not None else os.getenv("HQA_INTERNAL_TOKEN", "")
         if not self.token:
             raise ValueError("HQA_INTERNAL_TOKEN is required for account snapshots")
         self.timeout = timeout

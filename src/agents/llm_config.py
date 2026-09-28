@@ -53,6 +53,24 @@ _ROLE_LIMITS = {
 }
 
 
+# A non-streaming medium-reasoning RiskManager call with up to 12k output tokens can
+# outlast the 45 s default; a timed-out call is still billed and stays an "unknown"
+# budget reservation, so the long-output roles get their own default.
+_LONG_OUTPUT_ROLE_TIMEOUT_SECONDS = 180.0
+
+
+def _role_timeout(role: str) -> float:
+    names = [f"HQA_LLM_{role.upper()}_TIMEOUT_SECONDS"]
+    default = _LONG_OUTPUT_ROLE_TIMEOUT_SECONDS if role in {"risk_manager", "thinking"} else None
+    if default is None:
+        names.append("HQA_LLM_TIMEOUT_SECONDS")
+    raw = next((os.getenv(name) for name in names if os.getenv(name)), None)
+    timeout = float(raw) if raw is not None else (default or 45.0)
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError(f"{names[0]} must be positive and finite")
+    return timeout
+
+
 def get_role_limits(role: str) -> RoleLimits:
     defaults = _ROLE_LIMITS[role]
     prefix = f"HQA_LLM_{role.upper()}"
@@ -244,9 +262,7 @@ def _create_role_llm(role: str, model: str, temperature: float) -> Any:
         from src.utils.luna_chat import LunaChatOpenAI
 
         limits = get_role_limits(role)
-        timeout = float(os.getenv("HQA_LLM_TIMEOUT_SECONDS", "45"))
-        if not math.isfinite(timeout) or timeout <= 0:
-            raise ValueError("HQA_LLM_TIMEOUT_SECONDS must be positive and finite")
+        timeout = _role_timeout(role)
         return LunaChatOpenAI(
             model=DEFAULT_OPENAI_MODEL, api_key=key, base_url="https://api.openai.com/v1",
             use_responses_api=True, use_previous_response_id=False,
