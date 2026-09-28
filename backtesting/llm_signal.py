@@ -45,6 +45,10 @@ VALID_AGENT_SCORE_PROFILES = {
 }
 
 
+class LLMCacheMissError(RuntimeError):
+    """A cache-only run needed a score that is not cached; it must never be replaced."""
+
+
 class LLMThemeLeaderEvaluation(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -180,9 +184,6 @@ class TemporalLLMStockScorer:
                 "llm_horizon": self.horizon,
             }
         )
-        if result.get("llm_fallback_used"):
-            logger.warning("Multi-agent fallback score not cached: %s %s", as_of_ymd, row.get("stock_code"))
-            return result
         self.cache[key] = result
         self._append_cache(key, result)
         return result
@@ -433,11 +434,15 @@ class TemporalMultiAgentStockScorer:
     def score(self, *, as_of_ymd: str, row: Dict[str, Any]) -> Dict[str, Any]:
         key = self._cache_key(as_of_ymd=as_of_ymd, row=row)
         cached = self.cache.get(key)
+        if not cached and self._regime_parts() and _env_flag("AGENT_CACHE_LEGACY_KEYS"):
+            # Opt-in for cache files written before the regime was part of the key; only
+            # valid when the whole file was produced under the current flag settings.
+            cached = self.cache.get(self._cache_key(as_of_ymd=as_of_ymd, row=row, include_regime=False))
         if cached:
             return self._apply_agent_score_profile({**cached, "cache_hit": True}, row)
 
         if self.cache_only:
-            raise RuntimeError(
+            raise LLMCacheMissError(
                 "multi-agent cache miss with AGENT_SCORE_CACHE_ONLY=1 "
                 f"for {self.theme_key} {self.horizon} {as_of_ymd} {row.get('stock_code')}"
             )
@@ -465,6 +470,11 @@ class TemporalMultiAgentStockScorer:
                 "llm_horizon": self.horizon,
             }
         )
+        if result.get("llm_fallback_used"):
+            # A rule-based stand-in for a failed agent call must not be replayed later
+            # as if it were a multi-agent LLM score (e.g. by AGENT_SCORE_CACHE_ONLY runs).
+            logger.warning("Multi-agent fallback score not cached: %s %s", as_of_ymd, row.get("stock_code"))
+            return self._apply_agent_score_profile(result, row)
         self.cache[key] = dict(result)
         self._append_cache(key, result)
         return self._apply_agent_score_profile(result, row)
@@ -509,7 +519,19 @@ class TemporalMultiAgentStockScorer:
         with self.cache_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps({"cache_key": key, "result": result}, ensure_ascii=False) + "\n")
 
-    def _cache_key(self, *, as_of_ymd: str, row: Dict[str, Any]) -> str:
+    def _regime_parts(self) -> list[str]:
+        """Settings that change the prompt or the stored score; empty for the defaults."""
+        parts = []
+        if _env_flag("AGENT_PURE_FEATURES"):
+            parts.append("pure_features=1")
+        if _env_flag("AGENT_FREE_RISK_MANAGER"):
+            parts.append("free_risk_manager=1")
+        if self.context_docs != 5:
+            parts.append(f"context_docs={self.context_docs}")
+        return parts
+
+    def _cache_key(self, *, as_of_ymd: str, row: Dict[str, Any], include_regime: bool = True) -> str:
+        # Default settings keep the original key layout so existing caches stay valid.
         return "|".join(
             [
                 MULTI_AGENT_PROMPT_VERSION,
@@ -523,6 +545,7 @@ class TemporalMultiAgentStockScorer:
                 str(round(float(row.get("leader_score") or 0.0), 2)),
                 str(round(float(row.get("return_20d") or 0.0), 4)),
                 str(round(float(row.get("return_60d") or 0.0), 4)),
+                *(self._regime_parts() if include_regime else []),
             ]
         )
 

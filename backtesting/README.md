@@ -131,12 +131,15 @@ mock 결과는 투자 성능의 근거가 아닙니다. 실제 LLM 실험에는 
 | 환경변수 | 효과 |
 | --- | --- |
 | `AGENT_SCORE_PROFILE` | 저장된 역할별 점수를 다른 조합으로 다시 가중합니다. `current_hybrid_4agent`(기본), `three_agent_no_risk_manager`, `four_agent_supervisor_final`, `four_agent_raw_blend`, `four_agent_risk_adjusted`, `four_agent_plus_liquidity`, `risk_manager_raw_only`, `remove_analyst`, `remove_quant`, `remove_chartist`, `analyst_only`, `quant_only`, `chartist_only`. 결과에 `llm_original_score`, `llm_score_profile`을 남깁니다. |
-| `AGENT_SCORE_CACHE_ONLY=1` | 캐시 미스가 나면 LLM을 호출하지 않고 오류로 중단합니다. 새 비용 없이 프로필만 비교할 때 사용합니다. |
+| `AGENT_SCORE_CACHE_ONLY=1` | 캐시 미스가 나면 LLM을 호출하지 않고 백테스트 전체를 오류로 중단합니다. 규칙 점수로 대체하지 않습니다. 새 비용 없이 프로필만 비교할 때 사용합니다. |
+| `AGENT_CACHE_LEGACY_KEYS=1` | `AGENT_PURE_FEATURES`, `AGENT_FREE_RISK_MANAGER`, `context_docs`가 캐시 키에 들어가기 전에 만든 캐시 파일을 재사용합니다. 파일 전체가 현재와 같은 설정으로 만들어졌을 때만 켭니다. |
 | `AGENT_PURE_FEATURES=1` | 프롬프트에서 수치 `deterministic_leader_score`를 제거합니다. |
 | `AGENT_FREE_RISK_MANAGER=1` | RiskManager가 권장 가중 점수 대신 자체 `final_score`를 산출하고, 그 값을 최종 점수로 사용합니다. |
 | `AGENT_DISABLE_SHORT_CHARTIST_FLOOR=1` | short 구간의 Chartist 하한 보정을 해제합니다. |
-| `AGENT_FAIL_ON_AGENT_FALLBACK=1`, `AGENT_FAIL_ON_LLM_ERROR=1` | 역할 실패나 LLM 오류를 규칙 점수로 대체하지 않고 중단합니다. fallback이 섞인 결과는 플래그와 무관하게 캐시에 저장하지 않습니다. |
+| `AGENT_FAIL_ON_AGENT_FALLBACK=1`, `AGENT_FAIL_ON_LLM_ERROR=1` | 역할 실패나 LLM 오류를 규칙 점수로 대체하지 않고 중단합니다. fallback이 섞인 멀티 에이전트 결과는 플래그와 무관하게 캐시에 저장하지 않습니다. |
 | `LLM_SCHEMA_RETRIES`, `LLM_SCHEMA_TIMEOUT_SECONDS` | 구조화 출력 재시도 횟수(기본 1)와 호출 제한 시간(초, 기본 없음)입니다. 제한 시간은 메인 스레드에서만 적용됩니다. |
+
+멀티 에이전트 캐시 키에는 프롬프트를 바꾸는 설정(`AGENT_PURE_FEATURES`, `AGENT_FREE_RISK_MANAGER`, 기본값 5가 아닌 `context_docs`)이 포함되어, 설정이 다른 실행끼리 캐시를 공유하지 않습니다. 기본 설정의 키는 이전과 같습니다.
 
 이 옵션으로 만든 결과는 과거 연구 실험이며 현재 PAPER 성능의 근거가 아닙니다. 반복 실행 스크립트는 [scripts/research](../scripts/research/README.md)를 참고합니다.
 

@@ -592,8 +592,10 @@ def load_document_signals(data_dir: Path, theme_key: str) -> List[DocumentSignal
 def submit_result(result: Dict[str, Any], submit_url: str) -> Dict[str, Any]:
     import requests
 
+    token = os.environ.get("HQA_INTERNAL_TOKEN", "").strip()
+    headers = {"X-HQA-Internal-Token": token} if token else {}
     try:
-        response = requests.post(submit_url, json=result, timeout=10)
+        response = requests.post(submit_url, json=result, headers=headers, timeout=10)
         return {
             "ok": response.ok,
             "status_code": response.status_code,
@@ -879,7 +881,10 @@ def _rerank_with_llm(
                 (1.0 - llm_weight) * deterministic_score + llm_weight * llm_ranking_score
             )
         except Exception as exc:
-            if _env_flag("AGENT_FAIL_ON_LLM_ERROR"):
+            # In cache-only mode a miss or error means the stored multi-agent score does
+            # not exist; replacing it with the deterministic score would silently turn an
+            # LLM comparison into a rule-based one.
+            if _env_flag("AGENT_FAIL_ON_LLM_ERROR") or getattr(llm_scorer, "cache_only", False):
                 raise
             current["llm_error"] = str(exc)[:240]
             current["leader_score"] = round(deterministic_score)
