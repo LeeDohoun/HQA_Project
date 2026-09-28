@@ -77,3 +77,69 @@ def test_generator_fails_without_inputs_or_coverage(tmp_path, generator):
     build_inputs(tmp_path, cached_share="few")
     reloaded = importlib.reload(generator)
     assert reloaded.main(["--source-root", str(tmp_path), "--output-dir", str(tmp_path / "out2")]) == 3
+
+
+def test_agent_count_table_holds_only_llm_agents_and_the_report_has_no_fixed_claims(tmp_path, generator):
+    build_inputs(tmp_path)
+    out = tmp_path / "out"
+    assert generator.main(["--source-root", str(tmp_path), "--output-dir", str(out), "--min-agent-coverage", "0.5"]) == 0
+    counts = list(__import__("csv").DictReader((out / "agent-count-ablation-summary.csv").open(encoding="utf-8")))
+    variants = {variant for row in counts for variant in row["variants"].split("/")}
+    assert "current_hybrid_4agent" not in variants and "four_agent_plus_liquidity" not in variants
+    assert {row["agent_count"] for row in counts} <= {"0", "1", "2", "3", "4"}
+    report = (out / "AGENT_ABLATION_EVIDENCE_KO.md").read_text(encoding="utf-8")
+    for fixed in ("2023/2024/2025/2026Q1", "5개 이상으로 늘리는 것", "장타: Analyst+Quant 중심", "현재 4-agent 초과수익"):
+        assert fixed not in report
+    assert "포함된 실행의 테마·기간: AI validation_2024" in report
+    assert "v4 이전 캐시 키" in report  # the v3 fixture cannot be checked against its settings
+
+
+def test_plus_liquidity_is_built_on_the_three_agent_blend(generator):
+    variants = generator._variants("short")
+    row = {"analyst_total": 80, "quant_total": 60, "chartist_total": 40, "leader_score": 99, "liquidity_score": 50}
+    assert variants["four_agent_plus_liquidity"](row) == pytest.approx(
+        0.85 * variants["three_agent_no_risk_manager"](row) + 0.15 * 50)
+
+
+def test_ties_at_the_cut_off_share_slots_instead_of_using_the_rule_score(generator):
+    rows = [{"stock_code": code, "variant_score": 50.0, "deterministic_leader_score": rule, "realized_return_pct": ret}
+            for code, rule, ret in (("A", 90, 9.0), ("B", 10, -3.0), ("C", 50, 0.0))]
+    selected, gross = generator._select_top(rows, 2)
+    assert len(selected) == 2 and gross == pytest.approx(2.0)  # mean of the tied candidates, not A+C
+
+
+def test_cache_rows_from_other_settings_are_not_joined(generator):
+    ctx = generator.RunContext(path=Path("r.json"), theme="AI", theme_key="ai", period="p", horizon="short",
+                               strategy_id="short_hybrid_05", cache_path=None, round_trip_cost_pct=0.0,
+                               llm_identity=("temporal_theme_leader_multi_agent_v4_prior_day_evidence", "o", "m", "t"),
+                               regime=generator._expected_regime({"prompt_version": "..._multi_agent_v4_x", "context_docs": 5}))
+    raw = {"stock_code": "000001", "deterministic_leader_score": 70, "return_20d_pct": 17.0, "return_60d_pct": 27.0}
+    prefix = (ctx.llm_identity[0], "short", "o", "m", "t", "ai", "20250303", "000001")
+    other = {prefix: [((70.0, 0.17, 0.27), ("pure_features=1", "free_risk_manager=1"), {"llm_score": 1})]}
+    assert generator._lookup_agent_scores(ctx, "20250303", raw, other) == ({}, "missing")
+    same = {prefix: [((70.0, 0.17, 0.27), (), {"llm_score": 2})]}
+    assert generator._lookup_agent_scores(ctx, "20250303", raw, same) == ({"llm_score": 2}, "joined")
+
+
+def test_expected_regime_matches_the_scorer_key_suffix(monkeypatch, generator):
+    from backtesting.llm_signal import MULTI_AGENT_PROMPT_VERSION, TemporalMultiAgentStockScorer
+
+    scorer = TemporalMultiAgentStockScorer.__new__(TemporalMultiAgentStockScorer)
+    scorer.context_docs = 3
+    monkeypatch.setenv("AGENT_PURE_FEATURES", "1")
+    monkeypatch.delenv("AGENT_FREE_RISK_MANAGER", raising=False)
+    meta = {"prompt_version": MULTI_AGENT_PROMPT_VERSION, "pure_features": True, "free_risk_manager": False,
+            "context_docs": 3}
+    assert generator._expected_regime(meta) == tuple(scorer._regime_parts())
+
+
+def test_an_archived_copy_and_its_original_count_as_one_run(tmp_path, generator):
+    build_inputs(tmp_path)
+    archive = tmp_path / "research/backtesting/ai_strategy_comparison/source_multi_agent_runs_2023_2024/runs"
+    archive.mkdir(parents=True)
+    name = "proof-ai-validation_2024-short_hybrid_05.json"
+    (archive / name).write_text((tmp_path / RUNS / name).read_text(encoding="utf-8"), encoding="utf-8")
+    out = tmp_path / "out"
+    assert generator.main(["--source-root", str(tmp_path), "--output-dir", str(out), "--min-agent-coverage", "0.5"]) == 0
+    coverage = list(__import__("csv").DictReader((out / "agent-architecture-coverage.csv").open(encoding="utf-8")))
+    assert len(coverage) == 1

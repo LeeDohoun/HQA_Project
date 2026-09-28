@@ -83,10 +83,12 @@ ABLATION_VARIANTS = {
     "analyst_chartist": {"agent_count": 2, "label": "Analyst+Chartist", "group": "pair"},
     "quant_chartist": {"agent_count": 2, "label": "Quant+Chartist", "group": "pair"},
     "three_agent_no_risk_manager": {"agent_count": 3, "label": "3-agent", "group": "three_agent"},
-    "current_hybrid_4agent": {"agent_count": 4, "label": "현재 4-agent", "group": "four_agent"},
+    # Variants with a rule-based factor have no agent count: the hybrid is the run's own
+    # deterministic+LLM leader_score, and the liquidity variant adds a liquidity factor.
+    "current_hybrid_4agent": {"agent_count": None, "label": "현재 하이브리드(규칙+4-agent)", "group": "with_rule_factor"},
     "four_agent_raw_blend": {"agent_count": 4, "label": "4-agent 원점수 혼합", "group": "four_agent"},
     "four_agent_risk_adjusted": {"agent_count": 4, "label": "4-agent 위험보정", "group": "four_agent"},
-    "four_agent_plus_liquidity": {"agent_count": 5, "label": "4-agent+유동성", "group": "added_agent"},
+    "four_agent_plus_liquidity": {"agent_count": None, "label": "3-agent+유동성 요인", "group": "with_rule_factor"},
 }
 # (full variant, reduced variant, agent). The hybrid ranking actually used by the
 # runs mixes in the deterministic score, so it is not a baseline for agent removal:
@@ -112,6 +114,7 @@ class RunContext:
     cache_path: Path | None
     round_trip_cost_pct: float
     llm_identity: tuple = ()
+    regime: tuple = ()
 
 
 def main(argv: List[str] | None = None) -> int:
@@ -137,8 +140,13 @@ def main(argv: List[str] | None = None) -> int:
     period_rows: List[Dict[str, Any]] = []
     coverage_rows: List[Dict[str, Any]] = []
 
+    seen_tasks = set()
     for run_path in run_paths:
         result = _load_json(run_path)
+        task_id = str(result.get("task_id") or run_path.stem)
+        if task_id in seen_tasks:
+            continue  # an archived copy and its original are one run (archive listed first)
+        seen_tasks.add(task_id)
         ctx = _run_context(run_path, result)
         cache = _load_agent_cache(ctx.cache_path)
         periods = list(result.get("periods") or [])
@@ -253,6 +261,7 @@ def _run_context(path: Path, result: Dict[str, Any]) -> RunContext:
     llm_identity = (tuple(str(llm_meta.get(name) or "") for name in identity_fields)
                     if all(llm_meta.get(name) for name in identity_fields) else ())
     return RunContext(
+        regime=_expected_regime(llm_meta),
         path=path,
         theme=str(result.get("theme") or ""),
         theme_key=str(result.get("theme_key") or ""),
@@ -263,6 +272,27 @@ def _run_context(path: Path, result: Dict[str, Any]) -> RunContext:
         round_trip_cost_pct=round_trip_cost_pct,
         llm_identity=llm_identity,
     )
+
+
+def _expected_regime(llm_meta: Dict[str, Any]) -> tuple:
+    """The cache-key settings suffix a run's settings produce, as in
+    TemporalMultiAgentStockScorer._regime_parts. Keys before prompt v4 carry none, so
+    those runs cannot be checked against their settings (reported as a limitation)."""
+    if _prompt_generation(llm_meta) < 4:
+        return ()
+    parts = []
+    if llm_meta.get("pure_features"):
+        parts.append("pure_features=1")
+    if llm_meta.get("free_risk_manager"):
+        parts.append("free_risk_manager=1")
+    if llm_meta.get("context_docs") is not None and int(llm_meta["context_docs"]) != 5:
+        parts.append(f"context_docs={int(llm_meta['context_docs'])}")
+    return tuple(parts)
+
+
+def _prompt_generation(llm_meta: Dict[str, Any]) -> int:
+    match = re.search(r"multi_agent_v(\d+)", str(llm_meta.get("prompt_version") or ""))
+    return int(match.group(1)) if match else 0
 
 
 def _load_agent_cache(path: Path | None) -> Dict[tuple, List[tuple]]:
@@ -297,9 +327,9 @@ def _lookup_agent_scores(ctx: RunContext, as_of_ymd: str, raw: Dict[str, Any],
                   float(raw.get("return_60d_pct")) / 100.0)
     except (TypeError, ValueError):
         return {}, "missing"
-    matches = [result for numbers, _regime, result in cache.get(prefix, [])
-               if abs(numbers[0] - wanted[0]) < 0.01 and abs(numbers[1] - wanted[1]) < 1.01e-4
-               and abs(numbers[2] - wanted[2]) < 1.01e-4]
+    matches = [result for numbers, regime, result in cache.get(prefix, [])
+               if regime == ctx.regime and abs(numbers[0] - wanted[0]) < 0.01
+               and abs(numbers[1] - wanted[1]) < 1.01e-4 and abs(numbers[2] - wanted[2]) < 1.01e-4]
     if len(matches) > 1 and any(match != matches[0] for match in matches[1:]):
         return {}, "ambiguous"
     return (matches[0], "joined") if matches else ({}, "missing")
@@ -321,6 +351,9 @@ def _evaluate_run(
         "strategy_id": ctx.strategy_id,
         "cache_path": str(ctx.cache_path or ""),
         "cache_available": bool(cache),
+        "prompt_version": ctx.llm_identity[0] if ctx.llm_identity else "",
+        "cache_key_settings_checked": bool(ctx.llm_identity) and _prompt_generation(
+            {"prompt_version": ctx.llm_identity[0]}) >= 4,
         "periods_total": len(periods),
         "periods_with_candidates": 0,
         "candidate_rows": 0,
@@ -376,20 +409,8 @@ def _evaluate_run(
                     if score is None or math.isnan(score):
                         continue
                     scored.append({**row, "variant_score": round(score, 4)})
-                selected = sorted(
-                    scored,
-                    key=lambda row: (
-                        row.get("variant_score", 0.0),
-                        row.get("deterministic_leader_score", 0.0),
-                        row.get("llm_confidence", 0.0),
-                    ),
-                    reverse=True,
-                )[:top_n]
-                period_return = (
-                    _mean(row.get("realized_return_pct", 0.0) for row in selected) - ctx.round_trip_cost_pct
-                    if selected
-                    else 0.0
-                )
+                selected, gross_return = _select_top(scored, top_n)
+                period_return = gross_return - ctx.round_trip_cost_pct if selected else 0.0
             per_variant_returns[variant_name].append(period_return)
             per_variant_benchmarks[variant_name].append(benchmark)
             per_variant_selected[variant_name] += len(selected)
@@ -476,6 +497,21 @@ def _candidate_rows(
     return output
 
 
+def _select_top(scored: List[Dict[str, Any]], top_n: int) -> tuple[List[Dict[str, Any]], float]:
+    """Top-n rows by variant score and their mean return. Candidates tied at the cut-off
+    share the remaining slots equally (the expected return of a random tie-break), so no
+    other score, such as the deterministic one, decides an agent-only variant."""
+    ranked = sorted(scored, key=lambda row: (-row["variant_score"], str(row.get("stock_code") or "")))
+    if len(ranked) <= top_n:
+        return ranked, _mean(_float(row.get("realized_return_pct")) for row in ranked)
+    cutoff = ranked[top_n - 1]["variant_score"]
+    above = [row for row in ranked if row["variant_score"] > cutoff]
+    tied = [row for row in ranked if row["variant_score"] == cutoff]
+    total = (sum(_float(row.get("realized_return_pct")) for row in above)
+             + (top_n - len(above)) * _mean(_float(row.get("realized_return_pct")) for row in tied))
+    return ranked[:top_n], total / top_n
+
+
 def _variants(horizon: str):
     weights = SHORT_WEIGHTS if horizon == "short" else LONG_WEIGHTS
 
@@ -493,7 +529,8 @@ def _variants(horizon: str):
     risk_raw = lambda row: _float(row.get("risk_raw_total"))
     current_hybrid = lambda row: _float(row.get("leader_score"))
     risk_adjusted = lambda row: three_agent(row) - max(0.0, _float(row.get("risk_score")) - 60.0) * 0.25
-    plus_liquidity = lambda row: 0.85 * current_hybrid(row) + 0.15 * _float(row.get("liquidity_score"))
+    # Same definition as the scorer's four_agent_plus_liquidity profile (backtesting/llm_signal.py).
+    plus_liquidity = lambda row: 0.85 * three_agent(row) + 0.15 * _float(row.get("liquidity_score"))
 
     return {
         "current_hybrid_4agent": current_hybrid,
@@ -746,7 +783,7 @@ def _build_ablation_count_summary(summary_rows: List[Dict[str, Any]]) -> List[Di
     groups: Dict[tuple[str, int], List[Dict[str, Any]]] = defaultdict(list)
     for row in summary_rows:
         meta = ABLATION_VARIANTS.get(str(row.get("variant") or ""))
-        if not meta:
+        if not meta or meta["agent_count"] is None:
             continue
         enriched = {**row, **meta}
         groups[(str(row["horizon"]), int(meta["agent_count"]))].append(enriched)
@@ -754,7 +791,6 @@ def _build_ablation_count_summary(summary_rows: List[Dict[str, Any]]) -> List[Di
     output: List[Dict[str, Any]] = []
     for (horizon, agent_count), rows in sorted(groups.items()):
         best = max(rows, key=lambda row: _float(row["avg_excess_return_pct"]))
-        current = next((row for row in rows if row["variant"] == "current_hybrid_4agent"), None)
         output.append(
             {
                 "horizon": horizon,
@@ -767,7 +803,6 @@ def _build_ablation_count_summary(summary_rows: List[Dict[str, Any]]) -> List[Di
                 "best_avg_excess_return_pct": best["avg_excess_return_pct"],
                 "best_avg_mdd_pct": best["avg_mdd_pct"],
                 "avg_excess_return_pct": round(_mean(row["avg_excess_return_pct"] for row in rows), 2),
-                "current_4agent_excess_pct": current["avg_excess_return_pct"] if current else "",
             }
         )
     return output
@@ -1041,6 +1076,10 @@ def _computed_findings(leave_one_out_rows: List[Dict[str, Any]], coverage_rows: 
             f"- {_ko_horizon(row['horizon'])} {row['removed_agent']}: {row['current_variant']}와 {row['reduced_variant']}의 "
             f"평균 초과수익 차이 {_fmt_pct(row['excess_loss_when_removed_pct'])} ({verb} 시 기준, "
             f"{_usefulness_ko(row['usefulness_interpretation'])}).")
+    unchecked = sum(1 for row in included if not row.get("cache_key_settings_checked"))
+    if unchecked:
+        lines.append(f"- 포함된 실행 중 {unchecked}개는 설정을 담지 않은 v4 이전 캐시 키를 써서, 결합된 점수가 "
+                     "그 실행의 설정(pure_features, context_docs 등)으로 만들어졌는지 검증할 수 없습니다.")
     lines.append("- 차이는 기간별 표본 평균이며 통계적 유의성 검정이나 다중 비교 보정을 거치지 않았습니다.")
     return lines
 
@@ -1061,9 +1100,9 @@ def _render_agent_ablation_report(
         "",
         "## 목적",
         "",
-        "이 보고서의 목적은 현재 프로젝트의 4-agent 구성이 왜 유용한지 검증하는 것입니다.",
-        "접근 방식은 먼저 에이전트를 줄였을 때 성과가 어떻게 변하는지 보고, 각 역할이 필요한지 확인하는 것입니다.",
-        "그 다음 4개보다 더 늘렸을 때 추가 이득이 충분한지 확인합니다.",
+        "이 보고서의 목적은 현재 프로젝트의 4-agent 구성이 유용한지 검증하는 것입니다.",
+        "접근 방식은 에이전트를 하나씩 줄였을 때 성과가 어떻게 변하는지 보고, 각 역할이 필요한지 확인하는 것입니다.",
+        "규칙 기반 요인(실행의 하이브리드 점수, 유동성)을 섞은 변형은 에이전트 수 비교에서 빼고 별도로 표시합니다.",
         "",
         "## 실험 설계",
         "",
@@ -1079,7 +1118,7 @@ def _render_agent_ablation_report(
         "## 사용 데이터",
         "",
         f"- 오프라인 축소 실험: 포함 실행 {included_runs}개, 에이전트 점수 후보 {agent_rows}개",
-        "- 실제 캐시 백테스트: AI와 반도체, 2023/2024 중심 AI + 2023/2024/2025/2026Q1 반도체",
+        f"- 포함된 실행의 테마·기간: {_included_scope(coverage_rows)}",
         "- 모든 비교의 중심은 multi-agent 후보 조합입니다.",
         f"- 반도체 전체 후보 탐색 행 수: {len(exploration_rows)}",
         f"- AI+반도체 대표 후보 검증 행 수: {len(representative_rows)}",
@@ -1156,15 +1195,16 @@ def _render_agent_ablation_report(
             "",
             "양수는 해당 에이전트를 제거했더니 초과수익이 낮아졌다는 뜻입니다. 즉 해당 역할이 유용하다는 방향의 증거입니다.",
             "",
-            "| 구간 | 제거한 에이전트 | 현재 4-agent 초과수익 | 제거 후 초과수익 | 제거 시 손실 | 해석 |",
-            "|---|---|---:|---:|---:|---|",
+            "| 구간 | 제거한 에이전트 | 비교 기준 | 기준 초과수익 | 제거 후 초과수익 | 제거 시 손실 | 해석 |",
+            "|---|---|---|---:|---:|---:|---|",
         ]
     )
     for row in leave_one_out_rows:
         lines.append(
-            "| {horizon} | {agent} | {current} | {reduced} | {loss} | {label} |".format(
+            "| {horizon} | {agent} | {baseline} | {current} | {reduced} | {loss} | {label} |".format(
                 horizon=_ko_horizon(row["horizon"]),
                 agent=row["removed_agent"],
+                baseline=_variant_ko(row["current_variant"]),
                 current=_fmt_pct(row["current_avg_excess_return_pct"]),
                 reduced=_fmt_pct(row["reduced_avg_excess_return_pct"]),
                 loss=_fmt_pct(row["excess_loss_when_removed_pct"]),
@@ -1203,18 +1243,34 @@ def _render_agent_ablation_report(
             "1. 단독 에이전트가 특정 구간에서 좋게 나와도, 그것만으로 충분하다고 보지 않습니다. 구간이 바뀌면 역할이 바뀔 수 있기 때문입니다.",
             "2. 에이전트를 하나씩 제거했을 때 성과가 떨어지는 역할은 유지 후보로 봅니다.",
             "3. 제거했는데 성과가 좋아지는 역할은 버리는 것이 아니라, 해당 구간에서 가중치를 낮추거나 조건부로 써야 합니다.",
-            "4. RiskManager를 제거했는데 현재와 같다면 4번째 에이전트의 구현 효과가 약하다는 뜻입니다. RiskManager가 최종 점수에 직접 영향을 주게 바꿔야 합니다.",
-            "5. 5개 이상으로 늘리는 것은 현재 유동성 추가 실험만 보면 복잡도 대비 효과가 약합니다.",
+            "4. RiskManager를 더했는데 3-agent와 같다면 4번째 에이전트의 구현 효과가 약하다는 뜻입니다.",
             "",
-            "## 다음 실험",
+            "## 다음 실험 방향 (위 계산에서 도출)",
             "",
-            "- 단타: Quant+Chartist 중심, Analyst 낮은 가중치, RiskManager 위험 제한",
-            "- 장타: Analyst+Quant 중심, Chartist 낮은 가중치, RiskManager 위험보정 직접 반영",
-            "- 추가 에이전트: 유동성/뉴스/수급을 독립 에이전트로 늘리기 전에, 현재 4개 안에서 점수 결합을 먼저 안정화",
+            *_next_steps(leave_one_out_rows),
             "",
         ]
     )
     return "\n".join(lines)
+
+
+def _included_scope(coverage_rows: List[Dict[str, Any]]) -> str:
+    scope = sorted({f"{row['theme']} {row['period']}" for row in coverage_rows if row["included_for_agent_ablation"]})
+    return ", ".join(scope) if scope else "없음"
+
+
+def _next_steps(leave_one_out_rows: List[Dict[str, Any]]) -> List[str]:
+    """Directions taken from the leave-one-out table instead of fixed recommendations."""
+    lines = []
+    for horizon in ("short", "long"):
+        rows = [row for row in leave_one_out_rows if row["horizon"] == horizon]
+        if not rows:
+            continue
+        keep = [row["removed_agent"] for row in rows if _float(row["excess_loss_when_removed_pct"]) > 0]
+        lower = [row["removed_agent"] for row in rows if _float(row["excess_loss_when_removed_pct"]) < 0]
+        lines.append(f"- {_ko_horizon(horizon)}: 제거 시 손실이 난 역할(유지 후보) {', '.join(keep) or '없음'}; "
+                     f"제거하니 좋아진 역할(가중치 축소·조건부 후보) {', '.join(lower) or '없음'}.")
+    return lines or ["- 비교 가능한 실행이 없어 방향을 정하지 않습니다."]
 
 
 def _usefulness_ko(value: Any) -> str:

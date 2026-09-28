@@ -20,7 +20,7 @@
 | `run_agent_architecture_profile_backtests.py` | 기존 멀티 에이전트 캐시만으로 점수 프로필별 백테스트를 실행합니다. |
 | `run_agent_architecture_pure_agent_backtests.py` | 규칙 점수를 프롬프트에서 제거한 순수 에이전트 ablation을 캐시 전용으로 실행합니다. |
 | `run_agent_architecture_fresh_representatives.py` | 대표 프로필 1~2개를 새 LLM 호출로 재검증합니다. |
-| `build_agent_architecture_validation.py` | 저장된 실행 결과와 멀티 에이전트 캐시를 결합해 `AGENT_ABLATION_EVIDENCE_KO.md`와 요약 CSV를 만듭니다. 캐시는 프롬프트 버전·모델·테마·날짜·종목·점수까지 정확히 일치할 때만 결합하고, 점수가 없는 후보는 채우지 않고 제외합니다. 결합률이 `--min-agent-coverage`(기본 90%) 미만인 실행은 비교에서 빠지며, 에이전트 제거 비교의 기준선은 3-agent 조합입니다. 결론 문장은 계산 결과에서만 만듭니다. 입력이 없으면 종료 코드 2, 비교 가능한 실행이 없으면 3입니다. `--source-root`와 `--output-dir`로 원본을 덮어쓰지 않고 다른 곳에 결과를 쓸 수 있습니다. |
+| `build_agent_architecture_validation.py` | 저장된 실행 결과와 멀티 에이전트 캐시를 결합해 `AGENT_ABLATION_EVIDENCE_KO.md`와 요약 CSV를 만듭니다. 캐시는 프롬프트 버전·모델·테마·날짜·종목·점수와 v4부터 키에 들어간 설정(pure_features 등)까지 정확히 일치할 때만 결합하고, 점수가 없는 후보는 채우지 않고 제외합니다. 결합률이 `--min-agent-coverage`(기본 90%) 미만인 실행은 비교에서 빠지며, 에이전트 제거 비교의 기준선은 3-agent 조합입니다. 에이전트 수 비교에는 LLM 에이전트 점수만 쓰고, 규칙 점수가 섞인 하이브리드와 유동성 변형은 따로 표시합니다. 상위 N개 경계에서 점수가 같은 후보는 남은 자리를 나눠 가진 것으로 계산해 다른 점수가 순위를 정하지 않게 합니다. 같은 task_id의 보관본과 원본은 한 번만 셉니다. 결론 문장은 계산 결과에서만 만듭니다. 입력이 없으면 종료 코드 2, 비교 가능한 실행이 없으면 3입니다. `--source-root`와 `--output-dir`로 원본을 덮어쓰지 않고 다른 곳에 결과를 쓸 수 있습니다. |
 | `run_remaining_theme_backtests.py` | 여러 테마에 대해 멀티 에이전트 검증과 기술 기준선을 순차 실행합니다. `--mock-llm`이면 외부 호출 없이 흐름만 확인합니다. |
 | `build_combined_theme_universe.py` | 여러 테마를 합친 가상 유니버스 데이터를 만듭니다. |
 | `audit_theme_data.py` | 테마별 가격·코퍼스 커버리지를 점검하고 누락 구간을 보고합니다. |
