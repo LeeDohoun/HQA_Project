@@ -149,3 +149,15 @@ def test_luna_factory_uses_responses_and_disables_retries(monkeypatch, role):
     assert model.store is False
     assert model.reasoning["effort"] == llm_config.get_role_limits(role).reasoning_effort
     assert model.max_tokens == llm_config.get_role_limits(role).output_tokens
+
+
+def test_ollama_context_window_is_configurable_for_long_specialist_inputs(monkeypatch):
+    import pytest
+    from src.agents import llm_config
+
+    monkeypatch.setenv("OLLAMA_NUM_CTX", "16384")
+    model = llm_config._create_ollama_llm("qwen3:14b", base_url="http://127.0.0.1:9")
+    assert model.num_ctx == 16384
+    monkeypatch.setenv("OLLAMA_NUM_CTX", "1024")
+    with pytest.raises(ValueError, match="OLLAMA_NUM_CTX"):
+        llm_config._create_ollama_llm("qwen3:14b", base_url="http://127.0.0.1:9")

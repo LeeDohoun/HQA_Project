@@ -215,6 +215,13 @@ def _create_ollama_llm(
     }
     if reasoning is not None:
         kwargs["reasoning"] = reasoning
+    num_ctx = os.getenv("OLLAMA_NUM_CTX", "").strip()
+    if num_ctx:
+        # Ollama silently truncates prompts longer than its context window; specialist
+        # inputs can reach the 12k-token role limit, so local runs need a larger window.
+        if not num_ctx.isdigit() or int(num_ctx) < 2048:
+            raise ValueError("OLLAMA_NUM_CTX must be an integer of at least 2048")
+        kwargs["num_ctx"] = int(num_ctx)
 
     try:
         return ChatOllama(**kwargs)
