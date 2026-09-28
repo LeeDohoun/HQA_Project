@@ -229,21 +229,31 @@ class LocalAnalysisData:
         errors = []
         for path in paths:
             key = path.stem
-            generation = self._current_generation(key)
-            for target in read_jsonl(path):
-                code = ThemeUniverseLoader._stock_code(target)
-                name = ThemeUniverseLoader._stock_name(target)
-                if not code or len(code) != 6 or not code.isdigit() or not name:
-                    raise ValueError(f"invalid theme target:{path}")
+            # One theme's unpublished generation or malformed file must not stop every
+            # other theme; the failing theme is excluded and reported explicitly.
+            try:
+                generation = self._current_generation(key)
+                members = []
+                for target in read_jsonl(path):
+                    code = ThemeUniverseLoader._stock_code(target)
+                    name = ThemeUniverseLoader._stock_name(target)
+                    if not code or len(code) != 6 or not code.isdigit() or not name:
+                        raise ValueError(f"invalid theme target:{path}")
+                    members.append((code, name))
+                price_path = ((self._generation_dir(key, generation) if generation is not None
+                               else self.data_dir / "market_data" / key) / "chart.jsonl")
+                theme_prices = read_jsonl(price_path) if price_path.exists() else None
+            except (OSError, ValueError, TypeError) as exc:
+                errors.append({"theme_key": key, "stage": "theme_data", "error": str(exc)})
+                continue
+            for code, name in members:
                 stock = stocks.setdefault(code, {"stock_code": code, "stock_name": name, "theme_keys": [], "theme_generations": {}})
                 stock["theme_keys"].append(key)
                 stock["theme_generations"][key] = generation
-            price_path = ((self._generation_dir(key, generation) if generation is not None
-                           else self.data_dir / "market_data" / key) / "chart.jsonl")
-            if not price_path.exists():
+            if theme_prices is None:
                 errors.append({"theme_key": key, "stage": "price_data", "error": "missing_chart_file"})
                 continue
-            for row in read_jsonl(price_path):
+            for row in theme_prices:
                 code = ThemeUniverseLoader._stock_code(row)
                 if code:
                     price_rows.setdefault(code, []).append(row)

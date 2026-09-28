@@ -421,3 +421,62 @@ def test_enabled_empty_account_requires_no_price_request_or_invented_plan():
     assert not backend.quote_calls
     assert not monitor.last_report["errors"]
     assert not monitor.last_report["uncovered_holdings"]
+
+
+def test_run_forever_keeps_polling_after_transient_backend_errors(monkeypatch):
+    import requests
+    from src.runner import signal_monitor as module
+
+    class FlakyBackend:
+        calls = 0
+
+        def fetch_active_signals(self):
+            FlakyBackend.calls += 1
+            if FlakyBackend.calls == 1:
+                raise requests.ConnectionError("backend restarting")
+            return []
+
+    class Provider:
+        def prepare(self, signals):
+            return {}
+
+    class Audit:
+        events = []
+
+        def append(self, kind, payload):
+            self.events.append((kind, payload))
+            return len(self.events)
+
+    class Stop(Exception):
+        pass
+
+    sleeps = []
+
+    def fake_sleep(seconds):
+        sleeps.append(seconds)
+        if len(sleeps) == 3:
+            raise Stop()
+
+    monkeypatch.setattr(module.time, "sleep", fake_sleep)
+    audit = Audit()
+    monitor = module.SignalMonitor(FlakyBackend(), snapshot_batch_provider=Provider(), audit=audit)
+    with pytest.raises(Stop):
+        monitor.run_forever()
+    assert FlakyBackend.calls == 3
+    failed = [payload for kind, payload in audit.events if kind == "monitor" and payload.get("status") == "failed"]
+    assert len(failed) == 1
+    assert failed[0]["slo_met"] is False and failed[0]["errors"][0]["error_type"] == "ConnectionError"
+    assert monitor.last_report.get("status") != "failed"
+
+
+def test_signal_monitor_import_does_not_load_llm_stack():
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    program = ("import sys\nimport src.runner.signal_monitor\n"
+               "loaded = [m for m in sys.modules if m.startswith(('src.agents', 'src.tools', 'src.utils.llm_queue', 'src.utils.kis_auth'))]\n"
+               "assert not loaded, loaded\n")
+    result = subprocess.run([sys.executable, "-c", program], cwd=Path(__file__).resolve().parents[1],
+                            capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr

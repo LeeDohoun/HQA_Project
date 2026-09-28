@@ -195,3 +195,36 @@ def test_one_submission_failure_does_not_skip_other_accounts_or_retry(error):
     assert report["targets"][0]["error"] == f"{type(error).__name__}: {error}"
     assert report["targets"][1]["submitted"] == 1
     assert report["targets"][1]["error"] is None
+
+
+def test_scheduled_cycle_failure_is_reported_and_the_loop_continues(monkeypatch):
+    from src.runner import analysis_scheduler as module
+
+    assert module.run_cycle_safely(lambda: {"status": "ok"}) == {"status": "ok"}
+    failed = module.run_cycle_safely(lambda: (_ for _ in ()).throw(TimeoutError("AI server busy")))
+    assert failed == {"status": "failed", "error_type": "TimeoutError", "error": "AI server busy"}
+
+    class Stop(Exception):
+        pass
+
+    runs = []
+    sleeps = []
+
+    def fake_sleep(_):
+        sleeps.append(_)
+        if len(sleeps) == 3:
+            raise Stop()
+
+    scheduler = module.AnalysisScheduler.__new__(module.AnalysisScheduler)
+    scheduler.interval_seconds = 900
+    scheduler.market_hours_only = False
+
+    def run_once():
+        runs.append(1)
+        raise ConnectionError("backend down")
+
+    scheduler.run_once = run_once
+    monkeypatch.setattr(module.time, "sleep", fake_sleep)
+    with pytest.raises(Stop):
+        scheduler.run_forever()
+    assert len(runs) == 2

@@ -163,3 +163,20 @@ def test_undated_legacy_prices_are_quarantined_without_republishing_old_chart(tm
     assert quarantined[0]["reason"] == "missing_or_invalid_price_observation_time"
     current = pointer(tmp_path)["generation"]
     assert read_rows(tmp_path / "canonical_index/theme/generations" / current / "chart.jsonl") == []
+
+
+def test_one_unpublished_theme_generation_does_not_stop_other_themes(tmp_path, monkeypatch):
+    now = datetime.now(timezone.utc)
+    write_inputs(tmp_path, now)
+    EvidenceIndexBuilder(str(tmp_path)).rebuild_theme("theme")
+    # A failed first build leaves the marker directory without current.json.
+    write_rows(tmp_path / "raw/theme_targets/broken.jsonl", [{"stock_code": "000660", "stock_name": "SK하이닉스"}])
+    (tmp_path / "canonical_index/broken/generations").mkdir(parents=True)
+    write_rows(tmp_path / "raw/theme_targets/malformed.jsonl", [{"stock_code": "035420", "stock_name": ""}])
+    loader = loader_with_stub_prices(tmp_path, monkeypatch)
+    candidates, errors = loader.load_universe(now)
+    assert [row["stock_code"] for row in candidates] == ["005930"]
+    by_theme = {error["theme_key"]: error for error in errors if error.get("stage") == "theme_data"}
+    assert "unpublished_analysis_generation:broken" in by_theme["broken"]["error"]
+    assert "invalid theme target" in by_theme["malformed"]["error"]
+    assert all(row["stock_code"] not in {"000660", "035420"} for row in candidates)

@@ -260,11 +260,32 @@ class SignalMonitor:
         return triggered
 
     def run_forever(self) -> None:
+        consecutive_failures = 0
         while True:
             started = time.monotonic()
-            self.poll_once()
-            logger.info("signal_monitor %s", json.dumps(self.last_report))
+            try:
+                self.poll_once()
+                consecutive_failures = 0
+                logger.info("signal_monitor %s", json.dumps(self.last_report))
+            except Exception as exc:
+                # A backend restart or network error must not end position protection:
+                # record the failed poll and try again on the next interval.
+                consecutive_failures += 1
+                self._record_failed_poll(exc, time.monotonic() - started, consecutive_failures)
             time.sleep(max(0, min(self.open_poll_seconds, self.entry_poll_seconds) - (time.monotonic() - started)))
+
+    def _record_failed_poll(self, exc: Exception, elapsed: float, consecutive_failures: int) -> None:
+        self.last_report = {"checked_at": self.clock().isoformat(), "status": "failed", "checked": 0, "triggered": 0,
+                            "errors": [{"stage": "poll", "error_type": type(exc).__name__, "error": str(exc)[:500]}],
+                            "elapsed_seconds": round(elapsed, 3), "slo_met": False,
+                            "consecutive_failures": consecutive_failures}
+        logger.error("signal_monitor poll failed (%d consecutive): %s: %s",
+                     consecutive_failures, type(exc).__name__, str(exc)[:500])
+        if self.audit is not None:
+            try:
+                self.audit.append("monitor", self.last_report)
+            except Exception:
+                logger.exception("signal_monitor could not record the failed poll")
 
     def _matching_condition(self, signal: Dict[str, Any], snapshot: Snapshot) -> Optional[Tuple[str, Condition]]:
         status = str(signal.get("status") or "")
