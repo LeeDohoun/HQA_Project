@@ -17,8 +17,8 @@ CALENDAR_VERSION = "exchange-calendars:" + calendars.__version__ + ":XKRX:krx-no
 CALENDAR_REVIEWED_ON = "2026-09-27"
 CALENDAR_REVIEWED_THROUGH = "2027-09-30"
 # Dates with a known special schedule whose official KRX session-hour notice is not
-# yet published. They stay blocked, not guessed, until the notice is added to
-# SPECIAL_CLOSES (KRX usually publishes it about two weeks in advance).
+# yet published. They stay blocked, not guessed, until the notice's open and close are
+# added to SPECIAL_CLOSES (KRX usually publishes it about two weeks in advance).
 PENDING_SPECIAL_SESSION_NOTICES = {
     "2026-11-19": {
         "reason": "2027 CSAT exam day (Ministry of Education schedule); KRX session-hour notice not yet published",
@@ -37,16 +37,20 @@ EXCHANGE_HOLIDAY_OVERRIDES = {
                    "source_urls": ["https://www.fnnews.com/news/202605201034458662",
                                    "https://www.hankyung.com/article/2026052094456"]},
 }
+# Official KRX session-hour notices for days the pinned calendar gets wrong. Each
+# entry records both the regular-session open and close (CSAT days: 10:00-16:30).
 SPECIAL_CLOSES = {
     "2024-11-14": {
-        "close": "2024-11-14T16:30:00+09:00", "published_at": "2024-10-31T10:00:00+09:00",
+        "open": "2024-11-14T10:00:00+09:00", "close": "2024-11-14T16:30:00+09:00",
+        "published_at": "2024-10-31T10:00:00+09:00",
         "source_urls": {
             "KOSPI": "https://kind.krx.co.kr/external/2024/10/31/000086/20241031000185/99303.htm",
             "KOSDAQ": "https://kind.krx.co.kr/external/2024/10/31/000078/20241021000338/70780.htm",
         },
     },
     "2025-11-13": {
-        "close": "2025-11-13T16:30:00+09:00", "published_at": "2025-10-30T10:00:00+09:00",
+        "open": "2025-11-13T10:00:00+09:00", "close": "2025-11-13T16:30:00+09:00",
+        "published_at": "2025-10-30T10:00:00+09:00",
         "source_urls": {
             "KOSPI": "https://kind.krx.co.kr/external/2025/10/30/000102/20251030000137/99303.htm",
             "KOSDAQ": "https://kind.krx.co.kr/external/2025/10/30/000121/20251021000455/70780.htm",
@@ -98,8 +102,7 @@ def is_trading_day(day: str) -> bool:
     return bool(_calendar(parsed.year).is_session(day)) and day not in EXCHANGE_HOLIDAY_OVERRIDES
 
 
-@lru_cache(maxsize=2048)
-def daily_session_close(day: str) -> datetime:
+def _session_bound(day: str, bound: str) -> datetime:
     parsed = date.fromisoformat(day)
     if parsed.isoformat() != day:
         raise ValueError("price trade date requires YYYY-MM-DD")
@@ -108,8 +111,18 @@ def daily_session_close(day: str) -> datetime:
         raise ValueError(f"nontrading_price_date:{day}")
     _check_special_session_coverage(day)
     if day in SPECIAL_CLOSES:
-        return pd.Timestamp(SPECIAL_CLOSES[day]["close"]).tz_convert("UTC").to_pydatetime()
-    return calendar.session_close(day).to_pydatetime()
+        return pd.Timestamp(SPECIAL_CLOSES[day][bound]).tz_convert("UTC").to_pydatetime()
+    return (calendar.session_open if bound == "open" else calendar.session_close)(day).to_pydatetime()
+
+
+@lru_cache(maxsize=2048)
+def daily_session_open(day: str) -> datetime:
+    return _session_bound(day, "open")
+
+
+@lru_cache(maxsize=2048)
+def daily_session_close(day: str) -> datetime:
+    return _session_bound(day, "close")
 
 
 def completed_daily_sessions(as_of: datetime, count: int = 300) -> list[tuple[str, datetime]]:

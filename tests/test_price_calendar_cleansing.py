@@ -199,3 +199,12 @@ def test_real_2026_history_without_bars_on_new_holidays_is_complete():
     sessions = [session for session, _ in completed_daily_sessions(datetime(2026, 9, 25, 7, 0, tzinfo=timezone.utc))]
     assert sessions[-1] == "2026-09-23"  # Chuseok 2026-09-24/25 is closed
     assert "2026-06-03" not in sessions and "2026-07-17" not in sessions and "2026-06-02" in sessions
+
+
+def test_every_special_session_notice_records_its_open_and_close():
+    from src.runner.trading_calendar import daily_session_open
+
+    for day, notice in SPECIAL_CLOSES.items():
+        opens, closes = datetime.fromisoformat(notice["open"]), datetime.fromisoformat(notice["close"])
+        assert opens.date().isoformat() == closes.date().isoformat() == day and opens < closes
+        assert daily_session_open(day) == opens and daily_session_close(day) == closes

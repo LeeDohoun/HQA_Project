@@ -180,6 +180,19 @@ def test_one_unpublished_theme_generation_does_not_stop_other_themes(tmp_path, m
     assert "unpublished_analysis_generation:broken" in by_theme["broken"]["error"]
     assert "invalid theme target" in by_theme["malformed"]["error"]
     assert all(row["stock_code"] not in {"000660", "035420"} for row in candidates)
+    assert by_theme["broken"]["stock_codes"] == ["000660"]
+
+
+def test_preview_of_a_stock_in_a_failed_theme_reports_that_theme_error(tmp_path):
+    from src.runner.shared_analysis import SharedAnalysisService
+
+    now = datetime.now(timezone.utc)
+    write_rows(tmp_path / "raw/theme_targets/broken.jsonl", [{"stock_code": "000660", "stock_name": "SK하이닉스"}])
+    (tmp_path / "canonical_index/broken/generations").mkdir(parents=True)
+    engine = SharedAnalysisService(data=LocalAnalysisData(data_dir=str(tmp_path)), accounts=None, models={},
+                                   clock=lambda: now)
+    with pytest.raises(ValueError, match="preview_price_history_unavailable:000660:unpublished_analysis_generation:broken"):
+        engine.preview_stock("000660")
 
 
 def test_structured_raw_sources_are_not_indexed_as_documents(tmp_path):

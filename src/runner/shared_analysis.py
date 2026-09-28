@@ -465,8 +465,8 @@ class SharedAnalysisService:
         selected_codes = {row["stock_code"] for row in selected} | held
         if preview_code is not None:
             if preview_code not in by_code:
-                reason = next((error["error"] for error in errors if error.get("stock_code") == preview_code),
-                              "not_in_theme_universe")
+                reason = next((error["error"] for error in errors if error.get("stock_code") == preview_code
+                               or preview_code in (error.get("stock_codes") or ())), "not_in_theme_universe")
                 raise ValueError(f"preview_price_history_unavailable:{preview_code}:{reason}")
             selected_codes = {preview_code}
         common, payloads = {}, {}

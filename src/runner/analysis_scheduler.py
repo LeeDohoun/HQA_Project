@@ -7,7 +7,7 @@ import json
 import logging
 import threading
 import uuid
-from datetime import datetime, time as wall_time, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional
 
 import requests
@@ -185,15 +185,20 @@ def seconds_until_next_slot(timestamp: float, interval: int = 900) -> float:
 
 
 def within_analysis_session(at: datetime) -> bool:
-    """KRX trading day between 09:00 and 15:30 KST; exchange holidays spend no LLM budget."""
+    """Inside the KRX regular session: 09:00-15:30 KST, or a notice's special hours such
+    as 10:00-16:30 on CSAT days. Exchange holidays spend no LLM budget."""
     if at.tzinfo is None:
         raise ValueError("schedule clock requires an aware timestamp")
     local = at.astimezone(timezone(timedelta(hours=9)))
-    if local.weekday() >= 5 or not wall_time(9) <= local.time() < wall_time(15, 30):
+    if local.weekday() >= 5:
         return False
+    day = local.date().isoformat()
     try:
-        from src.runner.trading_calendar import is_trading_day
-        return is_trading_day(local.date().isoformat())
+        from src.runner.trading_calendar import daily_session_close, daily_session_open, is_trading_day
+        return is_trading_day(day) and daily_session_open(day) <= at < daily_session_close(day)
+    except ValueError as exc:  # unverified special session or expired review: fail closed
+        logger.error("analysis session calendar check failed; skipping this slot: %s", exc)
+        return False
     except Exception:
         logger.exception("analysis session calendar check failed; skipping this slot")
         return False

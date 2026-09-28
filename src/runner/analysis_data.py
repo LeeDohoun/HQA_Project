@@ -217,6 +217,15 @@ class LocalAnalysisData:
             raise ValueError(f"missing_analysis_generation:{theme}:{generation}")
         return path
 
+    @staticmethod
+    def _member_codes(path: Path) -> list[str]:
+        """Best-effort member codes of a theme that failed to load, so a preview of one of
+        its stocks reports the theme's error instead of "not in any theme"."""
+        try:
+            return sorted({code for code in map(ThemeUniverseLoader._stock_code, read_jsonl(path)) if code})
+        except (OSError, ValueError, TypeError, AttributeError):
+            return []
+
     def load_universe(self, as_of: datetime) -> tuple[list[dict], list[dict]]:
         if abs((datetime.now(UTC) - as_of).total_seconds()) > 60:
             raise ValueError("historical_replay_requires_versioned_price_and_universe_store")
@@ -244,7 +253,8 @@ class LocalAnalysisData:
                                else self.data_dir / "market_data" / key) / "chart.jsonl")
                 theme_prices = read_jsonl(price_path) if price_path.exists() else None
             except (OSError, ValueError, TypeError) as exc:
-                errors.append({"theme_key": key, "stage": "theme_data", "error": str(exc)})
+                errors.append({"theme_key": key, "stage": "theme_data", "error": str(exc),
+                               "stock_codes": self._member_codes(path)})
                 continue
             for code, name in members:
                 stock = stocks.setdefault(code, {"stock_code": code, "stock_name": name, "theme_keys": [], "theme_generations": {}})

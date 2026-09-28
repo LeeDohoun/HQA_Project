@@ -652,6 +652,15 @@ def test_scheduler_korean_weekday_session_boundaries(at, expected):
     assert within_analysis_session(datetime.fromisoformat(at)) is expected
 
 
+@pytest.mark.parametrize("at,expected", [("2025-11-13T09:05:00+09:00", False),   # CSAT day: opens at 10:00
+                                        ("2025-11-13T10:00:00+09:00", True),
+                                        ("2025-11-13T16:15:00+09:00", True),    # and closes at 16:30
+                                        ("2025-11-13T16:30:00+09:00", False),
+                                        ("2026-11-19T10:30:00+09:00", False)])  # notice still pending
+def test_scheduler_follows_special_session_hours(at, expected):
+    assert within_analysis_session(datetime.fromisoformat(at)) is expected
+
+
 def test_audit_records_real_inputs_without_exposing_them_in_public_rankings(tmp_path):
     from src.tracing.paper_audit import PaperAudit
     engine, _ = service(Data(1))
