@@ -66,7 +66,8 @@ class BaseCollector:
                     time.sleep(self.backoff_seconds * (attempt + 1))
 
         status_text = f" status={last_status}" if last_status else ""
-        raise requests.RequestException(f"[{log_prefix}] GET failed after retries: {safe_url}{status_text}") from None
+        raise RetryExhaustedError(f"[{log_prefix}] GET failed after retries: {safe_url}{status_text}",
+                                  last_status) from None
 
     @staticmethod
     def to_iso_datetime(
@@ -91,7 +92,23 @@ class BaseCollector:
         return ""
 
 
-def _http_status(error: Exception) -> int | None:
+class RetryExhaustedError(requests.RequestException):
+    """Every attempt failed; ``status`` is the last attempt's HTTP status (None for transport errors)."""
+
+    def __init__(self, message: str, status: int | None = None):
+        super().__init__(message)
+        self.status = status
+
+
+def http_status_suffix(error: BaseException) -> str:
+    """" status=NNN" for an HTTP failure, so wrapped final errors keep rate limits detectable."""
+    status = getattr(error, "status", None)
+    if type(status) is not int:
+        status = _http_status(error)
+    return f" status={status}" if status else ""
+
+
+def _http_status(error: BaseException) -> int | None:
     response = getattr(error, "response", None)
     status = getattr(response, "status_code", None)
     return status if type(status) is int else None

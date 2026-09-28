@@ -5,7 +5,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional
 
-from .base import BaseCollector
+from .base import BaseCollector, http_status_suffix
 from .dart_api import DartAPIError, read_dart_payload
 from .types import FinancialSnapshot
 
@@ -170,8 +170,8 @@ class DartFinancialStatementCollector(BaseCollector):
                         "bsns_year": fiscal_year, "reprt_code": report_code},
                 timeout=self.timeout, log_prefix=f"DART:FINANCIALS:{corp_code}:{fiscal_year}",
             )
-        except Exception:
-            raise DartAPIError("DART financial transport failure") from None
+        except Exception as exc:
+            raise DartAPIError(f"DART financial transport failure{http_status_suffix(exc)}") from None
         payload = read_dart_payload(response)
         if payload["status"] == "013":
             return []

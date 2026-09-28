@@ -84,7 +84,8 @@ def test_collection_module_has_no_model_analysis_entrypoint():
 
 @pytest.mark.parametrize("output,expected", [
     ("[WARN][삼성전자] dart collect failed: DART provider error status=020", True),
-    ("[WARN][NEWS:SEARCH:삼성전자] GET failed attempt=3/3 url=https://search.naver.com/search.naver error=HTTPError status=429", True),
+    ("[WARN][삼성전자] news collect failed: news_search_failed:page=1:RetryExhaustedError status=429", True),
+    ("[WARN][NEWS:SEARCH:삼성전자] GET failed attempt=1/3 url=https://search.naver.com/search.naver error=HTTPError status=429", False),
     ("KRX chart request failed (HTTPError) status=429", True),
     ("429 Too Many Requests", True),
     ("saved rcept_no=20260429000123 count=429", False),
@@ -105,3 +106,50 @@ def test_discover_writes_a_catalog_and_leaves_the_analysis_universe_alone(tmp_pa
     assert summary["saved_theme_count"] == 1
     assert (tmp_path / "theme_catalog" / "2차전지.jsonl").exists()
     assert not (tmp_path / "raw" / "theme_targets").exists()
+
+
+def _http_session(*statuses):
+    import requests
+
+    def response(status):
+        def raise_for_status():
+            if status >= 400:
+                raise requests.HTTPError(f"{status} error", response=SimpleNamespace(status_code=status))
+        return SimpleNamespace(status_code=status, text="", content=b"", raise_for_status=raise_for_status)
+
+    queue = [response(status) for status in statuses]
+    return SimpleNamespace(get=lambda *args, **kwargs: queue.pop(0) if len(queue) > 1 else queue[0],
+                           headers={})
+
+
+def test_loop_ignores_a_rate_limit_that_a_retry_recovered(capsys):
+    from src.ingestion.base import BaseCollector
+
+    collector = BaseCollector(backoff_seconds=0)
+    collector.session = _http_session(429, 200)
+    assert collector.get_with_retry("https://provider.invalid/list").status_code == 200
+    output = capsys.readouterr().out
+    assert "status=429" in output                     # the retry stays visible to operators
+    assert loop._contains_rate_limit(output) is False
+
+
+def test_loop_detects_rate_limits_that_exhausted_every_retry(monkeypatch):
+    from src.ingestion.dart import DartDisclosureCollector
+    from src.ingestion.dart_financials import DartFinancialStatementCollector
+    from src.ingestion.naver_news import NaverNewsCollector
+
+    news, dart, financials = NaverNewsCollector(), DartDisclosureCollector("fixture-key"), \
+        DartFinancialStatementCollector("fixture-key")
+    calls = [lambda: list(news._collect_search_candidates(keyword="삼성전자", from_date="20260901",
+                                                          to_date="20260905", max_pages=1)),
+             lambda: news._fetch_article_detail("https://news.invalid/1"),
+             lambda: dart._collect_listing("00126380", "20260901", "20260905", 100),
+             lambda: financials._fetch_rows("00126380", "2025", "11011")]
+    for collector in (news, dart, financials):
+        collector.backoff_seconds = 0
+        collector.session = _http_session(429)
+    for call in calls:
+        with pytest.raises(Exception) as error:
+            call()
+        assert "status=429" in str(error.value) and "fixture-key" not in str(error.value)
+        assert loop._contains_rate_limit(f"[WARN][삼성전자] news collect failed: {error.value}") is True

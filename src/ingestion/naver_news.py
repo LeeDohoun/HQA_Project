@@ -16,7 +16,7 @@ try:
 except ImportError:
     BeautifulSoup = None
 
-from .base import BaseCollector
+from .base import BaseCollector, http_status_suffix
 from .types import DocumentRecord
 
 _KST = ZoneInfo("Asia/Seoul")
@@ -168,7 +168,7 @@ class NaverNewsCollector(BaseCollector):
                     log_prefix=f"NEWS:SEARCH:{keyword}",
                 )
             except Exception as exc:
-                raise RuntimeError(f"news_search_failed:page={page_no}:{type(exc).__name__}") from None
+                raise RuntimeError(f"news_search_failed:page={page_no}:{type(exc).__name__}{http_status_suffix(exc)}") from None
 
             items = self._extract_search_items(response.text)
             if not items:
@@ -295,7 +295,7 @@ class NaverNewsCollector(BaseCollector):
                 log_prefix="NEWS:ARTICLE",
             )
         except Exception as exc:
-            raise RuntimeError(f"news_article_fetch_failed:{type(exc).__name__}") from None
+            raise RuntimeError(f"news_article_fetch_failed:{type(exc).__name__}{http_status_suffix(exc)}") from None
 
         if BeautifulSoup is None:
             raise ImportError("beautifulsoup4 is required for article extraction")

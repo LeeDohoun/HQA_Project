@@ -21,10 +21,14 @@ RATE_LIMIT_PATTERNS = [
     re.compile(r"\btoo many requests\b", re.IGNORECASE),
     re.compile(r"\bquota exceeded\b", re.IGNORECASE),
 ]
+# src/ingestion/base.py warns on every failed attempt, and a later attempt may still
+# succeed; only final errors (which keep the status) mean the provider refused the run.
+RETRY_ATTEMPT_PATTERN = re.compile(r"\bGET failed attempt=\d+/\d+")
 
 
 def _contains_rate_limit(text: str) -> bool:
-    return any(pattern.search(text) for pattern in RATE_LIMIT_PATTERNS)
+    return any(pattern.search(line) for line in text.splitlines()
+               if not RETRY_ATTEMPT_PATTERN.search(line) for pattern in RATE_LIMIT_PATTERNS)
 
 
 def _sleep_until_next_day(resume_hour: int, resume_minute: int) -> None:
