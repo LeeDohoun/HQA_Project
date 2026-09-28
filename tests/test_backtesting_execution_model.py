@@ -110,3 +110,75 @@ def test_price_basis_breaks_exclude_the_period():
     limit_up = frame("A", [100.0] * 11 + [129.0] * 9)               # a +29% limit move is a real return
     calendar = _market_dates({"A": limit_up})
     assert features(limit_up, limit_up["YMD"].iloc[10], calendar)["eligible"] is True
+
+
+def _write_chart(tmp_path, bars):
+    path = tmp_path / "market_data/theme/chart.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("".join(json.dumps({"stock_code": code, "stock_name": code, "timestamp": day, "open": o,
+                                        "high": h, "low": l, "close": c, "volume": v}) + "\n"
+                            for code, day, o, h, l, c, v in bars), encoding="utf-8")
+
+
+def _halt_case(tmp_path, resume_close, *, omit_halt_rows=False):
+    from backtesting.leader_backtest import load_price_history
+
+    days = [day.strftime("%Y-%m-%d") for day in pd.bdate_range("2025-08-01", periods=20)]
+    bars = [("B", day, 100, 101, 99, 100, 1000) for day in days]
+    for index, day in enumerate(days):
+        if 11 <= index <= 14:  # halted across the planned exit (entry index 10 + 3 sessions)
+            if not omit_halt_rows:
+                bars.append(("A", day, "0", "0", "0", 50, "0"))  # how Naver/KRX report a halted session
+        else:
+            close = 50 if index < 15 else resume_close
+            bars.append(("A", day, close, close, close, close, 1000))
+    _write_chart(tmp_path, bars)
+    prices = load_price_history(tmp_path, "theme")
+    return features(prices["A"], prices["A"]["YMD"].iloc[10], _market_dates(prices), hold=3), days
+
+
+def test_a_halt_stored_as_zero_prices_delays_the_exit_instead_of_ending_the_stock(tmp_path):
+    row, days = _halt_case(tmp_path, 55)
+    assert row["eligible"] is True and row["exit_reason"] == "exit_delayed_by_halt"
+    assert row["exit_date"] == days[15] and row["exit_price"] == 55
+
+
+def test_a_consolidation_during_a_halt_excludes_the_period(tmp_path):
+    row, _ = _halt_case(tmp_path, 325)  # 5:1 consolidation while halted
+    assert row["eligible"] is False and row["reason"] == "price_basis_break_in_holding"
+
+
+def test_missing_rows_across_the_planned_exit_are_a_halt_when_trading_resumes(tmp_path):
+    row, days = _halt_case(tmp_path, 55, omit_halt_rows=True)
+    assert row["exit_reason"] == "exit_delayed_by_halt" and row["exit_date"] == days[15]
+
+
+def test_an_open_beyond_the_target_fills_the_take_profit_before_the_stop():
+    df = frame("A", [100.0, 100.0, 118.0, 118.0], opens=[100.0, 100.0, 121.0, 118.0],
+               highs=[100.0, 115.0, 123.0, 118.0], lows=[100.0, 99.0, 111.0, 118.0])
+    result = _simulate_exit(df=df, entry_pos=0, planned_exit_pos=3, entry_price=100.0,
+                            exit_config=ExitConfig(take_profit_pct=20.0, trailing_stop_pct=2.5))
+    assert (result["exit_reason"], result["exit_price"]) == ("take_profit", 121.0)
+
+
+def test_an_llm_score_of_zero_is_a_score_not_a_missing_value():
+    from backtesting.leader_backtest import _rerank_with_llm
+
+    class Scorer:
+        def score(self, *, as_of_ymd, row):
+            return {"llm_score": {"A": 0, "B": 40}[row["stock_code"]], "llm_confidence": 80}
+
+    ranked = [{"stock_code": "A", "leader_score": 90}, {"stock_code": "B", "leader_score": 60}]
+    result = _rerank_with_llm(ranked=ranked, as_of_ymd="20250310", llm_scorer=Scorer(), top_n=2,
+                              llm_rerank_top_k=2, llm_weight=1.0, warnings=[])
+    assert [(row["stock_code"], row["leader_score"]) for row in result] == [("B", 40), ("A", 0)]
+
+
+def test_a_membership_inferred_from_documents_starts_after_its_first_document_day():
+    from src.ingestion.theme_membership import ThemeMembership, active_membership_codes
+
+    rows = [ThemeMembership("ai", "A", "000001", "2025-03-10", source="local_corpus_inferred"),
+            ThemeMembership("ai", "B", "000002", "2025-03-10", source="combined_local_corpus_inferred"),
+            ThemeMembership("ai", "C", "000003", "2025-03-10", source="official")]
+    assert active_membership_codes(rows, "2025-03-10") == {"000003"}  # same-day documents are not known
+    assert active_membership_codes(rows, "2025-03-11") == {"000001", "000002", "000003"}

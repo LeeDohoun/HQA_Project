@@ -21,6 +21,8 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from backtesting.leader_backtest import (
+    EXECUTION_MODEL_VERSION,
+    SAME_DAY_OHLC_POLICY,
     _market_dates,
     ExitConfig,
     RiskConfig,
@@ -396,7 +398,8 @@ def run_technical_baseline(
             "exit_counts": _exit_counts(positions),
             # Why stocks were excluded from the pool and benchmark (summed over rebalances).
             "ineligible_counts": dict(sorted(ineligible_counts.items())),
-            "same_day_ohlc_policy": "stop_or_trailing_stop_before_take_profit",
+            "same_day_ohlc_policy": SAME_DAY_OHLC_POLICY,
+            "model_version": EXECUTION_MODEL_VERSION,
         },
         "artifacts": {},
         "warnings": warnings + _default_warnings(bool(memberships)),

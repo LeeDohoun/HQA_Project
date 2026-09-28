@@ -470,7 +470,8 @@ def run_leader_backtest(
             "exit_counts": _exit_counts(positions),
             # Why stocks were excluded from the pool and benchmark (summed over rebalances).
             "ineligible_counts": dict(sorted(ineligible_counts.items())),
-            "same_day_ohlc_policy": "stop_or_trailing_stop_before_take_profit",
+            "same_day_ohlc_policy": SAME_DAY_OHLC_POLICY,
+            "model_version": EXECUTION_MODEL_VERSION,
         },
         "artifacts": {},
         "warnings": warnings + _default_warnings(
@@ -550,9 +551,13 @@ def load_price_history(data_dir: Path, theme_key: str) -> Dict[str, pd.DataFrame
         low = _to_float(row.get("low"))
         close = _to_float(row.get("close"))
         volume = _to_float(row.get("volume"))
-        if None in {open_, high, low, close}:
+        if None in {open_, high, low, close} or close <= 0:
             continue
-        if open_ <= 0 or high <= 0 or low <= 0 or close <= 0:
+        if open_ <= 0 and high <= 0 and low <= 0 and not volume:
+            # A halted session (Naver and KRX report 0 open/high/low, the prior close and no
+            # volume) stays as an untradable bar, so a halt is not mistaken for delisting.
+            open_ = high = low = close
+        elif open_ <= 0 or high <= 0 or low <= 0:
             continue
         if high < max(open_, close, low) or low > min(open_, close, high):
             continue
@@ -737,10 +742,6 @@ def _features_for_stock(
     feature_window = df["Close"].iloc[max(0, full_pos - 150):full_pos + 1]
     if _has_price_basis_break(feature_window):
         return _ineligible_row(code, name, as_of_ymd, "price_basis_break_in_features")
-    if _has_price_basis_break(df["Close"].iloc[full_pos:exit_pos + 1]):
-        # Unadjusted bars cannot give a return across a split or bonus issue; the
-        # period is excluded from both the pool and the benchmark and counted.
-        return _ineligible_row(code, name, as_of_ymd, "price_basis_break_in_holding")
 
     closes = known["Close"]
     returns = closes.pct_change().dropna()
@@ -769,6 +770,10 @@ def _features_for_stock(
         exit_config=exit_config,
         truncated=str(stock_ymd.iloc[exit_pos]) < planned_exit_ymd,
     )
+    if _has_price_basis_break(df["Close"].iloc[full_pos:exit_result["exit_pos"] + 1]):
+        # Unadjusted bars cannot give a return across a split or consolidation, including
+        # one during a halt that delays the exit; the period leaves the pool and benchmark.
+        return _ineligible_row(code, name, as_of_ymd, "price_basis_break_in_holding")
     realized = exit_result["exit_price"] / close - 1.0
 
     return {
@@ -832,6 +837,10 @@ def _simulate_exit(
                 active_stop_price = price
                 active_stop_reason = reason
 
+        if take_profit_price is not None and open_ >= take_profit_price:
+            # The first trade of the day is already past the target: it fills at the open,
+            # before any intraday low can reach the stop.
+            return {"exit_pos": pos, "exit_price": float(open_), "exit_reason": "take_profit"}
         if active_stop_price is not None and low <= active_stop_price:
             # A gap through the stop fills at the open, not at the stop price.
             return {
@@ -849,19 +858,21 @@ def _simulate_exit(
 
         high_water = max(high_water, high)
 
-    exit_pos = planned_exit_pos
-    reason = "stock_data_ended" if truncated else "holding_period_exit"
-    if float(df.iloc[exit_pos]["Volume"] or 0.0) <= 0:
-        # Halted at the planned exit: sell at the first tradable close after it, or at the
-        # last tradable close before it when trading never resumes in the data.
-        later = [pos for pos in range(exit_pos + 1, len(df)) if float(df.iloc[pos]["Volume"] or 0.0) > 0]
-        earlier = [pos for pos in range(exit_pos, entry_pos, -1) if float(df.iloc[pos]["Volume"] or 0.0) > 0]
+    exit_pos, reason = planned_exit_pos, "holding_period_exit"
+
+    def tradable(pos: int) -> bool:
+        return float(df.iloc[pos]["Volume"] or 0.0) > 0
+
+    if truncated or not tradable(exit_pos):
+        # No trade on the planned exit date (a halt, or no bar that day): sell at the first
+        # tradable close after it. Only when trading never resumes in the data does the
+        # position leave at the last tradable close before it.
+        later = [pos for pos in range(planned_exit_pos + 1, len(df)) if tradable(pos)]
+        earlier = [pos for pos in range(planned_exit_pos, entry_pos, -1) if tradable(pos)]
         if later:
             exit_pos, reason = later[0], "exit_delayed_by_halt"
-        elif earlier:
-            exit_pos, reason = earlier[0], "stock_data_ended"
         else:
-            exit_pos, reason = entry_pos, "stock_data_ended"
+            exit_pos, reason = (earlier[0] if earlier else entry_pos), "stock_data_ended"
     return {
         "exit_pos": exit_pos,
         "exit_price": float(df.iloc[exit_pos]["Close"]),
@@ -870,6 +881,10 @@ def _simulate_exit(
 
 
 PRICE_BASIS_BREAK_RETURN = 0.305  # beyond the KRX +/-30% daily limit
+# Bump when fills, exits, eligibility or point-in-time rules change: results written by
+# an older engine must not be resumed as if they were current (proof_validation).
+EXECUTION_MODEL_VERSION = "2026-09-29:prior-day-evidence:halts-kept:gap-fills:open-take-profit"
+SAME_DAY_OHLC_POLICY = "take_profit_at_open_beyond_target_else_stop_or_trailing_stop_before_take_profit"
 
 
 def _has_price_basis_break(closes: pd.Series) -> bool:
@@ -945,7 +960,9 @@ def _rerank_with_llm(
         current["llm_candidate_scope"] = llm_candidate_scope
         try:
             llm_result = llm_scorer.score(as_of_ymd=as_of_ymd, row=current)
-            raw_llm_score = float(llm_result.get("llm_score") or deterministic_score)
+            # A genuine 0 is a score; only a missing one falls back to the rule score.
+            missing = llm_result.get("llm_score") is None
+            raw_llm_score = deterministic_score if missing else float(llm_result["llm_score"])
             llm_ranking_score = _effective_llm_ranking_score(llm_result, raw_llm_score)
             current.update(llm_result)
             current["llm_raw_score"] = round(raw_llm_score)
