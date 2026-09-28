@@ -81,9 +81,19 @@ The XKRX session dependency is pinned in `requirements.txt`; its coverage is not
 substitute for a live exchange calendar feed. See the source-backed special-session
 notes in `src/runner/trading_calendar.py`. Missing bars fail completeness checks,
 and absence of a corporate-action warning still does not certify adjusted prices.
-The current verified special-session coverage expires on **2026-11-01**. Dates
-from then onward, and unverified November sessions in 2021-2023, fail explicitly
-until official schedules are reviewed; no future CSAT close time is guessed.
+The calendar was last reviewed on 2026-09-27 and is valid through **2027-09-30**;
+later sessions fail with `calendar_review_expired` until the KRX rules are reviewed
+again. The September 2026 KRX after-market does not change regular close times,
+market value or index; its volume is added to daily statistics, which the collector
+reads only for past sessions. Known special days without a published KRX notice
+(currently the CSAT day 2026-11-19) and unverified November sessions in 2021-2023
+fail explicitly; no future CSAT close time is guessed. Exchange holidays announced after the pinned
+`exchange-calendars` release (2026-06-03 local elections and 2026-07-17 Constitution Day)
+are applied from `EXCHANGE_HOLIDAY_OVERRIDES` with their announcement sources; add new
+ad-hoc closures there, or upgrade the dependency and remove entries it already covers. When KRX publishes the notice,
+add it to `SPECIAL_CLOSES` with its source URLs. `calendar_review_warnings()` reports
+pending notices and the review expiry 21 days in advance; the AI `/health` response
+and the scheduler log carry these warnings.
 
 ## Offline Verification
 

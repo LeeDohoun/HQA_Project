@@ -4,7 +4,10 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from src.runner.analysis_data import price_features
-from src.runner.trading_calendar import CALENDAR_VERSION, SPECIAL_CLOSES, completed_daily_sessions, daily_session_close
+from datetime import date
+
+from src.runner.trading_calendar import (CALENDAR_REVIEWED_THROUGH, CALENDAR_VERSION, PENDING_SPECIAL_SESSION_NOTICES,
+    SPECIAL_CLOSES, calendar_review_warnings, completed_daily_sessions, daily_session_close)
 
 NOW = datetime(2026, 9, 4, 8, tzinfo=timezone.utc)
 
@@ -143,12 +146,56 @@ def test_unverified_special_session_periods_fail_instead_of_guessing_normal_clos
         daily_session_close(day)
 
 
-def test_calendar_expiry_blocks_future_analysis_until_official_notice_is_added():
+def test_reviewed_regular_sessions_after_old_boundary_keep_working():
+    # 2026-11-18 16:00 KST: the latest completed session is an ordinary regular session.
+    sessions = completed_daily_sessions(datetime(2026, 11, 18, 7, 0, tzinfo=timezone.utc))
+    assert sessions[-1][0] == "2026-11-18"
+    assert daily_session_close("2026-11-02").isoformat() == "2026-11-02T06:30:00+00:00"
+
+
+def test_pending_special_session_blocks_from_that_day_until_official_notice_is_added():
+    assert "2026-11-19" in PENDING_SPECIAL_SESSION_NOTICES and "2026-11-19" not in SPECIAL_CLOSES
     with pytest.raises(ValueError, match="official_KRX_notice_required"):
-        completed_daily_sessions(datetime(2026, 11, 1, tzinfo=timezone.utc))
+        completed_daily_sessions(datetime(2026, 11, 19, 0, 30, tzinfo=timezone.utc))
+    # A later as_of still includes the unverified session in its completed window.
+    with pytest.raises(ValueError, match="official_KRX_notice_required"):
+        completed_daily_sessions(datetime(2026, 11, 25, 7, 0, tzinfo=timezone.utc))
+
+
+def test_calendar_review_horizon_blocks_unreviewed_future_sessions():
+    with pytest.raises(ValueError, match="calendar_review_expired"):
+        daily_session_close("2027-10-01")
+    assert CALENDAR_REVIEWED_THROUGH == "2027-09-30"
+
+
+def test_calendar_warnings_announce_pending_notice_and_review_expiry_in_advance():
+    assert calendar_review_warnings(date(2026, 9, 27)) == []
+    soon = calendar_review_warnings(date(2026, 11, 1))
+    assert soon == [f"calendar_notice_required:2026-11-19:blocks_in_18_days:{PENDING_SPECIAL_SESSION_NOTICES['2026-11-19']['reason']}"]
+    assert calendar_review_warnings(date(2026, 11, 19))[0].startswith("calendar_notice_required:2026-11-19:blocked")
+    later = calendar_review_warnings(date(2027, 9, 20))
+    # An unresolved pending notice keeps warning after its date, alongside the review expiry.
+    assert later[0].startswith("calendar_notice_required:2026-11-19:blocked")
+    assert later[-1] == "calendar_review_required:2027-09-30:expires_in_10_days"
+    assert calendar_review_warnings(date(2027, 10, 2))[-1] == "calendar_review_required:2027-09-30:expired"
 
 
 def test_future_observation_is_excluded_before_its_bad_bar_is_validated():
     rows = prices()
     rows.append({"timestamp": "2026-08-29", "metadata": {"collected_at": "2026-09-07T07:00:00+00:00"}})
     assert price_features(rows, NOW) == price_features(prices(), NOW)
+
+
+
+@pytest.mark.parametrize("day", ["2026-06-03", "2026-07-17"])
+def test_holidays_announced_after_the_calendar_release_are_not_trading_sessions(day):
+    with pytest.raises(ValueError, match="nontrading_price_date"):
+        daily_session_close(day)
+    after = datetime.fromisoformat(day + "T16:00:00+09:00") + timedelta(days=1)
+    assert day not in {session for session, _ in completed_daily_sessions(after)}
+
+
+def test_real_2026_history_without_bars_on_new_holidays_is_complete():
+    sessions = [session for session, _ in completed_daily_sessions(datetime(2026, 9, 25, 7, 0, tzinfo=timezone.utc))]
+    assert sessions[-1] == "2026-09-23"  # Chuseok 2026-09-24/25 is closed
+    assert "2026-06-03" not in sessions and "2026-07-17" not in sessions and "2026-06-02" in sessions
