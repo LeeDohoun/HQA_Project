@@ -11,6 +11,7 @@ combinations would have selected better top-3 candidates.
 import csv
 import json
 import math
+import sys
 import re
 from collections import defaultdict
 from dataclasses import dataclass
@@ -20,6 +21,10 @@ from typing import Any, Dict, Iterable, List
 
 
 OUT_DIR = Path("experiment_results/backtesting/agent_architecture_validation")
+SOURCE_ROOT = Path(".")
+# A run enters agent comparisons only when this share of its candidate rows has
+# exactly joined multi-agent scores; rows without scores are never filled in.
+MIN_AGENT_COVERAGE = 0.9
 PROFILE_RUN_ROOT = OUT_DIR / "profile_backtest_runs"
 RUN_SOURCES = [
     # Archived copies kept in the repository (see research/README.md).
@@ -83,12 +88,15 @@ ABLATION_VARIANTS = {
     "four_agent_risk_adjusted": {"agent_count": 4, "label": "4-agent 위험보정", "group": "four_agent"},
     "four_agent_plus_liquidity": {"agent_count": 5, "label": "4-agent+유동성", "group": "added_agent"},
 }
-LEAVE_ONE_OUT_VARIANTS = {
-    "remove_analyst": "Analyst",
-    "remove_quant": "Quant",
-    "remove_chartist": "Chartist",
-    "three_agent_no_risk_manager": "RiskManager",
-}
+# (full variant, reduced variant, agent). The hybrid ranking actually used by the
+# runs mixes in the deterministic score, so it is not a baseline for agent removal:
+# comparing it with the 3-agent blend measured removing the deterministic score.
+LEAVE_ONE_OUT_VARIANTS = [
+    ("three_agent_no_risk_manager", "remove_analyst", "Analyst"),
+    ("three_agent_no_risk_manager", "remove_quant", "Quant"),
+    ("three_agent_no_risk_manager", "remove_chartist", "Chartist"),
+    ("four_agent_raw_blend", "three_agent_no_risk_manager", "RiskManager"),
+]
 SHORT_WEIGHTS = {"analyst": 0.30, "quant": 0.15, "chartist": 0.55}
 LONG_WEIGHTS = {"analyst": 0.45, "quant": 0.40, "chartist": 0.15}
 
@@ -103,15 +111,33 @@ class RunContext:
     strategy_id: str
     cache_path: Path | None
     round_trip_cost_pct: float
+    llm_identity: tuple = ()
 
 
-def main() -> int:
+def main(argv: List[str] | None = None) -> int:
+    global OUT_DIR, PROFILE_RUN_ROOT, RUN_SOURCES, SOURCE_ROOT, MIN_AGENT_COVERAGE
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Aggregate saved multi-agent runs into agent ablation evidence.")
+    parser.add_argument("--source-root", default=".", help="Directory that contains experiment_results/ (default: cwd)")
+    parser.add_argument("--output-dir", default="", help="Where to write the evidence (default: <source-root>/" + str(OUT_DIR) + ")")
+    parser.add_argument("--min-agent-coverage", type=float, default=MIN_AGENT_COVERAGE)
+    args = parser.parse_args(argv)
+    SOURCE_ROOT = Path(args.source_root)
+    RUN_SOURCES = [path if path.is_absolute() else SOURCE_ROOT / path for path in RUN_SOURCES]
+    PROFILE_RUN_ROOT = SOURCE_ROOT / PROFILE_RUN_ROOT if not PROFILE_RUN_ROOT.is_absolute() else PROFILE_RUN_ROOT
+    OUT_DIR = Path(args.output_dir) if args.output_dir else SOURCE_ROOT / OUT_DIR
+    MIN_AGENT_COVERAGE = args.min_agent_coverage
+    run_paths = _discover_runs()
+    if not run_paths:
+        print("ERROR: no source runs found under " + ", ".join(str(path) for path in RUN_SOURCES), file=sys.stderr)
+        return 2
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     run_rows: List[Dict[str, Any]] = []
     period_rows: List[Dict[str, Any]] = []
     coverage_rows: List[Dict[str, Any]] = []
 
-    for run_path in _discover_runs():
+    for run_path in run_paths:
         result = _load_json(run_path)
         ctx = _run_context(run_path, result)
         cache = _load_agent_cache(ctx.cache_path)
@@ -191,6 +217,11 @@ def main() -> int:
     print(f"wrote {OUT_DIR / 'AGENT_ABLATION_EVIDENCE_KO.md'}")
     print(f"wrote {OUT_DIR / 'exploration-all-candidates-semiconductor.csv'}")
     print(f"wrote {OUT_DIR / 'representative-two-theme-summary.csv'}")
+    included = sum(1 for row in coverage_rows if row["included_for_agent_ablation"])
+    if not included:
+        print(f"ERROR: no run reached the {MIN_AGENT_COVERAGE:.0%} agent-score coverage; see agent-architecture-coverage.csv",
+              file=sys.stderr)
+        return 3
     return 0
 
 
@@ -211,10 +242,16 @@ def _run_context(path: Path, result: Dict[str, Any]) -> RunContext:
     metadata = result.get("metadata") if isinstance(result.get("metadata"), dict) else {}
     llm_meta = metadata.get("llm") if isinstance(metadata.get("llm"), dict) else {}
     raw_cache = str(llm_meta.get("cache_path") or "")
-    cache_path = Path(raw_cache) if raw_cache and raw_cache != "llm_cache_not_preserved_experiment_result_only" else None
+    cache_path = (SOURCE_ROOT / raw_cache if raw_cache and raw_cache != "llm_cache_not_preserved_experiment_result_only"
+                  else None)
     execution = result.get("execution") if isinstance(result.get("execution"), dict) else {}
     costs = execution.get("costs") if isinstance(execution.get("costs"), dict) else {}
-    round_trip_cost_pct = float(costs.get("round_trip_cost_bps") or 50.0) / 100.0
+    # An explicit 0 bps cost is a real setting; only a missing value falls back to 50 bps.
+    raw_cost = costs.get("round_trip_cost_bps")
+    round_trip_cost_pct = (float(raw_cost) if raw_cost is not None else 50.0) / 100.0
+    identity_fields = ("prompt_version", "provider", "model_name", "thinking_model_name")
+    llm_identity = (tuple(str(llm_meta.get(name) or "") for name in identity_fields)
+                    if all(llm_meta.get(name) for name in identity_fields) else ())
     return RunContext(
         path=path,
         theme=str(result.get("theme") or ""),
@@ -224,26 +261,48 @@ def _run_context(path: Path, result: Dict[str, Any]) -> RunContext:
         strategy_id=strategy_id,
         cache_path=cache_path,
         round_trip_cost_pct=round_trip_cost_pct,
+        llm_identity=llm_identity,
     )
 
 
-def _load_agent_cache(path: Path | None) -> Dict[tuple[str, str, str], Dict[str, Any]]:
-    cache: Dict[tuple[str, str, str], Dict[str, Any]] = {}
+def _load_agent_cache(path: Path | None) -> Dict[tuple, List[tuple]]:
+    """Index cache rows by (prompt version, horizon, provider, model, thinking model, theme,
+    as_of, stock) with the key's score and return parts kept for an exact match."""
+    cache: Dict[tuple, List[tuple]] = defaultdict(list)
     if path is None or not path.exists():
         return cache
     for row in _iter_jsonl(path):
         key = str(row.get("cache_key") or "")
         result = row.get("result")
-        if not key or not isinstance(result, dict):
-            continue
         parts = key.split("|")
-        if len(parts) < 8:
+        if not key or not isinstance(result, dict) or len(parts) < 11:
             continue
-        horizon = parts[1]
-        as_of_ymd = parts[6]
-        stock_code = parts[7]
-        cache[(horizon, as_of_ymd, stock_code)] = result
+        try:
+            numbers = (float(parts[8]), float(parts[9]), float(parts[10]))
+        except ValueError:
+            continue
+        cache[tuple(parts[:8])].append((numbers, tuple(parts[11:]), result))
     return cache
+
+
+def _lookup_agent_scores(ctx: RunContext, as_of_ymd: str, raw: Dict[str, Any],
+                         cache: Dict[tuple, List[tuple]]) -> tuple[Dict[str, Any], str]:
+    """Return (cached result, status) where status is joined, missing or ambiguous."""
+    if not ctx.llm_identity:
+        return {}, "missing"
+    version, provider, model, thinking = ctx.llm_identity
+    prefix = (version, ctx.horizon, provider, model, thinking, ctx.theme_key, as_of_ymd, str(raw.get("stock_code") or ""))
+    try:
+        wanted = (float(raw.get("deterministic_leader_score")), float(raw.get("return_20d_pct")) / 100.0,
+                  float(raw.get("return_60d_pct")) / 100.0)
+    except (TypeError, ValueError):
+        return {}, "missing"
+    matches = [result for numbers, _regime, result in cache.get(prefix, [])
+               if abs(numbers[0] - wanted[0]) < 0.01 and abs(numbers[1] - wanted[1]) < 1.01e-4
+               and abs(numbers[2] - wanted[2]) < 1.01e-4]
+    if len(matches) > 1 and any(match != matches[0] for match in matches[1:]):
+        return {}, "ambiguous"
+    return (matches[0], "joined") if matches else ({}, "missing")
 
 
 def _evaluate_run(
@@ -266,6 +325,10 @@ def _evaluate_run(
         "periods_with_candidates": 0,
         "candidate_rows": 0,
         "candidate_rows_with_agent_scores": 0,
+        "ambiguous_cache_joins": 0,
+        "agent_score_coverage": 0.0,
+        "periods_compared": 0,
+        "periods_skipped_insufficient_agent_rows": 0,
         "included_for_agent_ablation": False,
         "source_json": str(ctx.path),
     }
@@ -273,14 +336,34 @@ def _evaluate_run(
     per_variant_benchmarks: Dict[str, List[float]] = {name: [] for name in variants}
     per_variant_selected: Dict[str, int] = {name: 0 for name in variants}
 
+    evaluated_periods = []
     for period in periods:
-        benchmark = _float(period.get("benchmark_return_pct"))
         candidates = _candidate_rows(ctx, period, cache)
         if candidates:
             coverage["periods_with_candidates"] += 1
             coverage["candidate_rows"] += len(candidates)
             coverage["candidate_rows_with_agent_scores"] += sum(1 for row in candidates if row.get("agent_scores_available"))
+            coverage["ambiguous_cache_joins"] += sum(1 for row in candidates if row.get("cache_join") == "ambiguous")
+        evaluated_periods.append((period, candidates))
+    if coverage["candidate_rows"]:
+        coverage["agent_score_coverage"] = round(
+            coverage["candidate_rows_with_agent_scores"] / coverage["candidate_rows"], 4)
+    coverage["included_for_agent_ablation"] = bool(variants) and coverage["agent_score_coverage"] >= MIN_AGENT_COVERAGE
+    if not coverage["included_for_agent_ablation"]:
+        variants = {}
+        per_variant_returns, per_variant_benchmarks, per_variant_selected = {}, {}, {}
+
+    for period, all_candidates in evaluated_periods:
+        benchmark = _float(period.get("benchmark_return_pct"))
         top_n = int(period.get("selected_count") or 3)
+        # Every variant ranks the same rows: those with joined agent scores. A period
+        # without enough of them is skipped for all variants instead of being filled.
+        candidates = [row for row in all_candidates if row.get("agent_scores_available")]
+        if variants and all_candidates and len(candidates) < top_n:
+            coverage["periods_skipped_insufficient_agent_rows"] += 1
+            continue
+        if variants:
+            coverage["periods_compared"] += 1
 
         for variant_name, scorer in variants.items():
             if not candidates:
@@ -329,8 +412,6 @@ def _evaluate_run(
                 }
             )
 
-    coverage["included_for_agent_ablation"] = coverage["candidate_rows_with_agent_scores"] > 0
-
     for variant_name in variants:
         returns = per_variant_returns[variant_name]
         benchmarks = per_variant_benchmarks[variant_name]
@@ -370,22 +451,25 @@ def _candidate_rows(
     as_of_ymd = re.sub(r"[^0-9]", "", as_of_date)
     output: List[Dict[str, Any]] = []
     for raw in period.get("candidate_rankings") or []:
-        stock_code = str(raw.get("stock_code") or "")
-        cached = cache.get((ctx.horizon, as_of_ymd, stock_code), {})
+        cached, join_status = _lookup_agent_scores(ctx, as_of_ymd, raw, cache)
         agent_scores = cached.get("llm_agent_scores") if isinstance(cached.get("llm_agent_scores"), dict) else {}
+        # No fallback values: a row without all four agents' scores is not comparable.
+        complete = all(isinstance(agent_scores.get(name), dict)
+                       for name in ("analyst", "quant", "chartist", "risk_manager"))
         output.append(
             {
                 **raw,
                 "as_of_date": as_of_date,
+                "cache_join": join_status,
                 "agent_scores": agent_scores,
-                "agent_scores_available": bool(agent_scores),
-                "analyst_total": _agent_total(agent_scores, "analyst", raw.get("llm_score")),
-                "quant_total": _agent_total(agent_scores, "quant", raw.get("llm_score")),
-                "chartist_total": _agent_total(agent_scores, "chartist", raw.get("llm_score")),
-                "risk_raw_total": _risk_total(agent_scores, "raw_final_score", raw.get("llm_raw_score")),
-                "risk_calibrated_total": _risk_total(agent_scores, "calibrated_final_score", raw.get("llm_score")),
-                "risk_score": _risk_total(agent_scores, "risk_score", raw.get("llm_risk_score")),
-                "risk_confidence": _risk_total(agent_scores, "confidence", raw.get("llm_confidence")),
+                "agent_scores_available": complete,
+                "analyst_total": _agent_total(agent_scores, "analyst", float("nan")),
+                "quant_total": _agent_total(agent_scores, "quant", float("nan")),
+                "chartist_total": _agent_total(agent_scores, "chartist", float("nan")),
+                "risk_raw_total": _risk_total(agent_scores, "raw_final_score", float("nan")),
+                "risk_calibrated_total": _risk_total(agent_scores, "calibrated_final_score", float("nan")),
+                "risk_score": _risk_total(agent_scores, "risk_score", float("nan")),
+                "risk_confidence": _risk_total(agent_scores, "confidence", float("nan")),
                 "liquidity_score": _liquidity_score(raw),
             }
         )
@@ -693,19 +777,17 @@ def _build_leave_one_out_summary(summary_rows: List[Dict[str, Any]]) -> List[Dic
     by_key = {(row["horizon"], row["variant"]): row for row in summary_rows}
     output: List[Dict[str, Any]] = []
     for horizon in ["short", "long"]:
-        current = by_key.get((horizon, "current_hybrid_4agent"))
-        if not current:
-            continue
-        for variant, removed_agent in LEAVE_ONE_OUT_VARIANTS.items():
+        for full_variant, variant, removed_agent in LEAVE_ONE_OUT_VARIANTS:
+            current = by_key.get((horizon, full_variant))
             reduced = by_key.get((horizon, variant))
-            if not reduced:
+            if not current or not reduced:
                 continue
             delta = _float(current["avg_excess_return_pct"]) - _float(reduced["avg_excess_return_pct"])
             output.append(
                 {
                     "horizon": horizon,
                     "removed_agent": removed_agent,
-                    "current_variant": "current_hybrid_4agent",
+                    "current_variant": full_variant,
                     "reduced_variant": variant,
                     "current_avg_excess_return_pct": current["avg_excess_return_pct"],
                     "reduced_avg_excess_return_pct": reduced["avg_excess_return_pct"],
@@ -944,6 +1026,25 @@ def _render_korean_evidence_report(
     return "\n".join(lines)
 
 
+def _computed_findings(leave_one_out_rows: List[Dict[str, Any]], coverage_rows: List[Dict[str, Any]]) -> List[str]:
+    """Findings derived only from the computed tables (no fixed conclusions)."""
+    included = [row for row in coverage_rows if row["included_for_agent_ablation"]]
+    lines = [f"- 비교에 포함된 실행: {len(included)}/{len(coverage_rows)}개 (에이전트 점수 결합률 {MIN_AGENT_COVERAGE:.0%} 이상), "
+             f"비교한 기간 {sum(int(row['periods_compared']) for row in included)}개, "
+             f"점수 부족으로 제외한 기간 {sum(int(row['periods_skipped_insufficient_agent_rows']) for row in included)}개."]
+    if not included or not leave_one_out_rows:
+        lines.append("- 비교 가능한 실행이 없어 에이전트별 결론을 내리지 않습니다.")
+        return lines
+    for row in leave_one_out_rows:
+        verb = "추가" if row["removed_agent"] == "RiskManager" else "유지"
+        lines.append(
+            f"- {_ko_horizon(row['horizon'])} {row['removed_agent']}: {row['current_variant']}와 {row['reduced_variant']}의 "
+            f"평균 초과수익 차이 {_fmt_pct(row['excess_loss_when_removed_pct'])} ({verb} 시 기준, "
+            f"{_usefulness_ko(row['usefulness_interpretation'])}).")
+    lines.append("- 차이는 기간별 표본 평균이며 통계적 유의성 검정이나 다중 비교 보정을 거치지 않았습니다.")
+    return lines
+
+
 def _render_agent_ablation_report(
     summary_rows: List[Dict[str, Any]],
     count_rows: List[Dict[str, Any]],
@@ -971,15 +1072,9 @@ def _render_agent_ablation_report(
         "- 모든 비교는 multi-agent 구조를 중심으로 합니다.",
         "- 새 LLM 호출 없이 저장된 multi-agent 캐시를 사용해 조합별 백테스트를 재실행했습니다.",
         "",
-        "## 현재 결론",
+        "## 계산된 결과",
         "",
-        "- 이번 방식이 맞는 방향입니다. 먼저 줄여 보고, 빠졌을 때 손실이 생기는 역할만 유용하다고 봅니다.",
-        "- 다만 현재 결과만으로는 '4개 에이전트가 완성형으로 모두 유용하다'고 말할 수 없습니다. 일부 단독/축소 조합이 현재 4-agent보다 좋게 나왔습니다.",
-        "- Analyst는 장타에서 유용하지만 단타에서는 과하게 반영될 수 있습니다.",
-        "- Quant는 단타/장타 모두 제거하면 실제 캐시 백테스트가 나빠져 핵심 역할로 볼 수 있습니다.",
-        "- Chartist는 단타에서는 유용하지만 장타에서는 현재 가중치가 과할 가능성이 있습니다.",
-        "- RiskManager는 현재 4-agent와 제거 결과가 같아, 지금 구현에서는 독립 효과가 아직 증명되지 않았습니다.",
-        "- 5번째 역할로 유동성을 추가한 실험은 장타를 악화시켰고 단타도 +0.37%p 개선에 그쳤습니다. 현재 증거로는 에이전트를 더 늘릴 이유가 약합니다.",
+        *_computed_findings(leave_one_out_rows, coverage_rows),
         "",
         "## 사용 데이터",
         "",
