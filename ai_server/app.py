@@ -538,6 +538,40 @@ async def stock_disclosures(stock_code: str, limit: int = Query(20, ge=1, le=100
     return {"items": items}
 
 
+@app.get("/internal/status", dependencies=[Depends(_require_internal_runtime_token)])
+async def internal_status():
+    """Operator view: budget, pending calendar reviews, runtime tasks and published data generations."""
+    return await asyncio.to_thread(_internal_status)
+
+
+def _internal_status() -> Dict[str, Any]:
+    from collections import Counter
+
+    status: Dict[str, Any] = {"calendar_warnings": _calendar_warnings(),
+                              "runtime_tasks": dict(Counter(task.get("status") for task in list(_runtime_tasks.values())))}
+    budget_path = Path(os.getenv("HQA_LLM_BUDGET_PATH") or (_hqa_get_data_dir() / "llm_budget.sqlite3"))
+    if budget_path.exists():
+        try:
+            from src.utils.llm_budget import get_llm_budget
+            ledger = get_llm_budget()
+            status["llm_budget"] = {**ledger.snapshot(), "unresolved": len(ledger.unresolved()),
+                                    "unreviewed_overruns": len(ledger.overruns())}
+        except Exception as exc:
+            status["llm_budget"] = {"status": "error", "error_type": type(exc).__name__}
+    else:
+        status["llm_budget"] = {"status": "not_initialized"}
+    themes: Dict[str, Any] = {}
+    for pointer in sorted((_hqa_get_data_dir() / "canonical_index").glob("*/current.json")):
+        try:
+            manifest = json.loads(pointer.read_text(encoding="utf-8"))
+            themes[pointer.parent.name] = {"generation": manifest.get("generation"),
+                                           "published_at": manifest.get("published_at")}
+        except (OSError, ValueError):
+            themes[pointer.parent.name] = {"status": "unreadable_pointer"}
+    status["themes"] = themes
+    return status
+
+
 @app.get("/health")
 async def health():
     settings = get_settings()

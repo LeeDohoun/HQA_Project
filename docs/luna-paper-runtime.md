@@ -48,6 +48,22 @@ and month boundaries. Reconcile from provider usage before releasing uncertainty
 do not delete the ledger to resume work. Taxes and other applications are outside
 this internal limit. A dedicated OpenAI project is recommended for accounting.
 
+Reconcile with the operator tool, never by editing or deleting the ledger:
+
+```bash
+venv/bin/python -m scripts.llm_budget status
+venv/bin/python -m scripts.llm_budget settle <request_id> --input-tokens N --output-tokens M
+venv/bin/python -m scripts.llm_budget acknowledge-overrun <request_id> --note "what was corrected"
+```
+
+`settle` takes the provider-reported usage for a `sent`/`unknown` request; zero usage releases a
+request the provider never billed. An observed cost above its reservation blocks every call,
+including holding protection, until `acknowledge-overrun` records the review (for example a
+corrected price table). `GET /internal/status` (internal token) shows the budget snapshot,
+unresolved requests, unreviewed overruns, pending calendar reviews, runtime task states and the
+published generation per theme. The RiskManager has its own 180 s timeout
+(`HQA_LLM_RISK_MANAGER_TIMEOUT_SECONDS`) because a timed-out call is still billed.
+
 Persist `HQA_LLM_BUDGET_PATH` and `HQA_PAPER_AUDIT_PATH`. Audit records contain private
 account context and exact supplied evidence, so keep the data volume access-limited.
 Redis eviction cannot reset the budget or erase the prospective audit ledger.

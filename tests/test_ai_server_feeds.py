@@ -64,3 +64,18 @@ def test_feed_cache_is_bounded(client, monkeypatch):
 def test_feed_endpoints_reject_malformed_stock_codes(client, path):
     http, _ = client
     assert http.get(path).status_code == 400
+
+
+def test_internal_status_requires_token_and_reports_operations(client, monkeypatch):
+    http, root = client
+    monkeypatch.setenv("HQA_INTERNAL_TOKEN", "status-token")
+    monkeypatch.setenv("HQA_LLM_BUDGET_PATH", str(root / "llm_budget.sqlite3"))
+    pointer = root / "canonical_index/반도체/current.json"
+    pointer.parent.mkdir(parents=True)
+    pointer.write_text(json.dumps({"schema_version": 1, "generation": "a" * 32, "published_at": "2026-09-28T00:00:00+00:00"}))
+    assert http.get("/internal/status").status_code == 401
+    body = http.get("/internal/status", headers={"X-HQA-Internal-Token": "status-token"}).json()
+    assert body["llm_budget"] == {"status": "not_initialized"}
+    assert not (root / "llm_budget.sqlite3").exists()  # status never creates a ledger
+    assert body["themes"]["반도체"]["generation"] == "a" * 32
+    assert isinstance(body["calendar_warnings"], list) and isinstance(body["runtime_tasks"], dict)

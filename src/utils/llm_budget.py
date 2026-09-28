@@ -93,6 +93,11 @@ class LLMBudgetLedger:
                     created_at TEXT NOT NULL, updated_at TEXT NOT NULL
                 )"""
             )
+            columns = {row[1] for row in db.execute("PRAGMA table_info(llm_spend)")}
+            for column in ("reviewed_at", "review_note"):
+                if column not in columns:
+                    # Operator review of an overrun; existing ledgers are migrated in place.
+                    db.execute(f"ALTER TABLE llm_spend ADD COLUMN {column} TEXT")
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
@@ -122,7 +127,7 @@ class LLMBudgetLedger:
             """SELECT
                 COALESCE(SUM(CASE WHEN month=? AND state='settled' THEN actual_nano ELSE 0 END),0) AS spent,
                 COALESCE(SUM(CASE WHEN state IN ('reserved','sent','unknown') THEN reserved_nano ELSE 0 END),0) AS reserved,
-                COALESCE(MAX(CASE WHEN actual_nano > reserved_nano THEN 1 ELSE 0 END),0) AS overrun
+                COALESCE(MAX(CASE WHEN actual_nano > reserved_nano AND reviewed_at IS NULL THEN 1 ELSE 0 END),0) AS overrun
                 FROM llm_spend""",
             (month,),
         ).fetchone()
@@ -193,6 +198,36 @@ class LLMBudgetLedger:
             )
         if cost > row["reserved_nano"]:
             raise LLMBudgetAccountingError("Observed usage exceeded the reserved maximum; further calls are blocked")
+
+    def unresolved(self) -> list[dict]:
+        """Requests whose provider outcome is unknown; they stay reserved until settled."""
+        with self._connection() as db:
+            rows = db.execute("""SELECT request_id, month, role, state, reserved_nano, created_at, updated_at
+                                 FROM llm_spend WHERE state IN ('sent','unknown') ORDER BY created_at""").fetchall()
+        return [{**dict(row), "reserved_usd": row["reserved_nano"] / NANODOLLARS} for row in rows]
+
+    def overruns(self) -> list[dict]:
+        """Settled requests that cost more than their reservation and are not yet reviewed."""
+        with self._connection() as db:
+            rows = db.execute("""SELECT request_id, month, role, reserved_nano, actual_nano, updated_at FROM llm_spend
+                                 WHERE actual_nano > reserved_nano AND reviewed_at IS NULL ORDER BY updated_at""").fetchall()
+        return [{**dict(row), "reserved_usd": row["reserved_nano"] / NANODOLLARS,
+                 "actual_usd": row["actual_nano"] / NANODOLLARS} for row in rows]
+
+    def acknowledge_overrun(self, request_id: str, note: str) -> None:
+        """Record operator review of an overrun (e.g. corrected pricing) and lift the accounting block."""
+        if not note or not note.strip():
+            raise ValueError("An overrun review requires a note explaining the correction")
+        timestamp = self._timestamp()
+        with self._transaction() as db:
+            row = db.execute("SELECT actual_nano, reserved_nano, reviewed_at FROM llm_spend WHERE request_id=?",
+                             (request_id,)).fetchone()
+            if row is None or row["actual_nano"] is None or row["actual_nano"] <= row["reserved_nano"]:
+                raise LLMBudgetAccountingError(f"No overrun recorded for {request_id}")
+            if row["reviewed_at"] is not None:
+                return
+            db.execute("UPDATE llm_spend SET reviewed_at=?, review_note=?, updated_at=? WHERE request_id=?",
+                       (timestamp, note.strip()[:500], timestamp, request_id))
 
     def snapshot(self) -> dict:
         month = self._timestamp()[:7]
