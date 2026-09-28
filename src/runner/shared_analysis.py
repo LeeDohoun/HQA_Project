@@ -197,33 +197,34 @@ def _fit_analyst_payload(payload: dict, budget: int) -> dict:
         return payload
     order = payload["source_ids"]
 
-    def build(kept: list[dict], gaps: list[str]) -> dict:
+    def build(kept: list[dict], truncated: bool = False) -> dict:
         # The analyst may cite only what it is shown: the kept events and their sources.
+        # Every candidate is measured with the gap strings it would carry.
         visible = {source for event in kept for source in [event["event_id"], *event["source_ids"]]}
+        gaps = [f"analyst_events_omitted_for_input_budget:{len(events) - len(kept)}"] if len(kept) < len(events) else []
+        if truncated:
+            gaps.append("analyst_event_text_truncated_for_input_budget:1")
         return {**payload, "events": kept, "source_ids": [source for source in order if source in visible],
                 "data_gaps": list(payload.get("data_gaps") or []) + gaps}
 
     kept: list[dict] = []
-    truncated = 0
+    truncated = False
     for event in events:  # already ordered by select_event_evidence priority
-        if _payload_tokens(build(kept + [event], [])) <= budget:
+        if _payload_tokens(build(kept + [event])) <= budget:
             kept.append(event)
             continue
-        spare = budget - _payload_tokens(build(kept + [{**event, "text": ""}], []))
+        spare = budget - _payload_tokens(build(kept + [{**event, "text": ""}], truncated=True))
         chars = int(spare / 1.05) - 50
-        if chars >= MIN_BUDGETED_TEXT_CHARS:
-            kept.append({**event, "text": event["text"][:chars], "text_truncated": True})
-            truncated = 1
+        while chars >= MIN_BUDGETED_TEXT_CHARS:  # escaping or symbols can cost more than 1.05 per char
+            partial = {**event, "text": event["text"][:chars], "text_truncated": True}
+            if _payload_tokens(build(kept + [partial], truncated=True)) <= budget:
+                kept.append(partial)
+                truncated = True
+                break
+            chars = int(chars * 0.9)
         break
-    if not kept:
-        raise ValueError("analyst_input_budget_exceeded")
-    gaps = []
-    if len(kept) < len(events):
-        gaps.append(f"analyst_events_omitted_for_input_budget:{len(events) - len(kept)}")
-    if truncated:
-        gaps.append("analyst_event_text_truncated_for_input_budget:1")
-    result = build(kept, gaps)
-    if _payload_tokens(result) > budget:
+    result = build(kept, truncated) if kept else None
+    if result is None or _payload_tokens(result) > budget:
         raise ValueError("analyst_input_budget_exceeded")
     return result
 
@@ -250,7 +251,8 @@ def _fit_quant_payload(payload: dict, budget: int) -> dict:
         source_ids = [source for source in payload["source_ids"] if source not in disclosure_ids or source in kept_ids]
         omitted = len(disclosures) - len(kept)
         return {**payload, "disclosures": kept, "source_ids": source_ids,
-                "data_gaps": [f"quant_disclosures_omitted_for_input_budget:{omitted}"] if omitted else []}
+                "data_gaps": list(payload.get("data_gaps") or [])
+                             + ([f"quant_disclosures_omitted_for_input_budget:{omitted}"] if omitted else [])}
 
     kept_indexes: list[int] = []
     for index in priority:

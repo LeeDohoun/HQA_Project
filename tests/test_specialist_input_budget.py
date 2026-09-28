@@ -90,10 +90,35 @@ def test_news_heavy_stock_still_gets_an_analyst_result_in_the_cycle():
     assert analyst and estimate_tokens(json.dumps(analyst[0], ensure_ascii=False)) <= BUDGET
     assert any(gap.startswith("analyst_events_omitted_for_input_budget:") for gap in analyst[0]["data_gaps"])
     assert set(result["specialists"]) == {"analyst", "quant", "chartist"}
-    assert not [error for error in result["errors"] if error.get("stage") == "analyst_input"]
+    assert not [gap for gap in result["data_gaps"] if gap.startswith("analyst_input:")]
 
 
 def test_chartist_payload_is_left_to_its_design_bound():
     payload = {"stock_code": "247540", "event_reactions": [{"event_id": f"event:{i}", "title": BODY[:900]} for i in range(8)],
                "source_ids": ["price:247540:abc"]}
     assert fit_specialist_payload("chartist", payload, 1_000) is payload
+
+
+def test_analyst_fit_counts_its_own_gap_strings_instead_of_dropping_the_analyst():
+    # At the production budget the first six events fit only without the omission note;
+    # the fitter must fall back to five events plus a truncated sixth, not fail the stock.
+    lengths = [3118, 1050, 2042, 596, 1401, 368, 2898, 662]
+    documents = [news(index, hours_ago=index) for index in range(1, 9)]
+    for document, length in zip(documents, lengths):
+        document["text"] = document["text"][:length]
+    payload, events = analyst_payload(documents)
+    fitted = fit_specialist_payload("analyst", payload, BUDGET)
+    assert estimate_tokens(json.dumps(fitted, ensure_ascii=False)) <= BUDGET
+    assert fitted["events"] and any(gap.startswith("analyst_events_omitted_for_input_budget:")
+                                    for gap in fitted["data_gaps"])
+
+
+def test_truncated_analyst_text_is_measured_even_when_characters_cost_more_than_hangul():
+    documents = [news(index, hours_ago=index) for index in range(1, 9)]
+    for document in documents:
+        text = "\u2605\"\\" * 1100  # symbols and JSON escapes cost more than 1.05 tokens per char
+        document.update(text=text, original_characters=len(text), truncated=False,
+                        source_text_hash=hashlib.sha256(text.encode()).hexdigest())
+    payload, _ = analyst_payload(documents)
+    fitted = fit_specialist_payload("analyst", payload, BUDGET)
+    assert estimate_tokens(json.dumps(fitted, ensure_ascii=False)) <= BUDGET

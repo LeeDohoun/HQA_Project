@@ -270,3 +270,29 @@ def test_failed_generation_cleanup_does_not_fail_a_published_build(tmp_path, mon
     current = pointer(tmp_path)["generation"]
     assert (tmp_path / "canonical_index/theme/generations" / current / "documents.jsonl").is_file()
     assert "generation pruning failed for theme: PermissionError" in capsys.readouterr().out
+
+
+def test_many_unusable_evidence_rows_become_one_gap_per_reason(tmp_path, capsys):
+    now = datetime.now(timezone.utc)
+
+    def row(index, dated):
+        meta = {"collected_at": (now - timedelta(hours=2)).isoformat(), "version_id": f"v{index}"}
+        if not dated:  # search results that only had a relative date ("3시간 전")
+            meta.update(publication_time_status="estimated")
+        return asdict(DocumentRecord(source_type="news", title=f"삼성전자 기사 {index}", url=f"https://news.example/{index}",
+            content="삼성전자는 신규 계약을 발표했다. 계약 규모와 상대방은 공시 원문에 기재되어 있다. " * 3,
+            stock_code="005930", stock_name="삼성전자",
+            published_at=(now - timedelta(days=1)).isoformat() if dated else "", metadata=meta))
+
+    for theme in ("t1", "t2"):
+        write_rows(tmp_path / f"raw/theme_targets/{theme}.jsonl", [{"stock_code": "005930", "stock_name": "삼성전자"}])
+        write_rows(tmp_path / f"raw/news/{theme}.jsonl", [row(0, True)] + [row(index, False) for index in range(1, 121)])
+        EvidenceIndexBuilder(str(tmp_path)).rebuild_theme(theme)
+    capsys.readouterr()
+    loader = LocalAnalysisData(data_dir=str(tmp_path))
+    candidate = {"stock_code": "005930", "stock_name": "삼성전자", "theme_keys": ["t1", "t2"],
+                 "theme_generations": {theme: loader._current_generation(theme) for theme in ("t1", "t2")}}
+    evidence = loader.load_evidence(candidate, now)
+    assert evidence["documents"]
+    assert len(evidence["data_gaps"]) == 1
+    assert evidence["data_gaps"][0].startswith("invalid_evidence:source timestamp is required:count=240:first=")

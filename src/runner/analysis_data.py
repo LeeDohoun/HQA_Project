@@ -302,6 +302,7 @@ class LocalAnalysisData:
         from src.runner.event_evidence import build_event_evidence, select_event_evidence
         from src.runner.financial_snapshot import load_financial_snapshot
         documents, errors = {}, []
+        invalid: dict[str, list[str]] = {}
         conflicting_fragments = False
         for theme in candidate["theme_keys"]:
             captured = candidate.get("theme_generations")
@@ -393,9 +394,14 @@ class LocalAnalysisData:
                         existing["_fragment_times"][index] = min(available.isoformat(),
                             existing["_fragment_times"].get(index, available.isoformat()))
                 except (ValueError, TypeError) as exc:
-                    errors.append(f"invalid_evidence:{meta.get('doc_id', 'unknown')}:{exc}")
+                    reason = re.sub(r"'[^']*'", "'…'", str(exc))[:120]
+                    invalid.setdefault(reason, []).append(str(meta.get("doc_id", "unknown")))
         if conflicting_fragments:
             raise ValueError("conflicting canonical chunks without a source version")
+        # One gap per reason: a corpus with many unusable rows (such as news with only a
+        # relative search date) must not flood the specialist and RiskManager prompts.
+        errors.extend(f"invalid_evidence:{reason}:count={len(ids)}:first={ids[0]}"
+                      for reason, ids in sorted(invalid.items()))
         for document in documents.values():
             full_body = document.pop("_full_body")
             fragments = document.pop("_fragments")
