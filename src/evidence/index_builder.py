@@ -5,6 +5,7 @@ from __future__ import annotations
 # - Produces corpora, BM25 indexes, vector stores, and market-data shards.
 # - Syncs canonical evidence index after build (new Step 2 integration).
 
+import os
 import re
 import hashlib
 import json
@@ -99,6 +100,31 @@ def _compute_content_quality_score(source_type: str, content: str, title: str) -
     return max(0.0, min(1.0, score))
 
 
+def _prune_generations(root: Path, *, keep_generation: str) -> list[str]:
+    """Delete old published generations: keep the current one, the newest
+    HQA_GENERATION_KEEP (default 8) and any younger than
+    HQA_GENERATION_MIN_AGE_HOURS (default 24), so a running analysis never loses
+    the generation it captured. HQA_GENERATION_KEEP=0 disables pruning."""
+    import shutil
+    import time as _time
+
+    keep = int(os.getenv("HQA_GENERATION_KEEP", "8"))
+    min_age_hours = float(os.getenv("HQA_GENERATION_MIN_AGE_HOURS", "24"))
+    if keep <= 0 or not root.exists():
+        return []
+    generations = sorted((path for path in root.iterdir()
+                          if path.is_dir() and re.fullmatch(r"[0-9a-f]{32}", path.name)),
+                         key=lambda path: path.stat().st_mtime, reverse=True)
+    cutoff = _time.time() - min_age_hours * 3600
+    removed = []
+    for path in generations[keep:]:
+        if path.name == keep_generation or path.stat().st_mtime > cutoff:
+            continue
+        shutil.rmtree(path)
+        removed.append(path.name)
+    return removed
+
+
 class EvidenceIndexBuilder:
     DART_WRAPPER_TOKENS = (
         "잠시만 기다려주세요",
@@ -160,6 +186,7 @@ class EvidenceIndexBuilder:
                 ensure_ascii=False, allow_nan=False))
             atomic_write(current_path, json.dumps({"schema_version": 1, "generation": generation,
                 "published_at": datetime.now(timezone.utc).isoformat()}))
+            _prune_generations(index_dir / "generations", keep_generation=generation)
             return {**result, "reused": False}
 
     def _rebuild_theme(self, theme_key: str, update_mode: str) -> Dict:

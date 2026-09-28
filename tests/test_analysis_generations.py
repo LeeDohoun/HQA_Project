@@ -193,3 +193,25 @@ def test_structured_raw_sources_are_not_indexed_as_documents(tmp_path):
     documents = read_rows(tmp_path / "canonical_index/theme/documents.jsonl")
     assert documents and all(row["source_type"] == "news" for row in documents)
     assert all((row.get("title") or row.get("content")) for row in documents)
+
+
+def test_old_generations_are_pruned_but_current_and_recent_ones_stay(tmp_path, monkeypatch):
+    import os
+    import time
+    from src.evidence.index_builder import _prune_generations
+
+    root = tmp_path / "generations"
+    names = [f"{index:032x}" for index in range(12)]
+    for offset, name in enumerate(names):
+        (root / name).mkdir(parents=True)
+        stamp = time.time() - (200 - offset) * 3600  # oldest first, all older than 24 h
+        os.utime(root / name, (stamp, stamp))
+    fresh = f"{99:032x}"
+    (root / fresh).mkdir()
+    monkeypatch.setenv("HQA_GENERATION_KEEP", "4")
+    removed = _prune_generations(root, keep_generation=names[0])
+    remaining = {path.name for path in root.iterdir()}
+    assert names[0] in remaining and fresh in remaining           # current and young generations stay
+    assert set(names[-3:]) <= remaining and len(removed) == 8     # newest kept, older pruned
+    monkeypatch.setenv("HQA_GENERATION_KEEP", "0")
+    assert _prune_generations(root, keep_generation=names[0]) == []
