@@ -141,3 +141,15 @@ def test_legacy_finance_reader_uses_latest_revision_without_duplicate_years(tmp_
     result = QuantitativeAnalyzer(data_dir=str(tmp_path))._load_financial_snapshot("005930")
     assert result["operating_profit"] == 80
     assert result["financial_history_years"] == ["2025", "2024"]
+
+
+def test_older_fiscal_years_are_ignored_without_gaps_but_future_years_are_flagged(tmp_path):
+    old = snapshot(rcept_no="20240301000001")
+    old.fiscal_year = "2023"
+    future = snapshot(rcept_no="20260301000009")
+    future.fiscal_year = "2027"
+    persist(tmp_path, snapshot(), old, future)
+    result = load_financial_snapshot(tmp_path, "005930", datetime(2026, 9, 27, tzinfo=UTC))
+    assert result["status"] == "ready" and result["fiscal_year"] == 2025
+    assert not any("allowed window" in gap for gap in result["gaps"])
+    assert any("after the analysis date" in gap for gap in result["gaps"])

@@ -734,3 +734,52 @@ def test_manual_preview_missing_prices_fails_before_model_work():
     with pytest.raises(ValueError, match="preview_price_history_unavailable"):
         engine.preview_stock("999999")
     assert calls == []
+
+
+def test_llm_output_contracts_use_grammar_portable_ascii_digit_patterns():
+    # Local grammar-constrained decoders (Ollama/llama.cpp) reject the \d escape, and
+    # Python's \d also accepts non-ASCII digits; stock codes are ASCII digits only.
+    import json
+    import pytest
+    from src.runner.analysis_contracts import AccountDecision, SpecialistResult
+
+    for contract in (SpecialistResult, AccountDecision):
+        schema = json.dumps(contract.model_json_schema())
+        assert "\\\\d" not in schema
+    with pytest.raises(ValueError):
+        SpecialistResult.model_validate({"stock_code": "٠٠٠٠٠١", "role": "analyst", "score": 1.0, "confidence": 1,
+                                         "thesis": "x", "risks": [], "citations": [{"source_id": "a", "claim": "b"}],
+                                         "data_gaps": []})
+
+
+def test_specialist_requests_state_the_expected_role_and_score_scales():
+    engine, calls = service()
+    seen = {}
+
+    class Capture(Model):
+        def invoke(self, messages):
+            seen[self.role] = messages[0][1]
+            return super().invoke(messages)
+
+    engine.models = {role: Capture(role, calls) for role in ("analyst", "quant", "chartist", "risk_manager")}
+    engine.preview_stock("000001")
+    for role in ("analyst", "quant", "chartist"):
+        assert f'set role to "{role}"' in seen[role]
+        assert "from 0 (strongly unfavorable) to 100 (strongly favorable)" in seen[role]
+
+
+
+def test_chartist_indicators_have_a_citable_source_id():
+    engine, calls = service()
+    engine.preview_stock("000001")
+    chartist = next(payload for role, payload in calls if role == "chartist")
+    technical_id = chartist["technical_snapshot"]["source_id"]
+    assert technical_id.startswith("technical:000001:") and technical_id in chartist["source_ids"]
+
+
+def test_chartist_factors_cite_the_price_source():
+    engine, calls = service()
+    engine.preview_stock("000001")
+    chartist = next(payload for role, payload in calls if role == "chartist")
+    price_id = next(source for source in chartist["source_ids"] if source.startswith("price:000001:"))
+    assert chartist["factors"]["source_id"] == price_id

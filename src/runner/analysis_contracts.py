@@ -17,7 +17,7 @@ class Citation(Contract):
 
 
 class SpecialistResult(Contract):
-    stock_code: str = Field(pattern=r"^\d{6}$")
+    stock_code: str = Field(pattern=r"^[0-9]{6}$")
     role: Literal["analyst", "quant", "chartist"]
     score: StrictFloat = Field(ge=0, le=100)
     confidence: StrictInt = Field(ge=0, le=100)
@@ -75,7 +75,7 @@ class ConditionPayload(Contract):
 
 
 class TradingPlan(Contract):
-    stock_code: str = Field(pattern=r"^\d{6}$")
+    stock_code: str = Field(pattern=r"^[0-9]{6}$")
     stock_name: str = Field(min_length=1)
     action: Literal["BUY", "SELL", "HOLD"]
     holding_quantity: StrictInt = Field(ge=0)
@@ -128,7 +128,7 @@ class AccountDecision(Contract):
 
 
 class Holding(Contract):
-    stockCode: str = Field(pattern=r"^\d{6}$")
+    stockCode: str = Field(pattern=r"^[0-9]{6}$")
     stockName: str = Field(min_length=1)
     quantity: StrictInt = Field(ge=0)
     sellableQuantity: StrictInt = Field(ge=0)
