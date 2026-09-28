@@ -232,7 +232,10 @@ def _membership_stats(path: Path) -> Dict[str, Any]:
 
 
 def _multi_agent_cache_stats(cache_dir: Path) -> Dict[str, Any]:
+    from backtesting.llm_signal import MULTI_AGENT_PROMPT_VERSION
+
     years: Counter[str] = Counter()
+    stale_years: Counter[str] = Counter()
     versions: Counter[str] = Counter()
     rows = 0
     if not cache_dir.exists():
@@ -241,15 +244,20 @@ def _multi_agent_cache_stats(cache_dir: Path) -> Dict[str, Any]:
         for row in _iter_jsonl(path):
             rows += 1
             key = str(row.get("cache_key") or "")
-            if key:
-                versions[key.split("|")[0]] += 1
+            version = key.split("|")[0] if key else ""
+            if version:
+                versions[version] += 1
             ymd = _first_ymd_token(key)
             if ymd:
-                years[ymd[:4]] += 1
+                # Only entries of the current prompt version can be replayed; older ones
+                # (e.g. v3 with same-day evidence) are listed separately.
+                (years if version == MULTI_AGENT_PROMPT_VERSION else stale_years)[ymd[:4]] += 1
     return {
         "exists": True,
         "rows": rows,
         "years": dict(sorted(years.items())),
+        "stale_prompt_years": dict(sorted(stale_years.items())),
+        "current_prompt_version": MULTI_AGENT_PROMPT_VERSION,
         "prompt_versions": dict(sorted(versions.items())),
     }
 

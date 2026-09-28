@@ -139,7 +139,7 @@ mock 결과는 투자 성능의 근거가 아닙니다. 실제 LLM 실험에는 
 | `AGENT_FAIL_ON_AGENT_FALLBACK=1`, `AGENT_FAIL_ON_LLM_ERROR=1` | 역할 실패나 LLM 오류를 규칙 점수로 대체하지 않고 중단합니다. fallback이 섞인 멀티 에이전트 결과는 플래그와 무관하게 캐시에 저장하지 않습니다. |
 | `LLM_SCHEMA_RETRIES`, `LLM_SCHEMA_TIMEOUT_SECONDS` | 구조화 출력 재시도 횟수(기본 1)와 호출 제한 시간(초, 기본 없음)입니다. 제한 시간은 메인 스레드에서만 적용됩니다. |
 
-멀티 에이전트 캐시 키에는 프롬프트를 바꾸는 설정(`AGENT_PURE_FEATURES`, `AGENT_FREE_RISK_MANAGER`, 기본값 5가 아닌 `context_docs`)이 포함되어, 설정이 다른 실행끼리 캐시를 공유하지 않습니다. 기본 설정의 키는 이전과 같습니다.
+멀티 에이전트 캐시 키에는 프롬프트 버전(v4, 리밸런싱 전날까지의 증거)과 프롬프트를 바꾸는 설정(`AGENT_PURE_FEATURES`, `AGENT_FREE_RISK_MANAGER`, 기본값 5가 아닌 `context_docs`)이 포함되어, 설정이 다른 실행끼리 캐시를 공유하지 않습니다. 당일 증거를 쓰던 v3 이전 캐시는 재사용되지 않으며, `AGENT_CACHE_LEGACY_KEYS=1`로 과거 실행을 재현하면 결과 메타데이터의 `legacy_cache_hits`에 그 횟수가 기록됩니다. 연구 실행기는 실행 모델 버전(`execution.model_version`)이나 프롬프트 버전이 다르거나 legacy 캐시를 쓴 저장 결과를 이어받지 않고 다시 실행합니다.
 
 이 옵션으로 만든 결과는 과거 연구 실험이며 현재 PAPER 성능의 근거가 아닙니다. 반복 실행 스크립트는 [scripts/research](../scripts/research/README.md)를 참고합니다.
 

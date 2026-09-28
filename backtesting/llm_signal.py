@@ -222,6 +222,8 @@ class TemporalLLMStockScorer:
                 str(round(float(row.get("leader_score") or 0.0), 2)),
                 str(round(float(row.get("return_20d") or 0.0), 4)),
                 str(round(float(row.get("return_60d") or 0.0), 4)),
+                # The prompt shows context_docs documents; the default keeps existing keys.
+                *([] if self.context_docs == 5 else [f"context_docs={self.context_docs}"]),
             ]
         )
 
@@ -325,11 +327,7 @@ class TemporalLLMStockScorer:
 
     @staticmethod
     def _validate_structured_payload(payload: Any) -> Dict[str, Any]:
-        if isinstance(payload, BaseModel):
-            return payload.model_dump()
-        if not isinstance(payload, dict):
-            raise TypeError(f"Expected dict payload, got {type(payload).__name__}")
-        return LLMThemeLeaderEvaluation.model_validate(payload).model_dump()
+        return _validate_payload(payload, LLMThemeLeaderEvaluation)
 
     @staticmethod
     def _mock_payload(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -406,6 +404,7 @@ class TemporalMultiAgentStockScorer:
         self.cache_path = Path(cache_path) if cache_path else self._default_cache_path()
         self.cache: Dict[str, Dict[str, Any]] = {}
         self._load_cache()
+        self.legacy_cache_hits = 0
         self.instruct_llm = get_analyst_llm()
         self.thinking_llm = get_risk_manager_llm()
 
@@ -432,6 +431,9 @@ class TemporalMultiAgentStockScorer:
         payload["cache_only"] = self.cache_only
         payload["pure_features"] = _env_flag("AGENT_PURE_FEATURES")
         payload["free_risk_manager"] = _env_flag("AGENT_FREE_RISK_MANAGER")
+        # Scores served from pre-v4 (same-day evidence) entries are not current results.
+        payload["legacy_cache_keys"] = _env_flag("AGENT_CACHE_LEGACY_KEYS")
+        payload["legacy_cache_hits"] = self.legacy_cache_hits
         return payload
 
     def score(self, *, as_of_ymd: str, row: Dict[str, Any]) -> Dict[str, Any]:
@@ -441,6 +443,8 @@ class TemporalMultiAgentStockScorer:
             # Opt-in to reproduce pre-fix experiments: legacy entries used same-day
             # evidence and did not record the flag regime in the key.
             cached = self.cache.get(self._cache_key(as_of_ymd=as_of_ymd, row=row, legacy=True))
+            if cached:
+                self.legacy_cache_hits += 1
         if cached:
             return self._apply_agent_score_profile({**cached, "cache_hit": True}, row)
 
@@ -1291,11 +1295,17 @@ def _llm_call_timeout() -> Any:
 
 
 def _validate_payload(payload: Any, schema: type[BaseModel]) -> Dict[str, Any]:
-    if isinstance(payload, BaseModel):
-        return payload.model_dump()
-    if not isinstance(payload, dict):
-        raise TypeError(f"Expected dict payload, got {type(payload).__name__}")
-    return schema.model_validate(payload).model_dump()
+    if not isinstance(payload, BaseModel):
+        if not isinstance(payload, dict):
+            raise TypeError(f"Expected dict payload, got {type(payload).__name__}")
+        payload = schema.model_validate(payload)
+    # Score fields default to neutral values for fallbacks; an LLM answer that omits one
+    # would otherwise be cached and replayed as a genuine neutral score.
+    missing = sorted(name for name in type(payload).model_fields
+                     if (name.endswith("_score") or name == "confidence") and name not in payload.model_fields_set)
+    if missing:
+        raise ValueError("LLM response omitted score fields: " + ", ".join(missing))
+    return payload.model_dump()
 
 
 def _get_score(payload: Dict[str, Any], key: str, default: int = 50) -> int:

@@ -136,6 +136,7 @@ def test_backtest_cost_and_liquidity_helpers():
 
 
 def test_proof_validation_resumes_completed_runs(tmp_path):
+    from backtesting.leader_backtest import EXECUTION_MODEL_VERSION
     from backtesting.proof_validation import PeriodSpec, StrategySpec, run_proof_validation
 
     output_dir = tmp_path / "proof"
@@ -169,6 +170,7 @@ def test_proof_validation_resumes_completed_runs(tmp_path):
         },
         "positions": [{"stock_name": "Alpha", "stock_code": "000001"}],
         "periods": [{"as_of_date": "2026-01-02"}],
+        "execution": {"model_version": EXECUTION_MODEL_VERSION},
         "artifacts": {"result_json": str(runs_dir / f"{task_id}.json")},
     }
     (runs_dir / f"{task_id}.json").write_text(json.dumps(completed_result), encoding="utf-8")
@@ -224,6 +226,26 @@ def test_proof_validation_resumes_completed_runs(tmp_path):
     assert summary["row_count"] == 2
     assert summary["rows"][0]["task_id"] == task_id
     assert summary["rows"][1]["excess_delta_vs_baseline_pct"] == 2.0
+
+
+def test_results_from_an_older_engine_or_prompt_are_run_again(tmp_path):
+    from backtesting.leader_backtest import EXECUTION_MODEL_VERSION
+    from backtesting.llm_signal import MULTI_AGENT_PROMPT_VERSION
+    from backtesting.proof_validation import _load_completed_result
+
+    def stored(execution, llm):
+        path = tmp_path / "t.json"
+        path.write_text(json.dumps({"task_id": "t", "metrics": {}, "execution": execution,
+                                    "metadata": {"llm": llm}}), encoding="utf-8")
+        return _load_completed_result(path, "t")
+
+    current = {"model_version": EXECUTION_MODEL_VERSION}
+    agents = {"mode": "multi_agent", "prompt_version": MULTI_AGENT_PROMPT_VERSION}
+    assert stored(current, agents) is not None
+    assert stored({}, agents) is None                                   # written before versioning
+    assert stored({"model_version": "older-engine"}, agents) is None
+    assert stored(current, {**agents, "prompt_version": "temporal_theme_leader_multi_agent_v3"}) is None
+    assert stored(current, {**agents, "legacy_cache_hits": 3}) is None  # scores from same-day-evidence entries
 
 
 def test_proof_validation_skips_no_rebalance_periods(tmp_path):

@@ -15,7 +15,7 @@
 
 | 스크립트 | 역할 |
 | --- | --- |
-| `run_uncontaminated_4agent_backtests.py` | 수치 점수·규칙 사전 필터·RiskManager 보정을 모두 끈 4-agent 실행. `fresh_seed`로 새 캐시를 만든 뒤 여러 `AGENT_SCORE_PROFILE`을 캐시 전용으로 비교하고 `manifest.json`, 요약 CSV, 증거 문서를 씁니다. |
+| `run_uncontaminated_4agent_backtests.py` | 수치 점수·규칙 사전 필터·RiskManager 보정을 모두 끈 4-agent 실행. `fresh_seed`로 새 캐시를 만든 뒤 여러 `AGENT_SCORE_PROFILE`을 캐시 전용으로 비교하고 `manifest.json`, 요약 CSV, 증거 문서를 씁니다. 같은 출력 위치에서 다시 실행하면 완료된 작업을 이어받되, 실행 모델 버전이나 프롬프트 버전이 다르거나 legacy 캐시를 쓴 결과는 이어받지 않고 다시 실행합니다. |
 | `supervise_uncontaminated_4agent_run.py` | 위 실행을 감시하며 캐시 진행이 멈추면 재시작합니다. 장시간 로컬 LLM 실행용입니다. |
 | `run_agent_architecture_profile_backtests.py` | 기존 멀티 에이전트 캐시만으로 점수 프로필별 백테스트를 실행합니다. |
 | `run_agent_architecture_pure_agent_backtests.py` | 규칙 점수를 프롬프트에서 제거한 순수 에이전트 ablation을 캐시 전용으로 실행합니다. |
