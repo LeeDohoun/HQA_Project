@@ -212,9 +212,6 @@ def _run_one(
     env["AGENT_DISABLE_SHORT_CHARTIST_FLOOR"] = "1"
     env["AGENT_FAIL_ON_AGENT_FALLBACK"] = "1"
     env["AGENT_FAIL_ON_LLM_ERROR"] = "1"
-    # The pure4agent cache file is dedicated to this flag set, so entries written before
-    # the flags became part of the cache key are valid for it.
-    env.setdefault("AGENT_CACHE_LEGACY_KEYS", "1")
     env["LLM_SCHEMA_RETRIES"] = env.get("LLM_SCHEMA_RETRIES", "3")
     env["LLM_SCHEMA_TIMEOUT_SECONDS"] = env.get("LLM_SCHEMA_TIMEOUT_SECONDS", "900")
     if cache_only:

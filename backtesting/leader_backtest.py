@@ -14,7 +14,7 @@ import json
 import math
 import os
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -188,6 +188,8 @@ def run_leader_backtest(
         if not target_by_code:
             raise ValueError(f"theme membership found but no targets matched: theme_key={theme_key}")
     common_calendar = _build_common_calendar(prices, from_ymd, to_ymd, hold_days)
+    market_dates = _market_dates(prices)
+    ineligible_counts: Dict[str, int] = defaultdict(int)
     rebalance_dates = _select_rebalance_dates(common_calendar, rebalance)
     if not rebalance_dates:
         raise ValueError(f"no rebalance dates in period: {from_ymd}..{to_ymd}")
@@ -220,7 +222,9 @@ def run_leader_backtest(
             hold_days=hold_days,
             min_history_days=min_history_days,
             exit_config=exit_config,
+            market_dates=market_dates,
         )
+        _add_counts(ineligible_counts, Counter(row["reason"] for row in scored if not row.get("eligible")))
         eligible = [row for row in scored if row.get("eligible")]
         if len(eligible) < top_n:
             warnings.append(f"{as_of_ymd}: eligible stocks {len(eligible)} < top_n {top_n}")
@@ -464,6 +468,8 @@ def run_leader_backtest(
                 ),
             },
             "exit_counts": _exit_counts(positions),
+            # Why stocks were excluded from the pool and benchmark (summed over rebalances).
+            "ineligible_counts": dict(sorted(ineligible_counts.items())),
             "same_day_ohlc_policy": "stop_or_trailing_stop_before_take_profit",
         },
         "artifacts": {},
@@ -614,14 +620,17 @@ def _score_universe(
     hold_days: int,
     min_history_days: int,
     exit_config: ExitConfig | None = None,
+    market_dates: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     exit_config = exit_config or ExitConfig()
     raw_rows: List[Dict[str, Any]] = []
+    market_dates = market_dates if market_dates is not None else _market_dates(prices)
     for code, target in target_by_code.items():
         df = prices.get(code)
         if df is None or df.empty:
             continue
         row = _features_for_stock(
+            market_dates=market_dates,
             code=code,
             name=target.stock_name,
             df=df,
@@ -672,8 +681,17 @@ def _score_universe(
     return raw_rows
 
 
+def _market_dates(prices: Dict[str, pd.DataFrame]) -> List[str]:
+    """Union of trading dates across the loaded universe (the market session calendar)."""
+    dates = set()
+    for df in prices.values():
+        dates.update(df["YMD"] if "YMD" in df else df.index.strftime("%Y%m%d"))
+    return sorted(str(value) for value in dates)
+
+
 def _features_for_stock(
     *,
+    market_dates: Optional[List[str]] = None,
     code: str,
     name: str,
     df: pd.DataFrame,
@@ -695,11 +713,35 @@ def _features_for_stock(
     full_pos = df.index.get_loc(known.index[-1])
     if isinstance(full_pos, slice):
         full_pos = full_pos.stop - 1
-    exit_pos = int(full_pos) + hold_days
-    if exit_pos >= len(df):
-        return _ineligible_row(code, name, as_of_ymd, "insufficient_future")
+    full_pos = int(full_pos)
+    entry = df.iloc[full_pos]
+    stock_ymd = df["YMD"] if "YMD" in df else pd.Series(df.index.strftime("%Y%m%d"), index=df.index)
+    if str(stock_ymd.iloc[full_pos]) != as_of_ymd:
+        # No bar on the decision day: entering at an older close is not possible.
+        return _ineligible_row(code, name, as_of_ymd, "no_bar_on_rebalance_date")
+    if float(entry["Volume"] or 0.0) <= 0:
+        return _ineligible_row(code, name, as_of_ymd, "not_traded_on_rebalance_date")
 
-    entry = df.iloc[int(full_pos)]
+    # Hold for N market sessions, not N rows of this stock. A stock whose data stops
+    # early (suspension, delisting) stays in the pool and benchmark and exits at its
+    # last tradable bar; only the end of all data makes a period unevaluable.
+    calendar = market_dates or list(stock_ymd)
+    calendar_pos = bisect.bisect_left(calendar, as_of_ymd)
+    if calendar_pos >= len(calendar) or calendar[calendar_pos] != as_of_ymd:
+        return _ineligible_row(code, name, as_of_ymd, "no_bar_on_rebalance_date")
+    if calendar_pos + hold_days >= len(calendar):
+        return _ineligible_row(code, name, as_of_ymd, "insufficient_future")
+    planned_exit_ymd = calendar[calendar_pos + hold_days]
+    exit_pos = int(bisect.bisect_right(list(stock_ymd), planned_exit_ymd)) - 1
+
+    feature_window = df["Close"].iloc[max(0, full_pos - 150):full_pos + 1]
+    if _has_price_basis_break(feature_window):
+        return _ineligible_row(code, name, as_of_ymd, "price_basis_break_in_features")
+    if _has_price_basis_break(df["Close"].iloc[full_pos:exit_pos + 1]):
+        # Unadjusted bars cannot give a return across a split or bonus issue; the
+        # period is excluded from both the pool and the benchmark and counted.
+        return _ineligible_row(code, name, as_of_ymd, "price_basis_break_in_holding")
+
     closes = known["Close"]
     returns = closes.pct_change().dropna()
     close = float(entry["Close"])
@@ -721,10 +763,11 @@ def _features_for_stock(
     )
     exit_result = _simulate_exit(
         df=df,
-        entry_pos=int(full_pos),
+        entry_pos=full_pos,
         planned_exit_pos=exit_pos,
         entry_price=close,
         exit_config=exit_config,
+        truncated=str(stock_ymd.iloc[exit_pos]) < planned_exit_ymd,
     )
     realized = exit_result["exit_price"] / close - 1.0
 
@@ -733,7 +776,7 @@ def _features_for_stock(
         "as_of_date": _fmt_ymd(as_of_ymd),
         "entry_date": known.index[-1].strftime("%Y-%m-%d"),
         "exit_date": df.index[exit_result["exit_pos"]].strftime("%Y-%m-%d"),
-        "planned_exit_date": df.index[exit_pos].strftime("%Y-%m-%d"),
+        "planned_exit_date": _fmt_ymd(planned_exit_ymd),
         "exit_reason": exit_result["exit_reason"],
         "stock_name": name,
         "stock_code": code,
@@ -759,6 +802,7 @@ def _simulate_exit(
     planned_exit_pos: int,
     entry_price: float,
     exit_config: ExitConfig,
+    truncated: bool = False,
 ) -> Dict[str, Any]:
     stop_loss = max(0.0, float(exit_config.stop_loss_pct or 0.0)) / 100.0
     take_profit = max(0.0, float(exit_config.take_profit_pct or 0.0)) / 100.0
@@ -769,6 +813,9 @@ def _simulate_exit(
 
     for pos in range(entry_pos + 1, planned_exit_pos + 1):
         row = df.iloc[pos]
+        if float(row["Volume"] or 0.0) <= 0:
+            continue  # halted session: no fills and no new high-water mark
+        open_ = float(row["Open"])
         high = float(row["High"])
         low = float(row["Low"])
         trailing_price = high_water * (1.0 - trailing_stop) if trailing_stop > 0 else None
@@ -786,27 +833,53 @@ def _simulate_exit(
                 active_stop_reason = reason
 
         if active_stop_price is not None and low <= active_stop_price:
+            # A gap through the stop fills at the open, not at the stop price.
             return {
                 "exit_pos": pos,
-                "exit_price": float(active_stop_price),
+                "exit_price": float(min(open_, active_stop_price)),
                 "exit_reason": active_stop_reason,
             }
 
         if take_profit_price is not None and high >= take_profit_price:
             return {
                 "exit_pos": pos,
-                "exit_price": float(take_profit_price),
+                "exit_price": float(max(open_, take_profit_price)),
                 "exit_reason": "take_profit",
             }
 
         high_water = max(high_water, high)
 
-    exit_ = df.iloc[planned_exit_pos]
+    exit_pos = planned_exit_pos
+    reason = "stock_data_ended" if truncated else "holding_period_exit"
+    if float(df.iloc[exit_pos]["Volume"] or 0.0) <= 0:
+        # Halted at the planned exit: sell at the first tradable close after it, or at the
+        # last tradable close before it when trading never resumes in the data.
+        later = [pos for pos in range(exit_pos + 1, len(df)) if float(df.iloc[pos]["Volume"] or 0.0) > 0]
+        earlier = [pos for pos in range(exit_pos, entry_pos, -1) if float(df.iloc[pos]["Volume"] or 0.0) > 0]
+        if later:
+            exit_pos, reason = later[0], "exit_delayed_by_halt"
+        elif earlier:
+            exit_pos, reason = earlier[0], "stock_data_ended"
+        else:
+            exit_pos, reason = entry_pos, "stock_data_ended"
     return {
-        "exit_pos": planned_exit_pos,
-        "exit_price": float(exit_["Close"]),
-        "exit_reason": "holding_period_exit",
+        "exit_pos": exit_pos,
+        "exit_price": float(df.iloc[exit_pos]["Close"]),
+        "exit_reason": reason,
     }
+
+
+PRICE_BASIS_BREAK_RETURN = 0.305  # beyond the KRX +/-30% daily limit
+
+
+def _has_price_basis_break(closes: pd.Series) -> bool:
+    """A close-to-close move beyond the daily limit means a price-basis change (split,
+    consolidation, bonus or rights issue) in unadjusted bars."""
+    values = closes.astype(float).to_numpy()
+    if len(values) < 2:
+        return False
+    moves = values[1:] / values[:-1] - 1.0
+    return bool(np.any(np.abs(moves) > PRICE_BASIS_BREAK_RETURN))
 
 
 def _ineligible_row(code: str, name: str, as_of_ymd: str, reason: str) -> Dict[str, Any]:
@@ -828,7 +901,7 @@ def _count_recent_docs(source_index: Dict[str, List[str]], as_of_ymd: str) -> Di
         if lookback is not None:
             lower = (as_of_dt - pd.Timedelta(days=int(lookback))).strftime("%Y%m%d")
         left = bisect.bisect_left(dates, lower) if lower else 0
-        right = bisect.bisect_right(dates, as_of_ymd)
+        right = bisect.bisect_left(dates, as_of_ymd)  # same-day documents are not yet known
         counts[source] = max(0, right - left)
     return counts
 

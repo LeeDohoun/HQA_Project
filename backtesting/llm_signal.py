@@ -23,8 +23,11 @@ from src.config.settings import get_data_dir
 logger = logging.getLogger(__name__)
 
 
-PROMPT_VERSION = "temporal_theme_leader_llm_v2"
-MULTI_AGENT_PROMPT_VERSION = "temporal_theme_leader_multi_agent_v3"
+# v3/v4: evidence is limited to documents published before the as-of day, so scores
+# cached with same-day context (v2/v3) are not reused unless explicitly requested.
+PROMPT_VERSION = "temporal_theme_leader_llm_v3_prior_day_evidence"
+MULTI_AGENT_PROMPT_VERSION = "temporal_theme_leader_multi_agent_v4_prior_day_evidence"
+LEGACY_MULTI_AGENT_PROMPT_VERSION = "temporal_theme_leader_multi_agent_v3"
 
 SHORT_AGENT_WEIGHTS = {"analyst": 0.30, "quant": 0.15, "chartist": 0.55}
 LONG_AGENT_WEIGHTS = {"analyst": 0.45, "quant": 0.40, "chartist": 0.15}
@@ -434,10 +437,10 @@ class TemporalMultiAgentStockScorer:
     def score(self, *, as_of_ymd: str, row: Dict[str, Any]) -> Dict[str, Any]:
         key = self._cache_key(as_of_ymd=as_of_ymd, row=row)
         cached = self.cache.get(key)
-        if not cached and self._regime_parts() and _env_flag("AGENT_CACHE_LEGACY_KEYS"):
-            # Opt-in for cache files written before the regime was part of the key; only
-            # valid when the whole file was produced under the current flag settings.
-            cached = self.cache.get(self._cache_key(as_of_ymd=as_of_ymd, row=row, include_regime=False))
+        if not cached and _env_flag("AGENT_CACHE_LEGACY_KEYS"):
+            # Opt-in to reproduce pre-fix experiments: legacy entries used same-day
+            # evidence and did not record the flag regime in the key.
+            cached = self.cache.get(self._cache_key(as_of_ymd=as_of_ymd, row=row, legacy=True))
         if cached:
             return self._apply_agent_score_profile({**cached, "cache_hit": True}, row)
 
@@ -530,11 +533,10 @@ class TemporalMultiAgentStockScorer:
             parts.append(f"context_docs={self.context_docs}")
         return parts
 
-    def _cache_key(self, *, as_of_ymd: str, row: Dict[str, Any], include_regime: bool = True) -> str:
-        # Default settings keep the original key layout so existing caches stay valid.
+    def _cache_key(self, *, as_of_ymd: str, row: Dict[str, Any], legacy: bool = False) -> str:
         return "|".join(
             [
-                MULTI_AGENT_PROMPT_VERSION,
+                LEGACY_MULTI_AGENT_PROMPT_VERSION if legacy else MULTI_AGENT_PROMPT_VERSION,
                 self.horizon,
                 self.provider,
                 self.model_name,
@@ -545,7 +547,7 @@ class TemporalMultiAgentStockScorer:
                 str(round(float(row.get("leader_score") or 0.0), 2)),
                 str(round(float(row.get("return_20d") or 0.0), 4)),
                 str(round(float(row.get("return_60d") or 0.0), 4)),
-                *(self._regime_parts() if include_regime else []),
+                *([] if legacy else self._regime_parts()),
             ]
         )
 

@@ -132,7 +132,7 @@ mock 결과는 투자 성능의 근거가 아닙니다. 실제 LLM 실험에는 
 | --- | --- |
 | `AGENT_SCORE_PROFILE` | 저장된 역할별 점수를 다른 조합으로 다시 가중합니다. `current_hybrid_4agent`(기본), `three_agent_no_risk_manager`, `four_agent_supervisor_final`, `four_agent_raw_blend`, `four_agent_risk_adjusted`, `four_agent_plus_liquidity`, `risk_manager_raw_only`, `remove_analyst`, `remove_quant`, `remove_chartist`, `analyst_only`, `quant_only`, `chartist_only`. 결과에 `llm_original_score`, `llm_score_profile`을 남깁니다. |
 | `AGENT_SCORE_CACHE_ONLY=1` | 캐시 미스가 나면 LLM을 호출하지 않고 백테스트 전체를 오류로 중단합니다. 규칙 점수로 대체하지 않습니다. 새 비용 없이 프로필만 비교할 때 사용합니다. |
-| `AGENT_CACHE_LEGACY_KEYS=1` | `AGENT_PURE_FEATURES`, `AGENT_FREE_RISK_MANAGER`, `context_docs`가 캐시 키에 들어가기 전에 만든 캐시 파일을 재사용합니다. 파일 전체가 현재와 같은 설정으로 만들어졌을 때만 켭니다. |
+| `AGENT_CACHE_LEGACY_KEYS=1` | 과거 실험 재현 전용입니다. 당일 문서가 문맥에 들어가던 시기(프롬프트 v3 이하)에 만든 캐시를 재사용하며, 파일 전체가 현재와 같은 플래그 설정으로 만들어졌을 때만 켭니다. 새 결과에는 쓰지 않습니다. |
 | `AGENT_PURE_FEATURES=1` | 프롬프트에서 수치 `deterministic_leader_score`를 제거합니다. |
 | `AGENT_FREE_RISK_MANAGER=1` | RiskManager가 권장 가중 점수 대신 자체 `final_score`를 산출하고, 그 값을 최종 점수로 사용합니다. |
 | `AGENT_DISABLE_SHORT_CHARTIST_FLOOR=1` | short 구간의 Chartist 하한 보정을 해제합니다. |
@@ -158,6 +158,23 @@ buy-and-hold 기록을 직접 제공해야 합니다. 누락된 기준선이나 
 입력 계약과 해석은 [PAPER 운영 안내](../docs/luna-paper-runtime.md)를 참고합니다.
 
 ## 검증 경계
+
+### 체결·시점 규칙 (2026-09-28)
+
+- 문서는 발행 다음 날부터 씁니다. 결정은 기준일 종가에 하고 공시 날짜는 대부분 일 단위라,
+  당일 문서(장 마감 뒤 공시 포함)는 문서 점수와 LLM 문맥에서 모두 제외합니다.
+- 보유 기간은 종목 행 수가 아니라 시장 거래일 기준입니다. 보유 중 데이터가 끊긴 종목(거래정지,
+  상장폐지)은 후보와 벤치마크에 남기고 마지막 거래 가능 봉에서 청산하며 `stock_data_ended`로 표시합니다.
+  모든 종목의 데이터가 끝난 구간만 `insufficient_future`로 평가하지 않습니다.
+- 기준일에 봉이 없거나 거래량이 0인 종목은 진입하지 않습니다. 보유 중 거래량 0 봉에서는 손절·익절이
+  체결되지 않고, 청산 예정일에 거래정지면 거래가 재개된 첫 종가(`exit_delayed_by_halt`)에 청산합니다.
+- 시가가 손절선이나 목표가를 뚫고 시작하면 시가로 체결합니다.
+- 종가 변화가 ±30.5%를 넘으면 액면분할·무상증자 같은 가격 기준 변경으로 보고, 특성 계산 구간
+  (최근 150거래일)이나 보유 구간에 걸친 종목을 후보와 벤치마크에서 제외합니다. 결과의
+  `execution.ineligible_counts`에 제외 사유별 건수가 남습니다. 수정계수로 보정하지는 않습니다.
+
+이 규칙을 적용하기 전의 결과와 LLM 캐시(프롬프트 v3 이하)는 당일 문서와 낙관적 체결을 포함합니다.
+수집 데이터 3종목 주간 리밸런싱 비교에서 총수익이 21.3%에서 13.3%로 낮아졌습니다.
 
 과거 도구는 공개일/봉 날짜를 필터링하지만, 새 수집 파이프라인의 `available_at`,
 `observed_at`, 정정 버전 이력을 모두 반영하는 재생 엔진은 아닙니다.

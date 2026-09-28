@@ -7,7 +7,7 @@ import argparse
 import csv
 import json
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
@@ -19,6 +19,7 @@ if str(PROJECT_ROOT) not in sys.path:
 import numpy as np
 
 from backtesting.leader_backtest import (
+    _market_dates,
     ExitConfig,
     RiskConfig,
     StockTarget,
@@ -217,6 +218,8 @@ def _run_loaded_backtest(
         membership_codes = {row.stock_code for row in memberships}
         target_by_code = {code: target for code, target in target_by_code.items() if code in membership_codes}
     common_calendar = _build_common_calendar(prices, from_ymd, to_ymd, hold_days)
+    market_dates = _market_dates(prices)
+    ineligible_counts: Dict[str, int] = defaultdict(int)
     rebalance_dates = _select_rebalance_dates(common_calendar, rebalance)
 
     positions: List[Dict[str, Any]] = []
@@ -241,7 +244,9 @@ def _run_loaded_backtest(
             hold_days=hold_days,
             min_history_days=min_history_days,
             exit_config=exit_config,
+            market_dates=market_dates,
         )
+        _add_counts(ineligible_counts, Counter(row["reason"] for row in scored if not row.get("eligible")))
         eligible = [row for row in scored if row.get("eligible")]
         if len(eligible) < top_n:
             warnings.append(f"{as_of_ymd}: eligible stocks {len(eligible)} < top_n {top_n}")
@@ -405,6 +410,8 @@ def _run_loaded_backtest(
         "execution": {
             "exit_rules": exit_config.to_dict(),
             "exit_counts": _exit_counts(positions),
+            # Why stocks were excluded from the pool and benchmark (summed over rebalances).
+            "ineligible_counts": dict(sorted(ineligible_counts.items())),
             "same_day_ohlc_policy": "stop_or_trailing_stop_before_take_profit",
         },
         "artifacts": {},

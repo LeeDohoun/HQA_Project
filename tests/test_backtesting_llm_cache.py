@@ -69,7 +69,8 @@ def test_prompt_changing_settings_get_their_own_cache_keys(tmp_path, monkeypatch
 
 def test_legacy_cache_keys_are_used_only_when_explicitly_accepted(tmp_path, monkeypatch):
     instance = scorer(tmp_path, monkeypatch, cache_only=True)
-    legacy_key = instance._cache_key(as_of_ymd="20250303", row=ROW, include_regime=False)
+    legacy_key = instance._cache_key(as_of_ymd="20250303", row=ROW, legacy=True)
+    assert legacy_key.startswith("temporal_theme_leader_multi_agent_v3|")
     instance.cache[legacy_key] = {"llm_score": 77, "llm_agent_scores": {}, "llm_horizon": "short"}
     monkeypatch.setenv("AGENT_PURE_FEATURES", "1")
     monkeypatch.delenv("AGENT_CACHE_LEGACY_KEYS", raising=False)
