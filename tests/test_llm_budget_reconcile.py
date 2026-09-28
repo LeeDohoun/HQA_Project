@@ -81,3 +81,25 @@ def test_operator_cli_reports_and_reconciles(tmp_path, capsys, monkeypatch):
     assert settled["unresolved"] == [] and settled["snapshot"]["spent_usd"] > 0
     with pytest.raises(SystemExit):
         cli.main(["--path", str(tmp_path / "missing.sqlite3"), "status"])
+
+
+def test_a_reservation_that_was_never_sent_is_listed_and_released_by_the_operator(tmp_path, capsys, monkeypatch):
+    from scripts import llm_budget as cli
+
+    monkeypatch.setattr(cli, "load_project_env", lambda: None)
+    path = tmp_path / "budget.sqlite3"
+    stuck = ledger(path).reserve("risk_manager", 20_000, 12_000)  # the process stopped before mark_sent
+    fresh = LLMBudgetLedger(path).reserve("analyst", 100, 100)    # a live process may still send this one
+    sent = ledger(path).reserve("quant", 100, 100)
+    ledger(path).mark_sent(sent)
+    assert cli.main(["--path", str(path), "status"]) == 0
+    status = json.loads(capsys.readouterr().out)
+    assert {row["request_id"]: row["state"] for row in status["unresolved"]} == {
+        stuck: "reserved", fresh: "reserved", sent: "sent"}
+    assert status["snapshot"]["unresolved_requests"] == 3
+    for request, message in ((fresh, "s old"), (sent, "not an unsent reservation")):
+        with pytest.raises(SystemExit, match=message):
+            cli.main(["--path", str(path), "release", request])
+    assert cli.main(["--path", str(path), "release", stuck]) == 0
+    released = json.loads(capsys.readouterr().out)
+    assert {row["request_id"] for row in released["unresolved"]} == {fresh, sent}

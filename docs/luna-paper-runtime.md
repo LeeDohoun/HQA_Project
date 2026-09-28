@@ -53,11 +53,13 @@ Reconcile with the operator tool, never by editing or deleting the ledger:
 ```bash
 venv/bin/python -m scripts.llm_budget status
 venv/bin/python -m scripts.llm_budget settle <request_id> --input-tokens N --output-tokens M
+venv/bin/python -m scripts.llm_budget release <request_id>
 venv/bin/python -m scripts.llm_budget acknowledge-overrun <request_id> --note "what was corrected"
 ```
 
 `settle` takes the provider-reported usage for a `sent`/`unknown` request; zero usage releases a
-request the provider never billed. An observed cost above its reservation blocks every call,
+request the provider never billed. A `reserved` request was never sent (its process stopped between
+reservation and sending); `release` frees it once it is older than `--min-age-seconds` (default 600). An observed cost above its reservation blocks every call,
 including holding protection, until `acknowledge-overrun` records the review (for example a
 corrected price table). `GET /internal/status` (internal token) shows the budget snapshot,
 unresolved requests, unreviewed overruns, pending calendar reviews, runtime task states and the

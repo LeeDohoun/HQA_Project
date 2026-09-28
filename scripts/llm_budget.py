@@ -9,6 +9,7 @@ import argparse
 import json
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 from src.config.settings import get_data_dir, load_project_env
@@ -34,6 +35,10 @@ def main(argv: list[str] | None = None) -> int:
         settle.add_argument(f"--{name}", type=int, required=True)
     for name in ("cached-tokens", "cache-write-tokens", "reasoning-tokens"):
         settle.add_argument(f"--{name}", type=int, default=0)
+    release = commands.add_parser("release", help="Release a reservation that was never sent (state 'reserved')")
+    release.add_argument("request_id")
+    release.add_argument("--min-age-seconds", type=int, default=600,
+                         help="Refuse younger reservations, which a running process may still send (default 600)")
     review = commands.add_parser("acknowledge-overrun", help="Record review of an overrun and lift the block")
     review.add_argument("request_id")
     review.add_argument("--note", required=True, help="What was corrected (e.g. updated price table)")
@@ -44,6 +49,14 @@ def main(argv: list[str] | None = None) -> int:
         ledger.settle(args.request_id, input_tokens=args.input_tokens, output_tokens=args.output_tokens,
                       cached_tokens=args.cached_tokens, cache_write_tokens=args.cache_write_tokens,
                       reasoning_tokens=args.reasoning_tokens)
+    elif args.command == "release":
+        row = next((row for row in ledger.unresolved() if row["request_id"] == args.request_id), None)
+        if row is None or row["state"] != "reserved":
+            raise SystemExit(f"not an unsent reservation: {args.request_id} (settle sent/unknown requests instead)")
+        age = (datetime.now(timezone.utc) - datetime.fromisoformat(row["created_at"])).total_seconds()
+        if age < args.min_age_seconds:
+            raise SystemExit(f"reservation is {int(age)} s old; a running process may still send it")
+        ledger.release_unsent(args.request_id)
     elif args.command == "acknowledge-overrun":
         ledger.acknowledge_overrun(args.request_id, args.note)
     report = {"snapshot": ledger.snapshot(), "unresolved": ledger.unresolved(), "overruns": ledger.overruns()}

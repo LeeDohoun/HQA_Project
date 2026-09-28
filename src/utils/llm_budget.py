@@ -200,10 +200,11 @@ class LLMBudgetLedger:
             raise LLMBudgetAccountingError("Observed usage exceeded the reserved maximum; further calls are blocked")
 
     def unresolved(self) -> list[dict]:
-        """Requests whose provider outcome is unknown; they stay reserved until settled."""
+        """Requests still holding budget: 'sent'/'unknown' ones are settled from provider
+        usage; a 'reserved' one was never sent (its process stopped first) and is released."""
         with self._connection() as db:
             rows = db.execute("""SELECT request_id, month, role, state, reserved_nano, created_at, updated_at
-                                 FROM llm_spend WHERE state IN ('sent','unknown') ORDER BY created_at""").fetchall()
+                                 FROM llm_spend WHERE state IN ('reserved','sent','unknown') ORDER BY created_at""").fetchall()
         return [{**dict(row), "reserved_usd": row["reserved_nano"] / NANODOLLARS} for row in rows]
 
     def overruns(self) -> list[dict]:
@@ -233,7 +234,7 @@ class LLMBudgetLedger:
         month = self._timestamp()[:7]
         with self._connection() as db:
             spent, reserved, overrun = self._totals(db, month)
-            unknown = db.execute("SELECT COUNT(*) FROM llm_spend WHERE state IN ('sent','unknown')").fetchone()[0]
+            unknown = db.execute("SELECT COUNT(*) FROM llm_spend WHERE state IN ('reserved','sent','unknown')").fetchone()[0]
         return {
             "month": month, "timezone": "UTC", "model": MODEL, "price_version": PRICE_VERSION,
             "monthly_limit_usd": self.monthly_limit / NANODOLLARS,
