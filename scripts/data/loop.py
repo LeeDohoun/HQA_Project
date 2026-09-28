@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import sys
 import time
@@ -12,19 +13,18 @@ ROOT = Path(__file__).resolve().parents[2]
 
 KST = timezone(timedelta(hours=9))
 DEFAULT_THEMES = ["ai", "battery", "bio", "defense", "robot", "semiconductor"]
+# Only structured provider signals count. Bare numbers such as "429" and words such
+# as "한도" also appear in receipt numbers, counts and news titles.
 RATE_LIMIT_PATTERNS = [
-    "429",
-    "rate limit",
-    "too many requests",
-    "quota exceeded",
-    "한도",
-    "status=020",
+    re.compile(r"\bstatus=020\b"),  # OpenDART: request limit exceeded
+    re.compile(r"\bstatus=429\b"),  # HTTP 429 reported by the collectors
+    re.compile(r"\btoo many requests\b", re.IGNORECASE),
+    re.compile(r"\bquota exceeded\b", re.IGNORECASE),
 ]
 
 
 def _contains_rate_limit(text: str) -> bool:
-    lowered = text.lower()
-    return any(pattern in lowered for pattern in RATE_LIMIT_PATTERNS)
+    return any(pattern.search(text) for pattern in RATE_LIMIT_PATTERNS)
 
 
 def _sleep_until_next_day(resume_hour: int, resume_minute: int) -> None:

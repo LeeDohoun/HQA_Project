@@ -80,3 +80,16 @@ def test_collection_module_has_no_model_analysis_entrypoint():
     imports = [node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)]
     assert not any(name and name.startswith(("src.agents", "src.runner", "openai")) for name in imports)
     assert not hasattr(collect, "_step_analyze")
+
+
+@pytest.mark.parametrize("output,expected", [
+    ("[WARN][삼성전자] dart collect failed: DART provider error status=020", True),
+    ("[WARN][NEWS:SEARCH:삼성전자] GET failed attempt=3/3 url=https://search.naver.com/search.naver error=HTTPError status=429", True),
+    ("KRX chart request failed (HTTPError) status=429", True),
+    ("429 Too Many Requests", True),
+    ("saved rcept_no=20260429000123 count=429", False),
+    ("[NEWS] 은행권 대출 한도 확대 기사 수집", False),
+    ("status=4290 and status=0200 are not provider codes", False),
+])
+def test_loop_detects_only_structured_rate_limit_signals(output, expected):
+    assert loop._contains_rate_limit(output) is expected

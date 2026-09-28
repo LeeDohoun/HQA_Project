@@ -80,10 +80,14 @@ class KrxChartCollector:
             response = self.session.get(url, params={"basDd": bas_dd}, headers={"AUTH_KEY": self.api_key},
                                         timeout=20, allow_redirects=False)
             if type(response.status_code) is not int or not 200 <= response.status_code < 300:
-                raise requests.HTTPError("KRX chart response requires a successful HTTP status")
+                status = response.status_code if type(response.status_code) is int else "invalid"
+                raise requests.HTTPError(f"KRX chart response requires a successful HTTP status status={status}")
         except requests.RequestException as exc:
-            # Provider messages and request URLs can echo authentication material.
-            raise requests.RequestException(f"KRX chart request failed ({type(exc).__name__})") from None
+            # Provider messages and request URLs can echo authentication material; only the
+            # numeric HTTP status is kept so rate limits (status=429) stay detectable.
+            match = re.search(r"status=(\d{3})$", str(exc)) if isinstance(exc, requests.HTTPError) else None
+            status_text = f" status={match.group(1)}" if match else ""
+            raise requests.RequestException(f"KRX chart request failed ({type(exc).__name__}){status_text}") from None
         try:
             payload = response.json()
         except ValueError:

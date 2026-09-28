@@ -145,3 +145,17 @@ def test_missing_key_fails_when_collection_is_requested(monkeypatch):
     collector = KrxChartCollector(session=Session())
     with pytest.raises(ValueError, match="required"):
         collector.collect_daily("Stock", "005930", "20260904", "20260904")
+
+
+def test_krx_rate_limit_keeps_only_the_numeric_http_status(monkeypatch):
+    import requests
+    from types import SimpleNamespace
+    from src.ingestion.krx_chart import KrxChartCollector
+
+    monkeypatch.setenv("KRX_OPEN_API_KEY", "secret-key-value")
+    collector = KrxChartCollector()
+    collector.session = SimpleNamespace(get=lambda *a, **k: SimpleNamespace(status_code=429, text="quota secret-key-value"))
+    with pytest.raises(requests.RequestException) as error:
+        collector._fetch_market_rows(KrxChartCollector.KOSPI_DAILY_URL, "20260925")
+    assert str(error.value) == "KRX chart request failed (HTTPError) status=429"
+    assert "secret" not in str(error.value)
