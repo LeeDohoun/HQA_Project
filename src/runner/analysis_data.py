@@ -116,9 +116,16 @@ def price_features(rows: list[dict], as_of: datetime) -> tuple[dict, list[dict]]
             if value is None:
                 raise ValueError(f"missing OHLCV field: {field}")
             number = float(str(value).replace(",", ""))
-            if not math.isfinite(number) or number < 0 or (field != "volume" and number == 0):
+            if not math.isfinite(number) or number < 0 or (field == "close" and number == 0):
                 raise ValueError(f"invalid OHLCV field: {field}")
             normalized[field] = number
+        if normalized["volume"] == 0 and normalized["open"] == normalized["high"] == normalized["low"] == 0:
+            # A halted session (KRX and Naver report 0 open/high/low and the prior close):
+            # no trade happened, so the bar is flat at the close instead of voiding the history.
+            normalized.update(open=normalized["close"], high=normalized["close"], low=normalized["close"])
+        for field in ("open", "high", "low"):
+            if normalized[field] == 0:
+                raise ValueError(f"invalid OHLCV field: {field}")
         if not normalized["low"] <= min(normalized["open"], normalized["close"]) <= max(normalized["open"], normalized["close"]) <= normalized["high"]:
             raise ValueError("inconsistent OHLC values")
         observations_by_time = by_date.setdefault(day, {})
@@ -282,6 +289,8 @@ class LocalAnalysisData:
         errors = []
         if features["history_days"] < int(self.filters.get("min_history_days", 150)):
             errors.append("min_history_days")
+        if features["volume_ratio_20d"] <= 0:
+            errors.append("no_trade_latest_session")  # halted: no new entry, holdings still analyzed
         for setting, factor, minimum in (("min_avg_trading_value_20d", "avg_trading_value_20d", True),
                                         ("max_volatility_20d", "volatility_20d", False),
                                         ("max_return_5d", "return_5d", False),

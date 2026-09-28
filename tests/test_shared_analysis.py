@@ -531,6 +531,35 @@ def test_price_features_use_backtest_ma150_annualized_vol_and_pit_close():
         price_features(rows[:-1], NOW + timedelta(days=7))
 
 
+def _session_rows(count=160, *, halted=()):
+    from src.runner.trading_calendar import completed_daily_sessions
+    rows = []
+    for i, (day, close) in enumerate(completed_daily_sessions(NOW, count)):
+        bar = {"open": 100 + i, "high": 102 + i, "low": 99 + i, "close": 101 + i, "volume": 1000 + i}
+        if i in halted:  # how KRX and Naver report a halted session
+            bar = {"open": "0", "high": "0", "low": "0", "close": 100 + i, "volume": "0"}
+        rows.append({"timestamp": day, **bar, "metadata": {"collected_at": close.isoformat()}})
+    return rows
+
+
+def test_a_past_halt_does_not_void_the_price_history():
+    features, known = price_features(_session_rows(halted={100, 101}), NOW)
+    assert len(known) == 160 and features["current_price"] == 260
+    assert known[100]["open"] == known[100]["high"] == known[100]["low"] == known[100]["close"] == 200
+    assert known[100]["volume"] == 0
+    with pytest.raises(ValueError, match="invalid OHLCV field: low"):
+        price_features([{**row, "low": 0} if index == 50 else row for index, row in enumerate(_session_rows())], NOW)
+
+
+def test_a_stock_halted_on_the_latest_session_is_not_an_entry_candidate():
+    from src.runner.analysis_data import LocalAnalysisData
+
+    features, _ = price_features(_session_rows(halted={159}), NOW)
+    loader = LocalAnalysisData.__new__(LocalAnalysisData)
+    loader.filters = {}
+    assert "no_trade_latest_session" in loader._filter_errors(features)
+
+
 def test_missing_factor_is_not_a_neutral_percentile():
     candidate = {"stock_code": "000001", "features": {key: 1 for key in PRICE_WEIGHTS}}
     candidate["features"]["return_60d"] = float("nan")
