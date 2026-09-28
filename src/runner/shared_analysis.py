@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import json
+import math
 import os
+import re
 import threading
 import time
 from collections import OrderedDict
@@ -140,6 +142,127 @@ def _corporate_action_summary(context: dict, safety: dict) -> dict:
             "data_gap_count": len(context["data_gaps"])}
 
 
+DEFAULT_SPECIALIST_INPUT_TOKENS = 12_000
+# Instructions (~100 tokens) and the SpecialistResult JSON schema (~400 tokens) are sent
+# with every specialist request; the reserve is about three times their measured size.
+SPECIALIST_PROMPT_RESERVE_TOKENS = 1_500
+MIN_BUDGETED_TEXT_CHARS = 400
+_CJK = re.compile(r"[ᄀ-ᇿ㄰-㆏가-힯぀-ヿ一-鿿]")
+
+
+def estimate_tokens(text: str) -> int:
+    """Conservative offline token estimate for Korean evidence JSON.
+
+    Calibrated on 2026-09-27 against the o200k tokenizer with collected Korean news,
+    DART and forum text: never below the real count for documents (worst case 1.00x)
+    and about 1.2-1.5x for full specialist payloads. The provider count stays the
+    authoritative gate; this only keeps payloads from exceeding it.
+    """
+    cjk = alnum = punct = space = other = 0
+    for char in text:
+        if _CJK.match(char):
+            cjk += 1
+        elif char.isascii():
+            if char.isalnum():
+                alnum += 1
+            elif char.isspace():
+                space += 1
+            else:
+                punct += 1
+        else:
+            other += 1
+    return math.ceil(cjk * 1.05 + alnum * 0.5 + punct * 0.6 + space * 0.15 + other * 1.5)
+
+
+def _payload_tokens(payload: dict) -> int:
+    return estimate_tokens(json.dumps(payload, ensure_ascii=False, allow_nan=False))
+
+
+def fit_specialist_payload(role: str, payload: dict, budget: int) -> dict:
+    """Keep the highest-priority evidence that fits the role's input budget."""
+    if role == "analyst":
+        return _fit_analyst_payload(payload, budget)
+    if role == "quant":
+        return _fit_quant_payload(payload, budget)
+    # The chartist payload is bounded by design (8 compact reactions, 20 bars); its
+    # maximum is checked against the role limit in tests/test_market_context_runtime.py.
+    return payload
+
+
+def _fit_analyst_payload(payload: dict, budget: int) -> dict:
+    events = payload.get("events") or []
+    if not events:
+        if _payload_tokens(payload) > budget:
+            raise ValueError("analyst_input_budget_exceeded")
+        return payload
+    order = payload["source_ids"]
+
+    def build(kept: list[dict], gaps: list[str]) -> dict:
+        # The analyst may cite only what it is shown: the kept events and their sources.
+        visible = {source for event in kept for source in [event["event_id"], *event["source_ids"]]}
+        return {**payload, "events": kept, "source_ids": [source for source in order if source in visible],
+                "data_gaps": list(payload.get("data_gaps") or []) + gaps}
+
+    kept: list[dict] = []
+    truncated = 0
+    for event in events:  # already ordered by select_event_evidence priority
+        if _payload_tokens(build(kept + [event], [])) <= budget:
+            kept.append(event)
+            continue
+        spare = budget - _payload_tokens(build(kept + [{**event, "text": ""}], []))
+        chars = int(spare / 1.05) - 50
+        if chars >= MIN_BUDGETED_TEXT_CHARS:
+            kept.append({**event, "text": event["text"][:chars], "text_truncated": True})
+            truncated = 1
+        break
+    if not kept:
+        raise ValueError("analyst_input_budget_exceeded")
+    gaps = []
+    if len(kept) < len(events):
+        gaps.append(f"analyst_events_omitted_for_input_budget:{len(events) - len(kept)}")
+    if truncated:
+        gaps.append("analyst_event_text_truncated_for_input_budget:1")
+    result = build(kept, gaps)
+    if _payload_tokens(result) > budget:
+        raise ValueError("analyst_input_budget_exceeded")
+    return result
+
+
+def _fit_quant_payload(payload: dict, budget: int) -> dict:
+    if _payload_tokens(payload) <= budget:
+        return payload
+    disclosures = payload.get("disclosures") or []
+    disclosure_ids = {row["source_id"] for row in disclosures}
+
+    def flagged(row: dict) -> bool:
+        return bool(row.get("risk_flags") or row.get("is_correction") or row.get("is_withdrawal")
+                    or row.get("unlinked_correction"))
+
+    # Corrections, withdrawals and flagged filings first, each group newest first.
+    newest_first = sorted(range(len(disclosures)), key=lambda index: disclosures[index].get("available_at") or "",
+                          reverse=True)
+    priority = ([index for index in newest_first if flagged(disclosures[index])]
+                + [index for index in newest_first if not flagged(disclosures[index])])
+
+    def build(indexes: list[int]) -> dict:
+        kept = [disclosures[index] for index in sorted(indexes)]  # chronological, as collected
+        kept_ids = {row["source_id"] for row in kept}
+        source_ids = [source for source in payload["source_ids"] if source not in disclosure_ids or source in kept_ids]
+        omitted = len(disclosures) - len(kept)
+        return {**payload, "disclosures": kept, "source_ids": source_ids,
+                "data_gaps": [f"quant_disclosures_omitted_for_input_budget:{omitted}"] if omitted else []}
+
+    kept_indexes: list[int] = []
+    for index in priority:
+        if _payload_tokens(build(kept_indexes + [index])) > budget:
+            break
+        kept_indexes.append(index)
+    result = build(kept_indexes)
+    if _payload_tokens(result) > budget or not result["source_ids"]:
+        raise ValueError("quant_input_budget_exceeded")
+    return result
+
+
 class SingleFlightCache:
     def __init__(self, max_entries: int = 512):
         if max_entries <= 0:
@@ -234,6 +357,10 @@ class SharedAnalysisService:
             self.audit.append("llm_response", {"request_id": request_id, "role": role,
                                               "validation": "schema_only", "output": result.model_dump(mode="json")})
         return result
+
+    def _input_budget(self, role: str) -> int:
+        limit = getattr(self.models.get(role), "hqa_input_limit", None) or DEFAULT_SPECIALIST_INPUT_TOKENS
+        return max(1_000, int(limit) - SPECIALIST_PROMPT_RESERVE_TOKENS)
 
     def _specialist(self, role: str, payload: dict, critical: bool) -> SpecialistResult:
         model = self.models[role]
@@ -394,6 +521,13 @@ class SharedAnalysisService:
             except Exception as exc:
                 errors.append({"stock_code": code, "stage": "specialist_input", "error": str(exc)})
                 common[code]["specialist_errors"].append(f"specialist_input:{exc}")
+        for (code, role) in [key for key in payloads if key[1] in {"analyst", "quant"}]:
+            try:
+                payloads[(code, role)] = fit_specialist_payload(role, payloads[(code, role)], self._input_budget(role))
+            except ValueError as exc:
+                del payloads[(code, role)]
+                errors.append({"stock_code": code, "stage": f"{role}_input", "error": str(exc)})
+                common[code]["specialist_errors"].append(f"{role}_input:{exc}")
         data_finished = time.monotonic()
         with ThreadPoolExecutor(max_workers=self.max_workers) as pool:
             futures = {pool.submit(self._specialist, role, payload, code in held): (code, role)
