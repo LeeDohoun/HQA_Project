@@ -29,7 +29,7 @@
 
 기존 `run_pipeline.py`의 `reports/<theme>_pipeline_report.json`은 더 이상 갱신하지 않습니다. 현재 수집 결과는 `reports/<theme>_ingestion_report.json`이며, 중첩된 `steps` 대신 최상위 `status`, `build_status`, `per_stock_reports`를 확인합니다. 이전 보고서를 읽던 외부 작업도 파일명과 구조를 함께 바꿔야 합니다. 기존 보고서 자체는 삭제하지 않았습니다.
 
-종목 목록은 기본 재사용하며 `--refresh-targets`로 다시 조회합니다. `--save-only`는 종목 목록만 저장하고 원문·가격 수집과 빌드는 생략합니다. `discover`는 전체 테마의 종목 목록을 수집하는 별도 명령입니다. 배치와 단일 수집은 동일한 기본 소스·증분 날짜 규칙을 사용합니다.
+종목 목록은 기본 재사용하며 `--refresh-targets`로 다시 조회합니다. `--save-only`는 종목 목록만 저장하고 원문·가격 수집과 빌드는 생략합니다. `discover`는 전체 테마의 종목 목록을 `data/theme_catalog/`에 수집하는 별도 명령이며 분석 대상(`raw/theme_targets`)은 바꾸지 않습니다. 분석 대상으로 저장하려면 `--as-targets`를 명시합니다. 배치와 단일 수집은 동일한 기본 소스·증분 날짜 규칙을 사용합니다.
 
 ## 평가 명령
 

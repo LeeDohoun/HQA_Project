@@ -93,3 +93,15 @@ def test_collection_module_has_no_model_analysis_entrypoint():
 ])
 def test_loop_detects_only_structured_rate_limit_signals(output, expected):
     assert loop._contains_rate_limit(output) is expected
+
+
+def test_discover_writes_a_catalog_and_leaves_the_analysis_universe_alone(tmp_path):
+    from scripts.data import discover
+    from src.ingestion.naver_theme import ThemeStock, ThemeTargets
+
+    collected = [ThemeTargets(theme_name="2차전지", detail_url="https://finance.naver.com/sise/sise_group_detail.naver?no=1",
+                              stocks=[ThemeStock(theme_name="2차전지", stock_name="에코프로", stock_code="086520")])]
+    summary = discover.save_theme_catalog(collected, data_dir=str(tmp_path))
+    assert summary["saved_theme_count"] == 1
+    assert (tmp_path / "theme_catalog" / "2차전지.jsonl").exists()
+    assert not (tmp_path / "raw" / "theme_targets").exists()

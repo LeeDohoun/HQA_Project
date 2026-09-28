@@ -50,8 +50,13 @@ class KrxChartCollector:
             raise ValueError("KRX chart dates must be YYYYMMDD")
         start = datetime.strptime(from_date, "%Y%m%d").date()
         end = datetime.strptime(to_date, "%Y%m%d").date()
-        if start > end or end >= _now().astimezone(KST).date():
+        now = _now().astimezone(KST)
+        if start > end or end >= now.date():
             raise ValueError("KRX chart range must be ordered and exclude current and future KST dates")
+        if now.hour < 8 and end >= now.date() - timedelta(days=1):
+            # Same publication gate as the KRX index service: before 08:00 the previous
+            # session may be missing, which would publish a generation without its bar.
+            raise ValueError("KRX daily data for the previous session is published at 08:00 KST; collect after 08:00")
         records: List[MarketRecord] = []
         cursor = start
         while cursor <= end:

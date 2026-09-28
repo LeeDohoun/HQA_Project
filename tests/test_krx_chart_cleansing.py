@@ -159,3 +159,17 @@ def test_krx_rate_limit_keeps_only_the_numeric_http_status(monkeypatch):
         collector._fetch_market_rows(KrxChartCollector.KOSPI_DAILY_URL, "20260925")
     assert str(error.value) == "KRX chart request failed (HTTPError) status=429"
     assert "secret" not in str(error.value)
+
+
+def test_previous_session_is_not_requested_before_the_0800_publication(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from src.ingestion import krx_chart
+
+    monkeypatch.setenv("KRX_OPEN_API_KEY", "key")
+    kst = timezone(timedelta(hours=9))
+    monkeypatch.setattr(krx_chart, "_now", lambda: datetime(2026, 9, 29, 7, 30, tzinfo=kst))
+    collector = krx_chart.KrxChartCollector()
+    with pytest.raises(ValueError, match="published at 08:00 KST"):
+        collector.collect_daily("삼성전자", "005930", "20260925", "20260928")
+    collector.session = type("S", (), {"get": lambda *a, **k: pytest.fail("older sessions need no request here")})()
+    assert collector.collect_daily("삼성전자", "005930", "20260926", "20260927") == []  # weekend only
