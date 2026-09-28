@@ -391,52 +391,75 @@ from src.config.settings import get_data_dir as _hqa_get_data_dir
 
 # jsonl 캐시: (source, file_path) → (mtime, list[record])
 # 디스크 I/O를 줄이고 핫 종목 조회를 빠르게 함. mtime 바뀌면 invalidate.
-_jsonl_cache: Dict[str, Any] = {}
+_FEED_FILE_CACHE_LIMIT = 256
+# path -> (mtime_ns, size, {stock_code: [compact display rows]}); bounded LRU
+_feed_index_cache: "OrderedDict[str, tuple[int, int, Dict[str, List[Dict[str, Any]]]]]" = OrderedDict()
+_feed_index_lock = __import__("threading").Lock()
+_FEED_META_FIELDS = ("stock_code", "stock_name", "summary", "press", "rcept_no", "report_nm", "flr_nm",
+                     "corp_name", "collected_at")
 
 
-def _load_jsonl(path: Path) -> List[Dict[str, Any]]:
+def _require_stock_code(stock_code: str) -> None:
+    if not re.fullmatch(r"[0-9]{6}", stock_code or ""):
+        raise HTTPException(status_code=400, detail="stock_code must be six digits")
+
+
+def _compact_feed_row(record: Dict[str, Any]) -> Dict[str, Any]:
+    meta = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
+    return {"stock_code": record.get("stock_code") or meta.get("stock_code"),
+            "stock_name": record.get("stock_name"), "title": record.get("title"), "url": record.get("url"),
+            "published_at": record.get("published_at"),
+            "metadata": {key: meta[key] for key in _FEED_META_FIELDS if key in meta}}
+
+
+def _feed_index(path: Path) -> Dict[str, List[Dict[str, Any]]]:
+    """Per-file index of compact rows by stock code, rebuilt only when the file changes."""
     try:
-        mtime = path.stat().st_mtime
+        stat = path.stat()
     except OSError:
-        return []
-    cached = _jsonl_cache.get(str(path))
-    if cached and cached[0] == mtime:
-        return cached[1]
-    rows: List[Dict[str, Any]] = []
+        return {}
+    key = str(path)
+    with _feed_index_lock:
+        cached = _feed_index_cache.get(key)
+        if cached and cached[0] == stat.st_mtime_ns and cached[1] == stat.st_size:
+            _feed_index_cache.move_to_end(key)
+            return cached[2]
+    index: Dict[str, List[Dict[str, Any]]] = {}
     try:
-        with path.open("r", encoding="utf-8") as f:
-            for line in f:
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
                 line = line.strip()
                 if not line:
                     continue
                 try:
-                    rows.append(json.loads(line))
+                    record = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                if not isinstance(record, dict):
+                    continue
+                row = _compact_feed_row(record)
+                if row["stock_code"]:
+                    index.setdefault(str(row["stock_code"]), []).append(row)
     except OSError:
-        return []
-    _jsonl_cache[str(path)] = (mtime, rows)
-    return rows
+        return {}
+    with _feed_index_lock:
+        _feed_index_cache[key] = (stat.st_mtime_ns, stat.st_size, index)
+        _feed_index_cache.move_to_end(key)
+        while len(_feed_index_cache) > _FEED_FILE_CACHE_LIMIT:
+            _feed_index_cache.popitem(last=False)
+    return index
 
 
 def _collect_records_for_stock(source_dir: str, stock_code: str) -> List[Dict[str, Any]]:
-    """
-    data/raw/{source_dir}/*.jsonl 전부 스캔 → stock_code 일치 record만 모음.
-    파일은 테마별로 묶여있고 한 종목이 여러 테마에 속할 수 있어서 합집합 필요.
-    """
+    """Union of a stock's rows across theme files and its shared archive (compact fields only)."""
     base = _hqa_get_data_dir() / "raw" / source_dir
     if not base.exists():
         return []
     matched: List[Dict[str, Any]] = []
-    for jsonl_path in base.glob("*.jsonl"):
-        for record in _load_jsonl(jsonl_path):
-            # stock_code는 record 본체 또는 metadata에 들어있을 수 있음
-            code = record.get("stock_code")
-            if not code:
-                meta = record.get("metadata") or {}
-                code = meta.get("stock_code") if isinstance(meta, dict) else None
-            if code == stock_code:
-                matched.append(record)
+    for jsonl_path in sorted(base.glob("*.jsonl")):
+        if jsonl_path.name.startswith("_shared_") and jsonl_path.name != f"_shared_{stock_code}.jsonl":
+            continue
+        matched.extend(_feed_index(jsonl_path).get(stock_code, []))
     return matched
 
 
@@ -453,15 +476,16 @@ def _record_sort_key(record: Dict[str, Any]) -> str:
 
 @app.get("/stocks/{stock_code}/news")
 async def stock_news(stock_code: str, limit: int = Query(20, ge=1, le=100)):
+    _require_stock_code(stock_code)
     try:
-        records = _collect_records_for_stock("news", stock_code)
+        records = await asyncio.to_thread(_collect_records_for_stock, "news", stock_code)
     except Exception as exc:
         logger.warning("stock_news failed for %s: %s", stock_code, exc)
         return {"items": [], "error": str(exc)}
     records.sort(key=_record_sort_key, reverse=True)
     items = []
     seen_urls = set()
-    for r in records[: limit * 2]:  # dedupe 후에도 limit 채우도록 여유
+    for r in records:  # theme files and the shared archive repeat rows; dedupe until limit
         url = r.get("url") or ""
         if url and url in seen_urls:
             continue
@@ -484,15 +508,16 @@ async def stock_news(stock_code: str, limit: int = Query(20, ge=1, le=100)):
 
 @app.get("/stocks/{stock_code}/disclosures")
 async def stock_disclosures(stock_code: str, limit: int = Query(20, ge=1, le=100)):
+    _require_stock_code(stock_code)
     try:
-        records = _collect_records_for_stock("dart", stock_code)
+        records = await asyncio.to_thread(_collect_records_for_stock, "dart", stock_code)
     except Exception as exc:
         logger.warning("stock_disclosures failed for %s: %s", stock_code, exc)
         return {"items": [], "error": str(exc)}
     records.sort(key=_record_sort_key, reverse=True)
     items = []
     seen_keys = set()
-    for r in records[: limit * 2]:
+    for r in records:
         meta = r.get("metadata") if isinstance(r.get("metadata"), dict) else {}
         rcept = (meta or {}).get("rcept_no") or r.get("url") or ""
         if rcept and rcept in seen_keys:
