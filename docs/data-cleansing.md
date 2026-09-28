@@ -72,7 +72,7 @@ With no explicit date options they enable shared incremental collection:
   after the build completes; an interrupted build cannot replace the last published
   generation. Financial observations remain a separately dated, as-of-filtered
   archive. Legacy RAG compatibility files are individually atomic, not one combined
-  cross-file transaction. After each publish, generations beyond the current one, the newest `HQA_GENERATION_KEEP` (default 8) and any younger than `HQA_GENERATION_MIN_AGE_HOURS` (default 24) are deleted; `HQA_GENERATION_KEEP=0` keeps everything.
+  cross-file transaction. After each publish, generations other than the current one, the newest `HQA_GENERATION_KEEP` (default 8) and any replaced less than `HQA_GENERATION_MIN_AGE_HOURS` (default 24) ago are deleted, so an analysis keeps the generation it captured for at least that long; `HQA_GENERATION_KEEP=0` keeps everything. Empty values use the defaults, malformed values stop the build before it publishes, and a failed cleanup only logs a warning.
   Legacy RAG vector-store identities still collapse document revisions; the fixed
   DAG does not use those stores. Do not use that legacy retrieval path to evaluate
   correction-sensitive trading decisions without a separate migration.

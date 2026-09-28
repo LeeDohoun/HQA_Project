@@ -215,3 +215,58 @@ def test_old_generations_are_pruned_but_current_and_recent_ones_stay(tmp_path, m
     assert set(names[-3:]) <= remaining and len(removed) == 8     # newest kept, older pruned
     monkeypatch.setenv("HQA_GENERATION_KEEP", "0")
     assert _prune_generations(root, keep_generation=names[0]) == []
+
+
+def test_generation_replaced_recently_survives_even_when_old(tmp_path):
+    import os
+    import time
+    from src.evidence.index_builder import _prune_generations
+
+    root = tmp_path / "generations"
+    ages = {"new": 0, "captured": 30, "previous": 50, "oldest": 80}  # hours since creation
+    names = {label: f"{index:032x}" for index, label in enumerate(ages)}
+    for label, hours in ages.items():
+        (root / names[label]).mkdir(parents=True)
+        stamp = time.time() - hours * 3600
+        os.utime(root / names[label], (stamp, stamp))
+    # "captured" was current until "new" was published just now; an analysis may still read it.
+    removed = _prune_generations(root, keep_generation=names["new"], retention=(1, 24.0))
+    assert {path.name for path in root.iterdir()} == {names["new"], names["captured"]}
+    assert sorted(removed) == sorted([names["previous"], names["oldest"]])
+
+
+def test_generation_retention_settings_are_checked_before_publishing(tmp_path, monkeypatch):
+    now = datetime.now(timezone.utc)
+    write_inputs(tmp_path, now)
+    builder = EvidenceIndexBuilder(str(tmp_path))
+    monkeypatch.setenv("HQA_GENERATION_KEEP", "")               # empty .env entry → default
+    monkeypatch.setenv("HQA_GENERATION_MIN_AGE_HOURS", " ")
+    builder.rebuild_theme("theme")
+    before = pointer(tmp_path)
+    write_inputs(tmp_path, now, ("A", "B"))
+    for name, value in (("HQA_GENERATION_KEEP", "eight"), ("HQA_GENERATION_MIN_AGE_HOURS", "-1")):
+        with monkeypatch.context() as scoped:
+            scoped.setenv(name, value)
+            with pytest.raises(ValueError, match=name):
+                builder.rebuild_theme("theme")
+        assert pointer(tmp_path) == before
+
+
+def test_failed_generation_cleanup_does_not_fail_a_published_build(tmp_path, monkeypatch, capsys):
+    now = datetime.now(timezone.utc)
+    write_inputs(tmp_path, now)
+    builder = EvidenceIndexBuilder(str(tmp_path))
+    builder.rebuild_theme("theme")
+    monkeypatch.setenv("HQA_GENERATION_KEEP", "1")
+    monkeypatch.setenv("HQA_GENERATION_MIN_AGE_HOURS", "0")
+
+    def fail_rmtree(path, *args, **kwargs):
+        raise PermissionError("fixture cleanup failure")
+
+    monkeypatch.setattr("shutil.rmtree", fail_rmtree)
+    for versions in (("A", "B"), ("A", "B", "C")):
+        write_inputs(tmp_path, now, versions)
+        assert builder.rebuild_theme("theme")["reused"] is False
+    current = pointer(tmp_path)["generation"]
+    assert (tmp_path / "canonical_index/theme/generations" / current / "documents.jsonl").is_file()
+    assert "generation pruning failed for theme: PermissionError" in capsys.readouterr().out

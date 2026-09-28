@@ -5,6 +5,7 @@ from __future__ import annotations
 # - Produces corpora, BM25 indexes, vector stores, and market-data shards.
 # - Syncs canonical evidence index after build (new Step 2 integration).
 
+import math
 import os
 import re
 import hashlib
@@ -42,7 +43,7 @@ def _compute_freshness_score(published_at: str, reference_date: Optional[datetim
     if not published_at:
         return 0.3  # unknown age → conservative default
 
-    ref = reference_date or datetime.utcnow()
+    ref = reference_date or datetime.now(timezone.utc).replace(tzinfo=None)
     try:
         # Try common formats
         for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y%m%d", "%Y.%m.%d"):
@@ -100,25 +101,44 @@ def _compute_content_quality_score(source_type: str, content: str, title: str) -
     return max(0.0, min(1.0, score))
 
 
-def _prune_generations(root: Path, *, keep_generation: str) -> list[str]:
-    """Delete old published generations: keep the current one, the newest
-    HQA_GENERATION_KEEP (default 8) and any younger than
-    HQA_GENERATION_MIN_AGE_HOURS (default 24), so a running analysis never loses
-    the generation it captured. HQA_GENERATION_KEEP=0 disables pruning."""
+def _generation_retention() -> tuple[int, float]:
+    """HQA_GENERATION_KEEP (default 8, 0 disables pruning) and
+    HQA_GENERATION_MIN_AGE_HOURS (default 24). Empty values use the defaults;
+    malformed ones raise before a build starts instead of after it publishes."""
+    keep_raw = (os.getenv("HQA_GENERATION_KEEP") or "").strip() or "8"
+    age_raw = (os.getenv("HQA_GENERATION_MIN_AGE_HOURS") or "").strip() or "24"
+    try:
+        keep, min_age_hours = int(keep_raw), float(age_raw)
+    except ValueError:
+        raise ValueError("HQA_GENERATION_KEEP must be an integer and HQA_GENERATION_MIN_AGE_HOURS a number, "
+                         f"got {keep_raw!r} and {age_raw!r}") from None
+    if not math.isfinite(min_age_hours) or min_age_hours < 0:
+        raise ValueError(f"HQA_GENERATION_MIN_AGE_HOURS must be a finite non-negative number, got {age_raw!r}")
+    return keep, min_age_hours
+
+
+def _prune_generations(root: Path, *, keep_generation: str,
+                       retention: tuple[int, float] | None = None) -> list[str]:
+    """Delete old published generations. The current one, the newest ``keep`` and
+    any replaced less than ``min_age_hours`` ago stay. A generation stops being
+    current when the next one is published, so its retirement time is the next
+    generation's creation time, and a running analysis keeps the generation it
+    captured for at least that long, however old the generation itself is."""
     import shutil
     import time as _time
 
-    keep = int(os.getenv("HQA_GENERATION_KEEP", "8"))
-    min_age_hours = float(os.getenv("HQA_GENERATION_MIN_AGE_HOURS", "24"))
+    keep, min_age_hours = retention if retention is not None else _generation_retention()
     if keep <= 0 or not root.exists():
         return []
-    generations = sorted((path for path in root.iterdir()
+    generations = sorted(((path, path.stat().st_mtime) for path in root.iterdir()
                           if path.is_dir() and re.fullmatch(r"[0-9a-f]{32}", path.name)),
-                         key=lambda path: path.stat().st_mtime, reverse=True)
+                         key=lambda item: item[1], reverse=True)
     cutoff = _time.time() - min_age_hours * 3600
     removed = []
-    for path in generations[keep:]:
-        if path.name == keep_generation or path.stat().st_mtime > cutoff:
+    for index in range(keep, len(generations)):
+        path, _ = generations[index]
+        retired_at = generations[index - 1][1]
+        if path.name == keep_generation or retired_at > cutoff:
             continue
         shutil.rmtree(path)
         removed.append(path.name)
@@ -150,6 +170,7 @@ class EvidenceIndexBuilder:
 
         Returns a detailed stats dict.
         """
+        retention = _generation_retention()
         with file_lock(self.canonical_index_root / f"{theme_key}.build.lock"):
             inputs = {}
             if self.raw_dir.exists():
@@ -186,7 +207,11 @@ class EvidenceIndexBuilder:
                 ensure_ascii=False, allow_nan=False))
             atomic_write(current_path, json.dumps({"schema_version": 1, "generation": generation,
                 "published_at": datetime.now(timezone.utc).isoformat()}))
-            _prune_generations(index_dir / "generations", keep_generation=generation)
+            try:
+                _prune_generations(index_dir / "generations", keep_generation=generation, retention=retention)
+            except OSError as exc:
+                # The new generation is already live; failed cleanup is retried on the next publish.
+                print(f"[WARN][INDEX] generation pruning failed for {theme_key}: {type(exc).__name__}")
             return {**result, "reused": False}
 
     def _rebuild_theme(self, theme_key: str, update_mode: str) -> Dict:
