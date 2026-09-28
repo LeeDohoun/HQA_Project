@@ -119,7 +119,7 @@ class IngestionService:
                 result.documents.extend(documents)
                 result.market_records.extend(market)
                 result.financial_snapshots.extend(financials)
-                for field_name in ("source_success", "source_counts", "raw_saved_counts", "skipped_counts", "failures", "source_status", "rejected_counts"):
+                for field_name in ("source_success", "source_counts", "raw_saved_counts", "skipped_counts", "failures", "source_status", "rejected_counts", "notes"):
                     getattr(report, field_name).update(source_report.get(field_name, {}))
             except Exception as exc:
                 report.source_success[source] = False

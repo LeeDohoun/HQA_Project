@@ -19,6 +19,15 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _had_session(day) -> bool:
+    """Whether KRX traded on ``day``; an unverifiable calendar keeps the 08:00 gate closed."""
+    try:
+        from src.runner.trading_calendar import is_trading_day
+        return is_trading_day(day.isoformat())
+    except Exception:
+        return True
+
+
 class KrxChartCollector:
     """KRX Open API 일별매매정보 기반 OHLCV 수집기."""
 
@@ -53,9 +62,10 @@ class KrxChartCollector:
         now = _now().astimezone(KST)
         if start > end or end >= now.date():
             raise ValueError("KRX chart range must be ordered and exclude current and future KST dates")
-        if now.hour < 8 and end >= now.date() - timedelta(days=1):
-            # Same publication gate as the KRX index service: before 08:00 the previous
-            # session may be missing, which would publish a generation without its bar.
+        yesterday = now.date() - timedelta(days=1)
+        if now.hour < 8 and end >= yesterday and _had_session(yesterday):
+            # Before 08:00 yesterday's session may be unpublished, which would publish a
+            # generation without its bar; after a weekend or holiday every session is out.
             raise ValueError("KRX daily data for the previous session is published at 08:00 KST; collect after 08:00")
         records: List[MarketRecord] = []
         cursor = start
