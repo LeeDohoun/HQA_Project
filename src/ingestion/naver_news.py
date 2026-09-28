@@ -72,6 +72,8 @@ class NaverNewsCollector(BaseCollector):
             raise ValueError("max_pages must be a positive integer")
         if max_items == 0:
             return []
+        # Per-item filters compare YYYYMMDD strings; normalize dashed or dotted bounds.
+        from_date, to_date = _compact_search_date(from_date), _compact_search_date(to_date)
 
         docs: List[DocumentRecord] = []
         seen_urls = set()
@@ -170,6 +172,10 @@ class NaverNewsCollector(BaseCollector):
 
             items = self._extract_search_items(response.text)
             if not items:
+                # An empty first page is only "no news" when Naver says so; a block page
+                # or a markup change must fail loudly instead of publishing zero news.
+                if page_no == 1 and not self._is_no_result_page(response.text):
+                    raise RuntimeError("news_search_unrecognized_page:page=1")
                 break
 
             page_dates: List[str] = []
@@ -194,6 +200,8 @@ class NaverNewsCollector(BaseCollector):
                         continue
                 yield parsed
 
+            if page_no == 1 and not seen_urls:
+                raise RuntimeError("news_search_unparseable_page:page=1")
             if not new_urls or (all_dates_confirmed and from_date and page_dates and all(d < from_date for d in page_dates)):
                 break
 
@@ -212,6 +220,15 @@ class NaverNewsCollector(BaseCollector):
         if not start or not end:
             return {}
         return {"pd": "3", "ds": start, "de": end}
+
+    @staticmethod
+    def _is_no_result_page(html: str) -> bool:
+        """Naver's explicit empty-result notice (checked against live pages on 2026-09-27)."""
+        if "검색결과가 없습니다" in html:
+            return True
+        if BeautifulSoup is None:
+            return False
+        return BeautifulSoup(html, "html.parser").select_one(".api_noresult, .not_found") is not None
 
     def _extract_search_items(self, html: str) -> List[Any]:
         if BeautifulSoup is None:
@@ -437,6 +454,16 @@ def truncate_for_log(text: str, limit: int = 60) -> str:
     if len(compact) <= limit:
         return compact
     return compact[: limit - 3] + "..."
+
+
+def _compact_search_date(raw: str) -> str:
+    value = (raw or "").strip()
+    if not value:
+        return ""
+    digits = re.sub(r"\D", "", value)
+    if len(digits) != 8:
+        raise ValueError(f"news date bound must be YYYYMMDD or YYYY-MM-DD: {raw!r}")
+    return digits
 
 
 def _format_naver_search_date(raw: str) -> str:

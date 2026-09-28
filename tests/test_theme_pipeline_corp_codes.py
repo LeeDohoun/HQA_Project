@@ -88,3 +88,21 @@ def test_ensure_corp_codes_missing_file_without_api_key_does_not_create(tmp_path
 
     assert theme_pipeline._ensure_fresh_corp_codes_csv(str(csv_path), max_age_days=7) is False
     assert not csv_path.exists()
+
+
+def test_alphanumeric_krx_listings_are_skipped_not_fatal(capsys):
+    import pytest
+    from scripts.data.corp_codes import _parse_corp_codes
+
+    xml = """<result>
+      <list><corp_code>00126380</corp_code><corp_name>삼성전자</corp_name><stock_code>005930</stock_code><modify_date>20250101</modify_date></list>
+      <list><corp_code>01990011</corp_code><corp_name>삼성에피스홀딩스</corp_name><stock_code>0126Z0</stock_code><modify_date>20260101</modify_date></list>
+      <list><corp_code>00999999</corp_code><corp_name>비상장</corp_name><stock_code> </stock_code><modify_date>20250101</modify_date></list>
+    </result>""".encode("utf-8")
+    rows = _parse_corp_codes(xml)
+    assert [(row["stock_code"], row["corp_code"]) for row in rows] == [("005930", "00126380")]
+    assert "skipped 1 listings with alphanumeric KRX codes" in capsys.readouterr().out
+
+    malformed = xml.replace(b"0126Z0", b"12Z!")
+    with pytest.raises(ValueError, match="invalid corporate or stock code"):
+        _parse_corp_codes(malformed)

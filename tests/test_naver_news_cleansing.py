@@ -200,3 +200,40 @@ def test_format_naver_search_date(raw, expected):
     from src.ingestion.naver_news import _format_naver_search_date
 
     assert _format_naver_search_date(raw) == expected
+
+
+NO_RESULT_PAGE = ('<div class="api_noresult"><div class="not_found">'
+                  "'없는검색어' 에 대한 검색결과가 없습니다. 단어의 철자가 정확한지 확인해 주세요.</div></div>")
+
+
+def test_genuine_naver_no_result_page_is_empty_not_an_error(monkeypatch):
+    collector, calls = collector_with_html(monkeypatch, NO_RESULT_PAGE, article())
+    assert collector.collect("삼성전자", max_items=5) == []
+    assert calls == [collector.SEARCH_URL]
+
+
+@pytest.mark.parametrize("page", [
+    "<html><body><p>비정상적인 접근이 감지되어 서비스 이용이 제한되었습니다.</p></body></html>",
+    "<html><body><div class='totally_new_layout'>뉴스</div></body></html>",
+])
+def test_block_or_unknown_first_page_fails_instead_of_publishing_zero_news(monkeypatch, page):
+    collector, _ = collector_with_html(monkeypatch, page, article())
+    with pytest.raises(RuntimeError, match="news_search_unrecognized_page"):
+        collector.collect("삼성전자", max_items=5)
+
+
+def test_first_page_items_that_cannot_be_parsed_fail_loudly(monkeypatch):
+    unparseable = '<div class="news_area"><span class="info">1시간 전</span></div>'
+    collector, _ = collector_with_html(monkeypatch, unparseable, article())
+    with pytest.raises(RuntimeError, match="news_search_unparseable_page"):
+        collector.collect("삼성전자", max_items=5)
+
+
+def test_dashed_date_bounds_keep_articles_inside_the_range(monkeypatch):
+    item = search_item(date="2026.09.03.")
+    collector, _ = collector_with_html(monkeypatch, item, article())
+    dashed = collector.collect("삼성전자", from_date="2026-09-01", to_date="2026-09-05", max_items=1)
+    compact = collector.collect("삼성전자", from_date="20260901", to_date="20260905", max_items=1)
+    assert len(dashed) == len(compact) == 1
+    with pytest.raises(ValueError, match="YYYYMMDD"):
+        collector.collect("삼성전자", from_date="2026/9/1", to_date="20260905", max_items=1)

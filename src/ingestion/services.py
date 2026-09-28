@@ -34,6 +34,7 @@ class IngestionRunReport:
     source_status: Dict[str, str] = field(default_factory=dict)
     cache_hits: Dict[str, bool] = field(default_factory=dict)
     rejected_counts: Dict[str, int] = field(default_factory=dict)
+    notes: Dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -302,8 +303,13 @@ class IngestionService:
                 )
                 collected_snapshots = [snapshot] if snapshot is not None else []
             if not collected_snapshots:
-                report.source_success["financials"] = False
-                report.failures["financials"] = "재무제표 없음"
+                # OpenDART answered "no data" (013) for every fiscal year requested, e.g.
+                # a new listing without an annual report yet. That is provider data
+                # availability, not a failed collection: the theme build continues and
+                # the runtime blocks new entries for this stock (financials "blocked").
+                report.source_success["financials"] = True
+                report.source_counts["financials"] = 0
+                report.notes["financials"] = "provider_no_annual_report"
                 return
             collected_at = datetime.now(timezone.utc).isoformat()
             for snapshot in collected_snapshots:
