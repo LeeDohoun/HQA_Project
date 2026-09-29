@@ -7,6 +7,7 @@
 | [이벤트 파이프라인](event-data-pipeline.md) | 공시·뉴스 이벤트와 관측된 주가 반응을 해석할 때 |
 | [시장·업종 비교](market-context-data.md) | KRX 지수 승인·수집·매핑을 설정할 때 |
 | [Luna PAPER 운영](luna-paper-runtime.md) | 분석 API·예산·주문·체결·복구를 검증할 때 |
+| [AI·데이터 변경 내역 (2026-09)](ai-data-changes-2026-09.md) | `feat/dohoon-changes`에서 AI·수집·백테스트가 무엇을 왜 바꿨는지 확인할 때 |
 | [백테스팅](../backtesting/README.md) | 과거 전략 검증과 PAPER 평가를 실행할 때 |
 | [연구 보관 목록](../research/README.md) | 과거 실험의 원본 결과와 이전 경로를 찾을 때 |
 
