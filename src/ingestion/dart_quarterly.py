@@ -157,20 +157,28 @@ def _records(payload: dict, year: int, report: str, batch: list[str], universe: 
     records = []
     normalize = DartFinancialStatementCollector._normalize_account_name
     for (corp, division, receipt), accounts in sorted(groups.items()):
-        raw = {}
+        raw, conflicts = {}, {}
         for metric, aliases in ACCOUNTS.items():
-            candidates = [row for row in accounts if normalize(row["account_nm"]) in {normalize(alias) for alias in aliases}]
-            if candidates:
+            for alias in aliases:
+                candidates = [row for row in accounts if normalize(row["account_nm"]) == normalize(alias)]
+                if not candidates:
+                    continue
                 fields = ("account_nm", "thstrm_amount", "thstrm_add_amount", "thstrm_dt", "rcept_no", "currency", "fs_div")
                 values = [{field: row.get(field) for field in fields} for row in candidates]
-                if any(any(value[field] != values[0][field] for field in fields if field != "account_nm") for value in values[1:]):
+                if any(any(value[field] != values[0][field] for field in ("thstrm_dt", "rcept_no", "currency", "fs_div")) for value in values[1:]):
                     raise DartAPIError("DART conflicting quarterly accounts for one filing")
-                raw[metric] = values[0]
+                if any(any(value[field] != values[0][field] for field in ("thstrm_amount", "thstrm_add_amount")) for value in values[1:]):
+                    conflicts[metric] = alias
+                else:
+                    raw[metric] = values[0]
+                break
         currencies = {row["currency"] for row in raw.values() if row.get("currency")}
         records.append({"corp_code": corp, "stock_codes": universe[corp], "bsns_year": year,
             "reprt_code": report, "fiscal_quarter": f"{year}Q{REPORTS[report]}",
             "fs_div": division, "rcept_no": receipt, "available_date": _filing_date(receipt),
             "currency": next(iter(currencies)) if len(currencies) == 1 else None, "raw_accounts": raw})
+        if conflicts:
+            records[-1]["conflicting_accounts"] = conflicts
     return records
 
 
@@ -195,10 +203,12 @@ def _derive(records: list[dict]) -> list[dict]:
         earlier = history[(row["corp_code"], row["bsns_year"], row["fs_div"])][quarter - 1]
         known = [value for value in earlier if value["available_date"] <= row["available_date"]]
         prior = max(known, key=lambda value: (value["available_date"], value["rcept_no"])) if known else None
+        conflicts = row.get("conflicting_accounts", {})
         for metric in ACCOUNTS:
             account = row["raw_accounts"].get(metric)
             value = cumulative = None
-            reason = "missing_account"
+            reason = ({"reason": "conflicting_accounts", "alias": conflicts[metric]}
+                      if metric in conflicts else "missing_account")
             if account is not None:
                 amount, added = _amount(account.get("thstrm_amount")), _amount(account.get("thstrm_add_amount"))
                 months = _period_months(account)
@@ -276,7 +286,8 @@ def _publish(directory: Path, year: int, report: str, records: list[dict]) -> in
     for row in records:
         key = row["corp_code"], row["fs_div"], row["rcept_no"]
         previous = stored.get(key)
-        if previous is not None and previous["raw_accounts"] != row["raw_accounts"]:
+        if previous is not None and (previous["raw_accounts"] != row["raw_accounts"]
+                or previous.get("conflicting_accounts", {}) != row.get("conflicting_accounts", {})):
             raise DartAPIError("DART conflicting saved quarterly filing")
         if previous is None:
             archives[report].append(row)
@@ -332,7 +343,8 @@ def backfill(from_year: int, to_year: int, *, execute=False, max_requests=DEFAUL
         raise ValueError("DART API key is required for execution")
     now = clock if clock is not None else lambda: datetime.now(KST)
     owned_session = session is None
-    summary = {**plan, "status": "ok", "dry_run": False, "requests_made": 0, "records_saved": 0}
+    summary = {**plan, "status": "ok", "dry_run": False, "requests_made": 0, "records_saved": 0,
+               "conflicting_metrics": 0}
     with file_lock(directory / ".backfill.lock"):
         completed, quota = _state(directory), _quota(directory)
         try:
@@ -365,8 +377,9 @@ def backfill(from_year: int, to_year: int, *, execute=False, max_requests=DEFAUL
                     _write_json(directory / "_quota.json", quota)
                     raise _QuotaReached("provider_status_020") from None
                 payload = _redact(payload, api_key)
-                summary["records_saved"] += _publish(directory, year, report,
-                    _records(payload, year, report, batch, universe))
+                records = _records(payload, year, report, batch, universe)
+                summary["records_saved"] += _publish(directory, year, report, records)
+                summary["conflicting_metrics"] += sum(len(row.get("conflicting_accounts", {})) for row in records)
                 completed.add(key)
                 _write_json(directory / "_state.json", {"completed_batches": sorted(completed)})
         except _QuotaReached as error:

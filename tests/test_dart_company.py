@@ -20,6 +20,8 @@ NOW = datetime(2024, 9, 4, 10, tzinfo=company.KST)
 @pytest.fixture(autouse=True)
 def no_real_session(monkeypatch):
     monkeypatch.setattr(company.requests, "Session", lambda: pytest.fail("Unexpected real session"))
+    monkeypatch.setattr("src.config.settings.load_project_env", lambda: pytest.fail("Unexpected env loading"))
+    monkeypatch.setattr(cli, "load_project_env", lambda: pytest.fail("Unexpected env loading"))
 
 
 def references(tmp_path, stocks=("005930", "000660", "0015G0")):
@@ -246,7 +248,35 @@ def test_cli_dry_run_and_execute_with_exported_key(tmp_path, monkeypatch, capsys
     session = FakeSession(payload())
     monkeypatch.setattr(company.requests, "Session", lambda: session)
     monkeypatch.setattr(company.time, "sleep", lambda _: None)
+    monkeypatch.setattr(cli, "load_project_env", Mock())
     monkeypatch.setenv("DART_API_KEY", KEY)
     monkeypatch.setattr("sys.argv", args + ["--execute"])
     cli.main()
     assert json.loads(capsys.readouterr().out)["saved"] == 1 and session.closed
+
+
+def test_cli_execute_loads_environment_before_reading_api_key(tmp_path, monkeypatch, capsys):
+    path = references(tmp_path, ("005930",))
+    monkeypatch.delenv("DART_API_KEY", raising=False)
+    events = []
+
+    def load_env():
+        events.append("load_env")
+        monkeypatch.setenv("DART_API_KEY", KEY)
+
+    session = FakeSession(payload())
+
+    def create_session():
+        assert events == ["load_env"]
+        events.append("session")
+        return session
+
+    monkeypatch.setattr(cli, "load_project_env", load_env)
+    monkeypatch.setattr(company.requests, "Session", create_session)
+    monkeypatch.setattr(company.time, "sleep", lambda _: None)
+    monkeypatch.setattr("sys.argv", ["dart_company", "--corp-codes", str(path),
+        "--data-dir", str(tmp_path / "data"), "--execute"])
+    cli.main()
+    assert events == ["load_env", "session"]
+    assert session.calls[0][1]["params"]["crtfc_key"] == KEY and session.closed
+    assert json.loads(capsys.readouterr().out)["saved"] == 1

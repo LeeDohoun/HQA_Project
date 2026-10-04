@@ -188,17 +188,86 @@ def test_account_aliases_and_normalisation(tmp_path, name):
     assert frame.loc[0, ["revenue", "operating_income", "net_income"]].tolist() == [1234, -10, -5]
 
 
-@pytest.mark.parametrize("amount,expected_status", [("100", "ok"), ("200", "error")])
-def test_duplicate_aliases_accept_identical_values_and_reject_conflicts(tmp_path, amount, expected_status):
+@pytest.mark.parametrize("metric,index,names", [
+    ("revenue", 0, ("매출액", "수익(매출액)", "영업수익")),
+    ("revenue", 0, ("수익(매출액)", "영업수익")),
+    ("operating_income", 1, ("영업이익", "영업이익(손실)")),
+    ("net_income", 2, ("당기순이익", "당기순이익(손실)", "연결당기순이익")),
+    ("net_income", 2, ("당기순이익(손실)", "연결당기순이익")),
+])
+def test_account_alias_priority_is_independent_of_response_order(tmp_path, metric, index, names):
     rows = filing("11013")
-    rows.append({**rows[0], "account_nm": "수익(매출액)", "thstrm_amount": amount})
-    responses = [payload(*rows)] + ([{"status": "013"}] * 3 if expected_status == "ok" else [])
-    summary, _ = run(tmp_path, *responses)
-    assert summary["status"] == expected_status
-    if expected_status == "ok":
-        assert load_quarterly("2024-05-16", data_dir=tmp_path).iloc[0]["revenue"] == 100
-    else:
-        assert not archive(tmp_path).exists()
+    account = rows.pop(index)
+    rows.extend({**account, "account_nm": name, "thstrm_amount": str(100 + offset)}
+                for offset, name in reversed(list(enumerate(names))))
+    summary, _ = run(tmp_path, payload(*rows), *[{"status": "013"}] * 3)
+    assert summary["status"] == "ok" and summary["conflicting_metrics"] == 0
+    frame = load_quarterly("2024-05-16", data_dir=tmp_path)
+    assert frame.iloc[0][metric] == 100 and frame.iloc[0]["missing_reasons"] == {}
+    assert read_rows(archive(tmp_path))[0]["raw_accounts"][metric]["account_nm"] == names[0]
+
+
+@pytest.mark.parametrize("index", [0, 1, 2])
+def test_identical_account_duplicates_are_silently_deduplicated(tmp_path, index):
+    rows = filing("11013")
+    rows.extend([dict(rows[index]), dict(rows[index])])
+    summary, _ = run(tmp_path, payload(*rows), *[{"status": "013"}] * 3)
+    assert summary["status"] == "ok" and summary["conflicting_metrics"] == 0
+    stored = read_rows(archive(tmp_path))[0]
+    assert len(stored["raw_accounts"]) == 3 and stored["missing_reasons"] == {}
+    assert [stored[metric] for metric in module.ACCOUNTS] == [100, 10, 5]
+
+
+@pytest.mark.parametrize("metric,index,alias", [
+    ("revenue", 0, "매출액"), ("operating_income", 1, "영업이익"),
+    ("net_income", 2, "당기순이익"),
+])
+@pytest.mark.parametrize("field", ["thstrm_amount", "thstrm_add_amount"])
+def test_conflicting_selected_alias_is_missing_without_using_lower_alias(tmp_path, metric, index, alias, field):
+    rows = filing("11013")
+    rows.extend([{**rows[index], field: "200"}, {**rows[index], field: "200"},
+                 {**rows[index], "account_nm": module.ACCOUNTS[metric][1]}])
+    summary, session = run(tmp_path, payload(*rows), *[{"status": "013"}] * 3)
+    assert summary["status"] == "ok" and summary["conflicting_metrics"] == 1
+    assert summary["requests_made"] == len(session.calls) == 4 and summary["pending_requests"] == 0
+    reason = {"reason": "conflicting_accounts", "alias": alias}
+    stored = read_rows(archive(tmp_path))[0]
+    assert stored[metric] is None and stored["cumulative"][metric] is None
+    assert stored["missing_reasons"] == {metric: reason}
+    frame = load_quarterly("2024-05-16", data_dir=tmp_path)
+    assert pd.isna(frame.iloc[0][metric]) and frame.iloc[0]["missing_reasons"] == {metric: reason}
+    for other in module.ACCOUNTS:
+        if other != metric:
+            assert pd.notna(frame.iloc[0][other])
+
+
+def test_account_conflicts_do_not_stop_other_companies_or_later_batches(tmp_path):
+    companies = [{"corp_code": f"{i:08d}", "stock_code": f"{i:06d}"} for i in range(1, 102)]
+    rows = filing("11013", corp="00000001")
+    rows.append({**rows[0], "thstrm_amount": "200"})
+    rows.extend(filing("11013", corp="00000002"))
+    summary, session = run(tmp_path, payload(*rows), payload(*filing("11013", corp="00000101")),
+        payload(*filing("11012", (150, 20, 9), cumulative=(250, 30, 14), corp="00000002")),
+        *[{"status": "013"}] * 5, universe=companies)
+    assert summary["status"] == "ok" and summary["conflicting_metrics"] == 1
+    assert summary["requests_made"] == len(session.calls) == 8
+    assert summary["records_saved"] == 4 and summary["pending_requests"] == 0
+    frame = load_quarterly("2024-08-15", data_dir=tmp_path).set_index(["corp_code", "fiscal_quarter"])
+    assert pd.isna(frame.loc[("00000001", "2024Q1"), "revenue"])
+    assert frame.loc[("00000002", "2024Q1"), "revenue"] == 100
+    assert frame.loc[("00000101", "2024Q1"), "revenue"] == 100
+    assert frame.loc[("00000002", "2024Q2"), "revenue"] == 150
+    resumed, session = run(tmp_path, universe=companies)
+    assert resumed["requests_made"] == resumed["conflicting_metrics"] == 0 and session.calls == []
+
+
+@pytest.mark.parametrize("field,value", [("currency", "USD"), ("thstrm_dt", "2024.01.01 ~ 2024.03.31")])
+def test_duplicate_account_metadata_conflicts_still_fail_validation(tmp_path, field, value):
+    rows = filing("11013")
+    rows.append({**rows[0], field: value})
+    summary, _ = run(tmp_path, payload(*rows))
+    assert summary["status"] == "error" and summary["pending_requests"] == 4
+    assert not archive(tmp_path).exists()
 
 
 def test_direct_q2_q3_and_annual_minus_nine_months_q4(tmp_path):
