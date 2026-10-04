@@ -1,0 +1,11 @@
+[Unit]
+Description=HQA daily DART historical backfill at 00:20 KST
+
+[Timer]
+OnCalendar=*-*-* 00:20 Asia/Seoul
+Persistent=true
+RandomizedDelaySec=300
+Unit=hqa-dart-backfill.service
+
+[Install]
+WantedBy=timers.target

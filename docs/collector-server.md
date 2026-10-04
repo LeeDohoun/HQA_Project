@@ -1,6 +1,7 @@
 # NCP 경량 수집 서버 운영
 
-이 서버는 DART 첫 관측 폴러, KRX 전종목 일봉 수집, 로컬 상태 보고만 실행합니다.
+이 서버는 DART 첫 관측 폴러와 과거 전시장 backfill, KRX 전종목 일봉 수집,
+로컬 상태 보고만 실행합니다.
 백엔드·DB·LLM 분석·KIS 호출·주문은 실행하지 않습니다. 서버에 보관하는 API 키는
 `DART_API_KEY`, `KRX_OPEN_API_KEY` 두 개입니다. PC의 `.env`, `.env-ai`, 계좌 파일,
 KIS·OpenAI 키를 서버에 복사하지 마세요. 아래 외부 연결·설치·실행 명령은 운영자가
@@ -130,6 +131,53 @@ sudo systemctl --failed --no-pager
 API 승인이 없거나 응답 검증에 실패하면 KRX 작업은 실패 상태로 끝납니다. `empty`
 응답은 휴장일·미공개 가능성을 그대로 기록하며 오류를 정상 일봉으로 대체하지 않습니다.
 
+### DART 일일 전시장 backfill (M-ops 확장)
+
+`hqa-dart-backfill.timer`는 매일 **00:20 KST**에 실행하며 최대 300초의 무작위
+지연을 둡니다. `Persistent=true`로 놓친 일정은 부팅 후 실행합니다. 먼저
+**2023-01-01부터 한국 기준 어제까지** 목록을 채우고, 완료된 날짜는 건너뜁니다.
+오늘이나 미래 날짜는 요청하지 않습니다. 이후 `contract,convertible_bond,bond_subtype,
+capital_raise` 순서로 본문·구조화 행을 수집하고, 남은 예산으로 전체 카테고리를
+처리합니다. `--priority-categories`로 우선순위를 지정할 수 있습니다.
+
+세 단계와 같은 날의 재실행은 동일한 `/var/lib/hqa/data/disclosures/dart_full/_quota.json`을
+사용합니다. 기본 `--max-requests`는 **KST 하루 누적 17,000회**이며 재시도도
+포함합니다. DART 키의 일일 20,000회 한도에서 3,000회를 남겨 평일 07:00–19:30의
+첫 관측 폴러(약 1,000회/일)와 추가 여유를 확보합니다. 이 로컬 원장은 backfill
+요청 수이며 폴러 요청 수를 합산하지 않습니다. 제공자 한도 응답도 해당 날짜에
+기록해 추가 backfill 요청을 중단합니다. 쿼터 도달은 정상 종료(0)이며 다른 제공자
+오류는 실패 종료합니다. 한 번 실행할 때 단계별 상태·요청 수와 backfill이 보고한
+대기 건수를 JSON 한 개로 출력합니다.
+
+서비스는 `hqa` 사용자로 실행하고 기존 수집 서비스와 같은 환경 파일·보호 설정을
+사용합니다. `Nice=10`, 최대 실행 시간 6시간이며 순차 처리합니다. 기본 명령은
+dry run이고 API 키를 읽거나 요청하지 않습니다. 아래 첫 명령으로 계획을 확인합니다.
+두 번째 명령은 환경 파일을 systemd가 읽어 **실제 API 요청을 한 번 실행**합니다.
+수동 실행 전 예약 작업이 실행 중인지 확인하세요. 동일 원장의 잠금은 데이터와
+요청 예산을 보호하지만 중복 실행을 예약할 필요는 없습니다.
+
+```bash
+sudo -u hqa /opt/hqa/venv/bin/python /opt/hqa/scripts/ops/dart_backfill_daily.py \
+  --data-dir /var/lib/hqa/data
+sudo systemd-run --unit=hqa-dart-backfill-manual --wait --pipe --collect \
+  -p User=hqa -p Group=hqa -p WorkingDirectory=/opt/hqa \
+  -p EnvironmentFile=/etc/hqa/collector.env \
+  -p NoNewPrivileges=true -p ProtectSystem=strict -p ProtectHome=true \
+  -p ReadWritePaths=/var/lib/hqa/data -p PrivateTmp=true -p UMask=0027 \
+  -p TimeoutStartSec=6h -p Nice=10 \
+  /opt/hqa/venv/bin/python /opt/hqa/scripts/ops/dart_backfill_daily.py --execute
+sudo journalctl -u hqa-dart-backfill.service -n 50 --no-pager
+```
+
+예약과 실행 중인 backfill을 중지하려면 아래 명령을 사용합니다. 수동 실행 중인
+경우 마지막 명령도 실행합니다. 저장된 체크포인트는 다음 실행에 재사용됩니다.
+
+```bash
+sudo systemctl disable --now hqa-dart-backfill.timer
+sudo systemctl stop hqa-dart-backfill.service
+sudo systemctl stop hqa-dart-backfill-manual.service
+```
+
 ## 5. 상태 파일 확인
 
 ```bash
@@ -145,6 +193,7 @@ JSON과 journal 출력은 동일한 보고서를 담습니다. 환경 파일이�
 | `newest_first_seen_at` | 최신 first_seen JSONL 안에서 가장 최근의 첫 관측 시각 |
 | `newest_poll_completed_at` | 그 JSONL 안에서 가장 최근의 폴링 완료 시각 |
 | `poller_stale` | 평일 10:00 KST 이후 오늘 완료 기록이 없으면 true |
+| `dart_backfill` | 완료 목록 날짜·상세 접수·건너뛴 접수 건수, KST 오늘의 backfill 요청 수와 제공자 한도 여부 |
 | `krx_newest_date`, `krx_expected_date` | 최신 저장 날짜와 어제까지의 마지막 평일 |
 | `krx_lag_days` | 최신 저장일 이후 기대 날짜까지의 미수집 평일 수. 1보다 크면 경고 |
 | `empty_dates` | KRX 상태 파일의 빈 응답 날짜. 휴장으로 확정된 날짜가 아님 |
@@ -154,6 +203,8 @@ JSON과 journal 출력은 동일한 보고서를 담습니다. 환경 파일이�
 
 공시가 없는 날에도 성공한 폴링은 상태 파일에 날짜를 남기므로 정상으로 판단합니다.
 폴링 기록이 있더라도 마지막 10분의 가동 여부까지 보장하는 지표는 아닙니다.
+`dart_backfill`은 `dart_full/_state.json`과 `_quota.json`만 읽고 목록·본문 파일은
+순회하지 않습니다. 데이터가 아직 없으면 건수는 0, 제공자 한도 여부는 false입니다.
 KRX 지연은 거래소 휴일을 제외하지 않은 **평일 수**입니다. 달력 검증 상태는
 `src/runner/trading_calendar.py`의 실제 저장 결과를 사용하며, 2026-11-01 이후 특별장
 검증 범위는 기존 코드에서 미확인 상태입니다. 상태 보고는 모든 저장 일봉 파일을
@@ -177,8 +228,8 @@ bash scripts/ops/pull_collector_data.sh --execute ubuntu@PUBLIC_IP ~/.ssh/ncp_hq
 ## 7. 전체 중지와 비용 확인
 
 ```bash
-sudo systemctl disable --now hqa-dart-poller.service hqa-krx-daily.timer hqa-collector-status.timer
-sudo systemctl stop hqa-krx-daily.service hqa-collector-status.service
+sudo systemctl disable --now hqa-dart-poller.service hqa-krx-daily.timer hqa-collector-status.timer hqa-dart-backfill.timer
+sudo systemctl stop hqa-krx-daily.service hqa-collector-status.service hqa-dart-backfill.service
 sudo systemctl list-timers 'hqa-*' --all --no-pager
 ```
 

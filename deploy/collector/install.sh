@@ -86,8 +86,8 @@ PY
 fi
 
 if [[ "$env_check" -ne 0 ]]; then
-    systemctl disable --now hqa-dart-poller.service hqa-krx-daily.timer hqa-collector-status.timer
-    systemctl stop hqa-krx-daily.service hqa-collector-status.service
+    systemctl disable --now hqa-dart-poller.service hqa-krx-daily.timer hqa-collector-status.timer hqa-dart-backfill.timer
+    systemctl stop hqa-krx-daily.service hqa-collector-status.service hqa-dart-backfill.service
     cat <<'NEXT'
 Collectors have not been started. On this server:
   sudo cp -n /etc/hqa/collector.env.example /etc/hqa/collector.env
@@ -103,5 +103,5 @@ NEXT
     exit "$env_check"
 fi
 
-systemctl enable --now hqa-dart-poller.service hqa-krx-daily.timer hqa-collector-status.timer
+systemctl enable --now hqa-dart-poller.service hqa-krx-daily.timer hqa-collector-status.timer hqa-dart-backfill.timer
 printf '%s\n' 'Collector poller and timers enabled. Check systemctl status and /var/lib/hqa/data/ops/status.json.'

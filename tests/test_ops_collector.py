@@ -5,11 +5,14 @@ import subprocess
 import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from scripts.ops import collector_status as status
+from scripts.ops import dart_backfill_daily as dart_daily
 from scripts.ops import krx_catchup as catchup
+from src.ingestion import dart_backfill
 from src.ingestion import krx_chart
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,6 +28,7 @@ def offline_clock_and_disk(monkeypatch):
 
     monkeypatch.setattr(catchup, "datetime", FixedDatetime)
     monkeypatch.setattr(status, "datetime", FixedDatetime)
+    monkeypatch.setattr(dart_daily, "datetime", FixedDatetime)
     monkeypatch.setattr(krx_chart, "_now", lambda: NOW)
     monkeypatch.setattr(status.shutil, "disk_usage", lambda path: shutil._ntuple_diskusage(8_000_000_000, 0, 8_000_000_000))
     monkeypatch.setattr("src.config.settings.load_project_env", lambda *args, **kwargs: pytest.fail("Unexpected env read"))
@@ -308,12 +312,12 @@ def test_status_cli_writes_and_prints_same_report_without_reading_secrets(tmp_pa
     assert not list((tmp_path / "ops").glob(".status.*"))
 
 
-@pytest.mark.parametrize("name", ["hqa-dart-poller", "hqa-krx-daily", "hqa-collector-status"])
+@pytest.mark.parametrize("name", ["hqa-dart-poller", "hqa-krx-daily", "hqa-collector-status", "hqa-dart-backfill"])
 def test_service_units_use_hqa_environment_and_hardening(name):
     text = (ROOT / "deploy/collector/systemd" / f"{name}.service").read_text()
     for directive in ("User=hqa", "Group=hqa", "EnvironmentFile=/etc/hqa/collector.env",
                       "NoNewPrivileges=true", "ProtectSystem=strict", "PrivateTmp=true",
-                      "ReadWritePaths=/var/lib/hqa/data"):
+                      "ReadWritePaths=/var/lib/hqa/data", "ProtectHome=true", "UMask=0027"):
         assert directive in text.splitlines()
 
 
@@ -322,10 +326,16 @@ def test_service_schedule_and_poller_restart():
     dart = (directory / "hqa-dart-poller.service").read_text()
     assert "--loop --execute" in dart and "Restart=always\nRestartSec=30" in dart
     for name, calendar in (("hqa-krx-daily", "Mon..Fri 08:40 Asia/Seoul"),
-                           ("hqa-collector-status", "*-*-* 20:00 Asia/Seoul")):
+                           ("hqa-collector-status", "*-*-* 20:00 Asia/Seoul"),
+                           ("hqa-dart-backfill", "*-*-* 00:20 Asia/Seoul")):
         timer = (directory / f"{name}.timer").read_text()
         assert f"OnCalendar={calendar}" in timer and "Persistent=true" in timer
         assert f"Unit={name}.service" in timer
+    service = (directory / "hqa-dart-backfill.service").read_text()
+    for directive in ("Type=oneshot", "TimeoutStartSec=6h", "Nice=10"):
+        assert directive in service.splitlines()
+    assert "scripts/ops/dart_backfill_daily.py --execute" in service
+    assert "RandomizedDelaySec=300" in (directory / "hqa-dart-backfill.timer").read_text().splitlines()
 
 
 def test_push_excludes_secrets_and_root_data_without_excluding_scripts_data():
@@ -352,6 +362,186 @@ def test_install_environment_gate_offline(tmp_path, settings, exit_code):
     assert result.returncode == exit_code
     assert not any(value in result.stdout + result.stderr
                    for value in ("fixture-dart", "fixture-krx", "forbidden-key"))
+
+
+def test_install_gates_backfill_timer_and_stops_service_with_other_collectors():
+    installer = (ROOT / "deploy/collector/install.sh").read_text()
+    disabled, enabled = installer.split("systemctl enable --now", 1)
+    assert "if [[ \"$env_check\" -ne 0 ]]; then" in disabled
+    assert "hqa-dart-backfill.timer" in disabled.split("systemctl disable --now", 1)[1].splitlines()[0]
+    assert "hqa-dart-backfill.service" in disabled.split("systemctl stop", 1)[1].splitlines()[0]
+    assert "hqa-dart-backfill.timer" in enabled.splitlines()[0]
+    assert 'for unit in /opt/hqa/deploy/collector/systemd/*; do' in installer
+
+
+@pytest.mark.parametrize("now,end", [
+    ("2026-10-04T14:59:59+00:00", "2026-10-03"),
+    ("2026-10-04T15:00:00+00:00", "2026-10-04"),
+    ("2026-01-01T00:20:00+09:00", "2025-12-31"),
+])
+def test_dart_daily_range_and_priority_order(tmp_path, monkeypatch, now, end):
+    calls = []
+
+    def planned(start, stop, **kwargs):
+        calls.append((start, stop, kwargs))
+        return {"status": "dry_run", "pending_details_by_category": {"contract": 3}}
+
+    monkeypatch.setattr(dart_daily, "backfill", planned)
+    report = dart_daily.daily_backfill(tmp_path, clock=lambda: datetime.fromisoformat(now))
+    assert report["to_date"] == end
+    assert [(start, stop) for start, stop, _ in calls] == [("2023-01-01", end)] * 3
+    assert [kwargs["stage"] for _, _, kwargs in calls] == ["list", "details", "details"]
+    assert [kwargs["categories"] for _, _, kwargs in calls] == [None, dart_daily.DEFAULT_PRIORITY_CATEGORIES, None]
+    assert all(kwargs["data_dir"] == tmp_path and kwargs["max_requests"] == 17_000 for _, _, kwargs in calls)
+    assert all(not kwargs["execute"] for _, _, kwargs in calls)
+    assert report["steps"]["priority_details"]["pending_details_by_category"] == {"contract": 3}
+
+
+def test_dart_daily_dry_run_no_requests_secrets_or_writes(tmp_path, monkeypatch, capsys):
+    getenv = dart_daily.os.getenv
+    monkeypatch.setattr(dart_daily.os, "getenv", lambda name, default=None: getenv(name, default)
+                        if name == "HQA_DATA_DIR" else pytest.fail("Dry run read a secret"))
+    directory = tmp_path / "new-data"
+    dart_daily.main(["--data-dir", str(directory), "--priority-categories", "earnings, contract"])
+    report = json.loads(capsys.readouterr().out)
+    assert report["status"] == "dry_run" and report["requests_made"] == 0
+    assert report["steps"]["priority_details"]["categories"] == ["earnings", "contract"]
+    assert all(part["status"] == "dry_run" and part["requests_made"] == 0 for part in report["steps"].values())
+    assert not directory.exists()
+
+
+def dart_daily_fixture(data_dir, monkeypatch, payloads, *, used=0, provider_limited=False):
+    """Complete old listings locally, then inject only offline provider responses."""
+    directory = data_dir / "disclosures/dart_full"
+    days = []
+    day = date(2023, 1, 1)
+    while day < NOW.date() - timedelta(days=1):
+        saved_day = day.strftime("%Y%m%d")
+        path = directory / "list" / saved_day[:4] / f"{saved_day}.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+        days.append(saved_day)
+        day += timedelta(days=1)
+    write_json(directory / "_state.json", {"completed_listing_days": days,
+               "completed_detail_rcept_nos": [], "skipped_missing_stock_code_rcept_nos": []})
+    write_json(directory / "_quota.json", {"days": {NOW.date().isoformat():
+               {"requests": used, "provider_limited": provider_limited}}})
+    calls = []
+    remaining = iter(payloads)
+
+    def get(url, *, params, timeout):
+        calls.append((url, params))
+        payload = next(remaining)
+        return SimpleNamespace(json=lambda: payload, content=payload if isinstance(payload, bytes) else b"",
+                               raise_for_status=lambda: None)
+
+    def offline_backfill(*args, **kwargs):
+        return dart_backfill.backfill(*args, **kwargs, session=SimpleNamespace(get=get), sleeper=lambda _: None)
+
+    monkeypatch.setattr(dart_daily, "backfill", offline_backfill)
+    monkeypatch.setenv("DART_API_KEY", "fixture-private-key")
+    return calls, directory
+
+
+def dart_daily_payloads():
+    day = (NOW.date() - timedelta(days=1)).strftime("%Y%m%d")
+    rows = [{"rcept_no": f"{day}{number:06d}", "rcept_dt": day, "report_nm": title,
+             "corp_code": "00126380", "corp_name": "시험기업", "stock_code": "005930",
+             "corp_cls": "Y", "flr_nm": "시험기업", "rm": ""}
+            for number, title in enumerate(["단일판매ㆍ공급계약체결", "공급계약체결", "실적발표"], 1)]
+    listing = {"status": "000", "page_no": 1, "page_count": 100, "total_count": 3,
+               "total_page": 1, "list": rows}
+    document = b"<result><status>013</status></result>"
+    return [listing, {"status": "013"}, document, document, document]
+
+
+@pytest.mark.parametrize("remaining,stopped_step", [(0, "listing"), (3, "priority_details"),
+                                                   (4, "all_details"), (5, None)])
+def test_dart_daily_persisted_budget_shared_across_steps_and_reruns(tmp_path, monkeypatch, capsys,
+                                                                  remaining, stopped_step):
+    calls, directory = dart_daily_fixture(tmp_path, monkeypatch, dart_daily_payloads(), used=17_000 - remaining)
+    dart_daily.main(["--data-dir", str(tmp_path), "--execute"])
+    report = json.loads(capsys.readouterr().out)
+    assert report["status"] == ("quota_reached" if stopped_step else "ok")
+    assert len(calls) == report["requests_made"] == remaining
+    assert sum(part["requests_made"] for part in report["steps"].values()) == remaining
+    steps = list(report["steps"])
+    if stopped_step:
+        assert report["steps"][stopped_step]["status"] == "quota_reached"
+        assert all(report["steps"][name]["status"] == "not_run" for name in steps[steps.index(stopped_step) + 1:])
+    else:
+        assert [report["steps"][name]["requests_made"] for name in steps] == [2, 2, 1]
+    counter = json.loads((directory / "_quota.json").read_text())["days"][NOW.date().isoformat()]
+    assert counter == {"requests": 17_000, "provider_limited": False}
+    dart_daily.main(["--data-dir", str(tmp_path), "--execute"])
+    assert json.loads(capsys.readouterr().out)["requests_made"] == 0
+    assert len(calls) == remaining
+
+
+@pytest.mark.parametrize("step,index", [("listing", 0), ("priority_details", 2), ("all_details", 4)])
+@pytest.mark.parametrize("provider_status", ["020", "010"])
+def test_dart_daily_provider_quota_and_errors_exit_with_one_safe_summary(tmp_path, monkeypatch, capsys,
+                                                                      step, index, provider_status):
+    payloads = dart_daily_payloads()[:index]
+    error = {"status": provider_status, "message": "fixture-private-key"}
+    payloads.append(error if index == 0 else
+                    f"<result><status>{provider_status}</status><message>fixture-private-key</message></result>".encode())
+    calls, directory = dart_daily_fixture(tmp_path, monkeypatch, payloads)
+    args = ["--data-dir", str(tmp_path), "--execute"]
+    if provider_status == "020":
+        dart_daily.main(args)
+    else:
+        with pytest.raises(SystemExit) as exited:
+            dart_daily.main(args)
+        assert exited.value.code == 1
+    output = capsys.readouterr()
+    report = json.loads(output.out)
+    assert "fixture-private-key" not in output.out + output.err
+    assert report["status"] == report["steps"][step]["status"] == ("quota_reached" if provider_status == "020" else "error")
+    assert len(calls) == report["requests_made"] == index + 1
+    counter = json.loads((directory / "_quota.json").read_text())["days"][NOW.date().isoformat()]
+    assert counter["provider_limited"] is (provider_status == "020")
+
+
+@pytest.mark.parametrize("args", [["--max-requests", "0"], ["--priority-categories", "unknown"],
+                                 ["--priority-categories", ""]])
+def test_dart_daily_invalid_options_fail_before_work(tmp_path, capsys, args):
+    with pytest.raises(SystemExit) as exited:
+        dart_daily.main(["--data-dir", str(tmp_path), *args])
+    assert exited.value.code == 1
+    assert json.loads(capsys.readouterr().out)["status"] == "error"
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("limited", [False, True])
+def test_status_backfill_uses_checkpoints_and_kst_quota_only(tmp_path, monkeypatch, limited):
+    directory = tmp_path / "disclosures/dart_full"
+    write_json(directory / "_state.json", {"completed_listing_days": ["20230101", "20230102"],
+               "completed_detail_rcept_nos": ["20230101000001"],
+               "skipped_missing_stock_code_rcept_nos": ["20230101000002", "20230102000003"]})
+    write_json(directory / "_quota.json", {"days": {
+        "2026-09-07": {"requests": 17_000, "provider_limited": True},
+        "2026-09-08": {"requests": 1234, "provider_limited": limited}}})
+    glob = Path.glob
+
+    def guarded_glob(path, pattern):
+        assert "dart_full" not in path.parts
+        return glob(path, pattern)
+
+    monkeypatch.setattr(Path, "glob", guarded_glob)
+    report = status.collect_status(tmp_path, clock=lambda: datetime.fromisoformat("2026-09-07T15:20:00+00:00"))
+    assert report["dart_backfill"] == {"completed_listing_days": 2, "completed_detail_receipts": 1,
+        "skipped_receipts": 2, "requests_today": 1234, "provider_limited": limited}
+
+
+@pytest.mark.parametrize("previous_day", [False, True])
+def test_status_backfill_without_today_quota_or_progress(tmp_path, previous_day):
+    if previous_day:
+        write_json(tmp_path / "disclosures/dart_full/_quota.json", {"days": {
+            "2026-09-07": {"requests": 17_000, "provider_limited": True}}})
+    report = status.collect_status(tmp_path, clock=lambda: NOW)
+    assert report["dart_backfill"] == {"completed_listing_days": 0, "completed_detail_receipts": 0,
+        "skipped_receipts": 0, "requests_today": 0, "provider_limited": False}
 
 
 @pytest.mark.parametrize("script", ["push_collector_code.sh", "pull_collector_data.sh"])

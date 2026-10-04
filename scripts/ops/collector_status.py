@@ -59,6 +59,17 @@ def collect_status(data_dir: str | Path, *, clock=None) -> dict:
     polled_today = completed_date == today or (poll_completed is not None and poll_completed.date() == today)
     poller_stale = today.weekday() < 5 and now.time() >= time(10) and not polled_today
 
+    backfill_dir = data_dir / "disclosures" / "dart_full"
+    backfill_state = _read_state(backfill_dir / "_state.json")
+    backfill_quota = _read_state(backfill_dir / "_quota.json")
+    today_quota = backfill_quota["days"].get(today.isoformat()) if backfill_quota is not None else None
+    dart_backfill = {
+        "completed_listing_days": len(backfill_state["completed_listing_days"]) if backfill_state is not None else 0,
+        "completed_detail_receipts": len(backfill_state["completed_detail_rcept_nos"]) if backfill_state is not None else 0,
+        "skipped_receipts": len(backfill_state.get("skipped_missing_stock_code_rcept_nos", [])) if backfill_state is not None else 0,
+        "requests_today": today_quota["requests"] if today_quota is not None else 0,
+        "provider_limited": today_quota["provider_limited"] if today_quota is not None else False}
+
     krx_dir = data_dir / "market" / "krx_daily"
     krx_state = _read_state(krx_dir / "_state.json")
     empty_dates = sorted(krx_state["empty_dates"]) if krx_state is not None else []
@@ -92,6 +103,7 @@ def collect_status(data_dir: str | Path, *, clock=None) -> dict:
             "newest_first_seen_at": first_seen.isoformat() if first_seen is not None else None,
             "newest_poll_completed_at": poll_completed.isoformat() if poll_completed is not None else None,
             "poller_stale": poller_stale,
+            "dart_backfill": dart_backfill,
             "krx_newest_date": newest_krx.isoformat() if newest_krx is not None else None,
             "krx_expected_date": expected.isoformat(), "krx_lag_days": lag_days,
             "empty_dates": empty_dates, "calendar_unverified_dates": calendar_unverified,

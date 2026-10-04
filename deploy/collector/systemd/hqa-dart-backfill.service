@@ -1,0 +1,22 @@
+[Unit]
+Description=HQA daily full-market DART historical backfill through yesterday
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=hqa
+Group=hqa
+WorkingDirectory=/opt/hqa
+EnvironmentFile=/etc/hqa/collector.env
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/hqa/venv/bin/python /opt/hqa/scripts/ops/dart_backfill_daily.py --execute
+TimeoutStartSec=6h
+Nice=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/hqa/data
+PrivateTmp=true
+UMask=0027
