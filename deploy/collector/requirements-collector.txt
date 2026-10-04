@@ -1,0 +1,15 @@
+# Subset of requirements.txt, measured by importing both collector CLIs in venv.
+# src.ingestion re-exports also import BeautifulSoup and its lxml backend.
+python-dotenv>=1.0.0
+pandas>=2.0.0
+numpy>=1.24.0
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+
+# KRX execution imports src.runner.trading_calendar and src.runner.__init__.
+# These imports define helpers; no analysis, model, KIS or order job is started.
+PyYAML>=6.0.1
+pydantic>=2.0.0
+rank-bm25>=0.2.2
+exchange-calendars==4.13.2

@@ -2,13 +2,17 @@ package com.hqa.backend.controller;
 
 import com.hqa.backend.config.HqaProperties;
 import com.hqa.backend.dto.ErrorCode;
+import com.hqa.backend.dto.InternalMinuteCandleRequest;
+import com.hqa.backend.dto.InternalMinuteCandleResponse;
 import com.hqa.backend.dto.InternalPriceSnapshotRequest;
 import com.hqa.backend.dto.InternalPriceSnapshotResponse;
 import com.hqa.backend.exception.ApiException;
 import com.hqa.backend.service.PriceSnapshotService;
+import com.hqa.backend.service.MinuteCandleService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -22,10 +26,26 @@ public class InternalMarketController {
 
     private final PriceSnapshotService service;
     private final HqaProperties properties;
+    private MinuteCandleService minuteCandleService;
 
     public InternalMarketController(PriceSnapshotService service, HqaProperties properties) {
         this.service = service;
         this.properties = properties;
+    }
+
+    @Autowired
+    public void setMinuteCandleService(MinuteCandleService minuteCandleService) {
+        this.minuteCandleService = minuteCandleService;
+    }
+
+    @Operation(summary = "일별 1분봉 조회", description = "PAPER 계좌의 과거 분봉을 페이지 조회한다. (내부 토큰 필요)")
+    @PostMapping("/minute-candles")
+    public InternalMinuteCandleResponse minuteCandles(
+            @Valid @RequestBody InternalMinuteCandleRequest request,
+            @RequestHeader(value = "X-HQA-Internal-Token", required = false) String token
+    ) {
+        requireInternalToken(token);
+        return minuteCandleService.getMinuteCandles(request.userId(), request.stockCode(), request.date());
     }
 
     @Operation(summary = "다종목 가격 스냅샷",

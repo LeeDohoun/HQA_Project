@@ -1,0 +1,25 @@
+[Unit]
+Description=HQA DART first-seen disclosure poller
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=hqa
+Group=hqa
+WorkingDirectory=/opt/hqa
+EnvironmentFile=/etc/hqa/collector.env
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/hqa/venv/bin/python /opt/hqa/scripts/data/dart_poller.py --loop --execute
+Restart=always
+RestartSec=30
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/hqa/data
+PrivateTmp=true
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

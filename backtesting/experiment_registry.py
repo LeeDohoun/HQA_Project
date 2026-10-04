@@ -1,0 +1,175 @@
+"""Committed preregistrations and an append-only, locked experiment registry."""
+from __future__ import annotations
+
+import csv
+import fcntl
+import json
+import os
+import subprocess
+from contextlib import contextmanager
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Iterator, TextIO
+
+import yaml
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+REGISTRY_PATH = Path("research/experiments/registry.csv")
+REQUIRED_FIELDS = ("experiment_id", "sleeve", "hypothesis", "counterparty", "data_periods",
+                   "metrics", "pass_criteria", "variants_planned", "uses_llm", "uses_holdout")
+REGISTRY_COLUMNS = ("recorded_at", "experiment_id", "prereg_commit", "variant", "verdict", "metrics_json", "note")
+
+
+@dataclass(frozen=True)
+class Preregistration:
+    commit_hash: str
+    commit_time: datetime
+    fields: dict[str, Any]
+
+
+def _validate_experiment_id(experiment_id: str) -> None:
+    if (not isinstance(experiment_id, str) or not experiment_id.strip()
+            or experiment_id in (".", "..") or any(c in experiment_id for c in "/\\\0\n\r")):
+        raise ValueError("experiment_id must be a nonempty directory name")
+
+
+def _git(repo_root: Path, *args: str) -> str:
+    result = subprocess.run(["git", "-C", str(repo_root), *args], capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        raise ValueError(f"preregistration git check failed ({' '.join(args)}): {result.stderr.strip()}")
+    return result.stdout.strip()
+
+
+def verify_preregistration(experiment_id: str, repo_root: str | Path = PROJECT_ROOT) -> Preregistration:
+    _validate_experiment_id(experiment_id)
+    root = Path(repo_root).resolve()
+    relative = Path("research/experiments") / experiment_id / "preregistration.md"
+    path = root / relative
+    if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(root):
+        raise ValueError("preregistration must be a regular file inside repo_root")
+    _git(root, "ls-files", "--error-unmatch", "--", relative.as_posix())
+    _git(root, "diff", "--quiet", "--", relative.as_posix())
+    _git(root, "diff", "--cached", "--quiet", "--", relative.as_posix())
+    commits = _git(root, "log", "--format=%H|%cI", "--follow", "--", relative.as_posix()).splitlines()
+    if not commits:
+        raise ValueError("preregistration has not been committed")
+    if len(commits) != 1:
+        raise ValueError("preregistration is immutable after its first commit; a changed plan requires a new experiment_id")
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if not lines or lines[0] != "---" or "---" not in lines[1:]:
+        raise ValueError("preregistration requires YAML front matter delimited by ---")
+    try:
+        fields = yaml.safe_load("\n".join(lines[1:lines.index("---", 1)]))
+    except yaml.YAMLError as exc:
+        raise ValueError("invalid preregistration YAML") from exc
+    if not isinstance(fields, dict):
+        raise ValueError("preregistration YAML must be a mapping")
+    missing = [name for name in REQUIRED_FIELDS if name not in fields or fields[name] is None]
+    if missing:
+        raise ValueError(f"missing preregistration fields: {', '.join(missing)}")
+    if fields["experiment_id"] != experiment_id:
+        raise ValueError("preregistration experiment_id does not match its directory")
+    for name in ("uses_llm", "uses_holdout"):
+        if type(fields[name]) is not bool:
+            raise ValueError(f"{name} must be a YAML boolean")
+    if type(fields["variants_planned"]) is not int or fields["variants_planned"] < 1:
+        raise ValueError("variants_planned must be a positive integer")
+    commit_hash, commit_time = commits[0].split("|", 1)
+    return Preregistration(commit_hash, datetime.fromisoformat(commit_time), fields)
+
+
+def _resolve_path(repo_root: str | Path, path: str | Path) -> Path:
+    return (Path(repo_root) / path).resolve()
+
+
+@contextmanager
+def _locked_append(path: Path) -> Iterator[TextIO]:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+", encoding="utf-8", newline="") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            if size:
+                handle.seek(size - 1)
+                if handle.read(1) != "\n":
+                    raise ValueError(f"append-only file must end with a newline: {path}")
+            handle.seek(0)
+            yield handle
+            handle.flush()
+            os.fsync(handle.fileno())
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def _registry_rows(handle: TextIO) -> list[dict[str, str]]:
+    reader = csv.DictReader(handle)
+    if reader.fieldnames != list(REGISTRY_COLUMNS):
+        raise ValueError("registry.csv has an invalid header")
+    rows = list(reader)
+    if any(None in row or any(value is None for value in row.values()) for row in rows):
+        raise ValueError("registry.csv has an invalid row")
+    return rows
+
+
+def record_trial(
+    experiment_id: str,
+    variant: str,
+    metrics: dict[str, Any],
+    verdict: str,
+    *,
+    note: str = "",
+    repo_root: str | Path = PROJECT_ROOT,
+    registry_path: str | Path = REGISTRY_PATH,
+) -> None:
+    preregistration = verify_preregistration(experiment_id, repo_root)
+    if not isinstance(variant, str) or not variant.strip() or not isinstance(verdict, str) or not verdict.strip():
+        raise ValueError("variant and verdict must be nonempty strings")
+    if not isinstance(metrics, dict) or not isinstance(note, str):
+        raise ValueError("metrics must be a mapping and note must be a string")
+    try:
+        metrics_json = json.dumps(metrics, ensure_ascii=False, sort_keys=True, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("metrics must contain finite JSON values") from exc
+    path = _resolve_path(repo_root, registry_path)
+    with _locked_append(path) as handle:
+        empty = path.stat().st_size == 0
+        if not empty:
+            rows = _registry_rows(handle)
+            if any(row["experiment_id"] == experiment_id
+                   and row["prereg_commit"] != preregistration.commit_hash for row in rows):
+                raise ValueError("registry prereg_commit differs for this experiment_id; a changed plan requires a new experiment_id")
+        writer = csv.writer(handle)
+        if empty:
+            writer.writerow(REGISTRY_COLUMNS)
+        writer.writerow((datetime.now(timezone.utc).isoformat(), experiment_id, preregistration.commit_hash,
+                         variant, verdict, metrics_json, note))
+
+
+def trial_count(
+    experiment_id: str,
+    *,
+    repo_root: str | Path = PROJECT_ROOT,
+    registry_path: str | Path = REGISTRY_PATH,
+) -> int:
+    _validate_experiment_id(experiment_id)
+    path = _resolve_path(repo_root, registry_path)
+    if not path.exists():
+        return 0
+    with path.open(encoding="utf-8", newline="") as handle:
+        fcntl.flock(handle, fcntl.LOCK_SH)
+        try:
+            return sum(row["experiment_id"] == experiment_id for row in _registry_rows(handle))
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def required_t_stat(
+    experiment_id: str,
+    *,
+    repo_root: str | Path = PROJECT_ROOT,
+    registry_path: str | Path = REGISTRY_PATH,
+) -> float:
+    return 2.0 if trial_count(experiment_id, repo_root=repo_root, registry_path=registry_path) <= 20 else 3.0

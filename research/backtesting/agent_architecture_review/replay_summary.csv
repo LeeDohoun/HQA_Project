@@ -1,0 +1,17 @@
+suite,horizon,variant,cells,mean_delta_vs_rule_pp,cells_better_than_rule,control_runs,control_mean_delta_pp,control_p05_pp,control_p95_pp,share_of_controls_at_or_above
+fresh_representative,long,analyst_text_w20,6,-12.48,1,30,-4.31,-13.87,4.15,0.9
+fresh_representative,long,analyst_text_w50,6,-24.45,1,30,-11.04,-25.58,4.04,0.9
+fresh_representative,long,current_4agent_w100,6,-11.04,3,,,,,
+fresh_representative,long,current_4agent_w50,6,-18.98,1,,,,,
+fresh_representative,short,analyst_text_w20,6,4.87,5,30,0.15,-5.93,6.61,0.133
+fresh_representative,short,analyst_text_w50,6,-3.64,2,30,-7.91,-18.06,5.46,0.233
+fresh_representative,short,current_4agent_w100,6,-1.2,3,,,,,
+fresh_representative,short,current_4agent_w50,6,-1.0,5,,,,,
+uncontaminated,long,analyst_text_w20,3,1.94,1,30,-1.5,-9.03,5.11,0.333
+uncontaminated,long,analyst_text_w50,3,-15.87,1,30,-14.0,-25.54,-0.71,0.567
+uncontaminated,long,current_4agent_w100,3,-21.1,0,,,,,
+uncontaminated,long,current_4agent_w50,3,-4.38,2,,,,,
+uncontaminated,short,analyst_text_w20,3,7.09,2,30,4.93,-5.04,16.84,0.3
+uncontaminated,short,analyst_text_w50,3,1.8,1,30,-11.19,-32.63,6.63,0.133
+uncontaminated,short,current_4agent_w100,3,-33.07,1,,,,,
+uncontaminated,short,current_4agent_w50,3,3.38,1,,,,,

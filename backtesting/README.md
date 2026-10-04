@@ -16,6 +16,7 @@ venv/bin/python -m backtesting run --help
 | `run` | 과거 테마 주도주 전략 1회 평가 | 기본 없음. LLM 옵션 사용 시 가능 |
 | `sweep` | 수치 전략 파라미터 조합 비교 | 없음 |
 | `validate` | 고정 실험군의 baseline/hybrid/LLM 비교 | 기본 가능. `--mock-llm`은 테스트용 |
+| `replay-agents` | 저장된 멀티에이전트 점수 캐시로 점수 설계 비교 | 없음. 캐시에 없으면 해당 종목은 규칙 점수로 남고 누락 수를 기록 |
 | `build-evidence` | 기간별 근거 스냅샷 생성 | 생성형 LLM 없음 |
 | `clean-evidence` | 원본을 보존한 별도 정제 스냅샷 생성 | 없음 |
 | `build-membership` | 과거 테마 멤버십 근거 생성 | 없음 |

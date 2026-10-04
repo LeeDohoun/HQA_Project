@@ -1,0 +1,19 @@
+[Unit]
+Description=HQA local collector status report
+
+[Service]
+Type=oneshot
+User=hqa
+Group=hqa
+WorkingDirectory=/opt/hqa
+EnvironmentFile=/etc/hqa/collector.env
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/hqa/venv/bin/python /opt/hqa/scripts/ops/collector_status.py
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/hqa/data
+PrivateTmp=true
+PrivateNetwork=true
+UMask=0027

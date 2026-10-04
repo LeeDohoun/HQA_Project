@@ -1,0 +1,178 @@
+{
+  "weights": [
+    0.2,
+    0.5
+  ],
+  "control_seeds": 30,
+  "summary": [
+    {
+      "suite": "fresh_representative",
+      "horizon": "long",
+      "variant": "analyst_text_w20",
+      "cells": 6,
+      "mean_delta_vs_rule_pp": -12.48,
+      "cells_better_than_rule": 1,
+      "control_runs": 30,
+      "control_mean_delta_pp": -4.31,
+      "control_p05_pp": -13.87,
+      "control_p95_pp": 4.15,
+      "share_of_controls_at_or_above": 0.9
+    },
+    {
+      "suite": "fresh_representative",
+      "horizon": "long",
+      "variant": "analyst_text_w50",
+      "cells": 6,
+      "mean_delta_vs_rule_pp": -24.45,
+      "cells_better_than_rule": 1,
+      "control_runs": 30,
+      "control_mean_delta_pp": -11.04,
+      "control_p05_pp": -25.58,
+      "control_p95_pp": 4.04,
+      "share_of_controls_at_or_above": 0.9
+    },
+    {
+      "suite": "fresh_representative",
+      "horizon": "long",
+      "variant": "current_4agent_w100",
+      "cells": 6,
+      "mean_delta_vs_rule_pp": -11.04,
+      "cells_better_than_rule": 3
+    },
+    {
+      "suite": "fresh_representative",
+      "horizon": "long",
+      "variant": "current_4agent_w50",
+      "cells": 6,
+      "mean_delta_vs_rule_pp": -18.98,
+      "cells_better_than_rule": 1
+    },
+    {
+      "suite": "fresh_representative",
+      "horizon": "short",
+      "variant": "analyst_text_w20",
+      "cells": 6,
+      "mean_delta_vs_rule_pp": 4.87,
+      "cells_better_than_rule": 5,
+      "control_runs": 30,
+      "control_mean_delta_pp": 0.15,
+      "control_p05_pp": -5.93,
+      "control_p95_pp": 6.61,
+      "share_of_controls_at_or_above": 0.133
+    },
+    {
+      "suite": "fresh_representative",
+      "horizon": "short",
+      "variant": "analyst_text_w50",
+      "cells": 6,
+      "mean_delta_vs_rule_pp": -3.64,
+      "cells_better_than_rule": 2,
+      "control_runs": 30,
+      "control_mean_delta_pp": -7.91,
+      "control_p05_pp": -18.06,
+      "control_p95_pp": 5.46,
+      "share_of_controls_at_or_above": 0.233
+    },
+    {
+      "suite": "fresh_representative",
+      "horizon": "short",
+      "variant": "current_4agent_w100",
+      "cells": 6,
+      "mean_delta_vs_rule_pp": -1.2,
+      "cells_better_than_rule": 3
+    },
+    {
+      "suite": "fresh_representative",
+      "horizon": "short",
+      "variant": "current_4agent_w50",
+      "cells": 6,
+      "mean_delta_vs_rule_pp": -1.0,
+      "cells_better_than_rule": 5
+    },
+    {
+      "suite": "uncontaminated",
+      "horizon": "long",
+      "variant": "analyst_text_w20",
+      "cells": 3,
+      "mean_delta_vs_rule_pp": 1.94,
+      "cells_better_than_rule": 1,
+      "control_runs": 30,
+      "control_mean_delta_pp": -1.5,
+      "control_p05_pp": -9.03,
+      "control_p95_pp": 5.11,
+      "share_of_controls_at_or_above": 0.333
+    },
+    {
+      "suite": "uncontaminated",
+      "horizon": "long",
+      "variant": "analyst_text_w50",
+      "cells": 3,
+      "mean_delta_vs_rule_pp": -15.87,
+      "cells_better_than_rule": 1,
+      "control_runs": 30,
+      "control_mean_delta_pp": -14.0,
+      "control_p05_pp": -25.54,
+      "control_p95_pp": -0.71,
+      "share_of_controls_at_or_above": 0.567
+    },
+    {
+      "suite": "uncontaminated",
+      "horizon": "long",
+      "variant": "current_4agent_w100",
+      "cells": 3,
+      "mean_delta_vs_rule_pp": -21.1,
+      "cells_better_than_rule": 0
+    },
+    {
+      "suite": "uncontaminated",
+      "horizon": "long",
+      "variant": "current_4agent_w50",
+      "cells": 3,
+      "mean_delta_vs_rule_pp": -4.38,
+      "cells_better_than_rule": 2
+    },
+    {
+      "suite": "uncontaminated",
+      "horizon": "short",
+      "variant": "analyst_text_w20",
+      "cells": 3,
+      "mean_delta_vs_rule_pp": 7.09,
+      "cells_better_than_rule": 2,
+      "control_runs": 30,
+      "control_mean_delta_pp": 4.93,
+      "control_p05_pp": -5.04,
+      "control_p95_pp": 16.84,
+      "share_of_controls_at_or_above": 0.3
+    },
+    {
+      "suite": "uncontaminated",
+      "horizon": "short",
+      "variant": "analyst_text_w50",
+      "cells": 3,
+      "mean_delta_vs_rule_pp": 1.8,
+      "cells_better_than_rule": 1,
+      "control_runs": 30,
+      "control_mean_delta_pp": -11.19,
+      "control_p05_pp": -32.63,
+      "control_p95_pp": 6.63,
+      "share_of_controls_at_or_above": 0.133
+    },
+    {
+      "suite": "uncontaminated",
+      "horizon": "short",
+      "variant": "current_4agent_w100",
+      "cells": 3,
+      "mean_delta_vs_rule_pp": -33.07,
+      "cells_better_than_rule": 1
+    },
+    {
+      "suite": "uncontaminated",
+      "horizon": "short",
+      "variant": "current_4agent_w50",
+      "cells": 3,
+      "mean_delta_vs_rule_pp": 3.38,
+      "cells_better_than_rule": 1
+    }
+  ],
+  "cache_misses": 1792
+}

@@ -1,0 +1,10 @@
+[Unit]
+Description=HQA daily collector status at 20:00 KST
+
+[Timer]
+OnCalendar=*-*-* 20:00 Asia/Seoul
+Persistent=true
+Unit=hqa-collector-status.service
+
+[Install]
+WantedBy=timers.target

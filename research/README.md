@@ -8,6 +8,7 @@ Historical experiments and exported datasets live here, separate from applicatio
 | --- | --- |
 | `backtesting/results/` | Earlier backtest runs, sweeps, proof validation, and interpretation documents formerly under `data/backtest_results/` |
 | `backtesting/ai_strategy_comparison/` | Historical strategy comparisons and available source runs formerly under `experiment_results/backtesting/` |
+| `backtesting/agent_architecture_review/` | 2026-10-04 multi-agent structure review and cache-replay control experiment (no LLM calls) |
 | `backtesting/reports/backtesting_2024_report/` | Standalone HTML report formerly under `artifacts/` |
 | `datasets/theme_recent_month_data_20260610/` | Fixed collection export for 2026-05-10 through 2026-06-10 |
 | `archive_manifest.json` | Original path, archive path, byte size, and SHA-256 for every relocated file |
@@ -28,6 +29,6 @@ Historical experiments and exported datasets live here, separate from applicatio
 
 ## Known Provenance Gaps
 
-At the time of relocation, the published strategy comparison listed 68 result paths, but only 18 corresponding files existed in this checkout. The remaining 50 files were already absent. The published architecture comparison's `agent_architecture_validation/uncontaminated_4agent_runs` source directory was also already absent.
+At the time of relocation, the published strategy comparison listed 68 result paths, but only 18 corresponding files existed in this checkout. The remaining 50 files were already absent. The published architecture comparison's `agent_architecture_validation/uncontaminated_4agent_runs` source directory was also already absent. It is present in the Drive backup `HQA_Project_data_2026-09-13` (archive SHA-256 `dd8762ff…a6bf8f`) under `experiment_results/backtesting/agent_architecture_validation/`; see [agent_architecture_review](backtesting/agent_architecture_review/README.md).
 
 The available comparison files and web assets are retained for historical reference, not presented as a complete reproducible experiment bundle. Adding missing sources requires the original outputs; their results must not be synthesized from summary numbers.
