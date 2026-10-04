@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.hqa.backend.dto.CandleData;
 import com.hqa.backend.dto.CandleHistoryResponse;
@@ -17,6 +18,8 @@ import jakarta.servlet.http.HttpSession;
 import java.time.LocalDate;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class ChartServiceTest {
 
@@ -50,8 +53,9 @@ class ChartServiceTest {
         assertThat(response.hasMore()).isFalse();
     }
 
-    @Test
-    void usesKisDailyCandlesForDailyTimeframes() {
+    @ParameterizedTest
+    @ValueSource(strings = {"0015G0", "005930"})
+    void usesKisDailyCandlesForDailyTimeframes(String code) {
         AuthService authService = mock(AuthService.class);
         KisClient kisClient = mock(KisClient.class);
         LocalChartDataService localChartDataService = mock(LocalChartDataService.class);
@@ -63,7 +67,7 @@ class ChartServiceTest {
 
         when(authService.requireUser(session)).thenReturn(user);
         when(kisClient.fetchAccessToken("user-1", user.getSecret())).thenReturn("token-1");
-        when(kisClient.fetchDailyCandles(eq("user-1"), eq(user.getSecret()), eq("token-1"), eq("005930"),
+        when(kisClient.fetchDailyCandles(eq("user-1"), eq(user.getSecret()), eq("token-1"), eq(code),
                 eq("D"), any(LocalDate.class), any(LocalDate.class))).thenReturn(List.of(
                 new CandleData(1767222000L, 70000, 71000, 69000, 70500, 1000, true)
         ));
@@ -71,10 +75,24 @@ class ChartServiceTest {
         ChartService chartService = new ChartService(authService, kisClient, localChartDataService);
 
         CandleHistoryResponse response = chartService.getHistoricalCandles(
-                "005930", "1d", 200, null, session);
+                code, "1d", 200, null, session);
 
+        assertThat(response.stockCode()).isEqualTo(code);
         assertThat(response.candles()).hasSize(1);
         assertThat(response.candles().get(0).close()).isEqualTo(70500);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"0015g0", "15G0", "0015G0X", "0015-0"})
+    void rejectsInvalidCodesBeforeFetchingCandles(String code) {
+        AuthService auth = mock(AuthService.class);
+        KisClient kis = mock(KisClient.class);
+        LocalChartDataService local = mock(LocalChartDataService.class);
+        ChartService service = new ChartService(auth, kis, local);
+        assertThatThrownBy(() -> service.getHistoricalCandles(code, "1d", 200, null, null))
+                .isInstanceOf(ApiException.class)
+                .extracting(e -> ((ApiException) e).getErrorCode()).isEqualTo(ErrorCode.STOCK_INVALID_CODE);
+        verifyNoInteractions(auth, kis, local);
     }
 
     @Test

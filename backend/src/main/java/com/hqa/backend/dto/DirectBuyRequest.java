@@ -1,5 +1,6 @@
 package com.hqa.backend.dto;
 
+import com.hqa.backend.util.StockCodes;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -10,7 +11,7 @@ public class DirectBuyRequest {
     private String stockName;
 
     @NotBlank
-    @Pattern(regexp = "^\\d{6}$")
+    @Pattern(regexp = StockCodes.REGEX)
     private String stockCode;
 
     @Min(1)

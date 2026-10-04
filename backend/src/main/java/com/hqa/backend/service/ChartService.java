@@ -6,6 +6,7 @@ import com.hqa.backend.dto.ErrorCode;
 import com.hqa.backend.entity.User;
 import com.hqa.backend.entity.UserSecret;
 import com.hqa.backend.exception.ApiException;
+import com.hqa.backend.util.StockCodes;
 import jakarta.servlet.http.HttpSession;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -59,8 +60,8 @@ public class ChartService {
 
     public CandleHistoryResponse getHistoricalCandles(String stockCode, String timeframe,
                                                       int count, Long before, HttpSession session) {
-        if (!stockCode.matches("^\\d{6}$")) {
-            throw new ApiException(ErrorCode.STOCK_INVALID_CODE, 400, "Stock code must be 6 digits", null);
+        if (!StockCodes.isValid(stockCode)) {
+            throw new ApiException(ErrorCode.STOCK_INVALID_CODE, 400, "Stock code must be 6 ASCII digits or uppercase letters", null);
         }
         if (!MINUTE_BUCKETS.containsKey(timeframe) && !DAILY_PERIOD_CODES.containsKey(timeframe)) {
             throw new ApiException(ErrorCode.INVALID_REQUEST, 400, "Unsupported timeframe", timeframe);

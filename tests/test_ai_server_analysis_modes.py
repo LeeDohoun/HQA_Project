@@ -58,7 +58,8 @@ def test_legacy_analysis_executor_functions_are_removed():
     assert not hasattr(app_module, "_execute_theme")
 
 
-def test_current_stock_preview_requires_internal_auth_and_returns_runtime_result(monkeypatch):
+@pytest.mark.parametrize("code", ["0015G0", "005930"])
+def test_current_stock_preview_requires_internal_auth_and_returns_runtime_result(monkeypatch, code):
     import ai_server.app as module
     import src.runner.shared_analysis as shared
     from types import SimpleNamespace
@@ -71,10 +72,10 @@ def test_current_stock_preview_requires_internal_auth_and_returns_runtime_result
 
     async def run():
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-            denied = await client.post("/runtime/stock-preview", json={"stock_code": "005930"})
+            denied = await client.post("/runtime/stock-preview", json={"stock_code": code})
             assert denied.status_code == 401
             headers = {"X-HQA-Internal-Token": "preview-test-token"}
-            response = await client.post("/runtime/stock-preview", json={"stock_code": "005930"}, headers=headers)
+            response = await client.post("/runtime/stock-preview", json={"stock_code": code}, headers=headers)
             assert response.status_code == 202
             task_id = response.json()["task_id"]
             for _ in range(100):
@@ -82,11 +83,20 @@ def test_current_stock_preview_requires_internal_auth_and_returns_runtime_result
                 task = (await client.get(f"/runtime/tasks/{task_id}", headers=headers)).json()
                 if task["status"] == "completed":
                     break
-            assert task["result"]["stock_code"] == "005930"
+            assert task["result"]["stock_code"] == code
             assert task["result"]["plans"] == []
             assert task["created_at"].endswith("+00:00")
             module._runtime_tasks.pop(task_id)
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("code", ["0015g0", "15G0", "0015G0X", "0015-0"])
+def test_stock_preview_schema_rejects_invalid_codes(code):
+    from pydantic import ValidationError
+    from ai_server.app import StockPreviewRequest
+
+    with pytest.raises(ValidationError):
+        StockPreviewRequest(stock_code=code)
 
 
 def test_runtime_capacity_does_not_evict_running_tasks(monkeypatch):

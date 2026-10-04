@@ -17,6 +17,7 @@ import requests
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from src.config.settings import load_project_env
+from src.utils.stock_codes import is_stock_code
 
 load_project_env()
 
@@ -42,7 +43,7 @@ def _parse_corp_codes(xml_bytes: bytes, *, include_unlisted: bool = False) -> li
         stock_code = (item.findtext("stock_code") or "").strip()
         modify_date = (item.findtext("modify_date") or "").strip()
 
-        if not re.fullmatch(r"[0-9]{8}", corp_code) or (stock_code and not re.fullmatch(r"[0-9]{6}", stock_code)):
+        if not re.fullmatch(r"[0-9]{8}", corp_code) or (stock_code and not is_stock_code(stock_code)):
             raise ValueError("DART corpCode contains invalid corporate or stock code")
         if not include_unlisted and not stock_code:
             continue

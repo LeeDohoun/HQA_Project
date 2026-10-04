@@ -77,6 +77,25 @@ def test_price_mode_dispatches_without_analysis(monkeypatch):
     assert prices == ["005930"]
 
 
+@pytest.mark.parametrize("code", ["0015G0", "005930"])
+def test_price_query_passes_krx_short_codes_without_name_mapping(monkeypatch, code):
+    queried = []
+    monkeypatch.setitem(sys.modules, "src.tools.realtime_tool", SimpleNamespace(KISRealtimeTool=lambda: SimpleNamespace(
+        is_available=True, get_quote_summary=lambda value: queried.append(value) or "Quote")))
+    monkeypatch.setattr("src.utils.stock_mapper.get_mapper", lambda: pytest.fail("A stock code must bypass name mapping"))
+    cli.show_realtime_price(code)
+    assert queried == [code]
+
+
+@pytest.mark.parametrize("code", ["0015g0", "15G0", "0015G0X", "0015-0"])
+def test_price_query_rejects_invalid_codes_without_querying_kis(monkeypatch, code):
+    monkeypatch.setitem(sys.modules, "src.tools.realtime_tool", SimpleNamespace(
+        KISRealtimeTool=lambda: pytest.fail("An invalid code must not query KIS")))
+    monkeypatch.setattr("src.utils.stock_mapper.get_mapper", lambda: SimpleNamespace(get_code=lambda _: None))
+    with pytest.raises(ValueError, match="Unknown stock"):
+        cli.show_realtime_price(code)
+
+
 @pytest.mark.parametrize("argv, expected", [
     (["--theme-trade", "AI", "--theme-key", "ai", "--top-n", "4"], {
         "config_path": "config/watchlist.yaml", "include_theme_keys": ["ai"],

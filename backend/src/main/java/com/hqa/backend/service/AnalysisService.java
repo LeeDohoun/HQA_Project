@@ -7,6 +7,7 @@ import com.hqa.backend.entity.AnalysisRecord;
 import com.hqa.backend.entity.User;
 import com.hqa.backend.exception.ApiException;
 import com.hqa.backend.repository.AnalysisRecordRepository;
+import com.hqa.backend.util.StockCodes;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -34,7 +35,7 @@ public class AnalysisService {
     public AnalysisTaskResponse submit(AnalysisRequest request, User user) {
         requireMode(request.getMode(), request.getMaxRetries());
         String code = request.getStockCode();
-        if (code == null || !code.matches("[0-9]{6}") || request.getStockName() == null || request.getStockName().isBlank()) {
+        if (!StockCodes.isValid(code) || request.getStockName() == null || request.getStockName().isBlank()) {
             throw new ApiException(ErrorCode.INVALID_REQUEST, 400, "종목 이름과 6자리 코드가 필요합니다", null);
         }
         AnalysisRecord record = new AnalysisRecord();

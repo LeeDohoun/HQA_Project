@@ -11,6 +11,8 @@ import com.hqa.backend.repository.AnalysisRecordRepository;
 import java.util.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.test.util.ReflectionTestUtils;
 
 class AnalysisServiceTest {
@@ -40,6 +42,24 @@ class AnalysisServiceTest {
         assertThat(saved.getUser()).isSameAs(user);
         assertThat(saved.getMaxRetries()).isZero();
         verify(ai).submitStockPreview("005930");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"0015G0", "005930"})
+    void submitsAndPersistsKrxShortCodesUnchanged(String code) {
+        var request = request(); request.setStockCode(code);
+        when(ai.submitStockPreview(code)).thenReturn(Map.of("task_id", id, "status", "queued"));
+        assertThat(service.submit(request, user).taskId()).isEqualTo(id);
+        assertThat(saved.getStockCode()).isEqualTo(code);
+        verify(ai).submitStockPreview(code);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"0015g0", "15G0", "0015G0X", "0015-0"})
+    void rejectsInvalidCodesBeforeAnalysisOrPersistence(String code) {
+        var request = request(); request.setStockCode(code);
+        assertThatThrownBy(() -> service.submit(request, user)).hasMessageContaining("6자리");
+        verifyNoInteractions(ai, records);
     }
 
     @Test

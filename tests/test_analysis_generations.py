@@ -42,6 +42,27 @@ def loader_with_stub_prices(root, monkeypatch):
     return loader
 
 
+@pytest.mark.parametrize("code", ["0015G0", "005930"])
+def test_universe_keeps_krx_short_codes(tmp_path, monkeypatch, code):
+    now = datetime.now(timezone.utc)
+    write_inputs(tmp_path, now)
+    for name in ("raw/chart/theme.jsonl", "raw/theme_targets/theme.jsonl"):
+        path = tmp_path / name
+        write_rows(path, [{**row, "stock_code": code} for row in read_rows(path)])
+    EvidenceIndexBuilder(str(tmp_path)).rebuild_theme("theme")
+    candidates, errors = loader_with_stub_prices(tmp_path, monkeypatch).load_universe(now)
+    assert not errors
+    assert [item["stock_code"] for item in candidates] == [code]
+
+
+@pytest.mark.parametrize("code", ["0015g0", "15G0", "0015G0X", "0015-0"])
+def test_universe_rejects_invalid_stock_codes(tmp_path, code):
+    now = datetime.now(timezone.utc)
+    write_rows(tmp_path / "raw/theme_targets/theme.jsonl", [{"stock_code": code, "stock_name": "Stock"}])
+    with pytest.raises(ValueError, match="invalid theme target"):
+        LocalAnalysisData(data_dir=str(tmp_path)).load_universe(now)
+
+
 def test_legacy_body_revisions_survive_chunk_dedup_without_copying_full_body(tmp_path):
     now = datetime.now(timezone.utc)
     write_inputs(tmp_path, now, ("A", "B"), legacy=True)

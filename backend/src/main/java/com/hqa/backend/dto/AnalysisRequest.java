@@ -1,5 +1,6 @@
 package com.hqa.backend.dto;
 
+import com.hqa.backend.util.StockCodes;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -10,7 +11,7 @@ public class AnalysisRequest {
     @NotBlank
     private String stockName;
 
-    @Pattern(regexp = "^\\d{6}$")
+    @Pattern(regexp = StockCodes.REGEX)
     private String stockCode;
 
     private AnalysisMode mode = AnalysisMode.full;

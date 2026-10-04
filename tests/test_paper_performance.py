@@ -8,7 +8,7 @@ import sys
 import pytest
 from pydantic import ValidationError
 
-from src.tracing.paper_performance import compare_performance
+from src.tracing.paper_performance import ObservedRun, compare_performance
 
 DATES = ["2026-09-01T06:30:00Z", "2026-09-02T06:30:00Z", "2026-09-03T06:30:00Z"]
 
@@ -37,6 +37,25 @@ def observed_run(equity=(100.0, 80.0, 110.0)):
 def observations():
     return {"strategy": observed_run(), "numerical_baseline": observed_run((100.0, 100.0, 105.0)),
             "buy_and_hold": observed_run((100.0, 90.0, 108.0))}
+
+
+@pytest.mark.parametrize("code", ["0015G0", "005930"])
+def test_performance_universe_positions_and_fills_support_krx_short_codes(code):
+    payload = json.loads(json.dumps(observations()).replace("005930", code))
+    run = ObservedRun.model_validate(payload["strategy"])
+    assert code in run.universe
+    assert run.equity[0].positions[0].stock_code == code
+    assert run.fills[0].stock_code == code
+    assert compare_performance(payload)["runs"]["strategy"]["net_return_pct"] == pytest.approx(10.0)
+
+
+@pytest.mark.parametrize("code", ["0015g0", "15G0", "0015G0X", "0015-0"])
+def test_performance_rejects_invalid_codes_in_every_observation_layer(code):
+    payload = json.loads(json.dumps(observed_run()).replace("005930", code))
+    with pytest.raises(ValidationError) as error:
+        ObservedRun.model_validate(payload)
+    fields = {item["loc"][0] for item in error.value.errors()}
+    assert fields == {"universe", "equity", "fills"}
 
 
 def test_net_returns_drawdown_exposure_and_one_way_turnover_from_observations():

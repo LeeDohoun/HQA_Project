@@ -1,5 +1,6 @@
 package com.hqa.backend.dto;
 
+import com.hqa.backend.util.StockCodes;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -11,7 +12,7 @@ public class TradeDecisionRequest {
     private String stockName;
 
     @NotBlank
-    @Pattern(regexp = "^\\d{6}$")
+    @Pattern(regexp = StockCodes.REGEX)
     private String stockCode;
 
     @Valid

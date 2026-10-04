@@ -10,6 +10,8 @@ from typing import Any, Dict, List
 
 import requests
 
+from src.utils.stock_codes import is_stock_code
+
 from .types import MarketRecord
 
 KST = timezone(timedelta(hours=9))
@@ -44,8 +46,8 @@ class KrxChartCollector:
         if not self.api_key:
             raise ValueError("KRX_OPEN_API_KEY or KRX_API_KEY is required for chart collection")
 
-        if not re.fullmatch(r"\d{6}", stock_code):
-            raise ValueError("KRX chart collection requires a six-digit stock code")
+        if not is_stock_code(stock_code):
+            raise ValueError("KRX chart collection requires six ASCII digits or uppercase letters")
         if not all(isinstance(value, str) and re.fullmatch(r"\d{8}", value) for value in (from_date, to_date)):
             raise ValueError("KRX chart dates must be YYYYMMDD")
         start = datetime.strptime(from_date, "%Y%m%d").date()

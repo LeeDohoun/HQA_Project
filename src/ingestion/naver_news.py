@@ -11,6 +11,8 @@ from typing import Any, Iterator, List
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
+from src.utils.stock_codes import is_stock_code
+
 try:
     from bs4 import BeautifulSoup
 except ImportError:
@@ -25,8 +27,8 @@ _KST = ZoneInfo("Asia/Seoul")
 def match_news_entity(document: DocumentRecord, stock_code: str, company_name: str) -> dict[str, Any]:
     """Require an explicit ticker or the full company name, never the search query alone."""
     text = re.sub(r"\s+", " ", f"{document.title} {document.content}")
-    if re.fullmatch(r"\d{6}", stock_code or "") and re.search(
-        rf"(?:\(\s*{stock_code}\s*\)|(?:종목\s*코드|티커)\s*[:：]?\s*{stock_code}(?!\d))", text
+    if is_stock_code(stock_code) and re.search(
+        rf"(?:\(\s*{stock_code}\s*\)|(?:종목\s*코드|티커)\s*[:：]?\s*{stock_code}(?![0-9A-Za-z]))", text
     ):
         return {"matched": True, "method": "explicit_stock_code"}
     name = re.sub(r"^(?:주식회사\s*|\(주\)\s*)|(?:\s*주식회사|\s*\(주\))$", "", company_name or "").strip()

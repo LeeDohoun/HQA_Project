@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Iterable, List
 
 from src.config.settings import get_data_dir
+from src.utils.stock_codes import is_stock_code
 from .types import StockTarget
 from .storage import atomic_write, write_rows
 
@@ -25,7 +26,7 @@ def load_corp_code_map(csv_path: str) -> dict[str, str]:
             stock, corp = (row.get("stock_code") or "").strip(), (row.get("corp_code") or "").strip()
             if not stock:
                 continue
-            if not re.fullmatch(r"[0-9]{6}", stock) or not re.fullmatch(r"[0-9]{8}", corp):
+            if not is_stock_code(stock) or not re.fullmatch(r"[0-9]{8}", corp):
                 raise ValueError("invalid stock or corporate code in corporate code CSV")
             if stock in mapping and mapping[stock] != corp:
                 raise ValueError(f"conflicting corporate codes for stock:{stock}")
@@ -81,8 +82,8 @@ class ThemeTargetStore:
 
     @staticmethod
     def _validate_target(name: str, stock: str, corp: str) -> None:
-        if not name or not re.fullmatch(r"[0-9]{6}", stock):
-            raise ValueError("target requires a name and six-digit stock code")
+        if not name or not is_stock_code(stock):
+            raise ValueError("target requires a name and six ASCII digits or uppercase letters")
         if corp and not re.fullmatch(r"[0-9]{8}", corp):
             raise ValueError(f"invalid corporate code for stock:{stock}")
 

@@ -42,6 +42,22 @@ def clock(monkeypatch):
     monkeypatch.setattr(krx_chart, "_now", lambda: NOW)
 
 
+@pytest.mark.parametrize("code", ["0015G0", "005930"])
+def test_daily_chart_collects_krx_short_codes(code):
+    session = Session(Response({"OutBlock_1": [stock_row(ISU_CD=code)]}))
+    rows = KrxChartCollector("test-key", session).collect_daily("Stock", code, "20260904", "20260904")
+    assert len(rows) == 1 and rows[0].stock_code == code
+    assert len(session.calls) == 1
+
+
+@pytest.mark.parametrize("code", ["0015g0", "15G0", "0015G0X", "0015-0"])
+def test_daily_chart_rejects_invalid_stock_codes_before_http(code):
+    session = Session()
+    with pytest.raises(ValueError, match="stock code|ASCII"):
+        KrxChartCollector("test-key", session).collect_daily("Stock", code, "20260904", "20260904")
+    assert not session.calls
+
+
 @pytest.mark.parametrize("payload", [
     {"error": "quota"}, {"OutBlock_1": None}, {"output": []}, [],
     {"OutBlock_1": [], "error": "invalid key"}, {"OutBlock_1": [None]},

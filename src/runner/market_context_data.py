@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit
 
 from src.runner.analysis_data import content_hash, read_jsonl, source_time
+from src.utils.stock_codes import is_stock_code
 
 MARKET_INDEX_NAMES = {"KOSPI": "\ucf54\uc2a4\ud53c", "KOSDAQ": "\ucf54\uc2a4\ub2e5"}
 KST = timezone(timedelta(hours=9))
@@ -43,7 +44,7 @@ def _mapping(row: dict) -> dict:
             raise ValueError(f"benchmark mapping requires {field}")
     if (type(row.get("schema_version")) is not int or row["schema_version"] != 1
             or row["kind"] not in {"market", "sector"}
-            or len(row["stock_code"]) != 6 or not row["stock_code"].isdigit()
+            or not is_stock_code(row["stock_code"])
             or row["series"] not in MARKET_INDEX_NAMES):
         raise ValueError("invalid benchmark mapping identity")
     url = urlsplit(row["source_url"])

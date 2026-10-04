@@ -5,10 +5,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
-import re
 import shutil
 from pathlib import Path
 from typing import List, Tuple
+from urllib.parse import parse_qs, urlsplit
+
+from src.utils.stock_codes import is_stock_code
 
 try:
     from bs4 import BeautifulSoup
@@ -133,10 +135,9 @@ class NaverThemeStockCollector(BaseCollector):
 
                 for a_tag in stock_links:
                     href = a_tag.get("href", "")
-                    code_match = re.search(r"code=(\d{6})", href)
-                    if not code_match:
+                    stock_code = parse_qs(urlsplit(href).query).get("code", [""])[0]
+                    if not is_stock_code(stock_code):
                         continue
-                    stock_code = code_match.group(1)
                     if stock_code in seen_codes:
                         continue
                     stock_name = a_tag.get_text(" ", strip=True)
@@ -249,10 +250,9 @@ class NaverThemeStockCollector(BaseCollector):
         )
         for a_tag in stock_links:
             href = a_tag.get("href", "")
-            code_match = re.search(r"code=(\d{6})", href)
-            if not code_match:
+            stock_code = parse_qs(urlsplit(href).query).get("code", [""])[0]
+            if not is_stock_code(stock_code):
                 continue
-            stock_code = code_match.group(1)
             if stock_code in seen_codes:
                 continue
             stock_name = a_tag.get_text(" ", strip=True)

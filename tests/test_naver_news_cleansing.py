@@ -155,3 +155,22 @@ def test_entity_match_requires_full_name_or_explicit_ticker(text, matched, metho
 def test_corporate_legal_prefix_does_not_require_it_in_article():
     document = DocumentRecord(source_type="news", title="삼성전자 계약", content=BODY, url="https://example.test/1")
     assert match_news_entity(document, "005930", "주식회사 삼성전자")["matched"] is True
+
+
+@pytest.mark.parametrize("code", ["0015G0", "005930"])
+@pytest.mark.parametrize("text", ["기업 ({code}) 계약", "종목코드: {code} 계약"])
+def test_explicit_ticker_supports_krx_short_codes(code, text):
+    document = DocumentRecord(source_type="news", title="경제 뉴스", content=text.format(code=code), url="https://example.test/1")
+    assert match_news_entity(document, code, "다른기업") == {"matched": True, "method": "explicit_stock_code"}
+
+
+@pytest.mark.parametrize("code", ["0015g0", "15G0", "0015G0X", "0015-0"])
+def test_entity_match_rejects_invalid_stock_codes(code):
+    document = DocumentRecord(source_type="news", title="경제 뉴스", content=f"종목코드: {code} 계약", url="https://example.test/1")
+    assert match_news_entity(document, code, "다른기업")["matched"] is False
+
+
+@pytest.mark.parametrize("suffix", ["X", "x", "1"])
+def test_entity_match_does_not_accept_valid_code_as_prefix(suffix):
+    document = DocumentRecord(source_type="news", title="경제 뉴스", content=f"종목코드: 0015G0{suffix} 계약", url="https://example.test/1")
+    assert match_news_entity(document, "0015G0", "다른기업")["matched"] is False

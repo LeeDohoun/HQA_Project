@@ -11,6 +11,8 @@ import java.time.OffsetDateTime;
 import java.util.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.test.util.ReflectionTestUtils;
 
 class PaperTradeStoreTest {
@@ -59,6 +61,34 @@ class PaperTradeStoreTest {
         assertThatThrownBy(() -> store.save(request("BUY", 10, 1, "a", now), overloaded, now))
                 .hasMessage("PAPER_MONITOR_CAPACITY_EXCEEDED");
         verify(signals, never()).saveAndFlush(any());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"0015G0", "005930"})
+    void acceptsKrxShortCodesForPaperEntryAndOrderIntent(String code) throws Exception {
+        TradeSignal signal = store.save(requestForCode(code), account(0), now);
+        assertThat(signal.getStockCode()).isEqualTo(code);
+        assertThat(signal.getAccountMode()).isEqualTo("PAPER");
+        var intent = store.claim(signal.getId(), 1, TradeConditions.TriggerType.ENTRY, "entry", account(0),
+                100, 10000, 100, null, now);
+        assertThat(intent.getStockCode()).isEqualTo(code);
+        assertThat(intent.getStatus()).isEqualTo("INTENT");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"0015g0", "15G0", "0015G0X", "0015-0"})
+    void rejectsInvalidCodesBeforeSavingPlansOrOrders(String code) throws Exception {
+        var request = requestForCode(code);
+        assertThatThrownBy(() -> store.save(request, account(0), now)).hasMessage("Invalid stockCode");
+        verify(signals, never()).saveAndFlush(any());
+        verify(executions, never()).saveAndFlush(any());
+    }
+
+    private InternalTradeSignalRequest requestForCode(String code) throws Exception {
+        ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+        com.fasterxml.jackson.databind.node.ObjectNode json = mapper.valueToTree(request("BUY", 10, 1, "a", now));
+        json.put("stockCode", code);
+        return mapper.treeToValue(json, InternalTradeSignalRequest.class);
     }
 
     @Test

@@ -35,6 +35,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src.config.settings import get_env_status, get_settings, load_project_env
 from src.utils.llm_queue import LLMTaskPriority, llm_task_priority
+from src.utils.stock_codes import KRX_SHORT_CODE_REGEX
 
 load_project_env()
 
@@ -138,7 +139,7 @@ class SuggestRequest(BaseModel):
 
 class StockPreviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    stock_code: str = Field(pattern=r"^[0-9]{6}$")
+    stock_code: str = Field(pattern=KRX_SHORT_CODE_REGEX)
 
 
 class BacktestResultRequest(BaseModel):

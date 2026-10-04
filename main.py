@@ -10,12 +10,14 @@ import argparse
 import json
 from typing import Optional, Sequence
 
+from src.utils.stock_codes import is_stock_code
+
 
 def show_realtime_price(stock_input: str):
     from src.tools.realtime_tool import KISRealtimeTool
     from src.utils.stock_mapper import get_mapper
 
-    if stock_input.isdigit() and len(stock_input) == 6:
+    if is_stock_code(stock_input):
         stock_code = stock_input
     else:
         stock_code = get_mapper().get_code(stock_input)

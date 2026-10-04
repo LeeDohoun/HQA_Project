@@ -184,8 +184,25 @@ class MinuteCandleServiceTest {
     }
 
     @ParameterizedTest
+    @ValueSource(strings = {"005930", "0015G0", "00088K", "ABCDEF"})
+    void acceptsListedShortCodes(String code) {
+        UserSecret secret = paperUser();
+        when(kis.fetchDailyMinuteCandles("u1", secret, "token", code, date, "153000"))
+                .thenReturn(List.of(candle("09:00"), candle("15:30")));
+
+        var result = service.getMinuteCandles("u1", code, date);
+
+        assertThat(result.status()).isEqualTo("OK");
+        assertThat(result.stockCode()).isEqualTo(code);
+        assertThat(result.pages()).isEqualTo(1);
+        assertThat(result.candles()).hasSize(2);
+        verify(kis).fetchDailyMinuteCandles("u1", secret, "token", code, date, "153000");
+    }
+
+    @ParameterizedTest
     @NullAndEmptySource
-    @ValueSource(strings = {"00593", "0059300", "ABCDEF", " 005930", "００５９３０"})
+    @ValueSource(strings = {"00593", "0059300", "0015g0", "015G0", "15G0", "0015G0X", "0015-0",
+            " 005930", "００５９３０", "0015Ｇ0"})
     void invalidStockCodeFails(String code) {
         assertFailure("INVALID_STOCK_CODE", date, code);
         verifyNoInteractions(users, kis);

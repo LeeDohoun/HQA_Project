@@ -8,33 +8,36 @@ HQA 유틸리티 모음
 - memory: 대화형 메모리
 """
 
-from .stock_mapper import (
-    StockMapper,
-    StockInfo,
-    get_mapper,
-    get_stock_code,
-    get_stock_name,
-    search_stocks,
-    find_stocks_in_text,
-)
+from importlib import import_module
 
-from .kis_auth import (
-    KISConfig,
-    KISToken,
-    call_api,
-    get_base_headers,
-    is_api_available,
-)
+# Importing pure helpers such as stock_codes must not load KIS or runtime code.
+_EXPORTS = {
+    "StockMapper": "stock_mapper",
+    "StockInfo": "stock_mapper",
+    "get_mapper": "stock_mapper",
+    "get_stock_code": "stock_mapper",
+    "get_stock_name": "stock_mapper",
+    "search_stocks": "stock_mapper",
+    "find_stocks_in_text": "stock_mapper",
+    "KISConfig": "kis_auth",
+    "KISToken": "kis_auth",
+    "call_api": "kis_auth",
+    "get_base_headers": "kis_auth",
+    "is_api_available": "kis_auth",
+    "run_agents_parallel": "parallel",
+    "is_error": "parallel",
+    "ConversationMemory": "memory",
+    "ConversationTurn": "memory",
+}
 
-from .parallel import (
-    run_agents_parallel,
-    is_error,
-)
 
-from .memory import (
-    ConversationMemory,
-    ConversationTurn,
-)
+def __getattr__(name):
+    module = _EXPORTS.get(name)
+    if module is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(f".{module}", __name__), name)
+    globals()[name] = value
+    return value
 
 __all__ = [
     # stock_mapper

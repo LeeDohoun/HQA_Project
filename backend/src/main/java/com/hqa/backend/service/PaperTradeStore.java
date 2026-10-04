@@ -10,6 +10,7 @@ import com.hqa.backend.entity.User;
 import com.hqa.backend.repository.TradePlanReceiptRepository;
 import com.hqa.backend.repository.TradeSignalExecutionRepository;
 import com.hqa.backend.repository.TradeSignalRepository;
+import com.hqa.backend.util.StockCodes;
 import java.time.OffsetDateTime;
 import java.util.HashSet;
 import java.util.List;
@@ -69,7 +70,7 @@ public class PaperTradeStore {
         if (!Set.of("BUY", "STRONG_BUY", "SELL", "STRONG_SELL", "REDUCE", "HOLD").contains(request.action())) {
             throw new IllegalArgumentException("Unsupported action");
         }
-        if (request.stockCode() == null || !request.stockCode().matches("[0-9]{6}")) throw new IllegalArgumentException("Invalid stockCode");
+        if (!StockCodes.isValid(request.stockCode())) throw new IllegalArgumentException("Invalid stockCode");
         int version = request.planVersion() == null ? 1 : request.planVersion();
         if (version < 1) throw new IllegalArgumentException("planVersion must be positive");
         OffsetDateTime expiry = v2 ? request.entryValidUntil()

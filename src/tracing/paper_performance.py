@@ -9,6 +9,7 @@ import numpy as np
 from pydantic import AwareDatetime, BaseModel, BeforeValidator, ConfigDict, Field, StrictFloat, StringConstraints, model_validator
 
 from backtesting.metrics import max_drawdown
+from src.utils.stock_codes import KRX_SHORT_CODE_REGEX
 
 
 def _timestamp(value):
@@ -22,7 +23,7 @@ def _timestamp(value):
 
 Timestamp = Annotated[AwareDatetime, BeforeValidator(_timestamp)]
 Name = Annotated[str, StringConstraints(strict=True, strip_whitespace=True, min_length=1)]
-StockCode = Annotated[str, StringConstraints(strict=True, pattern=r"^[0-9]{6}$")]
+StockCode = Annotated[str, StringConstraints(strict=True, pattern=KRX_SHORT_CODE_REGEX)]
 
 
 class Contract(BaseModel):

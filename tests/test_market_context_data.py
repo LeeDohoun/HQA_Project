@@ -7,7 +7,7 @@ import pytest
 from src.ingestion.krx_chart import KrxChartCollector
 from src.ingestion.krx_benchmarks import _record
 from src.runner.analysis_data import price_features
-from src.runner.market_context_data import load_benchmark_context
+from src.runner.market_context_data import _mapping, load_benchmark_context
 from src.runner.trading_calendar import completed_daily_sessions
 
 
@@ -47,6 +47,21 @@ def mapping(kind="market", series="KOSPI", **overrides):
 def bar(series="KOSPI", index_name=KOSPI, **overrides):
     return {**_record(series, index_name, date(2026, 9, 4), 2000.0,
                       datetime(2026, 9, 4, 8, tzinfo=timezone.utc)), **overrides}
+
+
+@pytest.mark.parametrize("code", ["0015G0", "005930"])
+def test_benchmark_mapping_supports_krx_short_codes(tmp_path, code):
+    write_rows(tmp_path, "benchmark_mappings.jsonl", [mapping(stock_code=code)])
+    write_rows(tmp_path, "benchmarks.jsonl", [bar()])
+    item = candidate()
+    item["stock_code"] = code
+    assert load_benchmark_context(tmp_path, item, AS_OF)["market"]["status"] == "ready"
+
+
+@pytest.mark.parametrize("code", ["0015g0", "15G0", "0015G0X", "0015-0"])
+def test_benchmark_mapping_rejects_invalid_stock_codes(code):
+    with pytest.raises(ValueError, match="mapping identity"):
+        _mapping(mapping(stock_code=code))
 
 
 def test_optional_context_without_files_preserves_explicit_unavailable_states(tmp_path):

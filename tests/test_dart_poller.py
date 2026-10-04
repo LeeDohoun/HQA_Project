@@ -113,6 +113,15 @@ def test_first_poll_stores_all_pages_and_kst_timestamps(tmp_path):
             "last_reprt_at": "N"}
 
 
+@pytest.mark.parametrize("stock_code", ["005930", "0015G0", "00088K", "ABCDEF"])
+def test_listed_short_codes_are_saved(tmp_path, stock_code):
+    summary = poller_with(tmp_path, page(1, [row(1, stock_code=stock_code)])).poll_once()
+    assert summary["new"] == 1
+    stored = read_rows(archive(tmp_path))
+    assert len(stored) == 1 and stored[0]["stock_code"] == stock_code
+    assert stored[0]["listed"] is True
+
+
 def test_second_poll_and_restart_preserve_original_bytes_and_add_only_new(tmp_path):
     poller_with(tmp_path, page(1, [row(1)])).poll_once()
     original = archive(tmp_path).read_bytes()
@@ -279,6 +288,8 @@ def test_catch_up_revision_keeps_original_first_seen(tmp_path):
     None, [], {"rcept_no": "invalid"}, row(1, rcept_no="invalid"), row(1, report_nm=" "),
     row(1, rcept_dt="20260230"), row(1, rcept_dt="20260903"), row(1, corp_code=""),
     row(1, stock_code=None), row(1, stock_code="123"), row(1, corp_cls="?"), row(1, rm=None),
+    row(1, stock_code="0015g0"), row(1, stock_code="015G0"), row(1, stock_code="15G0"), row(1, stock_code="0015G0X"),
+    row(1, stock_code="0015-0"), row(1, stock_code="００５９３０"), row(1, stock_code="0015Ｇ0"),
 ])
 def test_malformed_row_rejected(tmp_path, bad):
     with pytest.raises(DartAPIError, match="malformed"):

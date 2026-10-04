@@ -9,6 +9,8 @@ import unicodedata
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
+from src.utils.stock_codes import is_stock_code
+
 EVENT_EVIDENCE_VERSION = "event-evidence-v2"
 MAX_TEXT = 2400
 MAX_SOURCES = 4
@@ -130,8 +132,8 @@ def build_event_evidence(documents: list[dict], stock_code: str) -> list[dict]:
     """No LLM extraction, inferred amounts, fuzzy deduplication, or time filtering."""
     if not isinstance(documents, list):
         raise ValueError("event documents must be a list")
-    if not isinstance(stock_code, str) or not re.fullmatch(r"[0-9]{6}", stock_code):
-        raise ValueError("event stock_code must contain six digits")
+    if not is_stock_code(stock_code):
+        raise ValueError("event stock_code must contain six ASCII digits or uppercase letters")
     groups, identities = {}, {}
     for raw in documents:
         row = _document(raw)

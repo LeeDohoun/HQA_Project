@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from pydantic import ValidationError
 
-from src.runner.analysis_contracts import AccountSnapshot, Predicate, TradingPlan
+from src.runner.analysis_contracts import AccountSnapshot, Holding, Predicate, SpecialistResult, TradingPlan
 from src.runner.analysis_data import PRICE_WEIGHTS, content_hash, price_features, rank_price_candidates
 from src.runner.analysis_scheduler import AnalysisScheduler, seconds_until_next_slot, within_analysis_session
 from src.runner.shared_analysis import SharedAnalysisService, SingleFlightCache
@@ -515,6 +515,27 @@ def buy_plan():
             "citations": [{"source_id": "source", "claim": "Observed source"}], "reasoning": "Explicit numerical plan"}
 
 
+@pytest.mark.parametrize("model", ["specialist", "plan", "holding"])
+@pytest.mark.parametrize("code,valid", [("0015G0", True), ("005930", True), ("0015g0", False),
+                                      ("15G0", False), ("0015G0X", False), ("0015-0", False)])
+def test_analysis_contracts_validate_krx_short_codes(model, code, valid):
+    if model == "specialist":
+        schema = SpecialistResult
+        payload = {"stock_code": code, "role": "analyst", "score": 80.0, "confidence": 80, "thesis": "Evidence",
+                   "risks": [], "citations": [{"source_id": "source", "claim": "Observed"}], "data_gaps": []}
+        field = "stock_code"
+    elif model == "plan":
+        schema, payload, field = TradingPlan, {**buy_plan(), "stock_code": code}, "stock_code"
+    else:
+        schema, payload, field = Holding, holding(code), "stockCode"
+    if valid:
+        assert getattr(schema.model_validate(payload), field) == code
+    else:
+        with pytest.raises(ValidationError) as error:
+            schema.model_validate(payload)
+        assert error.value.errors()[0]["loc"] == (field,)
+
+
 @pytest.mark.parametrize("predicates", [
     [{"field": "current_price", "operator": ">=", "value": 120.0}],
     [{"field": "current_price", "operator": "<", "value": 90.0}],
@@ -734,3 +755,35 @@ def test_manual_preview_missing_prices_fails_before_model_work():
     with pytest.raises(ValueError, match="preview_price_history_unavailable"):
         engine.preview_stock("999999")
     assert calls == []
+
+
+@pytest.mark.parametrize("code", ["0015G0", "005930"])
+def test_manual_preview_passes_krx_short_code_through_all_specialists(monkeypatch, code):
+    class CodeData(Data):
+        def load_universe(self, as_of):
+            rows, errors = super().load_universe(as_of)
+            rows[0].update(stock_code=code, stock_name="Stock")
+            return rows, errors
+
+    def invoke(model, messages):
+        payload = json.loads(messages[-1][1])
+        model.calls.append((model.role, payload))
+        return model.schema.model_validate({"stock_code": payload["stock_code"], "role": model.role,
+            "score": 80.0, "confidence": 80, "thesis": "Observed evidence", "risks": [],
+            "citations": [{"source_id": payload["source_ids"][0], "claim": "Observed"}], "data_gaps": []})
+
+    monkeypatch.setattr(Model, "invoke", invoke)
+    engine, calls = service(data=CodeData(count=1))
+    result = engine.preview_stock(code)
+    assert result["status"] == "completed" and result["stock_code"] == code
+    assert len(calls) == 3 and all(payload["stock_code"] == code for _, payload in calls)
+    assert all(row["stock_code"] == code for row in result["specialists"].values())
+    assert engine.accounts.calls == [] and result["plans"] == []
+
+
+@pytest.mark.parametrize("code", ["0015g0", "15G0", "0015G0X", "0015-0"])
+def test_manual_preview_rejects_invalid_codes_before_data_or_model_work(code):
+    engine, calls = service()
+    with pytest.raises(ValueError, match="stock_code"):
+        engine.preview_stock(code)
+    assert calls == [] and engine.data.loads == 0

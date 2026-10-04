@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 import requests
 
 from src.config.settings import get_project_root
+from src.utils.stock_codes import KRX_SHORT_CODE_PATTERN
 from .storage import file_lock, read_rows, write_rows
 
 KST = ZoneInfo("Asia/Seoul")
@@ -35,8 +36,8 @@ def _date(value: str | date) -> date:
 
 
 def _stock_code(value: str) -> str:
-    if not isinstance(value, str) or not re.fullmatch(r"[0-9]{6}", value):
-        raise ValueError("stock_code must contain six digits")
+    if not isinstance(value, str) or not KRX_SHORT_CODE_PATTERN.fullmatch(value):
+        raise ValueError("stock_code must contain exactly six ASCII digits or uppercase letters")
     return value
 
 

@@ -7,6 +7,7 @@ import com.hqa.backend.dto.StockSearchResult;
 import com.hqa.backend.entity.Stock;
 import com.hqa.backend.exception.ApiException;
 import com.hqa.backend.repository.StockRepository;
+import com.hqa.backend.util.StockCodes;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -34,11 +35,11 @@ public class StockCatalogService {
             return new StockSearchResponse(List.of(), 0);
         }
 
-        if (term.matches("^\\d{6}$")) {
+        if (StockCodes.isValid(term)) {
             Optional<Stock> exact = repository.findByCode(term);
-            return exact
-                    .map(stock -> new StockSearchResponse(List.of(toResult(stock)), 1))
-                    .orElseGet(() -> new StockSearchResponse(List.of(), 0));
+            if (exact.isPresent()) {
+                return new StockSearchResponse(List.of(toResult(exact.get())), 1);
+            }
         }
 
         List<StockSearchResult> results = repository
@@ -56,8 +57,8 @@ public class StockCatalogService {
     }
 
     public void validateCode(String code) {
-        if (code == null || !code.matches("^\\d{6}$")) {
-            throw new ApiException(ErrorCode.STOCK_INVALID_CODE, 400, "Stock code must be 6 digits", null);
+        if (!StockCodes.isValid(code)) {
+            throw new ApiException(ErrorCode.STOCK_INVALID_CODE, 400, "Stock code must be 6 ASCII digits or uppercase letters", null);
         }
     }
 

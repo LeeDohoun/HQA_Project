@@ -16,6 +16,18 @@ def document(source_id="doc:1", title="단일판매ㆍ공급계약체결", text=
     return {**row, **overrides}
 
 
+@pytest.mark.parametrize("code", ["0015G0", "005930"])
+def test_event_evidence_preserves_krx_short_codes(code):
+    events = build_event_evidence([document()], code)
+    assert len(events) == 1 and events[0]["stock_code"] == code
+
+
+@pytest.mark.parametrize("code", ["0015g0", "15G0", "0015G0X", "0015-0"])
+def test_event_evidence_rejects_invalid_stock_codes(code):
+    with pytest.raises(ValueError, match="stock_code"):
+        build_event_evidence([document()], code)
+
+
 def test_distinct_contracts_and_same_headline_with_different_bodies_remain_distinct():
     events = build_event_evidence([document(), document("doc:2", text="공급계약 원문 B")], "005930")
     assert len(events) == 2

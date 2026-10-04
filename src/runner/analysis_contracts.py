@@ -6,6 +6,8 @@ from typing import Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, model_validator
 
+from src.utils.stock_codes import KRX_SHORT_CODE_REGEX
+
 
 class Contract(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
@@ -17,7 +19,7 @@ class Citation(Contract):
 
 
 class SpecialistResult(Contract):
-    stock_code: str = Field(pattern=r"^\d{6}$")
+    stock_code: str = Field(pattern=KRX_SHORT_CODE_REGEX)
     role: Literal["analyst", "quant", "chartist"]
     score: StrictFloat = Field(ge=0, le=100)
     confidence: StrictInt = Field(ge=0, le=100)
@@ -75,7 +77,7 @@ class ConditionPayload(Contract):
 
 
 class TradingPlan(Contract):
-    stock_code: str = Field(pattern=r"^\d{6}$")
+    stock_code: str = Field(pattern=KRX_SHORT_CODE_REGEX)
     stock_name: str = Field(min_length=1)
     action: Literal["BUY", "SELL", "HOLD"]
     holding_quantity: StrictInt = Field(ge=0)
@@ -128,7 +130,7 @@ class AccountDecision(Contract):
 
 
 class Holding(Contract):
-    stockCode: str = Field(pattern=r"^\d{6}$")
+    stockCode: str = Field(pattern=KRX_SHORT_CODE_REGEX)
     stockName: str = Field(min_length=1)
     quantity: StrictInt = Field(ge=0)
     sellableQuantity: StrictInt = Field(ge=0)

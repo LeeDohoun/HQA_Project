@@ -63,18 +63,20 @@ def client(tmp_path, *responses):
     return minute.MinuteBarClient("http://backend:8000/", "test-internal", Session(*responses), data_dir=tmp_path)
 
 
-def test_parses_sorts_and_posts_one_backend_request_without_kis_credentials(tmp_path):
-    collector = client(tmp_path, response(candle("15:30"), candle("09:00"), candle("12:00")))
-    rows = collector.collect(*PAIR, "user-1")
+@pytest.mark.parametrize("stock_code", ["005930", "0015G0", "00088K", "ABCDEF"])
+def test_parses_sorts_and_posts_one_backend_request_without_kis_credentials(tmp_path, stock_code):
+    collector = client(tmp_path, response(candle("15:30"), candle("09:00"), candle("12:00"), code=stock_code))
+    rows = collector.collect(stock_code, DAY, "user-1")
     assert len(collector.session.calls) == 1
     url, args = collector.session.calls[0]
     assert url == "http://backend:8000/api/v1/internal/market/minute-candles"
-    assert args == {"json": {"userId": "user-1", "stockCode": "005930", "date": DAY},
+    assert args == {"json": {"userId": "user-1", "stockCode": stock_code, "date": DAY},
                     "headers": {"X-HQA-Internal-Token": "test-internal", "Accept": "application/json"},
                     "timeout": 30, "allow_redirects": False}
     assert [row["time"][11:16] for row in rows] == ["09:00", "12:00", "15:30"]
     assert all(row["collected_at"] == row["available_at"] == NOW.isoformat() for row in rows)
     assert all(row["complete"] is True for row in rows)
+    assert all(row["stock_code"] == stock_code for row in rows)
     row = rows[0]
     assert row["time"] == DAY + "T09:00:00+09:00"
     assert row["source"] == "kis_minute" and row["trade_date"] == DAY
@@ -172,7 +174,10 @@ def test_duplicate_minutes_are_rejected(tmp_path):
 
 
 @pytest.mark.parametrize("code,day", [("../bad", DAY), ("00593", DAY), ("005930", "2026-10-05"),
-                                     ("005930", "2025-10-02"), ("005930", "20260930")])
+                                     ("005930", "2025-10-02"), ("005930", "20260930"),
+                                     (None, DAY), ("", DAY), ("0015g0", DAY), ("015G0", DAY), ("15G0", DAY),
+                                     ("0015G0X", DAY), ("0015-0", DAY), ("００５９３０", DAY),
+                                     ("0015Ｇ0", DAY)])
 def test_invalid_requests_make_no_http_call(tmp_path, code, day):
     collector = client(tmp_path)
     with pytest.raises(ValueError):

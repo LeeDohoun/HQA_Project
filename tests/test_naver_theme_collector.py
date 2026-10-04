@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import json
+import sys
+from types import SimpleNamespace
+
+import pytest
 
 from src.ingestion.naver_theme import NaverThemeStockCollector, ThemeStock, ThemeTargets
 from src.ingestion.theme_targets import ThemeTargetStore
@@ -40,6 +44,24 @@ def test_extract_theme_stocks_dedupes_codes_and_limits_count():
         ThemeStock(theme_name="반도체", stock_name="삼성전자", stock_code="005930"),
         ThemeStock(theme_name="반도체", stock_name="SK하이닉스", stock_code="000660"),
     ]
+
+
+@pytest.mark.parametrize("method", ["html", "selenium"])
+@pytest.mark.parametrize("code,valid", [("0015G0", True), ("005930", True), ("0015g0", False),
+                                      ("15G0", False), ("0015G0X", False), ("0015-0", False)])
+def test_both_theme_parsers_validate_entire_krx_short_code(monkeypatch, method, code, valid):
+    html = f'<a href="/item/main.naver?code={code}&amp;other=1#chart">Stock</a>'
+    if method == "html":
+        stocks = NaverThemeStockCollector.extract_theme_stocks(html, "theme")
+    else:
+        driver = SimpleNamespace(page_source=html, get=lambda _: None, quit=lambda: None)
+        monkeypatch.setitem(sys.modules, "selenium.webdriver.support.ui", SimpleNamespace(
+            WebDriverWait=lambda driver, timeout: SimpleNamespace(until=lambda condition: condition(driver))))
+        collector = NaverThemeStockCollector()
+        monkeypatch.setattr(collector, "_build_driver", lambda: driver)
+        monkeypatch.setattr(collector, "_find_theme_links_selenium", lambda **kwargs: [("theme", "https://example.test/theme")])
+        stocks = collector.collect("theme")
+    assert [stock.stock_code for stock in stocks] == ([code] if valid else [])
 
 
 def test_save_collected_themes_writes_theme_target_files(tmp_path):

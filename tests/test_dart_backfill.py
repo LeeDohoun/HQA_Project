@@ -147,6 +147,29 @@ def test_all_pages_for_both_markets_are_saved_without_theme_or_corp_filter(tmp_p
         assert params["page_count"] == 100 and params["last_reprt_at"] == "N"
 
 
+def test_alphanumeric_listing_day_is_saved_and_selected_details_proceed(tmp_path):
+    day = "20230322"
+    y_rows = [row(1, day=day, title="단일판매ㆍ공급계약체결", stock_code="00088K"),
+              row(2, day=day, title="단일판매ㆍ공급계약체결")]
+    k_rows = [row(3, day=day, corp_cls="K", corp_name="그린광학", stock_code="0015G0"),
+              row(4, day=day, corp_cls="K", corp_name="그린광학", stock_code="0015G0",
+                  title="단일판매ㆍ공급계약체결")]
+    summary, session = run(tmp_path, page(1, y_rows), page(1, k_rows),
+                           document(), document(), document(), from_date=day, to_date=day)
+    assert summary["status"] == "ok" and summary["listing_days_saved"] == 1
+    assert summary["listed_rows"] == 4 and read_rows(archive(tmp_path, day=day)) == y_rows + k_rows
+    assert summary["details_saved"] == 3 and summary["known_pending_details"] == 0
+    assert summary["skipped_missing_stock_code"] == 0
+    assert len(session.calls) == summary["requests_made"] == 5
+    selected = y_rows + k_rows[1:]
+    docs = read_rows(archive(tmp_path, "docs", day))
+    assert {doc["metadata"]["rcept_no"]: doc["stock_code"] for doc in docs} == {
+        item["rcept_no"]: item["stock_code"] for item in selected}
+    assert all(doc["content"] == BODY.strip() for doc in docs)
+    assert state(tmp_path)["completed_listing_days"] == [day]
+    assert state(tmp_path)["completed_detail_rcept_nos"] == [item["rcept_no"] for item in selected]
+
+
 def test_empty_weekend_days_are_completed_and_not_repeated(tmp_path):
     summary, session = run(tmp_path, *[{"status": "013"}] * 4, from_date="2023-01-01",
                            to_date="20230102", stage="list")
@@ -451,7 +474,8 @@ def test_completed_skip_archive_missing_on_disk_fails_clearly(tmp_path):
         run(tmp_path)
 
 
-@pytest.mark.parametrize("stock_code", [None, "00593", "      "])
+@pytest.mark.parametrize("stock_code", [None, "00593", "      ", "0015g0", "015G0", "15G0",
+                                       "0015G0X", "0015-0", "００５９３０", "0015Ｇ0"])
 def test_invalid_stock_code_is_not_treated_as_a_missing_code_skip(tmp_path, stock_code):
     summary, session = run(tmp_path, page(1, [row(1, title="전환청구권행사", stock_code=stock_code)]))
     assert summary["status"] == "error" and summary["skipped_missing_stock_code"] == 0

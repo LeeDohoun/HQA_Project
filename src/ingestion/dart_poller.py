@@ -12,6 +12,8 @@ from zoneinfo import ZoneInfo
 
 import requests
 
+from src.utils.stock_codes import KRX_SHORT_CODE_PATTERN
+
 from .dart_api import DartAPIError, read_dart_payload
 from .storage import atomic_write, file_lock, read_rows, write_rows
 
@@ -60,7 +62,7 @@ def _validate_page(payload: dict, page_no: int, expected, day: str, items: dict)
                 or not row["corp_name"].strip() or not row["report_nm"].strip()
                 or row["rcept_dt"] != day
                 or row["corp_cls"] not in {"Y", "K", "N", "E"}
-                or (row["stock_code"] != "" and not re.fullmatch(r"[0-9]{6}", row["stock_code"]))):
+                or (row["stock_code"] != "" and not KRX_SHORT_CODE_PATTERN.fullmatch(row["stock_code"]))):
             raise DartAPIError("DART malformed disclosure row")
         receipt = row["rcept_no"]
         if receipt in items and items[receipt] != row:

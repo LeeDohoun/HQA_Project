@@ -2,6 +2,7 @@ package com.hqa.backend.service;
 
 import com.hqa.backend.entity.Stock;
 import com.hqa.backend.repository.StockRepository;
+import com.hqa.backend.util.StockCodes;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.net.URI;
@@ -150,9 +151,8 @@ public class KisMasterLoader {
             String code = prefix.substring(0, 9).trim();
             String nameKo = prefix.substring(21).trim();
             if (code.isEmpty() || nameKo.isEmpty()) continue;
-            // KIS uses 6-digit tickers; some lines pad to 9. Keep the raw value
-            // but only ingest plausible 6-digit equity codes.
-            if (!code.matches("^\\d{6}$")) continue;
+            // The 9-character ASCII field contains a space-padded KRX short code.
+            if (!StockCodes.isValid(code)) continue;
             out.add(new Stock(code, nameKo, null, market));
         }
         return out;

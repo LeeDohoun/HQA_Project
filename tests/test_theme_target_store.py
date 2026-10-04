@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 
-from src.ingestion.theme_targets import ThemeTargetStore, make_theme_key
+import pytest
+
+from src.ingestion.theme_targets import ThemeTargetStore, load_corp_code_map, make_theme_key
 from src.ingestion.types import StockTarget
 
 
@@ -50,3 +52,25 @@ def test_theme_target_store_append_dedupes_by_stock_code(tmp_path):
     )
 
     assert [target.stock_code for target in saved] == ["005930", "000660"]
+
+
+@pytest.mark.parametrize("code", ["0015G0", "005930"])
+def test_corporate_csv_and_saved_targets_preserve_krx_short_codes(tmp_path, code):
+    path = tmp_path / "corp_codes.csv"
+    path.write_text(f"stock_code,corp_code\n{code},00126380\n", encoding="utf-8-sig")
+    assert load_corp_code_map(str(path)) == {code: "00126380"}
+    store = ThemeTargetStore(data_dir=str(tmp_path))
+    targets = [StockTarget("Stock", code, "00126380")]
+    assert store.save_targets("theme", targets) == targets
+    assert store.load_targets("theme") == targets
+
+
+@pytest.mark.parametrize("code", ["0015g0", "15G0", "0015G0X", "0015-0"])
+def test_corporate_csv_and_targets_reject_invalid_stock_codes(tmp_path, code):
+    path = tmp_path / "corp_codes.csv"
+    path.write_text(f"stock_code,corp_code\n{code},00126380\n", encoding="utf-8-sig")
+    with pytest.raises(ValueError, match="invalid stock"):
+        load_corp_code_map(str(path))
+    store = ThemeTargetStore(data_dir=str(tmp_path))
+    with pytest.raises(ValueError, match="target requires"):
+        store.save_targets("theme", [StockTarget("Stock", code, "00126380")])

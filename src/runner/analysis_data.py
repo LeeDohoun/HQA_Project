@@ -18,6 +18,7 @@ from src.config.settings import get_data_dir
 from src.runner.analysis_contracts import AccountSnapshot
 from src.runner.theme_universe_loader import ThemeUniverseLoader
 from src.runner.trading_calendar import CALENDAR_VERSION, completed_daily_sessions, daily_session_close
+from src.utils.stock_codes import is_stock_code
 
 UTC = timezone.utc
 KST = timezone(timedelta(hours=9))
@@ -233,7 +234,7 @@ class LocalAnalysisData:
             for target in read_jsonl(path):
                 code = ThemeUniverseLoader._stock_code(target)
                 name = ThemeUniverseLoader._stock_name(target)
-                if not code or len(code) != 6 or not code.isdigit() or not name:
+                if not is_stock_code(code) or not name:
                     raise ValueError(f"invalid theme target:{path}")
                 stock = stocks.setdefault(code, {"stock_code": code, "stock_name": name, "theme_keys": [], "theme_generations": {}})
                 stock["theme_keys"].append(key)

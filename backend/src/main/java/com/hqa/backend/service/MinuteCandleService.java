@@ -6,6 +6,7 @@ import com.hqa.backend.dto.InternalMinuteCandleResponse.MinuteCandle;
 import com.hqa.backend.entity.User;
 import com.hqa.backend.entity.UserSecret;
 import com.hqa.backend.repository.UserRepository;
+import com.hqa.backend.util.StockCodes;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -14,6 +15,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
 import java.util.TreeMap;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -22,6 +24,7 @@ public class MinuteCandleService {
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
     private static final DateTimeFormatter HHMMSS = DateTimeFormatter.ofPattern("HHmmss");
     private static final int MAX_PAGES = 6;
+    private static final Pattern KRX_SHORT_CODE_PATTERN = StockCodes.PATTERN;
 
     private final UserRepository userRepository;
     private final KisClient kisClient;
@@ -32,7 +35,7 @@ public class MinuteCandleService {
     }
 
     public InternalMinuteCandleResponse getMinuteCandles(String userId, String stockCode, LocalDate date) {
-        if (stockCode == null || !stockCode.matches("[0-9]{6}")) {
+        if (stockCode == null || !KRX_SHORT_CODE_PATTERN.matcher(stockCode).matches()) {
             return failure(stockCode, date, "INVALID_STOCK_CODE", 0);
         }
         LocalDate today = LocalDate.now(KST);

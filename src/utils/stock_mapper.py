@@ -18,6 +18,8 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 
+from src.utils.stock_codes import is_stock_code
+
 # 캐시 파일 경로
 CACHE_DIR = Path(__file__).parent.parent.parent / "data" / "cache"
 CACHE_FILE = CACHE_DIR / "krx_stocks.json"
@@ -224,7 +226,7 @@ class StockMapper:
                         # 한글명: 21: (공백 제거)
                         name = rf1[21:].strip()
                         
-                        if code and name and len(code) == 6:
+                        if is_stock_code(code) and name:
                             info = StockInfo(code=code, name=name, market=market)
                             self._stocks[code] = info
                             self._name_to_code[name] = code
@@ -247,10 +249,12 @@ class StockMapper:
             kospi = fdr.StockListing("KOSPI")
             if kospi is not None:
                 for _, row in kospi.iterrows():
-                    code = str(row.get("Code", "")).zfill(6)
+                    code = str(row.get("Code", ""))
+                    if code.isdigit() and len(code) < 6:
+                        code = code.zfill(6)
                     name = row.get("Name", "")
                     sector = row.get("Sector", "")
-                    if code and name:
+                    if is_stock_code(code) and name:
                         info = StockInfo(code=code, name=name, market="KOSPI", sector=sector)
                         self._stocks[code] = info
                         self._name_to_code[name] = code
@@ -259,10 +263,12 @@ class StockMapper:
             kosdaq = fdr.StockListing("KOSDAQ")
             if kosdaq is not None:
                 for _, row in kosdaq.iterrows():
-                    code = str(row.get("Code", "")).zfill(6)
+                    code = str(row.get("Code", ""))
+                    if code.isdigit() and len(code) < 6:
+                        code = code.zfill(6)
                     name = row.get("Name", "")
                     sector = row.get("Sector", "")
-                    if code and name:
+                    if is_stock_code(code) and name:
                         info = StockInfo(code=code, name=name, market="KOSDAQ", sector=sector)
                         self._stocks[code] = info
                         self._name_to_code[name] = code
@@ -397,7 +403,10 @@ class StockMapper:
         Returns:
             종목명 또는 None
         """
-        code = code.zfill(6)  # 앞에 0 채우기
+        if code.isdigit() and len(code) < 6:
+            code = code.zfill(6)
+        if not is_stock_code(code):
+            return None
         info = self._stocks.get(code)
         return info.name if info else None
     
@@ -412,8 +421,10 @@ class StockMapper:
             StockInfo 또는 None
         """
         # 코드로 시도
-        code = code_or_name.zfill(6) if code_or_name.isdigit() else None
-        if code and code in self._stocks:
+        code = code_or_name
+        if code.isdigit() and len(code) < 6:
+            code = code.zfill(6)
+        if is_stock_code(code) and code in self._stocks:
             return self._stocks[code]
         
         # 이름으로 시도

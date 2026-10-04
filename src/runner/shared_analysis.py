@@ -15,6 +15,7 @@ from typing import Any, Callable
 from src.runner.analysis_contracts import AccountDecision, SpecialistResult
 from src.runner.analysis_data import BackendAccountClient, FACTOR_VERSION, LocalAnalysisData, content_hash, rank_price_candidates
 from src.utils.llm_queue import LLMTaskPriority, llm_task_priority
+from src.utils.stock_codes import is_stock_code
 
 UTC = timezone.utc
 PROMPT_VERSION = "hqa-fixed-dag-v6-market-context"
@@ -271,8 +272,8 @@ class SharedAnalysisService:
         return self._cycles.get_or_compute(key, lambda: self._run_cycle(targets, now), retain=False)
 
     def preview_stock(self, stock_code: str) -> dict:
-        if len(stock_code) != 6 or not stock_code.isascii() or not stock_code.isdigit():
-            raise ValueError("stock_code must contain six digits")
+        if not is_stock_code(stock_code):
+            raise ValueError("stock_code must contain six ASCII digits or uppercase letters")
         return self._run_cycle([], self.clock(), preview_code=stock_code)["stock_preview"]
 
     def _run_cycle(self, targets: list[dict], as_of: datetime, *, preview_code: str | None = None) -> dict:
