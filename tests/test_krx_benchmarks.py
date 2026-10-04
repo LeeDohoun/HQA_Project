@@ -8,6 +8,7 @@ import pytest
 import requests
 
 from src.ingestion import krx_benchmarks as benchmarks
+from scripts.data import market_context
 
 
 NOW = datetime(2026, 9, 5, 1, 0, tzinfo=timezone.utc)
@@ -129,11 +130,66 @@ def test_invalid_response_shapes_fail_without_fallback(payload):
     assert len(session.calls) == 1
 
 
-@pytest.mark.parametrize("value", ["", "-", None, True, False, float("nan"), float("inf"),
+@pytest.mark.parametrize("value", ["", "-", "  ", None, True, False, float("nan"), float("inf"),
                                    0, -1, "0", "1,2", "1e3", [], {}])
-def test_missing_or_invalid_close_never_becomes_zero(value):
+def test_missing_or_invalid_close_is_skipped_and_counted_next_to_saved_valid_row(tmp_path, value):
+    session = Session(Response({"OutBlock_1": [raw("Unavailable", value), raw()]}))
+    collector = benchmarks.KrxBenchmarkCollector("fixture-key", session)
+    rows = collector.collect_daily("20260904", "20260904", ("KOSPI",))
+    assert collector.skipped_rows == 1
+    assert len(rows) == 1
+    assert rows[0]["index_name"] == "KOSPI"
+    assert rows[0]["close"] == 2500.25
+    path = tmp_path / "benchmarks.jsonl"
+    assert benchmarks.save_benchmark_records(rows, path) == 1
+    assert [json.loads(line) for line in path.read_text().splitlines()] == rows
+
+
+def test_skipped_count_accumulates_across_dates_and_series_and_resets_per_call():
+    session = Session(*(Response({"OutBlock_1": [raw("Unavailable", "-", day)]})
+                        for day in ("20260903", "20260903", "20260904", "20260904")),
+                      Response({"OutBlock_1": [raw()]}))
+    collector = benchmarks.KrxBenchmarkCollector("fixture-key", session)
+    assert collector.collect_daily("20260903", "20260904") == []
+    assert collector.skipped_rows == 4
+    assert len(collector.collect_daily("20260904", "20260904", ("KOSPI",))) == 1
+    assert collector.skipped_rows == 0
+
+
+def test_index_name_filter_is_exact_and_keeps_only_requested_names():
+    session = Session(Response({"OutBlock_1": [raw("코스피"), raw("코스피 200"), raw("코스피 ")]}),
+                      Response({"OutBlock_1": [raw("코스닥"), raw("코스닥 150"), raw("Unlaunched", "-")]}))
+    collector = benchmarks.KrxBenchmarkCollector("fixture-key", session)
+    rows = collector.collect_daily("20260904", "20260904", index_names=("코스피", "코스닥"))
+    assert [(row["series"], row["index_name"]) for row in rows] == [("KOSPI", "코스피"), ("KOSDAQ", "코스닥")]
+    assert collector.skipped_rows == 1
+
+
+@pytest.mark.parametrize("index_names", ["코스피", (), ("",), (None,), ({},), ("코스피", "코스피")])
+def test_invalid_index_name_filters_fail_before_network(index_names):
+    session = Session()
+    with pytest.raises(ValueError, match="index_names"):
+        benchmarks.KrxBenchmarkCollector("fixture-key", session).collect_daily(
+            "20260904", "20260904", index_names=index_names)
+    assert session.calls == []
+
+
+@pytest.mark.parametrize("row", [raw("", "-"), raw(None, ""), raw("fixture-key", "-"),
+                                 raw(close="-", day="20260903"),
+                                 {"BAS_DD": "20260904", "IDX_NM": "Excluded"},
+                                 {"BAS_DD": "20260904", "CLSPRC_IDX": "-"}])
+def test_skipping_and_filtering_do_not_hide_other_row_validation(row):
+    session = Session(Response({"OutBlock_1": [row]}))
+    collector = benchmarks.KrxBenchmarkCollector("fixture-key", session)
     with pytest.raises(ValueError):
-        collected(raw(close=value))
+        collector.collect_daily("20260904", "20260904", ("KOSPI",), index_names=("Selected",))
+
+
+def test_filter_does_not_hide_conflicting_duplicates():
+    session = Session(Response({"OutBlock_1": [raw("Excluded"), raw("Excluded", "2501")]}))
+    with pytest.raises(ValueError, match="conflicting duplicate"):
+        benchmarks.KrxBenchmarkCollector("fixture-key", session).collect_daily(
+            "20260904", "20260904", ("KOSPI",), index_names=("Selected",))
 
 
 @pytest.mark.parametrize("field,value", [("IDX_NM", ""), ("IDX_NM", None), ("BAS_DD", "20260903"),
@@ -238,9 +294,21 @@ def test_observation_clock_before_close_is_rejected_not_fabricated(monkeypatch):
         collected()
 
 
-def test_overflowing_numeric_provider_close_is_an_explicit_validation_failure():
-    with pytest.raises(ValueError, match="finite"):
-        collected(raw(close=10 ** 1000))
+def test_overflowing_numeric_provider_close_is_skipped_and_counted():
+    session = Session(Response({"OutBlock_1": [raw(close=10 ** 1000)]}))
+    collector = benchmarks.KrxBenchmarkCollector("fixture-key", session)
+    assert collector.collect_daily("20260904", "20260904", ("KOSPI",)) == []
+    assert collector.skipped_rows == 1
+
+
+@pytest.mark.parametrize("close", ["2500", "-"])
+def test_skipping_and_filtering_preserve_observation_clock_validation(monkeypatch, close):
+    times = iter([NOW, datetime(2026, 9, 4, 1, tzinfo=timezone.utc)])
+    monkeypatch.setattr(benchmarks, "_now", lambda: next(times))
+    session = Session(Response({"OutBlock_1": [raw("Excluded", close)]}))
+    with pytest.raises(ValueError, match="precedes the completed market close"):
+        benchmarks.KrxBenchmarkCollector("fixture-key", session).collect_daily(
+            "20260904", "20260904", ("KOSPI",), index_names=("Selected",))
 
 
 def test_save_preserves_a_b_a_episodes_and_first_unchanged_availability(tmp_path):
@@ -349,3 +417,103 @@ def test_unterminated_valid_existing_record_is_not_concatenated_with_new_json(tm
     with pytest.raises(ValueError, match="unterminated"):
         benchmarks.save_benchmark_records([observed(row, "2026-09-05T02:00:00+00:00", 2600.0)], path)
     assert path.read_text() == existing
+
+
+def test_cli_saves_each_month_before_fetching_next_and_reports_total_skips(monkeypatch, tmp_path, capsys):
+    path = tmp_path / "market_context" / "benchmarks.jsonl"
+    session = Session(Response({"OutBlock_1": [raw("코스피", day="20260831"),
+                                             raw("Unlaunched", "-", "20260831"),
+                                             raw("Excluded", day="20260831")]}),
+                      Response({"OutBlock_1": [raw("코스피", day="20260901"),
+                                             raw("Unlaunched", "-", "20260901"),
+                                             raw("Another", "", "20260901")]}))
+    collector = benchmarks.KrxBenchmarkCollector("fixture-key", session)
+    original_get = session.get
+
+    def get(url, **kwargs):
+        if kwargs["params"]["basDd"] == "20260901":
+            assert [json.loads(line)["trade_date"] for line in path.read_text().splitlines()] == ["2026-08-31"]
+        return original_get(url, **kwargs)
+
+    monkeypatch.setattr(session, "get", get)
+    monkeypatch.setattr(market_context, "KrxBenchmarkCollector", lambda: collector)
+    monkeypatch.setattr(market_context, "load_project_env", lambda: None)
+    monkeypatch.setattr("sys.argv", ["market_context", "--from-date", "20260831", "--to-date", "20260901",
+                                    "--series", "KOSPI", "--index-names", "코스피", "--data-dir", str(tmp_path)])
+    market_context.main()
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["collected_records"] == summary["saved_records"] == 2
+    assert summary["skipped_rows"] == 3
+    assert len(path.read_text().splitlines()) == 2
+
+
+def test_cli_later_month_failure_keeps_earlier_month_without_partial_failed_month(monkeypatch, tmp_path):
+    session = Session(Response({"OutBlock_1": [raw(day="20260831")]}),
+                      Response({"OutBlock_1": [raw(day="20260901")]}),
+                      requests.Timeout("later month failed"))
+    collector = benchmarks.KrxBenchmarkCollector("fixture-key", session)
+    monkeypatch.setattr(market_context, "KrxBenchmarkCollector", lambda: collector)
+    monkeypatch.setattr(market_context, "load_project_env", lambda: None)
+    monkeypatch.setattr("sys.argv", ["market_context", "--from-date", "20260831", "--to-date", "20260902",
+                                    "--series", "KOSPI", "--data-dir", str(tmp_path)])
+    with pytest.raises(requests.Timeout, match="later month failed"):
+        market_context.main()
+    path = tmp_path / "market_context" / "benchmarks.jsonl"
+    assert [json.loads(line)["trade_date"] for line in path.read_text().splitlines()] == ["2026-08-31"]
+    assert len(session.calls) == 3
+
+
+@pytest.mark.parametrize("start,end,chunks", [
+    ("2026-08-30", "2026-09-02", [("20260830", "20260831"), ("20260901", "20260902")]),
+    ("20240228", "20240301", [("20240228", "20240229"), ("20240301", "20240301")]),
+    ("20251231", "20260101", [("20251231", "20251231"), ("20260101", "20260101")]),
+    ("20260902", "20260904", [("20260902", "20260904")]),
+])
+def test_cli_monthly_chunk_boundaries(monkeypatch, tmp_path, capsys, start, end, chunks):
+    calls = []
+
+    class Collector:
+        def collect_daily(self, start, end, series):
+            calls.append((start, end))
+            assert series == ("KOSPI", "KOSDAQ")
+            return []
+
+    monkeypatch.setattr(market_context, "KrxBenchmarkCollector", Collector)
+    monkeypatch.setattr(market_context, "load_project_env", lambda: None)
+    monkeypatch.setattr("sys.argv", ["market_context", "--from-date", start, "--to-date", end,
+                                    "--data-dir", str(tmp_path)])
+    market_context.main()
+    assert calls == chunks
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["collected_records"] == summary["saved_records"] == summary["skipped_rows"] == 0
+
+
+def test_cli_reversed_range_fails_without_fetch_or_save(monkeypatch, tmp_path):
+    collector = benchmarks.KrxBenchmarkCollector("fixture-key", Session())
+    monkeypatch.setattr(market_context, "KrxBenchmarkCollector", lambda: collector)
+    monkeypatch.setattr(market_context, "load_project_env", lambda: None)
+    monkeypatch.setattr("sys.argv", ["market_context", "--from-date", "20260904", "--to-date", "20260903",
+                                    "--data-dir", str(tmp_path)])
+    with pytest.raises(ValueError, match="ordered"):
+        market_context.main()
+    assert collector.session.calls == []
+    assert not (tmp_path / "market_context").exists()
+
+
+@pytest.mark.parametrize("end,now,message", [
+    ("20260905", NOW, "current and future"),
+    ("20260906", NOW, "current and future"),
+    ("20260904", datetime(2026, 9, 4, 22, 59, tzinfo=timezone.utc), "08:00"),
+])
+def test_cli_validates_full_range_and_publication_hour_before_any_chunk(monkeypatch, tmp_path, end, now, message):
+    session = Session()
+    collector = benchmarks.KrxBenchmarkCollector("fixture-key", session)
+    monkeypatch.setattr(benchmarks, "_now", lambda: now)
+    monkeypatch.setattr(market_context, "KrxBenchmarkCollector", lambda: collector)
+    monkeypatch.setattr(market_context, "load_project_env", lambda: None)
+    monkeypatch.setattr("sys.argv", ["market_context", "--from-date", "20150101", "--to-date", end,
+                                    "--data-dir", str(tmp_path)])
+    with pytest.raises(ValueError, match=message):
+        market_context.main()
+    assert session.calls == []
+    assert not (tmp_path / "market_context").exists()

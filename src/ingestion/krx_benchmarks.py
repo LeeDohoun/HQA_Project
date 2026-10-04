@@ -43,6 +43,19 @@ def _date(value: date | str) -> date:
     return datetime.strptime(value, "%Y%m%d" if len(value) == 8 else "%Y-%m-%d").date()
 
 
+def validate_benchmark_range(from_date: date | str, to_date: date | str) -> tuple[date, date]:
+    start, end, now = _date(from_date), _date(to_date), _aware(_now()).astimezone(KST)
+    if start > end or start < date(2010, 1, 4):
+        raise ValueError("benchmark range must be ordered and begin on or after 2010-01-04")
+    if end >= now.date():
+        raise ValueError("benchmark range must exclude current and future KST dates")
+    # The official specification gates the latest completed session until 08:00.
+    # Without a holiday calendar, defer collection rather than label unpublished data a holiday.
+    if now.hour < 8:
+        raise ValueError("benchmark collection requires 08:00 KST or later")
+    return start, end
+
+
 def _close(value: object) -> float:
     if isinstance(value, str):
         value = value.strip()
@@ -99,22 +112,22 @@ class KrxBenchmarkCollector:
             raise ValueError("KRX_OPEN_API_KEY or KRX_API_KEY is required for benchmark collection")
         self.api_key = key.strip()
         self.session = session if session is not None else requests.Session()
+        self.skipped_rows = 0
 
     def collect_daily(self, from_date: date | str, to_date: date | str,
-                      series: tuple[str, ...] = ("KOSPI", "KOSDAQ")) -> list[dict]:
-        start, end, now = _date(from_date), _date(to_date), _aware(_now()).astimezone(KST)
-        if start > end or start < date(2010, 1, 4):
-            raise ValueError("benchmark range must be ordered and begin on or after 2010-01-04")
-        if end >= now.date():
-            raise ValueError("benchmark range must exclude current and future KST dates")
-        # The official specification gates the latest completed session until 08:00.
-        # Without a holiday calendar, defer collection rather than label unpublished data a holiday.
-        if now.hour < 8:
-            raise ValueError("benchmark collection requires 08:00 KST or later")
+                      series: tuple[str, ...] = ("KOSPI", "KOSDAQ"),
+                      index_names: tuple[str, ...] | None = None) -> list[dict]:
+        """Return valid rows; skipped_rows counts invalid closes in this call, before filtering."""
+        self.skipped_rows = 0
+        start, end = validate_benchmark_range(from_date, to_date)
         if (not isinstance(series, (tuple, list)) or not series
                 or any(not isinstance(item, str) or item not in ENDPOINTS for item in series)
                 or len(set(series)) != len(series)):
             raise ValueError("benchmark series must be unique KOSPI/KOSDAQ names")
+        if index_names is not None and (not isinstance(index_names, (tuple, list)) or not index_names
+                or any(not isinstance(name, str) or not name.strip() for name in index_names)
+                or len(set(index_names)) != len(index_names)):
+            raise ValueError("index_names must be unique nonempty exact provider index names")
         records = []
         cursor = start
         while cursor <= end:
@@ -137,6 +150,8 @@ class KrxBenchmarkCollector:
                 if (not isinstance(payload, dict) or set(payload) != {"OutBlock_1"}
                         or not isinstance(payload["OutBlock_1"], list)):
                     raise ValueError("KRX benchmark response requires only an OutBlock_1 array")
+                if payload["OutBlock_1"] and collected < datetime.combine(cursor, time(15, 30), KST):
+                    raise ValueError("benchmark observation precedes the completed market close")
                 daily = {}
                 for raw in payload["OutBlock_1"]:
                     if not isinstance(raw, dict) or not {"BAS_DD", "IDX_NM", "CLSPRC_IDX"} <= raw.keys():
@@ -145,11 +160,19 @@ class KrxBenchmarkCollector:
                         raise ValueError("KRX benchmark BAS_DD does not match requested date")
                     if isinstance(raw["IDX_NM"], str) and self.api_key in raw["IDX_NM"]:
                         raise ValueError("KRX benchmark index name contains request credentials")
-                    row = _record(market, raw["IDX_NM"], cursor, _close(raw["CLSPRC_IDX"]), collected)
+                    if not isinstance(raw["IDX_NM"], str) or not raw["IDX_NM"].strip():
+                        raise ValueError("IDX_NM must be a nonempty exact provider index name")
+                    try:
+                        close = _close(raw["CLSPRC_IDX"])
+                    except ValueError:
+                        self.skipped_rows += 1
+                        continue
+                    row = _record(market, raw["IDX_NM"], cursor, close, collected)
                     previous = daily.setdefault(row["index_name"], row)
                     if previous != row:
                         raise ValueError("conflicting duplicate KRX benchmark index/date")
-                records.extend(daily[name] for name in sorted(daily))
+                records.extend(daily[name] for name in sorted(daily)
+                               if index_names is None or name in index_names)
             cursor += timedelta(days=1)
         return records
 
