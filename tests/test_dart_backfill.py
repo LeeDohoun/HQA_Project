@@ -509,19 +509,84 @@ def test_status_020_stops_cleanly_and_blocks_same_day_resume(tmp_path, where):
 
 
 @pytest.mark.parametrize("where", ["listing", "structured", "document"])
-@pytest.mark.parametrize("status", ["010", "014", "800"])
+@pytest.mark.parametrize("status", ["010", "011", "012", "021", "100", "101", "800", "900"])
 def test_provider_errors_stop_in_every_stage_without_marking_details_done(tmp_path, where, status, capsys):
     selected = row(1, title="주요사항보고서(교환사채권발행결정)" if where == "structured" else "단일판매ㆍ공급계약체결")
     error = {"status": status, "message": KEY}
-    payloads = ([error] if where == "listing" else [page(1, [selected]), {"status": "013"},
+    payloads = ([error] if where == "listing" else [page(1, [selected, row(2, title=selected["report_nm"])]), {"status": "013"},
         error if where == "structured" else f"<result><status>{status}</status><message>{KEY}</message></result>".encode()])
-    summary, _ = run(tmp_path, *payloads)
+    summary, session = run(tmp_path, *payloads)
     assert summary["status"] == "error" and f"status={status}" in summary["error"]
+    assert len(session.calls) == summary["requests_made"] == (1 if where == "listing" else 3)
+    assert quota(tmp_path)["2026-09-04"]["requests"] == summary["requests_made"]
+    assert summary["documents_not_found"] == 0
     assert not archive(tmp_path, "docs").exists()
     output = capsys.readouterr()
     assert KEY not in json.dumps(summary) + output.out + output.err
     if where != "listing":
         assert state(tmp_path)["completed_detail_rcept_nos"] == []
+        assert summary["known_pending_details"] == 2
+
+
+def test_status_014_in_listing_still_stops_the_run(tmp_path):
+    summary, session = run(tmp_path, {"status": "014"}, stage="list")
+    assert summary["status"] == "error" and "status=014" in summary["error"]
+    assert summary["documents_not_found"] == 0
+    assert len(session.calls) == summary["requests_made"] == 1
+    assert not archive(tmp_path).exists()
+
+
+@pytest.mark.parametrize("where", ["document_xml", "document_json", "structured"])
+def test_status_014_saves_empty_detail_continues_and_is_not_retried(tmp_path, where, capsys):
+    title = "주요사항보고서(전환사채권발행결정)" if where == "structured" else "단일판매ㆍ공급계약체결"
+    rows = [row(number, title=title) for number in (1, 2)]
+    run(tmp_path, page(1, rows), {"status": "013"}, stage="list")
+    error = {"status": "014", "message": KEY}
+    payloads = [f"<result><status>014</status><message>{KEY}</message></result>".encode()
+                if where == "document_xml" else error]
+    if where == "structured":
+        payloads.append({"status": "000", "list": [{"rcept_no": rows[1]["rcept_no"], "bd_tm": "2"}]})
+    payloads.append(document())
+    summary, session = run(tmp_path, *payloads, stage="details")
+    assert summary["status"] == "ok" and summary["details_saved"] == 2
+    assert summary["documents_not_found"] == summary["bodies_unavailable"] == 1
+    assert summary["known_pending_details"] == 0
+    assert len(session.calls) == summary["requests_made"] == (3 if where == "structured" else 2)
+    assert quota(tmp_path)["2026-09-04"] == {
+        "requests": 2 + summary["requests_made"], "provider_limited": False}
+    docs = read_rows(archive(tmp_path, "docs"))
+    error_type = "dart_014_structured_file_not_found" if where == "structured" else "dart_014_file_not_found"
+    assert docs[0]["content"] == ""
+    assert docs[0]["body_error_type"] == docs[0]["metadata"]["body_error_type"] == error_type
+    assert not docs[0]["metadata"]["has_body"] and not docs[0]["metadata"]["body_extracted"]
+    assert docs[1]["content"] == BODY.strip() and docs[1]["body_error_type"] == "success"
+    document_calls = [kwargs["params"]["rcept_no"] for url, kwargs in session.calls
+                      if url.endswith("document.xml")]
+    assert document_calls == [item["rcept_no"] for item in (rows[1:] if where == "structured" else rows)]
+    assert state(tmp_path)["completed_detail_rcept_nos"] == [item["rcept_no"] for item in rows]
+    output = capsys.readouterr()
+    assert KEY not in archive(tmp_path, "docs").read_text() + json.dumps(summary) + output.out + output.err
+    before = snapshot(tmp_path)
+    summary, session = run(tmp_path, stage="details", clock=FakeClock(START + timedelta(days=1)))
+    assert summary["status"] == "ok" and session.calls == []
+    assert summary["details_saved"] == summary["documents_not_found"] == summary["bodies_unavailable"] == 0
+    assert snapshot(tmp_path) == before
+
+
+def test_status_014_counts_toward_quota_and_resume_only_requests_pending_receipt(tmp_path):
+    rows = [row(number, title="단일판매ㆍ공급계약체결") for number in (1, 2)]
+    run(tmp_path, page(1, rows), {"status": "013"}, stage="list")
+    summary, session = run(tmp_path, {"status": "014"}, stage="details", max_requests=3)
+    assert summary["status"] == "quota_reached"
+    assert summary["details_saved"] == summary["documents_not_found"] == summary["known_pending_details"] == 1
+    assert len(session.calls) == summary["requests_made"] == 1
+    assert quota(tmp_path)["2026-09-04"]["requests"] == 3
+    assert state(tmp_path)["completed_detail_rcept_nos"] == [rows[0]["rcept_no"]]
+    summary, session = run(tmp_path, document(), stage="details", max_requests=3,
+                           clock=FakeClock(START + timedelta(days=1)))
+    assert summary["status"] == "ok" and summary["details_saved"] == 1
+    assert summary["documents_not_found"] == summary["known_pending_details"] == 0
+    assert len(session.calls) == 1 and session.calls[0][1]["params"]["rcept_no"] == rows[1]["rcept_no"]
 
 
 @pytest.mark.parametrize("payload", [{}, [], {"status": 0}, {"status": "013", "list": [row(1)]}])
@@ -534,6 +599,7 @@ def test_explicit_document_no_data_is_stored_as_empty_without_fabricated_body(tm
     summary, _ = run(tmp_path, page(1, [row(1, title="단일판매ㆍ공급계약체결")]), {"status": "013"},
                      b"<result><status>013</status><message>no data</message></result>")
     assert summary["status"] == "ok" and summary["bodies_unavailable"] == 1
+    assert summary["documents_not_found"] == 0
     doc = read_rows(archive(tmp_path, "docs"))[0]
     assert doc["content"] == "" and doc["body_error_type"] == "official_no_data"
     assert not doc["metadata"]["has_body"]

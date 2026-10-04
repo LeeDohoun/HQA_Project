@@ -158,6 +158,10 @@ class _QuotaReached(Exception):
     pass
 
 
+class _StructuredFileNotFound(Exception):
+    pass
+
+
 class DartBackfillCollector(DartDisclosureCollector):
     def __init__(self, api_key, directory, state, listings, *, session,
                  clock, sleeper, max_requests, request_interval, max_retries, timeout):
@@ -226,19 +230,21 @@ class DartBackfillCollector(DartDisclosureCollector):
             except Exception:
                 raise DartAPIError("DART transport failure") from None
 
-    def _payload(self, payload: dict) -> dict:
+    def _payload(self, payload: dict, *, allow_file_not_found=False) -> dict:
         if isinstance(payload, dict) and payload.get("status") == "020":
             self.quota["days"][self._request_day]["provider_limited"] = True
             _write_json(self.directory / "_quota.json", self.quota)
             raise _QuotaReached("provider_status_020")
+        if allow_file_not_found and isinstance(payload, dict) and payload.get("status") == "014":
+            return self._redacted(payload)
         return self._redacted(read_dart_payload(SimpleNamespace(json=lambda: payload)))
 
-    def _json_payload(self, response) -> dict:
+    def _json_payload(self, response, *, allow_file_not_found=False) -> dict:
         try:
             payload = response.json()
         except (ValueError, TypeError):
             raise DartAPIError("DART invalid JSON response") from None
-        return self._payload(payload)
+        return self._payload(payload, allow_file_not_found=allow_file_not_found)
 
     def _listing(self, day: str) -> list[dict]:
         items = {}
@@ -265,9 +271,13 @@ class DartBackfillCollector(DartDisclosureCollector):
             corp_code, day = item["corp_code"], item["rcept_dt"]
             key = (endpoint, corp_code, day, day)
             if key not in self._structured_cache:
-                self._structured_cache[key] = self._json_payload(self._request(
+                payload = self._json_payload(self._request(
                     f"https://opendart.fss.or.kr/api/{endpoint}.json",
-                    {"crtfc_key": self.api_key, "corp_code": corp_code, "bgn_de": day, "end_de": day}))
+                    {"crtfc_key": self.api_key, "corp_code": corp_code, "bgn_de": day, "end_de": day}),
+                    allow_file_not_found=True)
+                if payload["status"] == "014":
+                    raise _StructuredFileNotFound
+                self._structured_cache[key] = payload
             payload = self._structured_cache[key]
             if payload["status"] == "013":
                 continue
@@ -293,11 +303,13 @@ class DartBackfillCollector(DartDisclosureCollector):
                 except ElementTree.ParseError:
                     raise DartAPIError("DART invalid document status XML") from None
                 statuses = [node.text for node in root.iter() if node.tag.split("}")[-1] == "status"]
-                payload = self._payload({"status": statuses[0] if len(statuses) == 1 else None})
+                payload = self._payload({"status": statuses[0] if len(statuses) == 1 else None},
+                                        allow_file_not_found=True)
             else:
-                payload = self._json_payload(response)
-            if payload["status"] == "013":
-                return "", {"body_error_type": "official_no_data", "encoding_fixed": False,
+                payload = self._json_payload(response, allow_file_not_found=True)
+            if payload["status"] in {"013", "014"}:
+                error_type = "dart_014_file_not_found" if payload["status"] == "014" else "official_no_data"
+                return "", {"body_error_type": error_type, "encoding_fixed": False,
                             "mojibake_detected": False}
             raise DartAPIError("DART official document missing ZIP payload")
         try:
@@ -323,8 +335,14 @@ class DartBackfillCollector(DartDisclosureCollector):
     def _detail(self, item: dict) -> dict:
         if not item.get("stock_code"):
             raise DartAPIError("DART selected disclosure is missing stock_code")
-        structured = self._structured(item)
-        content, quality = self._document(item["rcept_no"])
+        try:
+            structured = self._structured(item)
+        except _StructuredFileNotFound:
+            structured = {}
+            content, quality = "", {"body_error_type": "dart_014_structured_file_not_found",
+                                    "encoding_fixed": False, "mojibake_detected": False}
+        else:
+            content, quality = self._document(item["rcept_no"])
         collected = _kst(self.clock()).isoformat()
         metadata = {"rcept_no": item["rcept_no"], "report_nm": item["report_nm"],
                     "rcept_dt": item["rcept_dt"], "corp_cls": item["corp_cls"],
@@ -348,7 +366,7 @@ class DartBackfillCollector(DartDisclosureCollector):
     def run(self, days: list[str], stage: str, categories=None) -> dict:
         summary = {"status": "ok", "dry_run": False, "stage": stage,
                    "listing_days_saved": 0, "listed_rows": 0, "details_saved": 0, "bodies_unavailable": 0,
-                   "skipped_missing_stock_code": 0}
+                   "skipped_missing_stock_code": 0, "documents_not_found": 0}
         try:
             if stage in {"all", "list"}:
                 for day in days:
@@ -396,6 +414,8 @@ class DartBackfillCollector(DartDisclosureCollector):
                         _write_json(self.directory / "_state.json", self.state)
                         summary["details_saved"] += 1
                         summary["bodies_unavailable"] += record["body_error_type"] != "success"
+                        summary["documents_not_found"] += record["body_error_type"] in {
+                            "dart_014_file_not_found", "dart_014_structured_file_not_found"}
         except _QuotaReached as error:
             summary.update(status="quota_reached", reason=str(error))
         except DartAPIError as error:
@@ -419,8 +439,8 @@ def backfill(from_date, to_date, *, stage="all", execute=False, data_dir=DEFAULT
     """Print a read-only plan by default; budgets count attempts across KST-day runs.
 
     `all` finishes the listing stage before details. `details` only uses saved
-    lists and reports unlisted dates. An explicit 013 document response is stored
-    as an empty, labelled body; invalid/failed requests remain pending.
+    lists and reports unlisted dates. Explicit 013 document and 014 detail responses
+    are stored as empty, labelled bodies; invalid/failed requests remain pending.
     Nonempty `categories` limit details in the given category order, then by date;
     excluded receipts remain pending. No categories preserves date-first processing.
     """
