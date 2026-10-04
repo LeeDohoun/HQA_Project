@@ -3,7 +3,7 @@ import os
 import shutil
 import subprocess
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -61,6 +61,104 @@ def test_catchup_weekend_gap_skips_saved_friday_and_weekend(tmp_path, capsys):
     report = json.loads(capsys.readouterr().out)
     assert report["planned"] == ["20260907"]
     assert report["skipped_existing"] == ["20260904"]
+
+
+@pytest.mark.parametrize("execute", [False, True])
+def test_catchup_retries_empty_weekday_before_later_saved_day(tmp_path, monkeypatch, capsys, execute):
+    daily(tmp_path, "20260907")
+    state = tmp_path / "market/krx_daily/_state.json"
+    write_json(state, {"empty_dates": ["20260904"]})
+    requested = []
+
+    def collect_day(self, day):
+        requested.append(day)
+        return [{"stock_code": "005930", "trade_date": "2026-09-04", "version": "recovered",
+                 "calendar_status": "verified", "collected_at": NOW.isoformat(), "available_at": NOW.isoformat()}]
+
+    monkeypatch.setattr(catchup.krx_market.KrxMarketCollector, "collect_day", collect_day)
+    catchup.main(["--data-dir", str(tmp_path)] + (["--execute"] if execute else []))
+    report = json.loads(capsys.readouterr().out)
+    assert (report["from_date"], report["to_date"]) == ("20260904", "20260907")
+    assert report["planned"] == ["20260904"] and report["skipped_existing"] == ["20260907"]
+    assert report["stale_empty_dates_not_retried"] == []
+    assert requested == (["20260904"] if execute else [])
+    assert report["fetched"] == report["saved_rows"] == int(execute)
+    assert (tmp_path / "market/krx_daily/2026/20260904.jsonl").exists() is execute
+    assert json.loads(state.read_text()) == {"empty_dates": [] if execute else ["20260904"]}
+
+
+@pytest.mark.parametrize("stored_day", ["20260907", "20260806"])
+@pytest.mark.parametrize("execute", [False, True])
+def test_catchup_stale_empty_date_is_reported_without_retry(tmp_path, monkeypatch, capsys, stored_day, execute):
+    daily(tmp_path, stored_day)
+    state = tmp_path / "market/krx_daily/_state.json"
+    write_json(state, {"empty_dates": ["20260807"]})
+    requested = []
+
+    def collect_day(self, day):
+        requested.append(day)
+        return []
+
+    monkeypatch.setattr(catchup.krx_market.KrxMarketCollector, "collect_day", collect_day)
+    catchup.main(["--data-dir", str(tmp_path)] + (["--execute"] if execute else []))
+    report = json.loads(capsys.readouterr().out)
+    assert report["from_date"] == stored_day and report["to_date"] == "20260907"
+    assert report["stale_empty_dates_not_retried"] == ["20260807"]
+    assert "20260807" not in report["planned"] and "20260807" not in requested
+    assert requested == (report["planned"] if execute else [])
+    assert report["fetched"] == (len(report["planned"]) if execute else 0)
+    assert "20260807" in json.loads(state.read_text())["empty_dates"]
+
+
+def test_catchup_holiday_stays_recorded_after_repeated_empty_responses(tmp_path, monkeypatch, capsys):
+    holiday = date(2026, 8, 17)
+    for offset in range(1, (NOW.date() - holiday).days):
+        day = holiday + timedelta(days=offset)
+        if day.weekday() < 5:
+            daily(tmp_path, day.strftime("%Y%m%d"))
+    state = tmp_path / "market/krx_daily/_state.json"
+    write_json(state, {"empty_dates": ["20260817"]})
+    original_state = state.read_bytes()
+    requested = []
+
+    def collect_day(self, day):
+        requested.append(day)
+        return []
+
+    monkeypatch.setattr(catchup.krx_market.KrxMarketCollector, "collect_day", collect_day)
+    for _ in range(2):
+        catchup.main(["--data-dir", str(tmp_path), "--execute"])
+        report = json.loads(capsys.readouterr().out)
+        assert report["planned"] == report["empty"] == ["20260817"]
+        assert report["fetched"] == 1 and report["saved_rows"] == 0
+        assert state.read_bytes() == original_state
+        assert not (tmp_path / "market/krx_daily/2026/20260817.jsonl").exists()
+    assert requested == ["20260817", "20260817"]
+
+
+@pytest.mark.parametrize("empty_day", ["20260901", "20260905", "20260908", "20260909"])
+def test_catchup_ignores_stored_weekend_current_and_future_empty_dates(tmp_path, monkeypatch, capsys, empty_day):
+    daily(tmp_path, "20260901")
+    daily(tmp_path, "20260907")
+    write_json(tmp_path / "market/krx_daily/_state.json", {"empty_dates": [empty_day]})
+    monkeypatch.setattr(catchup.krx_market.KrxMarketCollector, "collect_day",
+                        lambda *args: pytest.fail("Unexpected day requested"))
+    assert catchup.catchup_range(tmp_path, NOW.date()) == ("20260907", "20260907")
+    catchup.main(["--data-dir", str(tmp_path), "--execute"])
+    report = json.loads(capsys.readouterr().out)
+    assert report["planned"] == [] and report["fetched"] == 0
+    assert report["stale_empty_dates_not_retried"] == []
+
+
+def test_catchup_retries_empty_weekday_exactly_thirty_calendar_days_old(tmp_path):
+    daily(tmp_path, "20260907")
+    write_json(tmp_path / "market/krx_daily/_state.json", {"empty_dates": ["20260810"]})
+    assert catchup.catchup_range(tmp_path, date(2026, 9, 9)) == ("20260810", "20260908")
+
+
+def test_catchup_empty_store_retries_recent_empty_before_bootstrap_range(tmp_path):
+    write_json(tmp_path / "market/krx_daily/_state.json", {"empty_dates": ["20260817"]})
+    assert catchup.catchup_range(tmp_path, NOW.date()) == ("20260817", "20260907")
 
 
 def test_catchup_already_current_makes_no_requests(tmp_path, capsys):
