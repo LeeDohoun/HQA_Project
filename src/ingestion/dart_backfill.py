@@ -39,9 +39,16 @@ SELECTION_PATTERNS = (
 )
 
 
-def select_report(report_nm: str) -> bool:
+def detail_category(report_nm: str) -> str | None:
     title = re.sub(r"\s", "", report_nm)
-    return any(re.search(pattern, title) for _, pattern in SELECTION_PATTERNS)
+    for name, pattern in SELECTION_PATTERNS:
+        if re.search(pattern, title):
+            return name
+    return None
+
+
+def select_report(report_nm: str) -> bool:
+    return detail_category(report_nm) is not None
 
 
 def _date(value: str):
@@ -331,13 +338,14 @@ class DartBackfillCollector(DartDisclosureCollector):
                   "published_at": _date(item["rcept_dt"]).isoformat(), "stock_code": item["stock_code"],
                   "rcept_dt": item["rcept_dt"], "first_seen_at": None, "collected_at": collected,
                   "body_source": "official_api", "body_error_type": quality["body_error_type"],
+                  "selection_category": detail_category(item["report_nm"]),
                   "metadata": metadata}
         if len(content) > MAX_BODY_CHARACTERS:
             record["content"] = content[:MAX_BODY_CHARACTERS]
             record["body_truncated_at"] = metadata["body_truncated_at"] = MAX_BODY_CHARACTERS
         return self._redacted(record)
 
-    def run(self, days: list[str], stage: str) -> dict:
+    def run(self, days: list[str], stage: str, categories=None) -> dict:
         summary = {"status": "ok", "dry_run": False, "stage": stage,
                    "listing_days_saved": 0, "listed_rows": 0, "details_saved": 0, "bodies_unavailable": 0,
                    "skipped_missing_stock_code": 0}
@@ -359,10 +367,12 @@ class DartBackfillCollector(DartDisclosureCollector):
                 skipped = set(self.state["skipped_missing_stock_code_rcept_nos"])
                 skipped_path = self.directory / "skipped_missing_stock_code.jsonl"
                 skipped_rows = read_rows(skipped_path)
-                for day in days:
+                category_days = ((category, day) for category in categories or (None,) for day in days)
+                for category, day in category_days:
                     self._structured_cache.clear()
                     pending = [item for item in self.listings.get(day, [])
-                               if item["rcept_no"] not in completed and item["rcept_no"] not in skipped]
+                               if item["rcept_no"] not in completed and item["rcept_no"] not in skipped
+                               and (category is None or detail_category(item["report_nm"]) == category)]
                     if not pending:
                         continue
                     stored = read_rows(_path(self.directory, "docs", day))
@@ -405,12 +415,14 @@ class DartBackfillCollector(DartDisclosureCollector):
 
 def backfill(from_date, to_date, *, stage="all", execute=False, data_dir=DEFAULT_DATA_DIR,
              api_key=None, session=None, clock=None, sleeper=None, max_requests=DEFAULT_MAX_REQUESTS,
-             request_interval=0.2, max_retries=3, timeout=20) -> dict:
+             request_interval=0.2, max_retries=3, timeout=20, categories=None) -> dict:
     """Print a read-only plan by default; budgets count attempts across KST-day runs.
 
     `all` finishes the listing stage before details. `details` only uses saved
     lists and reports unlisted dates. An explicit 013 document response is stored
     as an empty, labelled body; invalid/failed requests remain pending.
+    Nonempty `categories` limit details in the given category order, then by date;
+    excluded receipts remain pending. No categories preserves date-first processing.
     """
     start, end = _date(from_date), _date(to_date)
     now = clock if clock is not None else lambda: datetime.now(KST)
@@ -418,6 +430,10 @@ def backfill(from_date, to_date, *, stage="all", execute=False, data_dir=DEFAULT
         raise ValueError("DART historical range must be ordered and end before today in Korea")
     if stage not in {"all", "list", "details"}:
         raise ValueError("DART stage must be all, list or details")
+    valid_categories = [name for name, _ in SELECTION_PATTERNS]
+    categories = tuple(dict.fromkeys(categories)) if categories is not None else ()
+    if any(name not in valid_categories for name in categories):
+        raise ValueError(f"DART unknown detail category; valid names: {', '.join(valid_categories)}")
     if type(max_requests) is not int or max_requests < 1:
         raise ValueError("DART max_requests must be a positive integer")
     if type(max_retries) is not int or max_retries < 1:
@@ -431,13 +447,20 @@ def backfill(from_date, to_date, *, stage="all", execute=False, data_dir=DEFAULT
         _, state, listings = _progress(directory, days)
         completed = (set(state["completed_detail_rcept_nos"])
                      | set(state["skipped_missing_stock_code_rcept_nos"]))
+        pending_by_category = dict.fromkeys(valid_categories, 0)
+        for rows in listings.values():
+            for item in rows:
+                if item["rcept_no"] not in completed:
+                    pending_by_category[detail_category(item["report_nm"])] += 1
         plan = {"status": "dry_run", "dry_run": True, "stage": stage,
                 "from_date": start.isoformat(), "to_date": end.isoformat(), "data_dir": str(directory),
                 "days_to_list": [day for day in days if day not in listings] if stage != "details" else [],
                 "unlisted_days": [day for day in days if day not in listings],
-                "known_pending_details": sum(select_report(item["report_nm"]) and
-                    item["rcept_no"] not in completed
-                    for rows in listings.values() for item in rows), "max_requests": max_requests,
+                "known_pending_details": sum(pending_by_category.values()),
+                "categories": list(categories) if categories else None,
+                "pending_details_by_category": pending_by_category,
+                "filtered_pending_details": sum(pending_by_category[name]
+                    for name in categories or valid_categories), "max_requests": max_requests,
                 "skipped_missing_stock_code": 0}
         print(json.dumps(plan, ensure_ascii=False))
         return plan
@@ -450,4 +473,4 @@ def backfill(from_date, to_date, *, stage="all", execute=False, data_dir=DEFAULT
             max_requests=max_requests, request_interval=request_interval, max_retries=max_retries, timeout=timeout)
         if state != previous:
             _write_json(directory / "_state.json", state)
-        return collector.run(days, stage)
+        return collector.run(days, stage, categories)

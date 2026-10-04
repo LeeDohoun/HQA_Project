@@ -19,6 +19,7 @@ def main() -> None:
     parser.add_argument("--from-date", required=True, help="YYYYMMDD or YYYY-MM-DD")
     parser.add_argument("--to-date", required=True, help="Last date, before today in Korea")
     parser.add_argument("--stage", choices=("all", "list", "details"), default="all")
+    parser.add_argument("--categories", help="Comma-separated detail categories in priority order")
     parser.add_argument("--max-requests", type=int, default=DEFAULT_MAX_REQUESTS,
                         help="Request cap per KST day, across runs (default: 18,999)")
     parser.add_argument("--data-dir", help="Data directory; dry-run default is the checkout's data directory")
@@ -35,7 +36,8 @@ def main() -> None:
             data_dir = get_project_root() / data_dir
     try:
         summary = backfill(args.from_date, args.to_date, stage=args.stage,
-            max_requests=args.max_requests, execute=args.execute, api_key=api_key, data_dir=data_dir)
+            max_requests=args.max_requests, execute=args.execute, api_key=api_key, data_dir=data_dir,
+            categories=[name.strip() for name in args.categories.split(",")] if args.categories is not None else None)
     except (ValueError, DartAPIError):
         # Exception text may originate in saved files or configuration; never echo it.
         print(json.dumps({"status": "error", "error": "DART backfill configuration or archive is invalid"}))

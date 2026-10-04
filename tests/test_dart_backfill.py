@@ -12,7 +12,7 @@ import requests
 
 from scripts.data import dart_backfill as cli
 from src.ingestion import dart_backfill as module
-from src.ingestion.dart_backfill import KST, MAX_BODY_CHARACTERS, backfill, select_report
+from src.ingestion.dart_backfill import KST, MAX_BODY_CHARACTERS, backfill, detail_category, select_report
 from src.ingestion.storage import read_rows
 
 
@@ -20,6 +20,17 @@ KEY = "fixture-private-key"
 DAY = "20230103"
 START = datetime(2026, 9, 4, 10, tzinfo=KST)
 BODY = "주요사항 이사회 결의에 따른 공시 본문입니다. 계약금액(원) 100,000,000 매출액대비(%) 12.5 " * 80
+CATEGORY_REPORTS = (
+    ("regulatory_risk", "불성실공시법인지정"),
+    ("convertible_bond", "주요사항보고서(전환사채권발행결정)"),
+    ("capital_raise", "주요사항보고서(유상증자결정)"),
+    ("buyback", "자사주소각"),
+    ("merger", "회사합병결정"),
+    ("contract", "단일판매ㆍ공급계약체결"),
+    ("dividend", "현금ㆍ현물배당결정"),
+    ("earnings", "영업(잠정)실적(공정공시)"),
+    ("bond_subtype", "전환청구권행사"),
+)
 
 
 @pytest.fixture(autouse=True)
@@ -233,6 +244,102 @@ def test_leaves_unrelated_reports_in_listing_only(title):
     assert not select_report(title)
 
 
+@pytest.mark.parametrize("title,category", [(title, name) for name, title in CATEGORY_REPORTS] + [
+    ("[기재정정]전환사채(해외전환사채포함)발행후만기전사채취득", "convertible_bond"),
+    ("불성실공시법인지정(전환사채)", "regulatory_risk"),
+    ("전환청구권행사에 따른 유상증자", "capital_raise"),
+    (" 영업 (잠정) 실적 (공정공시) ", "earnings"),
+    ("사업보고서 (2023.12)", None),
+])
+def test_detail_category_uses_the_first_selection_match(title, category):
+    assert detail_category(title) == category
+    assert select_report(title) == (category is not None)
+
+
+def test_every_detail_record_stores_its_selection_category(tmp_path):
+    rows = [row(number, title=title) for number, (_, title) in enumerate(CATEGORY_REPORTS, 1)]
+    payloads = [page(1, rows), {"status": "013"}]
+    for category, _ in CATEGORY_REPORTS:
+        if category in {"convertible_bond", "capital_raise"}:
+            payloads.append({"status": "013"})
+        payloads.append(b"<result><status>013</status></result>" if category == "earnings" else document())
+    summary, _ = run(tmp_path, *payloads)
+    assert summary["status"] == "ok" and summary["details_saved"] == len(rows)
+    assert summary["bodies_unavailable"] == 1
+    docs = read_rows(archive(tmp_path, "docs"))
+    assert {doc["metadata"]["rcept_no"]: doc["selection_category"] for doc in docs} == {
+        item["rcept_no"]: category for item, (category, _) in zip(rows, CATEGORY_REPORTS)}
+
+
+@pytest.mark.parametrize("stage", ["all", "details"])
+def test_category_filter_leaves_other_receipts_pending_without_skipping_them(tmp_path, stage):
+    rows = [row(1, title="영업(잠정)실적(공정공시)"), row(2, title="단일판매ㆍ공급계약체결"),
+            row(3, title="주요사항보고서(전환사채권발행결정)"), row(4, title="전환청구권행사"),
+            row(5, title="주요사항보고서(유상증자결정)"),
+            row(6, title="불성실공시법인지정", stock_code="")]
+    categories = ["contract", "convertible_bond", "bond_subtype", "capital_raise"]
+    summary, session = run(tmp_path, page(1, rows), {"status": "013"}, stage="list", categories=categories)
+    assert summary["listed_rows"] == len(rows) and summary["known_pending_details"] == len(rows)
+    assert len(session.calls) == 2 and read_rows(archive(tmp_path)) == rows
+    listing_bytes = archive(tmp_path).read_bytes()
+    summary, session = run(tmp_path, document(), {"status": "013"}, document(), document(),
+                           {"status": "013"}, document(), stage=stage, categories=categories)
+    assert summary["status"] == "ok" and summary["details_saved"] == 4
+    assert summary["known_pending_details"] == 2 and summary["skipped_missing_stock_code"] == 0
+    assert len(session.calls) == 6
+    assert state(tmp_path)["completed_detail_rcept_nos"] == [item["rcept_no"] for item in rows[1:5]]
+    assert state(tmp_path)["skipped_missing_stock_code_rcept_nos"] == []
+    assert not (root(tmp_path) / "skipped_missing_stock_code.jsonl").exists()
+    assert archive(tmp_path).read_bytes() == listing_bytes
+    assert [doc["selection_category"] for doc in read_rows(archive(tmp_path, "docs"))] == categories
+    before = snapshot(tmp_path)
+    summary, session = run(tmp_path, stage=stage, categories=categories)
+    assert summary["status"] == "ok" and summary["known_pending_details"] == 2
+    assert summary["details_saved"] == 0 and session.calls == [] and snapshot(tmp_path) == before
+    summary, session = run(tmp_path, document(), stage="details", categories=["earnings"])
+    assert summary["details_saved"] == 1 and summary["known_pending_details"] == 1
+    assert session.calls[0][1]["params"]["rcept_no"] == rows[0]["rcept_no"]
+    assert state(tmp_path)["skipped_missing_stock_code_rcept_nos"] == []
+
+
+def test_category_priority_precedes_date_order_across_days(tmp_path):
+    next_day = "20230104"
+    first_rows = [row(1, title="단일판매ㆍ공급계약체결"),
+                  row(2, title="현금ㆍ현물배당결정"), row(3, title="실적발표")]
+    next_rows = [row(1, day=next_day, title="현금ㆍ현물배당결정"),
+                 row(2, day=next_day, title="실적발표"),
+                 row(3, day=next_day, title="단일판매ㆍ공급계약체결")]
+    run(tmp_path, page(1, first_rows), {"status": "013"}, page(1, next_rows), {"status": "013"},
+        stage="list", to_date=next_day)
+    summary, session = run(tmp_path, *[document()] * 6, stage="details", to_date=next_day,
+                           categories=["earnings", "contract", "dividend"])
+    assert summary["status"] == "ok" and summary["details_saved"] == 6
+    assert [call[1]["params"]["rcept_no"] for call in session.calls] == [
+        item["rcept_no"] for item in (first_rows[2], next_rows[1], first_rows[0], next_rows[2],
+                                      first_rows[1], next_rows[0])]
+
+
+@pytest.mark.parametrize("categories", [None, [], (), set()])
+def test_no_category_filter_preserves_existing_detail_order(tmp_path, categories):
+    rows = [row(1, title="실적발표"), row(2, title="단일판매ㆍ공급계약체결")]
+    summary, session = run(tmp_path, page(1, rows), {"status": "013"}, document(), document(),
+                           categories=categories)
+    assert summary["status"] == "ok" and summary["details_saved"] == 2
+    assert [call[1]["params"]["rcept_no"] for call in session.calls[2:]] == [
+        item["rcept_no"] for item in rows]
+
+
+@pytest.mark.parametrize("execute", [False, True])
+def test_unknown_category_lists_valid_names_before_requests_or_writes(tmp_path, execute):
+    session = FakeSession()
+    with pytest.raises(ValueError, match="unknown detail category") as error:
+        backfill(DAY, DAY, execute=execute, api_key=KEY, session=session, clock=FakeClock(),
+                 data_dir=tmp_path, categories=["contract", "unknown_category"])
+    assert "valid names:" in str(error.value)
+    assert all(name in str(error.value) for name, _ in module.SELECTION_PATTERNS)
+    assert session.calls == [] and list(tmp_path.iterdir()) == []
+
+
 def test_structured_rows_match_receipts_and_cache_while_every_document_is_requested(tmp_path):
     rows = [row(n, title="주요사항보고서(전환사채권발행결정)") for n in (1, 2)]
     structured = [{"rcept_no": row(99)["rcept_no"], "bd_tm": "wrong receipt"},
@@ -339,6 +446,40 @@ def test_quota_resumes_only_unfinished_details_and_rerun_is_idempotent(tmp_path)
     summary, session = run(tmp_path, max_requests=3, clock=FakeClock(START + timedelta(days=1)))
     assert summary["status"] == "ok" and summary["requests_made"] == 0 and session.calls == []
     assert snapshot(tmp_path) == before
+
+
+def test_category_quota_stop_resumes_mid_category_after_completing_earlier_categories(tmp_path):
+    next_day = "20230104"
+    first_rows = [row(1, title="실적발표"), row(2, title="단일판매ㆍ공급계약체결")]
+    next_rows = [row(1, day=next_day, title="실적발표"),
+                 row(2, day=next_day, title="단일판매ㆍ공급계약체결"),
+                 row(3, day=next_day, title="불성실공시법인지정", stock_code="")]
+    run(tmp_path, page(1, first_rows), {"status": "013"}, page(1, next_rows), {"status": "013"},
+        stage="list", to_date=next_day)
+    options = {"stage": "details", "to_date": next_day, "max_requests": 3,
+               "categories": ["contract", "earnings"]}
+    clock = FakeClock(START + timedelta(days=1))
+    summary, session = run(tmp_path, document(), document(), document(), clock=clock, **options)
+    assert summary["status"] == "quota_reached" and summary["details_saved"] == 3
+    assert summary["known_pending_details"] == 2 and summary["skipped_missing_stock_code"] == 0
+    completed = [first_rows[1]["rcept_no"], next_rows[1]["rcept_no"], first_rows[0]["rcept_no"]]
+    assert [call[1]["params"]["rcept_no"] for call in session.calls] == completed
+    assert state(tmp_path)["completed_detail_rcept_nos"] == sorted(completed)
+    assert state(tmp_path)["skipped_missing_stock_code_rcept_nos"] == []
+    before = snapshot(tmp_path)
+    summary, session = run(tmp_path, clock=clock, **options)
+    assert summary["status"] == "quota_reached" and session.calls == []
+    assert snapshot(tmp_path) == before
+    clock = FakeClock(START + timedelta(days=2))
+    summary, session = run(tmp_path, document(), clock=clock, **options)
+    assert summary["status"] == "ok" and summary["details_saved"] == 1
+    assert summary["known_pending_details"] == 1 and summary["skipped_missing_stock_code"] == 0
+    assert len(session.calls) == 1 and session.calls[0][1]["params"]["rcept_no"] == next_rows[0]["rcept_no"]
+    assert state(tmp_path)["completed_detail_rcept_nos"] == sorted(completed + [next_rows[0]["rcept_no"]])
+    assert state(tmp_path)["skipped_missing_stock_code_rcept_nos"] == []
+    before = snapshot(tmp_path)
+    summary, session = run(tmp_path, clock=clock, **options)
+    assert summary["status"] == "ok" and session.calls == [] and snapshot(tmp_path) == before
 
 
 @pytest.mark.parametrize("where", ["listing", "structured", "document"])
@@ -552,6 +693,8 @@ def test_dry_run_prints_plan_without_env_session_requests_or_files(tmp_path, cap
                     session=session, clock=FakeClock())
     assert plan["status"] == "dry_run" and plan["days_to_list"] == ["20230101", "20230102", "20230103"]
     assert plan["known_pending_details"] == 0
+    assert plan["pending_details_by_category"] == dict.fromkeys((name for name, _ in CATEGORY_REPORTS), 0)
+    assert plan["filtered_pending_details"] == 0
     assert plan["skipped_missing_stock_code"] == 0
     assert not directory.exists() and session.calls == []
     output = capsys.readouterr()
@@ -569,6 +712,33 @@ def test_dry_run_counts_saved_pending_details_without_writes(tmp_path, capsys, s
     assert plan["unlisted_days"] == ["20230104"]
     assert plan["skipped_missing_stock_code"] == 0 and session.calls == []
     assert snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize("categories,filtered_count", [
+    (None, 9), ([], 9), (["contract", "convertible_bond", "bond_subtype", "capital_raise"], 4),
+    (["contract"], 0),
+])
+def test_dry_run_counts_all_categories_and_filter_without_requests(tmp_path, capsys, categories, filtered_count):
+    rows = [row(number, title=title, stock_code="" if category == "buyback" else "005930")
+            for number, (category, title) in enumerate(CATEGORY_REPORTS, 1)]
+    rows += [row(10, title="단일판매ㆍ공급계약체결"), row(11, title="실적발표"),
+             row(12, title="전환청구권행사", stock_code="")]
+    run(tmp_path, page(1, rows), {"status": "013"}, stage="list")
+    run(tmp_path, document(), document(), stage="details", categories=["contract"])
+    run(tmp_path, stage="details", categories=["buyback"])
+    before = snapshot(tmp_path)
+    session = FakeSession()
+    plan = backfill(DAY, "20230104", stage="details", categories=categories, data_dir=tmp_path,
+                    clock=FakeClock(), session=session)
+    expected = dict.fromkeys((name for name, _ in CATEGORY_REPORTS), 1)
+    expected.update(contract=0, buyback=0, earnings=2, bond_subtype=2)
+    assert plan["pending_details_by_category"] == expected
+    assert plan["known_pending_details"] == sum(expected.values()) == 9
+    assert plan["filtered_pending_details"] == filtered_count
+    assert plan["categories"] == (categories or None)
+    assert plan["unlisted_days"] == ["20230104"] and plan["days_to_list"] == []
+    assert session.calls == [] and snapshot(tmp_path) == before
+    assert json.loads(capsys.readouterr().out) == plan
 
 
 def test_details_stage_only_reads_existing_listings(tmp_path):
@@ -643,10 +813,12 @@ def test_cli_dry_run_does_not_even_read_environment_variables(tmp_path, monkeypa
 
     monkeypatch.setattr(cli, "os", SimpleNamespace(getenv=denied))
     monkeypatch.setattr("sys.argv", ["dart_backfill", "--from-date", DAY, "--to-date", DAY,
-                                    "--stage", "list", "--data-dir", str(tmp_path / "cli-data")])
+                                    "--stage", "list", "--data-dir", str(tmp_path / "cli-data"),
+                                    "--categories", "contract, convertible_bond,bond_subtype,capital_raise"])
     cli.main()
     summary = json.loads(capsys.readouterr().out)
     assert summary["status"] == "dry_run" and summary["days_to_list"] == [DAY]
+    assert summary["categories"] == ["contract", "convertible_bond", "bond_subtype", "capital_raise"]
     assert not (tmp_path / "cli-data").exists()
 
 
