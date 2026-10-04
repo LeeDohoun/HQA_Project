@@ -429,17 +429,128 @@ def test_invalid_payload_and_transport_errors_are_redacted_and_remain_pending(tm
     assert json.loads((root(tmp_path) / "_quota.json").read_text())["days"]["2026-10-05"]["requests"] == 1
 
 
-@pytest.mark.parametrize("field,value", [
-    ("corp_code", "99999999"), ("reprt_code", "11012"), ("bsns_year", "2023"),
-    ("fs_div", "BAD"), ("rcept_no", "20240230000001"), ("account_nm", None),
-    ("fs_div", []), ("corp_code", []), ("currency", []), ("thstrm_dt", []),
+@pytest.mark.parametrize("field,value,reason", [
+    ("corp_code", "99999999", "corp_not_in_batch"), ("corp_code", [], "corp_not_in_batch"),
+    ("reprt_code", "11012", "reprt_code"), ("bsns_year", "2023", "bsns_year"),
+    ("bsns_year", 2023, "bsns_year"), ("fs_div", "BAD", "fs_div"), ("fs_div", [], "fs_div"),
+    ("account_nm", None, "account_nm"), ("account_nm", "  ", "account_nm"),
+    ("currency", [], "currency_type"), ("thstrm_dt", 123, "thstrm_dt_type"),
 ])
-def test_a_malformed_row_prevents_partial_batch_publication(tmp_path, field, value):
+def test_a_malformed_row_is_skipped_and_valid_accounts_are_saved(tmp_path, field, value, reason):
     rows = filing("11013")
     rows[-1][field] = value
+    summary, _ = run(tmp_path, payload(*rows), *[{"status": "013"}] * 3)
+    assert summary["status"] == "ok" and summary["pending_requests"] == 0
+    assert summary["records_saved"] == 1 and summary["skipped_rows"] == {reason: 1}
+    assert summary["batches_with_all_rows_skipped"] == []
+    sample = summary["skipped_row_samples"][reason][0]
+    assert sample == {"field": field, "type": type(value).__name__, "value": value,
+        "corp_code": rows[-1]["corp_code"], "reprt_code": rows[-1]["reprt_code"],
+        "bsns_year": rows[-1]["bsns_year"]}
+    stored = read_rows(archive(tmp_path))[0]
+    assert stored["revenue"] == 100 and stored["operating_income"] == 10
+    assert stored["net_income"] is None and stored["missing_reasons"] == {"net_income": "missing_account"}
+    log = read_rows(root(tmp_path) / "_skipped_rows.jsonl")
+    assert len(log) == 1
+    assert log[0]["skipped_rows"] == summary["skipped_rows"]
+    assert log[0]["skipped_row_samples"] == summary["skipped_row_samples"]
+
+
+def test_malformed_receipt_remains_fatal(tmp_path):
+    rows = filing("11013")
+    rows[-1]["rcept_no"] = "20240230000001"
     summary, _ = run(tmp_path, payload(*rows))
     assert summary["status"] == "error" and summary["pending_requests"] == 4
     assert not archive(tmp_path).exists()
+
+
+def test_all_skipped_batch_is_completed_and_listed_on_resume(tmp_path):
+    rows = [{**row, "fs_div": "BAD"} for row in filing("11013")]
+    summary, _ = run(tmp_path, payload(*rows), *[{"status": "013"}] * 3)
+    state = json.loads((root(tmp_path) / "_state.json").read_text())
+    skipped = summary["batches_with_all_rows_skipped"]
+    assert summary["status"] == "ok" and summary["pending_requests"] == 0
+    assert summary["records_saved"] == 0 and summary["skipped_rows"] == {"fs_div": 3}
+    assert len(skipped) == 1 and skipped[0].startswith("2024_11013_")
+    assert state["batches_with_all_rows_skipped"] == skipped
+    assert skipped[0] in state["completed_batches"]
+    assert archive(tmp_path).exists() and read_rows(archive(tmp_path)) == []
+    resumed, session = run(tmp_path)
+    assert session.calls == [] and resumed["batches_with_all_rows_skipped"] == skipped
+    assert resumed["skipped_rows"] == resumed["skipped_row_samples"] == {}
+    assert len(read_rows(root(tmp_path) / "_skipped_rows.jsonl")) == 1
+
+
+@pytest.mark.parametrize("retry_all", [False, True])
+def test_retry_batches_requests_completed_batches_and_clears_skipped_marker(tmp_path, retry_all):
+    rows = [{**row, "fs_div": "BAD"} for row in filing("11013")]
+    first, _ = run(tmp_path, payload(*rows), *[{"status": "013"}] * 3)
+    retry = [] if retry_all else first["batches_with_all_rows_skipped"]
+    responses = [payload(*filing("11013"))] + ([{"status": "013"}] * 3 if retry_all else [])
+    summary, session = run(tmp_path, *responses, retry_batches=retry)
+    assert summary["status"] == "ok" and summary["pending_requests"] == 0
+    assert summary["requests_made"] == len(session.calls) == (4 if retry_all else 1)
+    assert summary["records_saved"] == 1 and summary["batches_with_all_rows_skipped"] == []
+    assert read_rows(archive(tmp_path))[0]["revenue"] == 100
+    assert json.loads((root(tmp_path) / "_state.json").read_text())["batches_with_all_rows_skipped"] == []
+    resumed, session = run(tmp_path)
+    assert resumed["requests_made"] == 0 and session.calls == []
+
+
+def test_skipped_samples_are_bounded_per_reason_per_run_redacted_and_appended(tmp_path, capsys):
+    base = filing("11013")[0]
+    rows = [{**base, "account_nm": {"number": i, "text": KEY, "api_key": KEY,
+        "url": f"{module.URL}?crtfc_key={KEY}"}} for i in range(25)]
+    rows.extend({**base, "currency": i} for i in range(25))
+    rows.append({**base, "fs_div": "BAD", "currency": 42})
+    first, _ = run(tmp_path, payload(*rows), *[{"status": "013"}] * 3)
+    assert first["skipped_rows"] == {"account_nm": 25, "currency_type": 25, "fs_div": 1}
+    assert {reason: len(samples) for reason, samples in first["skipped_row_samples"].items()} == {
+        "account_nm": 20, "currency_type": 20, "fs_div": 1}
+    sample = first["skipped_row_samples"]["account_nm"][0]
+    assert sample["type"] == "dict" and sample["value"] == {
+        "number": 0, "text": "[REDACTED]", "url": "[REDACTED_URL]"}
+    second, _ = run(tmp_path, payload(*rows), retry_batches=first["batches_with_all_rows_skipped"])
+    log = read_rows(root(tmp_path) / "_skipped_rows.jsonl")
+    assert len(log) == 2 and log[0]["skipped_rows"] == log[1]["skipped_rows"] == first["skipped_rows"]
+    assert log[0]["skipped_row_samples"] == first["skipped_row_samples"]
+    assert log[1]["skipped_row_samples"] == second["skipped_row_samples"]
+    saved = "".join(path.read_text() for path in root(tmp_path).iterdir())
+    output = saved + json.dumps(first) + json.dumps(second) + capsys.readouterr().out
+    assert KEY not in output and module.URL not in output and "crtfc_key" not in output
+
+
+def test_failed_retry_stays_pending_and_preserves_existing_completion(tmp_path):
+    run(tmp_path, *[{"status": "013"}] * 4)
+    summary, _ = run(tmp_path, {"status": "000", "list": []}, retry_batches=[])
+    assert summary["status"] == "error" and summary["pending_requests"] == 4
+    assert len(json.loads((root(tmp_path) / "_state.json").read_text())["completed_batches"]) == 4
+
+
+def test_retry_all_only_refreshes_requested_years_and_dry_run_does_not_write(tmp_path, capsys):
+    initial = FakeSession(*[{"status": "013"}] * 8)
+    backfill(2024, 2025, execute=True, api_key=KEY, session=initial, data_dir=tmp_path,
+        universe_source=UNIVERSE, clock=lambda: START)
+    before = {path.name: path.read_text() for path in root(tmp_path).iterdir()}
+    planned = backfill(2025, 2025, data_dir=tmp_path, universe_source=UNIVERSE, retry_batches=["all"])
+    assert planned["pending_requests"] == 4
+    assert {path.name: path.read_text() for path in root(tmp_path).iterdir()} == before
+    assert json.loads(capsys.readouterr().out) == planned
+    session = FakeSession(*[{"status": "013"}] * 4)
+    summary = backfill(2025, 2025, execute=True, api_key=KEY, session=session, data_dir=tmp_path,
+        universe_source=UNIVERSE, clock=lambda: START, retry_batches=["all"])
+    assert summary["status"] == "ok" and summary["pending_requests"] == 0
+    assert summary["requests_made"] == len(session.calls) == 4
+    assert {kwargs["params"]["bsns_year"] for _, kwargs in session.calls} == {"2025"}
+    state = json.loads((root(tmp_path) / "_state.json").read_text())
+    assert len(state["completed_batches"]) == 8
+
+
+def test_skipped_diagnostics_are_written_even_if_a_later_batch_is_fatal(tmp_path):
+    rows = [{**row, "fs_div": "BAD"} for row in filing("11013")]
+    summary, _ = run(tmp_path, payload(*rows), {"status": "000", "list": []})
+    assert summary["status"] == "error" and summary["pending_requests"] == 3
+    assert read_rows(root(tmp_path) / "_skipped_rows.jsonl")[0]["skipped_rows"] == {"fs_div": 3}
 
 
 def test_key_is_redacted_from_raw_fields_archives_and_checkpoints(tmp_path, capsys):
@@ -545,3 +656,42 @@ def test_cli_execute_loads_env_and_reports_failure_without_key(monkeypatch, tmp_
     load_env.assert_called_once_with()
     collect.assert_called_once_with(2015, 2016, execute=True, max_requests=3000, api_key=KEY, data_dir=tmp_path)
     assert KEY not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("selection", ["listed", "all", "bare"])
+def test_module_cli_retry_batches_re_requests_completed_jobs(monkeypatch, tmp_path, capsys, selection):
+    rows = [{**row, "account_nm": None} for row in filing("11013")]
+    first, _ = run(tmp_path, payload(*rows), *[{"status": "013"}] * 3)
+    options = first["batches_with_all_rows_skipped"] if selection == "listed" else (["all"] if selection == "all" else [])
+    session = FakeSession(payload(*filing("11013")), *([{"status": "013"}] * 3 if selection != "listed" else []))
+    load_env = Mock()
+    monkeypatch.setattr("src.config.settings.load_project_env", load_env)
+    monkeypatch.setenv("DART_API_KEY", KEY)
+    monkeypatch.setenv("HQA_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(sys, "argv", ["dart_quarterly", "--from-year", "2024", "--to-year", "2024",
+        "--execute", "--retry-batches", *options])
+
+    def offline_backfill(*args, **kwargs):
+        return backfill(*args, **kwargs, session=session, universe_source=UNIVERSE, clock=lambda: START)
+
+    monkeypatch.setattr(module, "backfill", offline_backfill)
+    module.main()
+    load_env.assert_called_once_with()
+    output = capsys.readouterr().out
+    summary = json.loads(output)
+    assert summary["status"] == "ok" and summary["pending_requests"] == 0
+    assert summary["batches_with_all_rows_skipped"] == [] and summary["records_saved"] == 1
+    assert summary["requests_made"] == len(session.calls) == (1 if selection == "listed" else 4)
+    assert KEY not in output
+
+
+def test_module_cli_dry_run_passes_retry_option_without_loading_env(monkeypatch, capsys):
+    monkeypatch.setenv("HQA_DATA_DIR", "/must-not-use-env-in-dry-run")
+    monkeypatch.setenv("DART_API_KEY", KEY)
+    monkeypatch.setattr(sys, "argv", ["dart_quarterly", "--from-year", "2025", "--to-year", "2026", "--retry-batches"])
+    collect = Mock(return_value={"status": "dry_run"})
+    monkeypatch.setattr(module, "backfill", collect)
+    module.main()
+    collect.assert_called_once_with(2025, 2026, execute=False, max_requests=3000, api_key=None,
+        data_dir=module.DEFAULT_DATA_DIR, retry_batches=[])
+    assert capsys.readouterr().out == ""

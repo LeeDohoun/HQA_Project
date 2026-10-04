@@ -134,7 +134,20 @@ def _period_months(row: dict):
     return (end.year - start.year) * 12 + end.month - start.month + 1
 
 
-def _records(payload: dict, year: int, report: str, batch: list[str], universe: dict) -> list[dict]:
+def _sample_value(value):
+    if isinstance(value, dict):
+        return {_sample_value(key): _sample_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_sample_value(item) for item in value]
+    if isinstance(value, str):
+        return re.sub(r"https?://\S+", "[REDACTED_URL]", value)
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
+    return value
+
+
+def _records(payload: dict, year: int, report: str, batch: list[str], universe: dict,
+             diagnostics: dict) -> list[dict]:
     if payload["status"] == "013":
         return []
     rows = payload.get("list")
@@ -142,13 +155,25 @@ def _records(payload: dict, year: int, report: str, batch: list[str], universe: 
         raise DartAPIError("DART invalid quarterly account list")
     groups = defaultdict(list)
     for row in rows:
-        if (not isinstance(row.get("corp_code"), str) or row["corp_code"] not in batch
-                or not isinstance(row.get("fs_div"), str) or row["fs_div"] not in {"CFS", "OFS"}
-                or str(row.get("bsns_year")) != str(year) or row.get("reprt_code") != report
-                or not isinstance(row.get("account_nm"), str) or not row["account_nm"].strip()
-                or row.get("currency") is not None and not isinstance(row["currency"], str)
-                or row.get("thstrm_dt") is not None and not isinstance(row["thstrm_dt"], str)):
-            raise DartAPIError("DART malformed quarterly account row")
+        checks = [
+            ("corp_not_in_batch", "corp_code", not isinstance(row.get("corp_code"), str) or row["corp_code"] not in batch),
+            ("fs_div", "fs_div", not isinstance(row.get("fs_div"), str) or row["fs_div"] not in {"CFS", "OFS"}),
+            ("bsns_year", "bsns_year", str(row.get("bsns_year")) != str(year)),
+            ("reprt_code", "reprt_code", row.get("reprt_code") != report),
+            ("account_nm", "account_nm", not isinstance(row.get("account_nm"), str) or not row["account_nm"].strip()),
+            ("currency_type", "currency", row.get("currency") is not None and not isinstance(row["currency"], str)),
+            ("thstrm_dt_type", "thstrm_dt", row.get("thstrm_dt") is not None and not isinstance(row["thstrm_dt"], str)),
+        ]
+        failure = next(((reason, field) for reason, field, invalid in checks if invalid), None)
+        if failure is not None:
+            reason, field = failure
+            counts = diagnostics["skipped_rows"]
+            counts[reason] = counts.get(reason, 0) + 1
+            samples = diagnostics["skipped_row_samples"].setdefault(reason, [])
+            if len(samples) < 20:
+                samples.append(_sample_value({"field": field, "type": type(row.get(field)).__name__,
+                    "value": row.get(field), **{name: row.get(name) for name in ("corp_code", "reprt_code", "bsns_year")}}))
+            continue
         try:
             _filing_date(row.get("rcept_no"))
         except ValueError:
@@ -254,14 +279,18 @@ class _QuotaReached(Exception):
     pass
 
 
-def _state(directory: Path) -> set[str]:
-    values = _read_json(directory / "_state.json", {"completed_batches": []}).get("completed_batches")
+def _state(directory: Path) -> tuple[set[str], set[str]]:
+    state = _read_json(directory / "_state.json", {"completed_batches": []})
+    values = state.get("completed_batches")
     if not isinstance(values, list) or any(not isinstance(value, str) or not re.fullmatch(r"[0-9]{4}_110(?:11|12|13|14)_[0-9a-f]{64}", value) for value in values):
         raise ValueError("DART invalid completed quarterly batches")
     for value in values:
         if not (directory / f"{'_'.join(value.split('_')[:2])}.jsonl").is_file():
             raise ValueError("DART completed quarterly archive is missing")
-    return set(values)
+    skipped = state.get("batches_with_all_rows_skipped", [])
+    if not isinstance(skipped, list) or any(not isinstance(value, str) or value not in values for value in skipped):
+        raise ValueError("DART invalid skipped quarterly batches")
+    return set(values), set(skipped)
 
 
 def _quota(directory: Path) -> dict:
@@ -307,7 +336,8 @@ def _publish(directory: Path, year: int, report: str, records: list[dict]) -> in
 
 def backfill(from_year: int, to_year: int, *, execute=False, max_requests=DEFAULT_MAX_REQUESTS,
              data_dir=DEFAULT_DATA_DIR, api_key=None, session=None, clock=None,
-             corp_codes_path=DEFAULT_CORP_CODES, listing_dir=None, universe_source=None) -> dict:
+             corp_codes_path=DEFAULT_CORP_CODES, listing_dir=None, universe_source=None,
+             retry_batches=None) -> dict:
     """Print a read-only plan by default; execution reserves each KST-day attempt.
 
     Completed batches, including 013, are skipped. Batch identity hashes its
@@ -315,7 +345,8 @@ def backfill(from_year: int, to_year: int, *, execute=False, max_requests=DEFAUL
     to different companies. No retries are implicit. The endpoint has no receipt
     selector: preserve all returned/saved corrections, but this collector cannot
     recover an original version that OpenDART no longer returns. Future reports
-    returning 013 are also completed; refreshing them needs checkpoint removal.
+    returning 013 are also completed. retry_batches lists completed batch IDs to
+    refresh; an empty list or ["all"] refreshes all completed jobs in these years.
     """
     if type(from_year) is not int or type(to_year) is not int or not 2015 <= from_year <= to_year <= 9999:
         raise ValueError("DART quarterly years must be ordered integers starting in 2015")
@@ -330,11 +361,19 @@ def backfill(from_year: int, to_year: int, *, execute=False, max_requests=DEFAUL
     hashes = [hashlib.sha256(",".join(batch).encode()).hexdigest() for batch in batches]
     jobs = [(year, report, batch, f"{year}_{report}_{digest}") for year in range(from_year, to_year + 1)
             for report in REPORTS for batch, digest in zip(batches, hashes)]
-    completed = _state(directory)
+    completed, all_skipped = _state(directory)
+    job_keys = {job[3] for job in jobs}
+    if retry_batches is not None and (not isinstance(retry_batches, list)
+            or any(not isinstance(key, str) for key in retry_batches)):
+        raise ValueError("DART retry_batches must be a list of completed batch IDs")
+    retry = (completed & job_keys if retry_batches in ([], ["all"]) else set(retry_batches or []))
+    if not retry.issubset(completed & job_keys):
+        raise ValueError("DART retry batches must be completed batches in the requested years and universe")
     plan = {"status": "dry_run", "dry_run": True, "from_year": from_year, "to_year": to_year,
             "companies": len(universe), "stock_codes": sum(map(len, universe.values())),
             "batches": len(batches), "reports": (to_year - from_year + 1) * 4,
-            "requests": len(jobs), "pending_requests": sum(job[3] not in completed for job in jobs),
+            "requests": len(jobs), "pending_requests": len((job_keys - completed) | retry),
+            "batches_with_all_rows_skipped": sorted(all_skipped & job_keys),
             "max_requests": max_requests, "data_dir": str(directory)}
     if not execute:
         print(json.dumps(plan, ensure_ascii=False))
@@ -344,12 +383,15 @@ def backfill(from_year: int, to_year: int, *, execute=False, max_requests=DEFAUL
     now = clock if clock is not None else lambda: datetime.now(KST)
     owned_session = session is None
     summary = {**plan, "status": "ok", "dry_run": False, "requests_made": 0, "records_saved": 0,
-               "conflicting_metrics": 0}
+               "conflicting_metrics": 0, "skipped_rows": {}, "skipped_row_samples": {}}
     with file_lock(directory / ".backfill.lock"):
-        completed, quota = _state(directory), _quota(directory)
+        completed, all_skipped = _state(directory)
+        quota = _quota(directory)
+        if retry_batches in ([], ["all"]):
+            retry = completed & job_keys
         try:
             for year, report, batch, key in jobs:
-                if key in completed:
+                if key in completed and key not in retry:
                     continue
                 day = _kst(now()).date().isoformat()
                 counter = quota["days"].setdefault(day, {"requests": 0, "provider_limited": False})
@@ -377,11 +419,17 @@ def backfill(from_year: int, to_year: int, *, execute=False, max_requests=DEFAUL
                     _write_json(directory / "_quota.json", quota)
                     raise _QuotaReached("provider_status_020") from None
                 payload = _redact(payload, api_key)
-                records = _records(payload, year, report, batch, universe)
+                records = _records(payload, year, report, batch, universe, summary)
                 summary["records_saved"] += _publish(directory, year, report, records)
                 summary["conflicting_metrics"] += sum(len(row.get("conflicting_accounts", {})) for row in records)
                 completed.add(key)
-                _write_json(directory / "_state.json", {"completed_batches": sorted(completed)})
+                retry.discard(key)
+                if payload["status"] == "000" and not records:
+                    all_skipped.add(key)
+                else:
+                    all_skipped.discard(key)
+                _write_json(directory / "_state.json", {"completed_batches": sorted(completed),
+                    "batches_with_all_rows_skipped": sorted(all_skipped)})
         except _QuotaReached as error:
             summary.update(status="quota_reached", reason=str(error))
         except DartAPIError as error:
@@ -389,7 +437,14 @@ def backfill(from_year: int, to_year: int, *, execute=False, max_requests=DEFAUL
         finally:
             if owned_session and session is not None:
                 session.close()
-        summary["pending_requests"] = sum(job[3] not in completed for job in jobs)
+        summary["pending_requests"] = len((job_keys - completed) | retry)
+        summary["batches_with_all_rows_skipped"] = sorted(all_skipped & job_keys)
+        if summary["skipped_rows"]:
+            with (directory / "_skipped_rows.jsonl").open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps({name: summary[name] for name in (
+                    "from_year", "to_year", "status", "requests_made", "skipped_rows",
+                    "skipped_row_samples", "batches_with_all_rows_skipped")},
+                    ensure_ascii=False, allow_nan=False) + "\n")
     return summary
 
 
@@ -495,3 +550,43 @@ def yoy_signals(frame: pd.DataFrame) -> pd.DataFrame:
     result["operating_leverage"] = (result["operating_income_yoy"] > result["revenue_yoy"]) & (result["revenue_yoy"] > 0)
     result["phase"] = pd.array(phases, dtype="Int64")
     return result
+
+
+def main() -> None:
+    """Module CLI supports explicit refreshes without removing checkpoints."""
+    import argparse
+    import os
+
+    from src.config.settings import get_project_root, load_project_env
+
+    parser = argparse.ArgumentParser(description="Backfill point-in-time quarterly DART financials")
+    parser.add_argument("--from-year", type=int, required=True)
+    parser.add_argument("--to-year", type=int, required=True)
+    parser.add_argument("--max-requests", type=int, default=DEFAULT_MAX_REQUESTS,
+                        help="Request cap per KST day across runs (default: 3000)")
+    parser.add_argument("--execute", action="store_true", help="Load environment, call DART and save progress")
+    parser.add_argument("--retry-batches", nargs="*", metavar="BATCH_ID",
+                        help="Re-request listed completed batch IDs; omit IDs or use all for all completed batches in these years")
+    args = parser.parse_args()
+    api_key, data_dir = None, DEFAULT_DATA_DIR
+    if args.execute:
+        load_project_env()
+        api_key = os.getenv("DART_API_KEY")
+        data_dir = Path(os.getenv("HQA_DATA_DIR", str(DEFAULT_DATA_DIR))).expanduser()
+        if not data_dir.is_absolute():
+            data_dir = get_project_root() / data_dir
+    try:
+        summary = backfill(args.from_year, args.to_year, execute=args.execute,
+            max_requests=args.max_requests, api_key=api_key, data_dir=data_dir,
+            retry_batches=args.retry_batches)
+    except (ValueError, OSError, DartAPIError):
+        print(json.dumps({"status": "error", "error": "DART quarterly configuration or archive is invalid"}))
+        raise SystemExit(1) from None
+    if args.execute:
+        print(json.dumps(summary, ensure_ascii=False))
+    if summary["status"] == "error":
+        raise SystemExit(1)
+
+
+if __name__ == "__main__":
+    main()
