@@ -204,6 +204,26 @@ def signals_as_of(day, *, data_dir=PROJECT_ROOT / "data", first_receipts=None):
     return latest.set_index("stock_code")
 
 
+def _universe_on_decision(history, decision, day, profiles, *, data_dir, first_receipts, repo_root):
+    universe = common.universe_filter(history, decision, repo_root=repo_root)
+    signals = signals_as_of(day, data_dir=data_dir, first_receipts=first_receipts).reindex(universe.index)
+    valid = signals.computable.eq(True)
+    report = {"trade_date": day.date().isoformat(), "price_eligible": len(universe),
+              "no_data": int((~valid).sum()),
+              "no_financials": int(signals.fiscal_quarter.isna().sum()),
+              "corrections_used": int((signals.correction_used.eq(True) | signals.prior_correction_used.eq(True)).sum()),
+              "conflicting_metrics": int(signals.conflicting_metrics.sum()),
+              "phase_overlap": int(signals.phase_overlap.eq(True).sum()),
+              "phase1_phase3_overlap": int((signals.matches_phase1.eq(True) & signals.matches_phase3.eq(True)).sum()),
+              "phase1_phase4_overlap": int((signals.matches_phase1.eq(True) & signals.matches_phase4.eq(True)).sum())}
+    eligible = universe[["avg_trading_value_20d"]].join(signals.loc[valid])
+    eligible = eligible.loc[valid]
+    eligible, industry = exclude_financials(eligible, profiles)
+    report["industry_profiles"] = industry
+    report["unclassified_phase"] = int(eligible.phase.isna().sum())
+    return eligible, report
+
+
 def build_universe(prices, *, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT, sessions=None):
     common.guard_prices(prices, repo_root=repo_root)
     available = common._sessions(prices)
@@ -227,22 +247,8 @@ def build_universe(prices, *, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_
         decision = sessions[position - 1]
         price_days = prices.index.get_level_values("trade_date")
         history = prices.loc[price_days.isin(sessions[position - 20:position])]
-        universe = common.universe_filter(history, decision, repo_root=repo_root)
-        signals = signals_as_of(day, data_dir=data_dir, first_receipts=first_receipts).reindex(universe.index)
-        valid = signals.computable.eq(True)
-        report = {"trade_date": day.date().isoformat(), "price_eligible": len(universe),
-                  "no_data": int((~valid).sum()),
-                  "no_financials": int(signals.fiscal_quarter.isna().sum()),
-                  "corrections_used": int((signals.correction_used.eq(True) | signals.prior_correction_used.eq(True)).sum()),
-                  "conflicting_metrics": int(signals.conflicting_metrics.sum()),
-                  "phase_overlap": int(signals.phase_overlap.eq(True).sum()),
-                  "phase1_phase3_overlap": int((signals.matches_phase1.eq(True) & signals.matches_phase3.eq(True)).sum()),
-                  "phase1_phase4_overlap": int((signals.matches_phase1.eq(True) & signals.matches_phase4.eq(True)).sum())}
-        eligible = universe[["avg_trading_value_20d"]].join(signals.loc[valid])
-        eligible = eligible.loc[valid]
-        eligible, industry = exclude_financials(eligible, profiles)
-        report["industry_profiles"] = industry
-        report["unclassified_phase"] = int(eligible.phase.isna().sum())
+        eligible, report = _universe_on_decision(
+            history, decision, day, profiles, data_dir=data_dir, first_receipts=first_receipts, repo_root=repo_root)
         counts.append(report)
         if eligible.empty:
             excluded.append({**rebalance, "reason": "no_eligible_signals"})
@@ -254,6 +260,10 @@ def build_universe(prices, *, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_
 
 
 def _observations(prices, universe, *, repo_root=PROJECT_ROOT):
+    return _observations_for_horizon(prices, universe, HORIZON, repo_root=repo_root)
+
+
+def _observations_for_horizon(prices, universe, horizon, *, repo_root=PROJECT_ROOT):
     common.guard_prices(prices, repo_root=repo_root)
     columns = ["trade_date", "stock_code", "avg_trading_value_20d", "phase", "revenue_yoy", "score", "gross", "reason", "exit_date",
                "bucket", "cost_1.0", "cost_1.5", "cost_2.0", *signal_eval._RETURN_FLAGS]
@@ -261,7 +271,7 @@ def _observations(prices, universe, *, repo_root=PROJECT_ROOT):
         return pd.DataFrame(columns=columns)
     index = pd.MultiIndex.from_frame(universe[["decision_date", "stock_code"]]).set_names(["trade_date", "stock_code"])
     holding = signal_eval._holding_data(prices, "exclude")
-    window = signal_eval._holding_window(holding, HORIZON, "last_close")
+    window = signal_eval._holding_window(holding, horizon, "last_close")
     observations = signal_eval._forward_observations(holding, window, index).reset_index(drop=True)
     entries = holding["sessions"].get_indexer(universe.trade_date)
     stocks = holding["codes"].get_indexer(universe.stock_code)
