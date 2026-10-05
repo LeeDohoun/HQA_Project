@@ -1,0 +1,2206 @@
+{
+  "experiment_id": "LH001_llm_hegemony_judge",
+  "stage": "probe",
+  "selected_variant": "all_fixed_variants",
+  "verdict": "insufficient",
+  "reasons": [
+    "Each fixed variant is reported separately; aggregate pass means at least one LLM variant passed."
+  ],
+  "variants": {
+    "b_num": {
+      "verdict": "insufficient_clean_window",
+      "reasons": [
+        "probe stage only; no strategy evaluated"
+      ],
+      "primary": {
+        "count": 0,
+        "mean": null,
+        "std": null,
+        "standard_error": null,
+        "t_stat": null,
+        "lag": 4
+      },
+      "ic": {
+        "count": 0,
+        "mean": null,
+        "std": null,
+        "standard_error": null,
+        "t_stat": null,
+        "lag": 4
+      },
+      "cost_sensitivity": {
+        "1.0": {
+          "top_net": null,
+          "top_net_excess": null
+        },
+        "1.5": {
+          "top_net": null,
+          "top_net_excess": null
+        },
+        "2.0": {
+          "top_net": null,
+          "top_net_excess": null
+        }
+      },
+      "random_control": {
+        "share_of_controls": null
+      },
+      "skipped_month_count": 0,
+      "unadjusted_fallback": 0,
+      "delisting_exclusions": 0
+    },
+    "b_text": {
+      "verdict": "insufficient_clean_window",
+      "reasons": [
+        "probe stage only; no strategy evaluated"
+      ],
+      "primary": {
+        "count": 0,
+        "mean": null,
+        "std": null,
+        "standard_error": null,
+        "t_stat": null,
+        "lag": 4
+      },
+      "ic": {
+        "count": 0,
+        "mean": null,
+        "std": null,
+        "standard_error": null,
+        "t_stat": null,
+        "lag": 4
+      },
+      "cost_sensitivity": {
+        "1.0": {
+          "top_net": null,
+          "top_net_excess": null
+        },
+        "1.5": {
+          "top_net": null,
+          "top_net_excess": null
+        },
+        "2.0": {
+          "top_net": null,
+          "top_net_excess": null
+        }
+      },
+      "random_control": {
+        "share_of_controls": null
+      },
+      "skipped_month_count": 0,
+      "unadjusted_fallback": 0,
+      "delisting_exclusions": 0
+    },
+    "c_num": {
+      "verdict": "insufficient_clean_window",
+      "reasons": [
+        "probe stage only; no strategy evaluated"
+      ],
+      "primary": {
+        "count": 0,
+        "mean": null,
+        "std": null,
+        "standard_error": null,
+        "t_stat": null,
+        "lag": 4
+      },
+      "ic": {
+        "count": 0,
+        "mean": null,
+        "std": null,
+        "standard_error": null,
+        "t_stat": null,
+        "lag": 4
+      },
+      "cost_sensitivity": {
+        "1.0": {
+          "top_net": null,
+          "top_net_excess": null
+        },
+        "1.5": {
+          "top_net": null,
+          "top_net_excess": null
+        },
+        "2.0": {
+          "top_net": null,
+          "top_net_excess": null
+        }
+      },
+      "random_control": {
+        "share_of_controls": null
+      },
+      "skipped_month_count": 0,
+      "unadjusted_fallback": 0,
+      "delisting_exclusions": 0
+    },
+    "c_text": {
+      "verdict": "insufficient_clean_window",
+      "reasons": [
+        "probe stage only; no strategy evaluated"
+      ],
+      "primary": {
+        "count": 0,
+        "mean": null,
+        "std": null,
+        "standard_error": null,
+        "t_stat": null,
+        "lag": 4
+      },
+      "ic": {
+        "count": 0,
+        "mean": null,
+        "std": null,
+        "standard_error": null,
+        "t_stat": null,
+        "lag": 4
+      },
+      "cost_sensitivity": {
+        "1.0": {
+          "top_net": null,
+          "top_net_excess": null
+        },
+        "1.5": {
+          "top_net": null,
+          "top_net_excess": null
+        },
+        "2.0": {
+          "top_net": null,
+          "top_net_excess": null
+        }
+      },
+      "random_control": {
+        "share_of_controls": null
+      },
+      "skipped_month_count": 0,
+      "unadjusted_fallback": 0,
+      "delisting_exclusions": 0
+    },
+    "hc002_holdout": {
+      "verdict": "insufficient_clean_window",
+      "reasons": [
+        "probe stage only; no strategy evaluated"
+      ],
+      "primary": {
+        "count": 0,
+        "mean": null,
+        "std": null,
+        "standard_error": null,
+        "t_stat": null,
+        "lag": 4
+      },
+      "ic": {
+        "count": 0,
+        "mean": null,
+        "std": null,
+        "standard_error": null,
+        "t_stat": null,
+        "lag": 4
+      },
+      "cost_sensitivity": {
+        "1.0": {
+          "top_net": null,
+          "top_net_excess": null
+        },
+        "1.5": {
+          "top_net": null,
+          "top_net_excess": null
+        },
+        "2.0": {
+          "top_net": null,
+          "top_net_excess": null
+        }
+      },
+      "random_control": {
+        "share_of_controls": null
+      },
+      "skipped_month_count": 0,
+      "unadjusted_fallback": 0,
+      "delisting_exclusions": 0
+    }
+  },
+  "interpretations": {
+    "note": "Four LLM groups are judged separately; multiple opportunities for a chance pass remain. Random ranks are reported for every arm; text effects and memory dependence are diagnostics. No winner is selected.",
+    "criteria": {
+      "primary": {
+        "metric": "primary.mean",
+        "definition": "Mean decision-level B net minus universe EW gross, or C net minus A EW net, using only paired executable observations."
+      },
+      "core_t_stat_gt": {
+        "metric": "primary.t_stat",
+        "definition": "Mean / NW standard error; Bartlett lag 4 calendar decision periods, preserving missing weeks/months, no finite-sample correction; >2 or >3 after more than 20 trial rows."
+      },
+      "random_control_top_percent": {
+        "metric": "random_control.share_of_controls",
+        "definition": "Fraction of 200 seed-0 control paths with paired mean excess >= actual; <=5% final, <=20% screening. Each path draws ten names without replacement each decision from its preregistered pool."
+      },
+      "minimum_observations": {
+        "metric": "primary.count, events",
+        "definition": "Conservatively require both 20 valid paired weekly decisions and 300 executable selected stock/decision observations; t uses weekly observations only."
+      },
+      "cost_sensitivity": {
+        "metric": "cost_sensitivity[m].top_net_excess",
+        "definition": "Full round-trip cost per bundle at 1/1.5/2; sell tax unscaled. Positive paired excess at 1.5 is required."
+      },
+      "holdout_direction_fraction": {
+        "metric": "final.mean / screening.mean",
+        "definition": "Numeric only: same sign as screening, positive, at least half its effect. Text has no screening effect; this criterion is not applicable."
+      },
+      "screening": {
+        "metric": "primary, random_control",
+        "definition": "Anonymous month-end numeric groups proceed if mean>0, lag-4 t>1 and random share<=20%; failed numeric groups remain screening_fail in final, but still supply text candidates."
+      },
+      "a_weekly": {
+        "metric": "a_weekly",
+        "definition": "HC002 phase-2 EW net minus the same universe EW gross, diagnostic; full costs at each weekly decision."
+      },
+      "b_vs_a": {
+        "metric": "per_decision.vs_a",
+        "definition": "B EW net minus A EW net on the same decision, diagnostic."
+      },
+      "text_effect": {
+        "metric": "text_effect",
+        "definition": "Paired text net minus its numeric net, both selected from the fixed numeric 30; no independent pass criterion."
+      },
+      "avoid": {
+        "metric": "avoid_excess",
+        "definition": "C_num avoid-ten EW net minus A EW net; diagnostic, negative is successful avoidance."
+      },
+      "memory_dependence": {
+        "metric": "memory_dependence",
+        "definition": "Paired named minus anonymous C_num in 2023-01..2025-11, one call each; diagnostic only."
+      },
+      "liquidity_month": {
+        "metric": "liquidity_buckets, monthly",
+        "definition": "Decision-close ADV cost-model buckets (within-bucket benchmarks), and decision-month means; no extra variants."
+      },
+      "jaccard": {
+        "metric": "jaccard",
+        "definition": "Mean of the three pairwise repeat buy-ten set intersections/unions. Stage-1 industry consistency is reported separately."
+      },
+      "invalid_calls": {
+        "metric": "invalid_calls, invalid_call_count",
+        "definition": "Invalid real attempts including retries, deduplicated by cache key; cache reuse is not another invalid call. Stage-1 counts are separate. A failed repeat invalidates the arm's decision."
+      },
+      "text_missing": {
+        "metric": "text_missing",
+        "definition": "Missing extraction per stock/decision/arm, counted once for the common text input, not once per repeat."
+      },
+      "execution": {
+        "metric": "return_counts, stale_exits",
+        "definition": "Shared HC002 next-open/entry-inclusive 20th-close, limit-up exclusion, adjusted ret_1d chain; shared explicitly counted raw fallback/stale/no-later-price policies."
+      },
+      "hc002_holdout": {
+        "metric": "hc002_holdout",
+        "definition": "Only if an HC002 phase2_ew passing registry row exists: HC002 monthly January-May rules, exits by June 30; positive same-direction effect >=0.5 of registered design effect. Otherwise not_applicable."
+      },
+      "provenance": {
+        "metric": "manifest, inputs, snapshot_hash, assumptions",
+        "definition": "Frozen prompt/schema hashes, fixed model/CLI version, content-addressed rendered inputs and extraction metadata. These certify artifacts, not profitability or unseen training data."
+      },
+      "compatibility_aliases": {
+        "metric": "ic, skipped_month_count",
+        "definition": "Shared writer compatibility only: ic aliases paired excess statistics (LLM: NW), never a rank IC; skipped_month_count counts skipped decisions, including weekly ones."
+      }
+    }
+  },
+  "assumptions": [
+    "The dedicated probe reader may read 2026 market-level facts before opening the holdout. This is contamination measurement, not strategy evaluation; it does not call guard_period or consume a holdout claim. Reviewed and accepted by the coordinator on 2026-10-05; the read is limited to KOSPI month-end levels, sector index returns and top-30 stock month-end closes.",
+    "B_num random controls use the entire HC002 universe capped at the top 300 by decision-close 20-session ADV, irrespective of the three selected industries. C_num uses the displayed capped A pool; text uses its fixed 30. The ambiguous B universe/same-300 wording remains a coordinator decision.",
+    "All three final repeats must be valid; otherwise that arm has no selection. Exact count/mean-rank ties use the displayed ID in lexical order. Fewer than 30 numeric candidates, or fewer than 40 C candidates for disjoint ranked/avoid lists, produce no selection; candidate counts are never shortened.",
+    "Date-only DART listings cannot establish publication before the decision-day close. Conservatively exclude the decision session: use the prior 60 completed sessions and calendar days between their first/last dates. Partial listing coverage makes counts unavailable, never presumed zeros; stored titles carry coverage.",
+    "Input returns use complete ret_1d chains; missing windows remain unavailable. Volatility is daily sample standard deviation (not annualised); a 52-week window is 250 sessions and uses adjusted intraday highs. Breadth uses the HC002 eligible universe. Industry RS subtracts matching cap/EW all-market index returns.",
+    "Stock-table trading value is decision-day turnover (percentile in anonymous mode). The 20-session ADV is retained separately for eligibility, candidate caps and execution costs, not substituted for the displayed daily value.",
+    "Industry financial growth sums unique corporate current/prior pairs in the industry's latest known quarter; every eligible corporate member must have that quarter and a complete pair, otherwise growth is unavailable. Four-quarter trends show YoY and revenue/OI scaled by latest absolute revenue, never monetary amounts in anonymous mode.",
+    "Current stored price revisions and company classifications are used, as in HC002; historical collection timestamps are not publication vintages. This does not reconstruct historical industry classifications. Financial receipt dates strictly precede the decision date.",
+    "Probe stock returns are ratios of the two month-end closes, not strategy returns; stock splits can affect these facts. The two triples are disjoint draws from the prior month-end top-30 common stocks. Sector questions use KOSPI sector index rows, excluding index names beginning with 코스피/코스닥.",
+    "Missing probe facts or invalid answers block clean-window approval; the probe needs all 21 months and four answers each. Zero estimated variance gives an undefined t, never an infinite passing t. NW uses Bartlett weights, lag 4, and no small-sample correction.",
+    "Conservatively enforce both minimum_observations fields: 20 paired weekly decisions and 300 executable selected stock/decision observations. The t unit remains weekly; stock rows are not independent t observations. Screening uses the same lag-4 NW estimator. Forward dates are exit-price-only, so decisions end in September even when a later weekly exit could fit October 30.",
+    "A quota-interrupted final run resumes only its hash-checked frozen snapshot prepared in the one HoldoutSession, with no protected source rereads or second holdout claim. If interrupted before snapshot publication, the claim is consumed and the run cannot be restarted.",
+    "Smoke runs consume real-call budget if executed, but never append registry rows or overwrite official stage state. A final smoke run still consumes the one holdout claim. Text loaders are local only; no report is fetched by this experiment.",
+    "Prompts are sent through stdin (`codex exec ... -`) because Linux's single-argument limit rejects long tables and business texts; nothing is truncated. A synthetic C_num format check (50 fake stocks) on 2026-10-05 returned schema-valid output with no tool events.",
+    "A bounded stock-presence-date scan through the allowed stage price end preserves HC002's no-later-price exclusion versus temporary missing-exit last-close valuation. No closes from this scan enter LLM inputs; screening never scans 2026 files."
+  ],
+  "performance": {
+    "runtime_seconds": 152.6975298010002,
+    "peak_memory_mib": 109.40625
+  },
+  "scores": [
+    {
+      "month": "2025-01",
+      "correct": 2,
+      "questions": 4,
+      "contaminated": false
+    },
+    {
+      "month": "2025-02",
+      "correct": 1,
+      "questions": 4,
+      "contaminated": false
+    },
+    {
+      "month": "2025-03",
+      "correct": 3,
+      "questions": 4,
+      "contaminated": true
+    },
+    {
+      "month": "2025-04",
+      "correct": 4,
+      "questions": 4,
+      "contaminated": true
+    },
+    {
+      "month": "2025-05",
+      "correct": 4,
+      "questions": 4,
+      "contaminated": true
+    },
+    {
+      "month": "2025-06",
+      "correct": 2,
+      "questions": 4,
+      "contaminated": false
+    },
+    {
+      "month": "2025-07",
+      "correct": 3,
+      "questions": 4,
+      "contaminated": true
+    },
+    {
+      "month": "2025-08",
+      "correct": 1,
+      "questions": 4,
+      "contaminated": false
+    },
+    {
+      "month": "2025-09",
+      "correct": 1,
+      "questions": 4,
+      "contaminated": false
+    },
+    {
+      "month": "2025-10",
+      "correct": 4,
+      "questions": 4,
+      "contaminated": true
+    },
+    {
+      "month": "2025-11",
+      "correct": 1,
+      "questions": 4,
+      "contaminated": false
+    },
+    {
+      "month": "2025-12",
+      "correct": 2,
+      "questions": 4,
+      "contaminated": false
+    },
+    {
+      "month": "2026-01",
+      "correct": 1,
+      "questions": 4,
+      "contaminated": false
+    },
+    {
+      "month": "2026-02",
+      "correct": 2,
+      "questions": 4,
+      "contaminated": false
+    },
+    {
+      "month": "2026-03",
+      "correct": 2,
+      "questions": 4,
+      "contaminated": false
+    },
+    {
+      "month": "2026-04",
+      "correct": 2,
+      "questions": 4,
+      "contaminated": false
+    },
+    {
+      "month": "2026-05",
+      "correct": 2,
+      "questions": 4,
+      "contaminated": false
+    },
+    {
+      "month": "2026-06",
+      "correct": 2,
+      "questions": 4,
+      "contaminated": false
+    },
+    {
+      "month": "2026-07",
+      "correct": 2,
+      "questions": 4,
+      "contaminated": false
+    },
+    {
+      "month": "2026-08",
+      "correct": 2,
+      "questions": 4,
+      "contaminated": false
+    },
+    {
+      "month": "2026-09",
+      "correct": 3,
+      "questions": 4,
+      "contaminated": true
+    }
+  ],
+  "calls": [
+    "a8ed760e73bfc5beedf1fb906c0e7c43d424679415c13ef9e4a502d191787301",
+    "d5d55c5ad3377e66988fcd6e0694e0e387d1294a1044efae6cc6a19455fca6c0",
+    "a011e8045edf8ecdf54b611b4fb9b0ed6fc9951b04c96c0461bcf2041bf37c9e",
+    "1f4230565d825e2fc2ceb3c0fcfdcf08fc2b00c69398497e4b937b56b12c08bb",
+    "b628752b137b3f771dae2422dd2906cad7feb10e2e2b501667e4137e4f98d0a7",
+    "23aa5e40ceabe25037414b14b387f29dea4442f48f8f3ea04a5e412b9938ddd2",
+    "815aa7ecb7886d9296ad0064a55b3f6e5f297cd3c86c3f2d9e91347c1e5d57f8",
+    "7aacbf6d62cf78083a043aef977bc1f76fe80eee3e4712207e0eb60c22422ef9",
+    "1e08b3a92dc20f72ece981d6dc1d2ef5fc2c9ea87b26333becec6be33af806ae",
+    "932d568366fa505c82d93d132b8b488a674b69ae903c0d748a0ed03e4825465f",
+    "5874124cf2b2c8f59faad32c45dc1265b08297a995d6002b07c7afd293c7b6fd",
+    "27737258f9c0f413abbe18864f054548355475292c9cd0f37763f35635ba4a90",
+    "995f2e097e589af0b6a41b418298459975a3b57ea2f2e16e11f31d74bd61eaeb",
+    "8fb934c7dde2d73dd25d3f8fa6ffcb26911977d5d344e68de1d036c34b627d7f",
+    "c4e1faf0d003e424be0340acbf3276cb52de008f3816d9a692a3c2d65ceda153",
+    "97519dbf6a6ec09e870c8e24c0ae7e435f98bca921913c7f67c30da0fbcf4488",
+    "56ff4476afc36598a30d19602155c032951bc9bc147984c774bffb89a27afa66",
+    "87e51f9416f36c9145a21259baef9beaade7f6b31bac23240b496ae940f76037",
+    "a409c06568ba1782ffecc6677447835850cc4fa89c2528018031aa5f77553cb5",
+    "c0f89b6f5848a2f03faf1e9ecc55758be905d824f8dcd6f9eb787ef882c38f08",
+    "ada64a724a70e2d37f076ea4a63cd73863b85884d3bbd0c3e308acc8f3746dd4"
+  ],
+  "probe": {
+    "verdict": "insufficient_clean_window",
+    "clean_start": "2026-10-01",
+    "pooled_accuracy": null,
+    "last_contaminated_month": "2026-09",
+    "pooled_pushes": [],
+    "reason": "clean start later than May 2026"
+  },
+  "probe_read_note": "The dedicated contamination reader accesses benchmark index rows and prior-month cap ranks / month-end closes of the top 30 common stocks, including 2026-01..06, before the holdout. This is contamination measurement, not a strategy evaluation; guard_period is deliberately not called for protected months and no holdout claim is consumed.",
+  "questions": [
+    {
+      "month": "2025-01",
+      "questions": [
+        {
+          "id": "q1",
+          "question": "2025-01 월말 코스피 종가 수준은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "2517.37"
+            },
+            {
+              "id": "B",
+              "label": "3146.71"
+            },
+            {
+              "id": "C",
+              "label": "2013.90"
+            }
+          ],
+          "correct": "A"
+        },
+        {
+          "id": "q2",
+          "question": "2025-01 수익률이 가장 높은 업종 지수는?",
+          "options": [
+            {
+              "id": "A",
+              "label": "IT 서비스"
+            },
+            {
+              "id": "B",
+              "label": "금속"
+            },
+            {
+              "id": "C",
+              "label": "기계·장비"
+            }
+          ],
+          "correct": "C"
+        },
+        {
+          "id": "q3",
+          "question": "2025-01 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "LG전자(066570)"
+            },
+            {
+              "id": "B",
+              "label": "고려아연(010130)"
+            },
+            {
+              "id": "C",
+              "label": "삼성생명(032830)"
+            }
+          ],
+          "correct": "A"
+        },
+        {
+          "id": "q4",
+          "question": "2025-01 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "삼성SDI(006400)"
+            },
+            {
+              "id": "B",
+              "label": "신한지주(055550)"
+            },
+            {
+              "id": "C",
+              "label": "하나금융지주(086790)"
+            }
+          ],
+          "correct": "B"
+        }
+      ]
+    },
+    {
+      "month": "2025-02",
+      "questions": [
+        {
+          "id": "q1",
+          "question": "2025-02 월말 코스피 종가 수준은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "2532.78"
+            },
+            {
+              "id": "B",
+              "label": "3165.98"
+            },
+            {
+              "id": "C",
+              "label": "2026.22"
+            }
+          ],
+          "correct": "A"
+        },
+        {
+          "id": "q2",
+          "question": "2025-02 수익률이 가장 높은 업종 지수는?",
+          "options": [
+            {
+              "id": "A",
+              "label": "의료·정밀기기"
+            },
+            {
+              "id": "B",
+              "label": "화학"
+            },
+            {
+              "id": "C",
+              "label": "오락·문화"
+            }
+          ],
+          "correct": "C"
+        },
+        {
+          "id": "q3",
+          "question": "2025-02 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "HMM(011200)"
+            },
+            {
+              "id": "B",
+              "label": "KB금융(105560)"
+            },
+            {
+              "id": "C",
+              "label": "삼성생명(032830)"
+            }
+          ],
+          "correct": "A"
+        },
+        {
+          "id": "q4",
+          "question": "2025-02 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "고려아연(010130)"
+            },
+            {
+              "id": "B",
+              "label": "삼성물산(028260)"
+            },
+            {
+              "id": "C",
+              "label": "POSCO홀딩스(005490)"
+            }
+          ],
+          "correct": "C"
+        }
+      ]
+    },
+    {
+      "month": "2025-03",
+      "questions": [
+        {
+          "id": "q1",
+          "question": "2025-03 월말 코스피 종가 수준은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "3101.40"
+            },
+            {
+              "id": "B",
+              "label": "1984.90"
+            },
+            {
+              "id": "C",
+              "label": "2481.12"
+            }
+          ],
+          "correct": "C"
+        },
+        {
+          "id": "q2",
+          "question": "2025-03 수익률이 가장 높은 업종 지수는?",
+          "options": [
+            {
+              "id": "A",
+              "label": "음식료·담배"
+            },
+            {
+              "id": "B",
+              "label": "제약"
+            },
+            {
+              "id": "C",
+              "label": "유통"
+            }
+          ],
+          "correct": "A"
+        },
+        {
+          "id": "q3",
+          "question": "2025-03 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "셀트리온(068270)"
+            },
+            {
+              "id": "B",
+              "label": "기아(000270)"
+            },
+            {
+              "id": "C",
+              "label": "SK하이닉스(000660)"
+            }
+          ],
+          "correct": "C"
+        },
+        {
+          "id": "q4",
+          "question": "2025-03 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "삼성생명(032830)"
+            },
+            {
+              "id": "B",
+              "label": "SK이노베이션(096770)"
+            },
+            {
+              "id": "C",
+              "label": "두산에너빌리티(034020)"
+            }
+          ],
+          "correct": "A"
+        }
+      ]
+    },
+    {
+      "month": "2025-04",
+      "questions": [
+        {
+          "id": "q1",
+          "question": "2025-04 월말 코스피 종가 수준은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "2556.61"
+            },
+            {
+              "id": "B",
+              "label": "3195.76"
+            },
+            {
+              "id": "C",
+              "label": "2045.29"
+            }
+          ],
+          "correct": "A"
+        },
+        {
+          "id": "q2",
+          "question": "2025-04 수익률이 가장 높은 업종 지수는?",
+          "options": [
+            {
+              "id": "A",
+              "label": "전기·가스"
+            },
+            {
+              "id": "B",
+              "label": "운송·창고"
+            },
+            {
+              "id": "C",
+              "label": "유통"
+            }
+          ],
+          "correct": "A"
+        },
+        {
+          "id": "q3",
+          "question": "2025-04 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "셀트리온(068270)"
+            },
+            {
+              "id": "B",
+              "label": "LG에너지솔루션(373220)"
+            },
+            {
+              "id": "C",
+              "label": "한화에어로스페이스(012450)"
+            }
+          ],
+          "correct": "C"
+        },
+        {
+          "id": "q4",
+          "question": "2025-04 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "HD한국조선해양(009540)"
+            },
+            {
+              "id": "B",
+              "label": "하나금융지주(086790)"
+            },
+            {
+              "id": "C",
+              "label": "삼성바이오로직스(207940)"
+            }
+          ],
+          "correct": "A"
+        }
+      ]
+    },
+    {
+      "month": "2025-05",
+      "questions": [
+        {
+          "id": "q1",
+          "question": "2025-05 월말 코스피 종가 수준은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "2158.14"
+            },
+            {
+              "id": "B",
+              "label": "3372.09"
+            },
+            {
+              "id": "C",
+              "label": "2697.67"
+            }
+          ],
+          "correct": "C"
+        },
+        {
+          "id": "q2",
+          "question": "2025-05 수익률이 가장 높은 업종 지수는?",
+          "options": [
+            {
+              "id": "A",
+              "label": "건설"
+            },
+            {
+              "id": "B",
+              "label": "비금속"
+            },
+            {
+              "id": "C",
+              "label": "유통"
+            }
+          ],
+          "correct": "A"
+        },
+        {
+          "id": "q3",
+          "question": "2025-05 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "현대차(005380)"
+            },
+            {
+              "id": "B",
+              "label": "LG에너지솔루션(373220)"
+            },
+            {
+              "id": "C",
+              "label": "HD현대중공업(329180)"
+            }
+          ],
+          "correct": "C"
+        },
+        {
+          "id": "q4",
+          "question": "2025-05 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "LG화학(051910)"
+            },
+            {
+              "id": "B",
+              "label": "KB금융(105560)"
+            },
+            {
+              "id": "C",
+              "label": "크래프톤(259960)"
+            }
+          ],
+          "correct": "B"
+        }
+      ]
+    },
+    {
+      "month": "2025-06",
+      "questions": [
+        {
+          "id": "q1",
+          "question": "2025-06 월말 코스피 종가 수준은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "3839.62"
+            },
+            {
+              "id": "B",
+              "label": "2457.36"
+            },
+            {
+              "id": "C",
+              "label": "3071.70"
+            }
+          ],
+          "correct": "C"
+        },
+        {
+          "id": "q2",
+          "question": "2025-06 수익률이 가장 높은 업종 지수는?",
+          "options": [
+            {
+              "id": "A",
+              "label": "오락·문화"
+            },
+            {
+              "id": "B",
+              "label": "보험"
+            },
+            {
+              "id": "C",
+              "label": "음식료·담배"
+            }
+          ],
+          "correct": "B"
+        },
+        {
+          "id": "q3",
+          "question": "2025-06 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "카카오(035720)"
+            },
+            {
+              "id": "B",
+              "label": "삼성바이오로직스(207940)"
+            },
+            {
+              "id": "C",
+              "label": "삼성생명(032830)"
+            }
+          ],
+          "correct": "A"
+        },
+        {
+          "id": "q4",
+          "question": "2025-06 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "하나금융지주(086790)"
+            },
+            {
+              "id": "B",
+              "label": "HD한국조선해양(009540)"
+            },
+            {
+              "id": "C",
+              "label": "KB금융(105560)"
+            }
+          ],
+          "correct": "A"
+        }
+      ]
+    },
+    {
+      "month": "2025-07",
+      "questions": [
+        {
+          "id": "q1",
+          "question": "2025-07 월말 코스피 종가 수준은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "4056.80"
+            },
+            {
+              "id": "B",
+              "label": "2596.35"
+            },
+            {
+              "id": "C",
+              "label": "3245.44"
+            }
+          ],
+          "correct": "C"
+        },
+        {
+          "id": "q2",
+          "question": "2025-07 수익률이 가장 높은 업종 지수는?",
+          "options": [
+            {
+              "id": "A",
+              "label": "오락·문화"
+            },
+            {
+              "id": "B",
+              "label": "전기전자"
+            },
+            {
+              "id": "C",
+              "label": "보험"
+            }
+          ],
+          "correct": "B"
+        },
+        {
+          "id": "q3",
+          "question": "2025-07 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "SK이노베이션(096770)"
+            },
+            {
+              "id": "B",
+              "label": "POSCO홀딩스(005490)"
+            },
+            {
+              "id": "C",
+              "label": "신한지주(055550)"
+            }
+          ],
+          "correct": "B"
+        },
+        {
+          "id": "q4",
+          "question": "2025-07 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "한국전력(015760)"
+            },
+            {
+              "id": "B",
+              "label": "현대차(005380)"
+            },
+            {
+              "id": "C",
+              "label": "삼성전자(005930)"
+            }
+          ],
+          "correct": "C"
+        }
+      ]
+    },
+    {
+      "month": "2025-08",
+      "questions": [
+        {
+          "id": "q1",
+          "question": "2025-08 월말 코스피 종가 수준은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "3982.51"
+            },
+            {
+              "id": "B",
+              "label": "2548.81"
+            },
+            {
+              "id": "C",
+              "label": "3186.01"
+            }
+          ],
+          "correct": "C"
+        },
+        {
+          "id": "q2",
+          "question": "2025-08 수익률이 가장 높은 업종 지수는?",
+          "options": [
+            {
+              "id": "A",
+              "label": "보험"
+            },
+            {
+              "id": "B",
+              "label": "종이·목재"
+            },
+            {
+              "id": "C",
+              "label": "금속"
+            }
+          ],
+          "correct": "A"
+        },
+        {
+          "id": "q3",
+          "question": "2025-08 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "셀트리온(068270)"
+            },
+            {
+              "id": "B",
+              "label": "POSCO홀딩스(005490)"
+            },
+            {
+              "id": "C",
+              "label": "신한지주(055550)"
+            }
+          ],
+          "correct": "C"
+        },
+        {
+          "id": "q4",
+          "question": "2025-08 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "KB금융(105560)"
+            },
+            {
+              "id": "B",
+              "label": "삼성전자(005930)"
+            },
+            {
+              "id": "C",
+              "label": "HD현대중공업(329180)"
+            }
+          ],
+          "correct": "C"
+        }
+      ]
+    },
+    {
+      "month": "2025-09",
+      "questions": [
+        {
+          "id": "q1",
+          "question": "2025-09 월말 코스피 종가 수준은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "2739.68"
+            },
+            {
+              "id": "B",
+              "label": "3424.60"
+            },
+            {
+              "id": "C",
+              "label": "4280.75"
+            }
+          ],
+          "correct": "B"
+        },
+        {
+          "id": "q2",
+          "question": "2025-09 수익률이 가장 높은 업종 지수는?",
+          "options": [
+            {
+              "id": "A",
+              "label": "통신"
+            },
+            {
+              "id": "B",
+              "label": "제조"
+            },
+            {
+              "id": "C",
+              "label": "금융"
+            }
+          ],
+          "correct": "B"
+        },
+        {
+          "id": "q3",
+          "question": "2025-09 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "HD현대중공업(329180)"
+            },
+            {
+              "id": "B",
+              "label": "셀트리온(068270)"
+            },
+            {
+              "id": "C",
+              "label": "LG에너지솔루션(373220)"
+            }
+          ],
+          "correct": "B"
+        },
+        {
+          "id": "q4",
+          "question": "2025-09 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "SK하이닉스(000660)"
+            },
+            {
+              "id": "B",
+              "label": "한화에어로스페이스(012450)"
+            },
+            {
+              "id": "C",
+              "label": "한화오션(042660)"
+            }
+          ],
+          "correct": "A"
+        }
+      ]
+    },
+    {
+      "month": "2025-10",
+      "questions": [
+        {
+          "id": "q1",
+          "question": "2025-10 월말 코스피 종가 수준은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "4107.50"
+            },
+            {
+              "id": "B",
+              "label": "3286.00"
+            },
+            {
+              "id": "C",
+              "label": "5134.38"
+            }
+          ],
+          "correct": "A"
+        },
+        {
+          "id": "q2",
+          "question": "2025-10 수익률이 가장 높은 업종 지수는?",
+          "options": [
+            {
+              "id": "A",
+              "label": "오락·문화"
+            },
+            {
+              "id": "B",
+              "label": "종이·목재"
+            },
+            {
+              "id": "C",
+              "label": "운송·창고"
+            }
+          ],
+          "correct": "A"
+        },
+        {
+          "id": "q3",
+          "question": "2025-10 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "메리츠금융지주(138040)"
+            },
+            {
+              "id": "B",
+              "label": "하나금융지주(086790)"
+            },
+            {
+              "id": "C",
+              "label": "한화오션(042660)"
+            }
+          ],
+          "correct": "C"
+        },
+        {
+          "id": "q4",
+          "question": "2025-10 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "SK하이닉스(000660)"
+            },
+            {
+              "id": "B",
+              "label": "LG화학(051910)"
+            },
+            {
+              "id": "C",
+              "label": "삼성물산(028260)"
+            }
+          ],
+          "correct": "A"
+        }
+      ]
+    },
+    {
+      "month": "2025-11",
+      "questions": [
+        {
+          "id": "q1",
+          "question": "2025-11 월말 코스피 종가 수준은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "3926.59"
+            },
+            {
+              "id": "B",
+              "label": "3141.27"
+            },
+            {
+              "id": "C",
+              "label": "4908.24"
+            }
+          ],
+          "correct": "A"
+        },
+        {
+          "id": "q2",
+          "question": "2025-11 수익률이 가장 높은 업종 지수는?",
+          "options": [
+            {
+              "id": "A",
+              "label": "보험"
+            },
+            {
+              "id": "B",
+              "label": "운송장비·부품"
+            },
+            {
+              "id": "C",
+              "label": "건설"
+            }
+          ],
+          "correct": "A"
+        },
+        {
+          "id": "q3",
+          "question": "2025-11 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "HD현대일렉트릭(267260)"
+            },
+            {
+              "id": "B",
+              "label": "셀트리온(068270)"
+            },
+            {
+              "id": "C",
+              "label": "삼성SDI(006400)"
+            }
+          ],
+          "correct": "B"
+        },
+        {
+          "id": "q4",
+          "question": "2025-11 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "HD한국조선해양(009540)"
+            },
+            {
+              "id": "B",
+              "label": "KB금융(105560)"
+            },
+            {
+              "id": "C",
+              "label": "SK하이닉스(000660)"
+            }
+          ],
+          "correct": "B"
+        }
+      ]
+    },
+    {
+      "month": "2025-12",
+      "questions": [
+        {
+          "id": "q1",
+          "question": "2025-12 월말 코스피 종가 수준은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "3371.34"
+            },
+            {
+              "id": "B",
+              "label": "5267.71"
+            },
+            {
+              "id": "C",
+              "label": "4214.17"
+            }
+          ],
+          "correct": "C"
+        },
+        {
+          "id": "q2",
+          "question": "2025-12 수익률이 가장 높은 업종 지수는?",
+          "options": [
+            {
+              "id": "A",
+              "label": "제약"
+            },
+            {
+              "id": "B",
+              "label": "의료·정밀기기"
+            },
+            {
+              "id": "C",
+              "label": "전기전자"
+            }
+          ],
+          "correct": "C"
+        },
+        {
+          "id": "q3",
+          "question": "2025-12 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "셀트리온(068270)"
+            },
+            {
+              "id": "B",
+              "label": "삼성SDI(006400)"
+            },
+            {
+              "id": "C",
+              "label": "삼성생명(032830)"
+            }
+          ],
+          "correct": "C"
+        },
+        {
+          "id": "q4",
+          "question": "2025-12 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "삼성바이오로직스(207940)"
+            },
+            {
+              "id": "B",
+              "label": "현대차(005380)"
+            },
+            {
+              "id": "C",
+              "label": "LG화학(051910)"
+            }
+          ],
+          "correct": "B"
+        }
+      ]
+    },
+    {
+      "month": "2026-01",
+      "questions": [
+        {
+          "id": "q1",
+          "question": "2026-01 월말 코스피 종가 수준은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "6530.45"
+            },
+            {
+              "id": "B",
+              "label": "4179.49"
+            },
+            {
+              "id": "C",
+              "label": "5224.36"
+            }
+          ],
+          "correct": "C"
+        },
+        {
+          "id": "q2",
+          "question": "2026-01 수익률이 가장 높은 업종 지수는?",
+          "options": [
+            {
+              "id": "A",
+              "label": "보험"
+            },
+            {
+              "id": "B",
+              "label": "기계·장비"
+            },
+            {
+              "id": "C",
+              "label": "증권"
+            }
+          ],
+          "correct": "C"
+        },
+        {
+          "id": "q3",
+          "question": "2026-01 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "삼성중공업(010140)"
+            },
+            {
+              "id": "B",
+              "label": "삼성화재(000810)"
+            },
+            {
+              "id": "C",
+              "label": "NAVER(035420)"
+            }
+          ],
+          "correct": "A"
+        },
+        {
+          "id": "q4",
+          "question": "2026-01 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "HD현대일렉트릭(267260)"
+            },
+            {
+              "id": "B",
+              "label": "삼성물산(028260)"
+            },
+            {
+              "id": "C",
+              "label": "현대차(005380)"
+            }
+          ],
+          "correct": "C"
+        }
+      ]
+    },
+    {
+      "month": "2026-02",
+      "questions": [
+        {
+          "id": "q1",
+          "question": "2026-02 월말 코스피 종가 수준은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "4995.30"
+            },
+            {
+              "id": "B",
+              "label": "6244.13"
+            },
+            {
+              "id": "C",
+              "label": "7805.16"
+            }
+          ],
+          "correct": "B"
+        },
+        {
+          "id": "q2",
+          "question": "2026-02 수익률이 가장 높은 업종 지수는?",
+          "options": [
+            {
+              "id": "A",
+              "label": "통신"
+            },
+            {
+              "id": "B",
+              "label": "운송장비·부품"
+            },
+            {
+              "id": "C",
+              "label": "음식료·담배"
+            }
+          ],
+          "correct": "B"
+        },
+        {
+          "id": "q3",
+          "question": "2026-02 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "HD한국조선해양(009540)"
+            },
+            {
+              "id": "B",
+              "label": "두산에너빌리티(034020)"
+            },
+            {
+              "id": "C",
+              "label": "기아(000270)"
+            }
+          ],
+          "correct": "C"
+        },
+        {
+          "id": "q4",
+          "question": "2026-02 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "삼성전자(005930)"
+            },
+            {
+              "id": "B",
+              "label": "한화에어로스페이스(012450)"
+            },
+            {
+              "id": "C",
+              "label": "하나금융지주(086790)"
+            }
+          ],
+          "correct": "A"
+        }
+      ]
+    },
+    {
+      "month": "2026-03",
+      "questions": [
+        {
+          "id": "q1",
+          "question": "2026-03 월말 코스피 종가 수준은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "6315.57"
+            },
+            {
+              "id": "B",
+              "label": "4041.97"
+            },
+            {
+              "id": "C",
+              "label": "5052.46"
+            }
+          ],
+          "correct": "C"
+        },
+        {
+          "id": "q2",
+          "question": "2026-03 수익률이 가장 높은 업종 지수는?",
+          "options": [
+            {
+              "id": "A",
+              "label": "통신"
+            },
+            {
+              "id": "B",
+              "label": "금융"
+            },
+            {
+              "id": "C",
+              "label": "의료·정밀기기"
+            }
+          ],
+          "correct": "A"
+        },
+        {
+          "id": "q3",
+          "question": "2026-03 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "미래에셋증권(006800)"
+            },
+            {
+              "id": "B",
+              "label": "한미반도체(042700)"
+            },
+            {
+              "id": "C",
+              "label": "LG에너지솔루션(373220)"
+            }
+          ],
+          "correct": "C"
+        },
+        {
+          "id": "q4",
+          "question": "2026-03 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "한화에어로스페이스(012450)"
+            },
+            {
+              "id": "B",
+              "label": "고려아연(010130)"
+            },
+            {
+              "id": "C",
+              "label": "SK(034730)"
+            }
+          ],
+          "correct": "A"
+        }
+      ]
+    },
+    {
+      "month": "2026-04",
+      "questions": [
+        {
+          "id": "q1",
+          "question": "2026-04 월말 코스피 종가 수준은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "6598.87"
+            },
+            {
+              "id": "B",
+              "label": "8248.59"
+            },
+            {
+              "id": "C",
+              "label": "5279.10"
+            }
+          ],
+          "correct": "A"
+        },
+        {
+          "id": "q2",
+          "question": "2026-04 수익률이 가장 높은 업종 지수는?",
+          "options": [
+            {
+              "id": "A",
+              "label": "보험"
+            },
+            {
+              "id": "B",
+              "label": "기계·장비"
+            },
+            {
+              "id": "C",
+              "label": "부동산"
+            }
+          ],
+          "correct": "B"
+        },
+        {
+          "id": "q3",
+          "question": "2026-04 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "LG에너지솔루션(373220)"
+            },
+            {
+              "id": "B",
+              "label": "HD현대일렉트릭(267260)"
+            },
+            {
+              "id": "C",
+              "label": "한화에어로스페이스(012450)"
+            }
+          ],
+          "correct": "B"
+        },
+        {
+          "id": "q4",
+          "question": "2026-04 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "현대차(005380)"
+            },
+            {
+              "id": "B",
+              "label": "효성중공업(298040)"
+            },
+            {
+              "id": "C",
+              "label": "삼성전기(009150)"
+            }
+          ],
+          "correct": "C"
+        }
+      ]
+    },
+    {
+      "month": "2026-05",
+      "questions": [
+        {
+          "id": "q1",
+          "question": "2026-05 월말 코스피 종가 수준은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "8476.15"
+            },
+            {
+              "id": "B",
+              "label": "10595.19"
+            },
+            {
+              "id": "C",
+              "label": "6780.92"
+            }
+          ],
+          "correct": "A"
+        },
+        {
+          "id": "q2",
+          "question": "2026-05 수익률이 가장 높은 업종 지수는?",
+          "options": [
+            {
+              "id": "A",
+              "label": "기계·장비"
+            },
+            {
+              "id": "B",
+              "label": "전기전자"
+            },
+            {
+              "id": "C",
+              "label": "운송장비·부품"
+            }
+          ],
+          "correct": "B"
+        },
+        {
+          "id": "q3",
+          "question": "2026-05 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "두산에너빌리티(034020)"
+            },
+            {
+              "id": "B",
+              "label": "효성중공업(298040)"
+            },
+            {
+              "id": "C",
+              "label": "KB금융(105560)"
+            }
+          ],
+          "correct": "B"
+        },
+        {
+          "id": "q4",
+          "question": "2026-05 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "NAVER(035420)"
+            },
+            {
+              "id": "B",
+              "label": "삼성전기(009150)"
+            },
+            {
+              "id": "C",
+              "label": "삼성SDI(006400)"
+            }
+          ],
+          "correct": "B"
+        }
+      ]
+    },
+    {
+      "month": "2026-06",
+      "questions": [
+        {
+          "id": "q1",
+          "question": "2026-06 월말 코스피 종가 수준은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "8476.48"
+            },
+            {
+              "id": "B",
+              "label": "10595.60"
+            },
+            {
+              "id": "C",
+              "label": "6781.18"
+            }
+          ],
+          "correct": "A"
+        },
+        {
+          "id": "q2",
+          "question": "2026-06 수익률이 가장 높은 업종 지수는?",
+          "options": [
+            {
+              "id": "A",
+              "label": "제조"
+            },
+            {
+              "id": "B",
+              "label": "의료·정밀기기"
+            },
+            {
+              "id": "C",
+              "label": "IT 서비스"
+            }
+          ],
+          "correct": "B"
+        },
+        {
+          "id": "q3",
+          "question": "2026-06 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "삼성생명(032830)"
+            },
+            {
+              "id": "B",
+              "label": "HD현대일렉트릭(267260)"
+            },
+            {
+              "id": "C",
+              "label": "신한지주(055550)"
+            }
+          ],
+          "correct": "A"
+        },
+        {
+          "id": "q4",
+          "question": "2026-06 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "셀트리온(068270)"
+            },
+            {
+              "id": "B",
+              "label": "KB금융(105560)"
+            },
+            {
+              "id": "C",
+              "label": "현대모비스(012330)"
+            }
+          ],
+          "correct": "B"
+        }
+      ]
+    },
+    {
+      "month": "2026-07",
+      "questions": [
+        {
+          "id": "q1",
+          "question": "2026-07 월말 코스피 종가 수준은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "6595.45"
+            },
+            {
+              "id": "B",
+              "label": "5276.36"
+            },
+            {
+              "id": "C",
+              "label": "8244.31"
+            }
+          ],
+          "correct": "A"
+        },
+        {
+          "id": "q2",
+          "question": "2026-07 수익률이 가장 높은 업종 지수는?",
+          "options": [
+            {
+              "id": "A",
+              "label": "비금속"
+            },
+            {
+              "id": "B",
+              "label": "건설"
+            },
+            {
+              "id": "C",
+              "label": "증권"
+            }
+          ],
+          "correct": "A"
+        },
+        {
+          "id": "q3",
+          "question": "2026-07 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "SK스퀘어(402340)"
+            },
+            {
+              "id": "B",
+              "label": "HD현대일렉트릭(267260)"
+            },
+            {
+              "id": "C",
+              "label": "신한지주(055550)"
+            }
+          ],
+          "correct": "C"
+        },
+        {
+          "id": "q4",
+          "question": "2026-07 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "한화오션(042660)"
+            },
+            {
+              "id": "B",
+              "label": "HD한국조선해양(009540)"
+            },
+            {
+              "id": "C",
+              "label": "LG에너지솔루션(373220)"
+            }
+          ],
+          "correct": "B"
+        }
+      ]
+    },
+    {
+      "month": "2026-08",
+      "questions": [
+        {
+          "id": "q1",
+          "question": "2026-08 월말 코스피 종가 수준은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "8525.03"
+            },
+            {
+              "id": "B",
+              "label": "5456.02"
+            },
+            {
+              "id": "C",
+              "label": "6820.02"
+            }
+          ],
+          "correct": "C"
+        },
+        {
+          "id": "q2",
+          "question": "2026-08 수익률이 가장 높은 업종 지수는?",
+          "options": [
+            {
+              "id": "A",
+              "label": "섬유·의류"
+            },
+            {
+              "id": "B",
+              "label": "음식료·담배"
+            },
+            {
+              "id": "C",
+              "label": "오락·문화"
+            }
+          ],
+          "correct": "B"
+        },
+        {
+          "id": "q3",
+          "question": "2026-08 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "한화에어로스페이스(012450)"
+            },
+            {
+              "id": "B",
+              "label": "POSCO홀딩스(005490)"
+            },
+            {
+              "id": "C",
+              "label": "삼성전자(005930)"
+            }
+          ],
+          "correct": "A"
+        },
+        {
+          "id": "q4",
+          "question": "2026-08 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "SK(034730)"
+            },
+            {
+              "id": "B",
+              "label": "삼성물산(028260)"
+            },
+            {
+              "id": "C",
+              "label": "두산에너빌리티(034020)"
+            }
+          ],
+          "correct": "C"
+        }
+      ]
+    },
+    {
+      "month": "2026-09",
+      "questions": [
+        {
+          "id": "q1",
+          "question": "2026-09 월말 코스피 종가 수준은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "6838.04"
+            },
+            {
+              "id": "B",
+              "label": "8547.55"
+            },
+            {
+              "id": "C",
+              "label": "5470.43"
+            }
+          ],
+          "correct": "A"
+        },
+        {
+          "id": "q2",
+          "question": "2026-09 수익률이 가장 높은 업종 지수는?",
+          "options": [
+            {
+              "id": "A",
+              "label": "전기전자"
+            },
+            {
+              "id": "B",
+              "label": "운송장비·부품"
+            },
+            {
+              "id": "C",
+              "label": "금융"
+            }
+          ],
+          "correct": "A"
+        },
+        {
+          "id": "q3",
+          "question": "2026-09 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "우리금융지주(316140)"
+            },
+            {
+              "id": "B",
+              "label": "현대모비스(012330)"
+            },
+            {
+              "id": "C",
+              "label": "NAVER(035420)"
+            }
+          ],
+          "correct": "A"
+        },
+        {
+          "id": "q4",
+          "question": "2026-09 수익률이 가장 높은 종목은?",
+          "options": [
+            {
+              "id": "A",
+              "label": "KB금융(105560)"
+            },
+            {
+              "id": "B",
+              "label": "HD현대중공업(329180)"
+            },
+            {
+              "id": "C",
+              "label": "한화에어로스페이스(012450)"
+            }
+          ],
+          "correct": "A"
+        }
+      ]
+    }
+  ],
+  "facts_hash": "d4fcfc7e6dd7ab802d0d692db43276bfededad8ccd043dfd6e7828e29012dd08",
+  "prompt_hashes": {
+    "v1_b_num.schema.json": "1a6138314ba8d02ba820e1648922e89bf79c8747beb6f8094c5d3c59424a05b2",
+    "v1_b_num.txt": "fbe3b9d38a2efddc2f3388e95e2f920940e40aa642b99eb209b4dd0cdb513d4b",
+    "v1_b_stage1.schema.json": "0259e0c3251c354a111c59bcf2b47db774c2b24d95697cee72af0435d4c5629c",
+    "v1_b_stage1.txt": "50a00e6e0983a504ff846dc5394c1c3450b0cc985b7425c365aef78ba5c30cca",
+    "v1_b_text.txt": "8ffb293a747caecc1d14e9cd657969f12dae4d40b35d01f0d45385c19906f234",
+    "v1_c_num.schema.json": "14d02594e2f5a80490771e9f734475a5c886616b1d13659fd44d0dea38d9a9b1",
+    "v1_c_num.txt": "664a19d9b9ce5e18d8c2b401467f4742376098bcd39e40b374a6d6ba8b43b4b8",
+    "v1_c_text.txt": "8ffb293a747caecc1d14e9cd657969f12dae4d40b35d01f0d45385c19906f234",
+    "v1_common.txt": "ba57439552cb71df3a8c4edf69e4a787d7b86ef4c0ebdbcfe72c27743d98a851",
+    "v1_probe.schema.json": "abc872fadbe855827222f841e98e9169f0b3412a6eb3482f2832926a17aa7185",
+    "v1_probe.txt": "011a23dfe9777ca64b97a9072c2b7044aaa2f4b75584a132968c860d8345af7c",
+    "v1_text.schema.json": "58937f9f34084d1caeff38e1a22e2d5973a7824fddfdccffc9b40a0d73f87318"
+  },
+  "smoke": false
+}
