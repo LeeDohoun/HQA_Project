@@ -14,14 +14,16 @@ from .probe import ProbeUnavailable, month_ends, render_questions
 CONTROL_MONTHS = pd.period_range("2024-01", "2024-06", freq="M")
 MONTHS = CONTROL_MONTHS.append(pd.period_range("2025-01", "2026-09", freq="M"))
 READ_NOTE = ("LH002 contamination measurement reads only KOSPI month-end levels, sector index returns "
-             "and prior-month cap ranks / top-30 common-stock month-end closes. The dedicated LH001 "
+             "and prior-month cap ranks / month-end closes of the 30 largest prior-month common stocks that still "
+             "trade at month end (names delisted or merged during the month are skipped). The dedicated LH001 "
              "reader is extended to the 2024-01..06 positive control (anchors from 2023-12), plus "
              "2025-01..2026-09. This is not a strategy evaluation; guard_period is deliberately not "
              "called and no holdout claim is consumed.")
 
 
 def read_contamination_facts(months, *, data_dir, sessions):
-    facts = probe.read_contamination_facts(months, data_dir=data_dir, sessions=sessions, guard_unprotected=False)
+    facts = probe.read_contamination_facts(months, data_dir=data_dir, sessions=sessions, guard_unprotected=False,
+                                           survivors_only=True)
     for row in facts.values():
         row["read_note"] = READ_NOTE
     return facts

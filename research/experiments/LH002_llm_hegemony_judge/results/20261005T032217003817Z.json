@@ -1,0 +1,329 @@
+{
+  "experiment_id": "LH002_llm_hegemony_judge",
+  "stage": "probe",
+  "selected_variant": "all_fixed_variants",
+  "verdict": "insufficient",
+  "reasons": [
+    "Each fixed variant is reported separately; aggregate pass means at least one LLM variant passed."
+  ],
+  "variants": {
+    "b_num": {
+      "verdict": "insufficient",
+      "reasons": [
+        "missing top-30 month-end close: 2024-01/091990"
+      ],
+      "primary": {
+        "count": 0,
+        "mean": null,
+        "std": null,
+        "standard_error": null,
+        "t_stat": null,
+        "lag": 4
+      },
+      "ic": {
+        "count": 0,
+        "mean": null,
+        "std": null,
+        "standard_error": null,
+        "t_stat": null,
+        "lag": 4
+      },
+      "cost_sensitivity": {
+        "1.0": {
+          "top_net": null,
+          "top_net_excess": null
+        },
+        "1.5": {
+          "top_net": null,
+          "top_net_excess": null
+        },
+        "2.0": {
+          "top_net": null,
+          "top_net_excess": null
+        }
+      },
+      "random_control": {
+        "share_of_controls": null
+      },
+      "skipped_month_count": 0,
+      "unadjusted_fallback": 0,
+      "delisting_exclusions": 0
+    },
+    "b_text": {
+      "verdict": "insufficient",
+      "reasons": [
+        "missing top-30 month-end close: 2024-01/091990"
+      ],
+      "primary": {
+        "count": 0,
+        "mean": null,
+        "std": null,
+        "standard_error": null,
+        "t_stat": null,
+        "lag": 4
+      },
+      "ic": {
+        "count": 0,
+        "mean": null,
+        "std": null,
+        "standard_error": null,
+        "t_stat": null,
+        "lag": 4
+      },
+      "cost_sensitivity": {
+        "1.0": {
+          "top_net": null,
+          "top_net_excess": null
+        },
+        "1.5": {
+          "top_net": null,
+          "top_net_excess": null
+        },
+        "2.0": {
+          "top_net": null,
+          "top_net_excess": null
+        }
+      },
+      "random_control": {
+        "share_of_controls": null
+      },
+      "skipped_month_count": 0,
+      "unadjusted_fallback": 0,
+      "delisting_exclusions": 0
+    },
+    "c_num": {
+      "verdict": "insufficient",
+      "reasons": [
+        "missing top-30 month-end close: 2024-01/091990"
+      ],
+      "primary": {
+        "count": 0,
+        "mean": null,
+        "std": null,
+        "standard_error": null,
+        "t_stat": null,
+        "lag": 4
+      },
+      "ic": {
+        "count": 0,
+        "mean": null,
+        "std": null,
+        "standard_error": null,
+        "t_stat": null,
+        "lag": 4
+      },
+      "cost_sensitivity": {
+        "1.0": {
+          "top_net": null,
+          "top_net_excess": null
+        },
+        "1.5": {
+          "top_net": null,
+          "top_net_excess": null
+        },
+        "2.0": {
+          "top_net": null,
+          "top_net_excess": null
+        }
+      },
+      "random_control": {
+        "share_of_controls": null
+      },
+      "skipped_month_count": 0,
+      "unadjusted_fallback": 0,
+      "delisting_exclusions": 0
+    },
+    "c_text": {
+      "verdict": "insufficient",
+      "reasons": [
+        "missing top-30 month-end close: 2024-01/091990"
+      ],
+      "primary": {
+        "count": 0,
+        "mean": null,
+        "std": null,
+        "standard_error": null,
+        "t_stat": null,
+        "lag": 4
+      },
+      "ic": {
+        "count": 0,
+        "mean": null,
+        "std": null,
+        "standard_error": null,
+        "t_stat": null,
+        "lag": 4
+      },
+      "cost_sensitivity": {
+        "1.0": {
+          "top_net": null,
+          "top_net_excess": null
+        },
+        "1.5": {
+          "top_net": null,
+          "top_net_excess": null
+        },
+        "2.0": {
+          "top_net": null,
+          "top_net_excess": null
+        }
+      },
+      "random_control": {
+        "share_of_controls": null
+      },
+      "skipped_month_count": 0,
+      "unadjusted_fallback": 0,
+      "delisting_exclusions": 0
+    },
+    "hc002_holdout": {
+      "verdict": "insufficient",
+      "reasons": [
+        "missing top-30 month-end close: 2024-01/091990"
+      ],
+      "primary": {
+        "count": 0,
+        "mean": null,
+        "std": null,
+        "standard_error": null,
+        "t_stat": null,
+        "lag": 4
+      },
+      "ic": {
+        "count": 0,
+        "mean": null,
+        "std": null,
+        "standard_error": null,
+        "t_stat": null,
+        "lag": 4
+      },
+      "cost_sensitivity": {
+        "1.0": {
+          "top_net": null,
+          "top_net_excess": null
+        },
+        "1.5": {
+          "top_net": null,
+          "top_net_excess": null
+        },
+        "2.0": {
+          "top_net": null,
+          "top_net_excess": null
+        }
+      },
+      "random_control": {
+        "share_of_controls": null
+      },
+      "skipped_month_count": 0,
+      "unadjusted_fallback": 0,
+      "delisting_exclusions": 0
+    }
+  },
+  "interpretations": {
+    "note": "Four LLM groups are judged separately; multiple opportunities for a chance pass remain. Random ranks are reported for every arm; text effects and memory dependence are diagnostics. No winner is selected.",
+    "criteria": {
+      "primary": {
+        "metric": "primary.mean",
+        "definition": "Mean decision-level B net minus universe EW gross, or C net minus A EW net, using only paired executable observations."
+      },
+      "core_t_stat_gt": {
+        "metric": "primary.t_stat",
+        "definition": "Mean / NW standard error; Bartlett lag 4 calendar decision periods, preserving missing weeks/months, no finite-sample correction; >2 or >3 after more than 20 trial rows."
+      },
+      "random_control_top_percent": {
+        "metric": "random_control.share_of_controls",
+        "definition": "Fraction of 200 seed-0 control paths with paired mean excess >= actual; <=5% final, <=20% screening. Each path draws ten names without replacement each decision from its preregistered pool."
+      },
+      "minimum_observations": {
+        "metric": "primary.count, events",
+        "definition": "Conservatively require both 20 valid paired weekly decisions and 300 executable selected stock/decision observations; t uses weekly observations only."
+      },
+      "cost_sensitivity": {
+        "metric": "cost_sensitivity[m].top_net_excess",
+        "definition": "Full round-trip cost per bundle at 1/1.5/2; sell tax unscaled. Positive paired excess at 1.5 is required."
+      },
+      "holdout_direction_fraction": {
+        "metric": "final.mean / screening.mean",
+        "definition": "Numeric only: same sign as screening, positive, at least half its effect. Text has no screening effect; this criterion is not applicable."
+      },
+      "screening": {
+        "metric": "primary, random_control",
+        "definition": "Anonymous month-end numeric groups proceed if mean>0, lag-4 t>1 and random share<=20%; failed numeric groups remain screening_fail in final, but still supply text candidates."
+      },
+      "a_weekly": {
+        "metric": "a_weekly",
+        "definition": "HC002 phase-2 EW net minus the same universe EW gross, diagnostic; full costs at each weekly decision."
+      },
+      "b_vs_a": {
+        "metric": "per_decision.vs_a",
+        "definition": "B EW net minus A EW net on the same decision, diagnostic."
+      },
+      "text_effect": {
+        "metric": "text_effect",
+        "definition": "Paired text net minus its numeric net, both selected from the fixed numeric 30; no independent pass criterion."
+      },
+      "avoid": {
+        "metric": "avoid_excess",
+        "definition": "C_num avoid-ten EW net minus A EW net; diagnostic, negative is successful avoidance."
+      },
+      "memory_dependence": {
+        "metric": "memory_dependence",
+        "definition": "Paired named minus anonymous C_num in 2023-01..2025-11, one call each; diagnostic only."
+      },
+      "liquidity_month": {
+        "metric": "liquidity_buckets, monthly",
+        "definition": "Decision-close ADV cost-model buckets (within-bucket benchmarks), and decision-month means; no extra variants."
+      },
+      "jaccard": {
+        "metric": "jaccard",
+        "definition": "Mean of the three pairwise repeat buy-ten set intersections/unions. Stage-1 industry consistency is reported separately."
+      },
+      "invalid_calls": {
+        "metric": "invalid_calls, invalid_call_count",
+        "definition": "Invalid real attempts including retries, deduplicated by cache key; cache reuse is not another invalid call. Stage-1 counts are separate. A failed repeat invalidates the arm's decision."
+      },
+      "text_missing": {
+        "metric": "text_missing",
+        "definition": "Missing extraction per stock/decision/arm, counted once for the common text input, not once per repeat."
+      },
+      "execution": {
+        "metric": "return_counts, stale_exits",
+        "definition": "Shared HC002 next-open/entry-inclusive 20th-close, limit-up exclusion, adjusted ret_1d chain; shared explicitly counted raw fallback/stale/no-later-price policies."
+      },
+      "hc002_holdout": {
+        "metric": "hc002_holdout",
+        "definition": "Only if an HC002 phase2_ew passing registry row exists: HC002 monthly January-May rules, exits by June 30; positive same-direction effect >=0.5 of registered design effect. Otherwise not_applicable."
+      },
+      "provenance": {
+        "metric": "manifest, inputs, snapshot_hash, assumptions",
+        "definition": "Frozen prompt/schema hashes, fixed model/CLI version, content-addressed rendered inputs and extraction metadata. These certify artifacts, not profitability or unseen training data."
+      },
+      "compatibility_aliases": {
+        "metric": "ic, skipped_month_count",
+        "definition": "Shared writer compatibility only: ic aliases paired excess statistics (LLM: NW), never a rank IC; skipped_month_count counts skipped decisions, including weekly ones."
+      }
+    }
+  },
+  "assumptions": [
+    "The dedicated probe reader may read 2026 market-level facts before opening the holdout. This is contamination measurement, not strategy evaluation; it does not call guard_period or consume a holdout claim. Reviewed and accepted by the coordinator on 2026-10-05; the read is limited to KOSPI month-end levels, sector index returns and top-30 stock month-end closes.",
+    "LH002 section 2 fixes B_num random controls to the entire HC002 universe capped at the top 300 by decision-close 20-session ADV, irrespective of selected industries. C_num uses the displayed capped A pool; text uses its fixed 30.",
+    "All three final repeats must be valid; otherwise that arm has no selection. Exact count/mean-rank ties use the displayed ID in lexical order. Fewer than 30 numeric candidates, or fewer than 40 C candidates for disjoint ranked/avoid lists, produce no selection; candidate counts are never shortened.",
+    "Date-only DART listings cannot establish publication before the decision-day close. Conservatively exclude the decision session: use the prior 60 completed sessions and calendar days between their first/last dates. Partial listing coverage makes counts unavailable, never presumed zeros; stored titles carry coverage.",
+    "Input returns use complete ret_1d chains; missing windows remain unavailable. Volatility is daily sample standard deviation (not annualised); a 52-week window is 250 sessions and uses adjusted intraday highs. Breadth uses the HC002 eligible universe. Industry RS subtracts matching cap/EW all-market index returns.",
+    "Stock-table trading value is decision-day turnover (percentile in anonymous mode). The 20-session ADV is retained separately for eligibility, candidate caps and execution costs, not substituted for the displayed daily value.",
+    "Industry financial growth sums unique corporate current/prior pairs in the industry's latest known quarter; every eligible corporate member must have that quarter and a complete pair, otherwise growth is unavailable. Four-quarter trends show YoY and revenue/OI scaled by latest absolute revenue, never monetary amounts in anonymous mode.",
+    "Current stored price revisions and company classifications are used, as in HC002; historical collection timestamps are not publication vintages. This does not reconstruct historical industry classifications. Financial receipt dates strictly precede the decision date.",
+    "Probe stock returns are ratios of the two month-end closes, not strategy returns; stock splits can affect these facts. Five disjoint triples are drawn from the prior month-end top-30 common stocks. Two disjoint sector triples use KOSPI sector index rows, excluding names beginning with 코스피/코스닥, with pairwise separation of at least 3 percentage points.",
+    "LH002 probe v2 needs all 27 months and eight valid answers each. The 2024-01..06 positive control must pass a one-sided exact binomial test against 1/3 (p<0.05). A contaminated month has at least seven correct answers. The earliest January-May 2026 start must have no contaminated month through September and pooled p>=0.05. The 2025 months are boundary information only. Zero estimated variance gives an undefined t, never an infinite passing t; NW remains Bartlett lag 4 with no small-sample correction.",
+    "Conservatively enforce both minimum_observations fields: 20 paired weekly decisions and 300 executable selected stock/decision observations. The t unit remains weekly; stock rows are not independent t observations. Screening uses the same lag-4 NW estimator. Forward dates are exit-price-only, so decisions end in September even when a later weekly exit could fit October 30.",
+    "A quota-interrupted final run resumes only its hash-checked frozen snapshot prepared in the one HoldoutSession, with no protected source rereads or second holdout claim. If interrupted before snapshot publication, the claim is consumed and the run cannot be restarted.",
+    "Smoke runs consume real-call budget if executed, but never append registry rows or overwrite official stage state. A final smoke run still consumes the one holdout claim. Text loaders are local only; no report is fetched by this experiment.",
+    "Prompts are sent through stdin (`codex exec ... -`) because Linux's single-argument limit rejects long tables and business texts; nothing is truncated. A synthetic C_num format check (50 fake stocks) on 2026-10-05 returned schema-valid output with no tool events.",
+    "A bounded stock-presence-date scan through the allowed stage price end preserves HC002's no-later-price exclusion versus temporary missing-exit last-close valuation. No closes from this scan enter LLM inputs; screening never scans 2026 files."
+  ],
+  "performance": {
+    "runtime_seconds": 2.7202414850034984,
+    "peak_memory_mib": 108.1875
+  },
+  "interruption": "missing top-30 month-end close: 2024-01/091990",
+  "smoke": false
+}

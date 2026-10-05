@@ -33,7 +33,7 @@ def month_ends(month, sessions):
     return ends
 
 
-def read_contamination_facts(months, *, data_dir, sessions, guard_unprotected=True):
+def read_contamination_facts(months, *, data_dir, sessions, guard_unprotected=True, survivors_only=False):
     """The sole swappable pre-holdout exception. No financials, daily paths,
     opens, signals, strategy membership, or strategy returns leave this function.
     Prior-month cap rows must be scanned to identify 30 names; only selected
@@ -73,16 +73,20 @@ def read_contamination_facts(months, *, data_dir, sessions, guard_unprotected=Tr
                 code = row["stock_code"]
                 if code.endswith("0") and "스팩" not in row["stock_name"] and row["market"] in ("KOSPI", "KOSDAQ"):
                     prior[code] = {key: row[key] for key in ("stock_code", "stock_name", "market_cap", "close")}
-        top = sorted(prior.values(), key=lambda row: (-float(row["market_cap"]), row["stock_code"]))[:30]
-        if len(top) != 30:
-            raise ProbeUnavailable(f"fewer than 30 prior-month common stocks: {month}")
-        selected = {row["stock_code"] for row in top}
+        ranked = sorted(prior.values(), key=lambda row: (-float(row["market_cap"]), row["stock_code"]))
         closes = {}
         with current_path.open(encoding="utf-8") as handle:
             for line in handle:
                 row = json.loads(line)
-                if row["stock_code"] in selected:
+                if row["stock_code"] in prior:
                     closes[row["stock_code"]] = float(row["close"])
+        if survivors_only:
+            # LH002: a name delisted or merged during the month has no month-end
+            # close, so the pool is the 30 largest prior-month names that still trade.
+            ranked = [row for row in ranked if closes.get(row["stock_code"], 0) > 0 and float(row["close"]) > 0]
+        top = ranked[:30]
+        if len(top) != 30:
+            raise ProbeUnavailable(f"fewer than 30 prior-month common stocks: {month}")
         stocks = []
         for row in top:
             code, opening = row["stock_code"], float(row["close"])

@@ -328,13 +328,30 @@ def test_dedicated_reader_extends_to_controls_and_never_guards_or_evaluates(tmp_
     assert not (tmp_path / holdout.LEDGER_PATH).exists()
 
 
-def test_reader_missing_top30_close_fails_before_any_calls(tmp_path):
+def test_reader_skips_names_without_month_end_close_and_fills_from_next_largest(tmp_path):
+    sessions = pd.bdate_range("2023-12-01", "2024-02-01")
+    write_probe_archive(tmp_path, ["2024-01"], sessions)
+    previous, current = probe_v2.month_ends("2024-01", sessions)
+    prior_path = tmp_path / "market/krx_daily" / str(previous.year) / f"{previous:%Y%m%d}.jsonl"
+    current_path = tmp_path / "market/krx_daily" / str(current.year) / f"{current:%Y%m%d}.jsonl"
+    extra = {"stock_code": "999990", "stock_name": "후순위", "market": "KOSPI", "market_cap": 1.0,
+             "close": 1000, "open": "forbidden-unused", "signals": "forbidden-unused"}
+    prior_path.write_text(prior_path.read_text() + json.dumps(extra) + "\n")
+    lines = current_path.read_text().splitlines()
+    merged_away = json.loads(lines[-1])["stock_code"]
+    current_path.write_text("\n".join(lines[:-1] + [json.dumps({**extra, "close": 1100})]) + "\n")
+    facts_by_month = probe_v2.read_contamination_facts(["2024-01"], data_dir=tmp_path, sessions=sessions)
+    codes = {row["stock_code"] for row in facts_by_month["2024-01"]["stocks"]}
+    assert len(codes) == 30 and merged_away not in codes and "999990" in codes
+
+
+def test_reader_fails_when_fewer_than_30_names_survive(tmp_path):
     sessions = pd.bdate_range("2023-12-01", "2024-02-01")
     write_probe_archive(tmp_path, ["2024-01"], sessions)
     current = probe_v2.month_ends("2024-01", sessions)[1]
     path = tmp_path / "market/krx_daily" / str(current.year) / f"{current:%Y%m%d}.jsonl"
     path.write_text("\n".join(path.read_text().splitlines()[:-1]) + "\n")
-    with pytest.raises(probe_v2.ProbeUnavailable, match="missing top-30"):
+    with pytest.raises(probe_v2.ProbeUnavailable, match="fewer than 30"):
         probe_v2.read_contamination_facts(["2024-01"], data_dir=tmp_path, sessions=sessions)
 
 
