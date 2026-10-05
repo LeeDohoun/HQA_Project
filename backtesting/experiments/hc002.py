@@ -114,6 +114,19 @@ def _observations(prices, universe, *, repo_root=PROJECT_ROOT):
     return observations
 
 
+def universe_on_decision(history, decision_date, *, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT):
+    """One close-known monthly universe, without requiring future price observations."""
+    day = pd.Timestamp(decision_date)
+    return hc001._universe_on_decision(
+        history, day, day, hc001._industries(data_dir), data_dir=data_dir,
+        first_receipts=None, repo_root=repo_root)
+
+
+def forward_observations(prices, universe, *, repo_root=PROJECT_ROOT):
+    """Expose the unchanged HC002 return, execution exclusion and cost policies."""
+    return _observations(prices, universe, repo_root=repo_root)
+
+
 def turnover_metrics(frame):
     """Secondary only: retained executable phase-2 names pay no round-trip cost."""
     adjusted = frame.copy()
