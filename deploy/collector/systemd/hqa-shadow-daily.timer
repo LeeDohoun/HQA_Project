@@ -1,0 +1,11 @@
+[Unit]
+Description=HQA shadow recorder at 08:55 and 12:30 KST daily
+
+[Timer]
+OnCalendar=*-*-* 08:55 Asia/Seoul
+OnCalendar=*-*-* 12:30 Asia/Seoul
+Persistent=true
+Unit=hqa-shadow-daily.service
+
+[Install]
+WantedBy=timers.target

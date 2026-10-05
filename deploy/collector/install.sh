@@ -32,6 +32,9 @@ if [[ "$project_root" != /opt/hqa ]]; then
         --exclude='.agents/' --exclude='__pycache__/' \
         "$project_root/./src/" "$project_root/./scripts/data/" \
         "$project_root/./scripts/ops/" "$project_root/./scripts/__init__.py" \
+        "$project_root/./scripts/forward/" \
+        "$project_root"/./backtesting/{__init__,capacity,cost_model,experiment_registry,holdout,signal_eval}.py \
+        "$project_root"/./backtesting/experiments/{__init__,common,d001,hc001,hc002}.py \
         "$project_root/./deploy/collector/" "$project_root"/./requirements*.txt /opt/hqa/
 fi
 if [[ -e /opt/hqa/.env || -e /opt/hqa/.env-ai ]]; then
@@ -97,8 +100,8 @@ if [[ "$env_check" -eq 20 ]]; then
 fi
 
 if [[ "$env_check" -ne 0 ]]; then
-    systemctl disable --now hqa-dart-poller.service hqa-krx-daily.timer hqa-collector-status.timer hqa-dart-backfill.timer hqa-investor-flow.timer
-    systemctl stop hqa-krx-daily.service hqa-collector-status.service hqa-dart-backfill.service hqa-investor-flow.service
+    systemctl disable --now hqa-dart-poller.service hqa-krx-daily.timer hqa-collector-status.timer hqa-dart-backfill.timer hqa-investor-flow.timer hqa-shadow-daily.timer hqa-fundamentals-refresh.timer
+    systemctl stop hqa-krx-daily.service hqa-collector-status.service hqa-dart-backfill.service hqa-investor-flow.service hqa-shadow-daily.service hqa-fundamentals-refresh.service
     cat <<'NEXT'
 Collectors have not been started. On this server:
   sudo cp -n /etc/hqa/collector.env.example /etc/hqa/collector.env
@@ -114,7 +117,7 @@ NEXT
     exit "$env_check"
 fi
 
-systemctl enable --now hqa-dart-poller.service hqa-krx-daily.timer hqa-collector-status.timer hqa-dart-backfill.timer
+systemctl enable --now hqa-dart-poller.service hqa-krx-daily.timer hqa-collector-status.timer hqa-dart-backfill.timer hqa-shadow-daily.timer hqa-fundamentals-refresh.timer
 if [[ "$investor_flow_enabled" == true ]]; then
     systemctl enable --now hqa-investor-flow.timer
 else

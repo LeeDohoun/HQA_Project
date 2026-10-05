@@ -313,7 +313,8 @@ def test_status_cli_writes_and_prints_same_report_without_reading_secrets(tmp_pa
     assert not list((tmp_path / "ops").glob(".status.*"))
 
 
-@pytest.mark.parametrize("name", ["hqa-dart-poller", "hqa-krx-daily", "hqa-collector-status", "hqa-dart-backfill"])
+@pytest.mark.parametrize("name", ["hqa-dart-poller", "hqa-krx-daily", "hqa-collector-status", "hqa-dart-backfill",
+                                  "hqa-shadow-daily", "hqa-fundamentals-refresh"])
 def test_service_units_use_hqa_environment_and_hardening(name):
     text = (ROOT / "deploy/collector/systemd" / f"{name}.service").read_text()
     for directive in ("User=hqa", "Group=hqa", "EnvironmentFile=/etc/hqa/collector.env",
@@ -700,8 +701,8 @@ def test_transfer_scripts_default_to_dry_run_and_quote_paths(tmp_path, script, e
     key = tmp_path / 'ssh key with "quotes"'
     key.touch()
     log = tmp_path / "rsync.json"
-    data_dir = tmp_path / "local data"
-    env = {**os.environ, "PATH": f"{commands}:{os.environ['PATH']}", "HQA_DATA_DIR": str(data_dir),
+    data_dir = project / "data"
+    env = {**os.environ, "PATH": f"{commands}:{os.environ['PATH']}", "HQA_DATA_DIR": str(tmp_path / "different data"),
            "TEST_RSYNC_LOG": str(log), "PYTHONDONTWRITEBYTECODE": "1"}
     command = ["bash", str(script_path), "operator@192.0.2.1", str(key)]
     if execute:
@@ -715,9 +716,65 @@ def test_transfer_scripts_default_to_dry_run_and_quote_paths(tmp_path, script, e
     assert f'-i "{str(key).replace(chr(34), chr(34) * 2)}"' in ssh
     if script.startswith("push"):
         assert f"{project}/./src/" in arguments
+        assert f"{project}/./scripts/forward/" in arguments
+        assert f"{project}/./backtesting/experiments/hc002.py" in arguments
+        assert not any("bb001" in argument for argument in arguments)
         assert arguments[-1] == "operator@192.0.2.1:/opt/hqa/"
     else:
         assert arguments[-1] == str(data_dir) + "/"
-        assert arguments[-4:-1] == [f"operator@192.0.2.1:/var/lib/hqa/data/{name}"
-                                    for name in ("disclosures", "market", "ops")]
+        assert arguments[-7:-1] == [f"operator@192.0.2.1:/var/lib/hqa/data/{name}"
+                                    for name in ("disclosures", "market", "ops", "forward", "fundamentals", "reference")]
         assert data_dir.exists() is execute
+
+
+def test_shadow_and_refresh_timer_schedules_and_memory_limit():
+    directory = ROOT / "deploy/collector/systemd"
+    timer = (directory / "hqa-shadow-daily.timer").read_text().splitlines()
+    for directive in ("OnCalendar=*-*-* 08:55 Asia/Seoul", "OnCalendar=*-*-* 12:30 Asia/Seoul",
+                      "Persistent=true", "Unit=hqa-shadow-daily.service"):
+        assert directive in timer
+    service = (directory / "hqa-shadow-daily.service").read_text()
+    assert "MemoryMax=800M" in service.splitlines() and "PrivateNetwork=true" in service.splitlines()
+    assert "scripts/ops/shadow_daily.py --execute" in service
+    timer = (directory / "hqa-fundamentals-refresh.timer").read_text().splitlines()
+    for directive in ("OnCalendar=Sun *-*-* 03:00 Asia/Seoul", "Persistent=true", "Unit=hqa-fundamentals-refresh.service"):
+        assert directive in timer
+    assert "scripts/ops/fundamentals_refresh.py --execute" in (directory / "hqa-fundamentals-refresh.service").read_text()
+
+
+@pytest.mark.parametrize("env_check", [0, 10, 2])
+def test_installer_enables_or_stops_new_timers_with_existing_environment_gate(tmp_path, env_check):
+    installer = (ROOT / "deploy/collector/install.sh").read_text()
+    log = tmp_path / "systemctl.log"
+    script = 'systemctl() { printf "%s\\n" "$*" >> "$TEST_SYSTEMCTL_LOG"; }\n'
+    script += f"env_check={env_check}\n" + installer[installer.index("investor_flow_enabled=false"):]
+    result = subprocess.run(["bash", "-c", script], env={**os.environ, "TEST_SYSTEMCTL_LOG": str(log)},
+                            capture_output=True, text=True)
+    assert result.returncode == (2 if env_check == 2 else 0)
+    for name in ("hqa-shadow-daily", "hqa-fundamentals-refresh"):
+        commands = log.read_text().splitlines()
+        if env_check == 0:
+            assert any(command.startswith("enable --now ") and f"{name}.timer" in command for command in commands)
+        else:
+            assert any(command.startswith("disable --now ") and f"{name}.timer" in command for command in commands)
+            assert any(command.startswith("stop ") and f"{name}.service" in command for command in commands)
+
+
+def test_status_shadow_and_refresh_are_local_and_distinguish_no_runs(tmp_path):
+    report = status.collect_status(tmp_path, clock=lambda: NOW)
+    assert report["shadow"] == {"latest_decision_month": None, "evaluated_count": 0,
+                                 "last_run": None, "last_run_result": None}
+    assert report["fundamentals_refresh"] == {"last_run": None, "last_run_result": None, "requests_used": None}
+    directory = tmp_path / "forward/hegemony_shadow"
+    # Decision contents are not needed for the month/count status lookup.
+    (directory / "decisions").mkdir(parents=True)
+    (directory / "decisions/202610.json").write_text("contents must not be read")
+    write_json(directory / "evaluation.json", {"summary": {"count": 2}})
+    write_json(directory / "_last_run.json", {"finished_at": NOW.isoformat(), "status": "error"})
+    write_json(tmp_path / "fundamentals/_refresh_last_run.json", {
+        "finished_at": NOW.isoformat(), "status": "quota_reached", "requests_used": 600})
+    report = status.collect_status(tmp_path, clock=lambda: NOW)
+    assert report["shadow"] == {"latest_decision_month": "2026-10", "evaluated_count": 2,
+                                 "last_run": NOW.isoformat(), "last_run_result": "error"}
+    assert report["fundamentals_refresh"] == {"last_run": NOW.isoformat(),
+        "last_run_result": "quota_reached", "requests_used": 600}

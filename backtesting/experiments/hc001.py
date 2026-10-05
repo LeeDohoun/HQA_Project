@@ -263,14 +263,14 @@ def _observations(prices, universe, *, repo_root=PROJECT_ROOT):
     return _observations_for_horizon(prices, universe, HORIZON, repo_root=repo_root)
 
 
-def _observations_for_horizon(prices, universe, horizon, *, repo_root=PROJECT_ROOT):
+def _observations_for_horizon(prices, universe, horizon, *, repo_root=PROJECT_ROOT, last_dates=None):
     common.guard_prices(prices, repo_root=repo_root)
     columns = ["trade_date", "stock_code", "avg_trading_value_20d", "phase", "revenue_yoy", "score", "gross", "reason", "exit_date",
                "bucket", "cost_1.0", "cost_1.5", "cost_2.0", *signal_eval._RETURN_FLAGS]
     if universe.empty:
         return pd.DataFrame(columns=columns)
     index = pd.MultiIndex.from_frame(universe[["decision_date", "stock_code"]]).set_names(["trade_date", "stock_code"])
-    holding = signal_eval._holding_data(prices, "exclude")
+    holding = signal_eval._holding_data(prices, "exclude", last_dates=last_dates)
     window = signal_eval._holding_window(holding, horizon, "last_close")
     observations = signal_eval._forward_observations(holding, window, index).reset_index(drop=True)
     entries = holding["sessions"].get_indexer(universe.trade_date)

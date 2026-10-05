@@ -43,8 +43,11 @@ fi
 # Anchor /data/ so scripts/data/ is included. Never transfer project env files.
 rsync "${rsync_options[@]}" \
     --exclude='/data/' --exclude='venv/' --exclude='.env*' --exclude='.agents/' \
-    --exclude='.git/' --exclude='frontend/' --exclude='backend/' --exclude='research/' \
+    --exclude='.git/' --exclude='frontend/' --exclude='backend/' --exclude='/research/' \
     --exclude='tests/' --exclude='__pycache__/' \
     "$project_root/./src/" "$project_root/./scripts/data/" \
     "$project_root/./scripts/ops/" "$project_root/./scripts/__init__.py" \
+    "$project_root/./scripts/forward/" \
+    "$project_root"/./backtesting/{__init__,capacity,cost_model,experiment_registry,holdout,signal_eval}.py \
+    "$project_root"/./backtesting/experiments/{__init__,common,d001,hc001,hc002}.py \
     "$project_root/./deploy/collector/" "$project_root"/./requirements*.txt "$host:/opt/hqa/"

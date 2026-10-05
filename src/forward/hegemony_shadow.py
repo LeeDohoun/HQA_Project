@@ -28,6 +28,8 @@ FORWARD_START = pd.Timestamp("2026-10-01")
 KST = ZoneInfo("Asia/Seoul")
 PREREGISTRATION = Path("research/experiments/HC002_operating_leverage_monthly/preregistration.md")
 RECORD_DIR = Path("forward/hegemony_shadow")
+PRICE_COLUMNS = {"trade_date", "stock_code", *krx_market.PRICE_FIELDS, "stock_name", "market",
+                 "trading_value", "calendar_status", "change_rate_pct", "base_price"}
 
 
 def _now():
@@ -166,7 +168,7 @@ def _save_decision(record, data_dir, *, execute, append_rerun):
 
 
 def decide(decision_date, data_dir=PROJECT_ROOT / "data", *, execute=False,
-           backfill_label=False, append_rerun=False):
+           backfill_label=False, append_rerun=False, bounded_window=False):
     """Freeze the close-known HC002 phase-2 portfolio; never execute orders.
 
     Recency is checked against stored prices and the current completed session.
@@ -198,7 +200,8 @@ def decide(decision_date, data_dir=PROJECT_ROOT / "data", *, execute=False,
     if not financial_dir.is_dir():
         raise ValueError("quarterly financial archive is required")
     trailing = sessions[position - 59:position + 1]
-    prices = krx_market.load_prices(None, trailing[0].strftime("%Y%m%d"), day.strftime("%Y%m%d"), data_dir)
+    prices = krx_market.load_prices(None, trailing[0].strftime("%Y%m%d"), day.strftime("%Y%m%d"), data_dir,
+                                   columns=PRICE_COLUMNS if bounded_window else None)
     missing = sessions[position - 19:position + 1].difference(prices.index.get_level_values("trade_date"))
     if len(missing):
         raise ValueError("missing required ADV sessions: " + ", ".join(date.date().isoformat() for date in missing))
@@ -230,11 +233,13 @@ def decide(decision_date, data_dir=PROJECT_ROOT / "data", *, execute=False,
     record = {"strategy_id": STRATEGY_ID, "record_type": "decision",
               "label": "reconstructed" if backfill_label else "forward",
               "recorded_at": now.isoformat(), "recording_delay_sessions": int(delay),
-              "preregistration_commit": _git("log", "-1", "--format=%H", "--", str(PREREGISTRATION)),
+              "preregistration_commit": (_git("log", "-1", "--format=%H", "--", str(PREREGISTRATION))
+                  if (PROJECT_ROOT / PREREGISTRATION).is_file() else "unknown (server)"),
               "code_commit": _git("rev-parse", "HEAD"),
               "code_snapshot_sha256": _digest({str(path.relative_to(PROJECT_ROOT)):
                   hashlib.sha256(path.read_bytes()).hexdigest() for path in (
                       Path(__file__), PROJECT_ROOT / "scripts/forward/hegemony_shadow.py",
+                      PROJECT_ROOT / "scripts/ops/shadow_daily.py",
                       PROJECT_ROOT / "backtesting/experiments/hc002.py",
                       PROJECT_ROOT / "backtesting/experiments/hc001.py",
                       PROJECT_ROOT / "backtesting/experiments/common.py",
@@ -252,6 +257,7 @@ def decide(decision_date, data_dir=PROJECT_ROOT / "data", *, execute=False,
                   "financial_exclusion_applied": report["industry_profiles"]["exclusion_applied"],
                   "universe_report": {key: value for key, value in report.items() if key != "corrections_used"},
                   "dart_listing": listing,
+                  "price_history_columns": list(prices.columns),
                   "price_history_sha256": hashlib.sha256(prices.to_json(orient="split").encode()).hexdigest(),
                   "known_financials_sha256": hashlib.sha256(known.to_json(orient="split").encode()).hexdigest()},
               "tag_policy": "informational only; trailing 60 sessions inclusive; volatility std(ddof=1), stock_code breaks ties"}
@@ -275,20 +281,49 @@ def _running(rows):
             "turnover_based_excess": _summary([row["turnover_based"]["excess"] for row in rows])}
 
 
-def _decisions(data_dir):
+def _decisions(data_dir, *, stream=False):
     directory = Path(data_dir) / RECORD_DIR / "decisions"
-    return [json.loads(path.read_text(encoding="utf-8")) for path in sorted(directory.glob("[0-9]" * 6 + ".json"))]
+    records = (json.loads(path.read_text(encoding="utf-8"))
+               for path in sorted(directory.glob("[0-9]" * 6 + ".json")))
+    return records if stream else list(records)
 
 
-def evaluate(data_dir=PROJECT_ROOT / "data", *, execute=False):
+def _last_dates_after_window(prices, exit_day, days, data_dir, codes):
+    """Preserve no_later_price using row identities, without loading later prices.
+
+    Only names missing on the planned exit need evidence beyond the window.
+    A later row's existence suffices, even when its price/volume is untradable.
+    """
+    last_dates = hc002.signal_eval._last_price_dates(prices)
+    missing = set(last_dates.index[last_dates < exit_day]).intersection(codes)
+    for day in reversed(days):
+        if day <= exit_day or not missing:
+            break
+        path = krx_market._path(day.date(), data_dir)
+        with path.open(encoding="utf-8") as handle:
+            for line in handle:
+                if line.strip():
+                    row = json.loads(line)
+                    code = row["stock_code"]
+                    if code in missing:
+                        if pd.Timestamp(row["trade_date"]) != day:
+                            raise ValueError("KRX row date disagrees with its archive")
+                        last_dates[code] = day
+                        missing.remove(code)
+    return last_dates
+
+
+def evaluate(data_dir=PROJECT_ROOT / "data", *, execute=False, bounded_window=False):
     """Revalue frozen universes using HC002 policies; no experiment/holdout run.
 
     Excluded outcomes are reported, with HC002's equal weights over executable
     names. Reconstructed observations never enter forward statistics or reduce
     their turnover costs. Cumulative excess is compounding monthly net excess,
-    a diagnostic rather than an investable wealth series.
+    a diagnostic rather than an investable wealth series. bounded_window loads
+    only decision close plus the 20 holding sessions, retaining later-row
+    existence checks for the unchanged no_later_price policy.
     """
-    records, days = _decisions(data_dir), _price_days(data_dir)
+    records, days = _decisions(data_dir, stream=bounded_window), _price_days(data_dir)
     latest = days[-1] if days else None
     pending, frames, matured = [], [], []
     for record in records:
@@ -301,7 +336,9 @@ def evaluate(data_dir=PROJECT_ROOT / "data", *, execute=False):
         actual = sessions[sessions.get_loc(day) + 1:sessions.get_loc(day) + 1 + hc002.HORIZON]
         if not planned.equals(actual):
             raise ValueError("calendar disagrees with immutable planned holding sessions")
-        prices = krx_market.load_prices(None, day.strftime("%Y%m%d"), latest.strftime("%Y%m%d"), data_dir)
+        end = exit_day if bounded_window else latest
+        prices = krx_market.load_prices(None, day.strftime("%Y%m%d"), end.strftime("%Y%m%d"), data_dir,
+                                       columns=PRICE_COLUMNS if bounded_window else None)
         required = pd.DatetimeIndex([day, *planned])
         missing = required.difference(prices.index.get_level_values("trade_date"))
         if len(missing):
@@ -311,13 +348,19 @@ def evaluate(data_dir=PROJECT_ROOT / "data", *, execute=False):
         if not record["universe"]:
             pending.append({"decision_date": record["decision_date"], "reason": "empty_decision_universe"})
             continue
-        universe = pd.DataFrame(record["universe"])
+        universe = pd.DataFrame(record["universe"], columns=[
+            "stock_code", "phase", "score", "revenue_yoy", "avg_trading_value_20d"])
         universe["phase"] = pd.array(universe.phase, dtype="Int64")
         universe = universe.assign(decision_date=day, trade_date=pd.Timestamp(record["planned_entry_date"]))
-        observations = hc002.forward_observations(prices, universe)
+        last_dates = (_last_dates_after_window(prices, exit_day, days, data_dir, universe.stock_code)
+                      if bounded_window else None)
+        observations = hc002.forward_observations(prices, universe, last_dates=last_dates)
+        # Do not retain one month's price frame while loading the next.
+        del prices
         observations["label"] = record["label"]
         frames.append(observations)
-        matured.append(record)
+        matured.append({"decision_date": record["decision_date"], "label": record["label"],
+                        "holdings_count": len(record["holdings"])})
     results = []
     if frames:
         frame = pd.concat(frames, ignore_index=True)
@@ -341,7 +384,7 @@ def evaluate(data_dir=PROJECT_ROOT / "data", *, execute=False):
             other = next(row for row in turnover["per_rebalance"] if row["trade_date"] == key)
             churn = next(row for row in turnover["turnover_by_month"] if row["decision_date"] == key)
             results.append({"decision_date": key, "label": record["label"], "status": "evaluated",
-                            "planned_holdings_count": len(record["holdings"]), "evaluated_holdings_count": main["count"],
+                            "planned_holdings_count": record["holdings_count"], "evaluated_holdings_count": main["count"],
                             "evaluated_universe_size": main["universe_count"], "gross": main["gross"],
                             "cost": main["gross"] - main["net_1.0"], "net": main["net_1.0"],
                             "universe_gross": main["universe_gross"], "excess": main["excess_1.0"],

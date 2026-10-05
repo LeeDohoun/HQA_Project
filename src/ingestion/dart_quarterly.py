@@ -9,6 +9,7 @@ import math
 import re
 from collections import defaultdict
 from datetime import date, datetime
+from itertools import groupby
 from pathlib import Path
 
 import pandas as pd
@@ -337,7 +338,7 @@ def _publish(directory: Path, year: int, report: str, records: list[dict]) -> in
 def backfill(from_year: int, to_year: int, *, execute=False, max_requests=DEFAULT_MAX_REQUESTS,
              data_dir=DEFAULT_DATA_DIR, api_key=None, session=None, clock=None,
              corp_codes_path=DEFAULT_CORP_CODES, listing_dir=None, universe_source=None,
-             retry_batches=None) -> dict:
+             retry_batches=None, batch_offset=0) -> dict:
     """Print a read-only plan by default; execution reserves each KST-day attempt.
 
     Completed batches, including 013, are skipped. Batch identity hashes its
@@ -347,11 +348,15 @@ def backfill(from_year: int, to_year: int, *, execute=False, max_requests=DEFAUL
     recover an original version that OpenDART no longer returns. Future reports
     returning 013 are also completed. retry_batches lists completed batch IDs to
     refresh; an empty list or ["all"] refreshes all completed jobs in these years.
+    batch_offset rotates request order for capped recurring refreshes without
+    changing batch identities, filing versions or quota accounting.
     """
     if type(from_year) is not int or type(to_year) is not int or not 2015 <= from_year <= to_year <= 9999:
         raise ValueError("DART quarterly years must be ordered integers starting in 2015")
     if type(max_requests) is not int or max_requests < 1:
         raise ValueError("DART max_requests must be a positive integer")
+    if type(batch_offset) is not int or batch_offset < 0:
+        raise ValueError("DART batch_offset must be a nonnegative integer")
     directory = Path(data_dir) / "fundamentals/dart_quarterly"
     universe = load_universe(corp_codes_path=corp_codes_path,
         listing_dir=listing_dir if listing_dir is not None else Path(data_dir) / "disclosures/dart_full/list",
@@ -361,6 +366,9 @@ def backfill(from_year: int, to_year: int, *, execute=False, max_requests=DEFAUL
     hashes = [hashlib.sha256(",".join(batch).encode()).hexdigest() for batch in batches]
     jobs = [(year, report, batch, f"{year}_{report}_{digest}") for year in range(from_year, to_year + 1)
             for report in REPORTS for batch, digest in zip(batches, hashes)]
+    # A capped recurring refresh rotates so later reports/companies cannot starve.
+    offset = batch_offset % len(jobs) if jobs else 0
+    jobs = jobs[offset:] + jobs[:offset]
     completed, all_skipped = _state(directory)
     job_keys = {job[3] for job in jobs}
     if retry_batches is not None and (not isinstance(retry_batches, list)
@@ -375,6 +383,7 @@ def backfill(from_year: int, to_year: int, *, execute=False, max_requests=DEFAUL
             "requests": len(jobs), "pending_requests": len((job_keys - completed) | retry),
             "batches_with_all_rows_skipped": sorted(all_skipped & job_keys),
             "max_requests": max_requests, "data_dir": str(directory)}
+    plan["batch_offset"] = offset
     if not execute:
         print(json.dumps(plan, ensure_ascii=False))
         return plan
@@ -464,21 +473,33 @@ def load_quarterly(as_of, *, data_dir=DEFAULT_DATA_DIR) -> pd.DataFrame:
         session_date = session_date.tz_convert(KST)
     day = session_date.date().isoformat()
     directory = Path(data_dir) / "fundamentals/dart_quarterly"
-    records = []
-    for path in sorted(directory.glob("[0-9][0-9][0-9][0-9]_110*.jsonl")):
-        for row in read_rows(path):
-            if row["available_date"] != _filing_date(row["rcept_no"]):
-                raise ValueError("DART quarterly availability does not match receipt")
-            if row["available_date"] < day:
-                records.append(row)
-    latest = {}
-    for row in _derive(records):
-        key = row["corp_code"], row["fiscal_quarter"]
-        rank = row["fs_div"] == "CFS", row["available_date"], row["rcept_no"]
-        if key not in latest or rank > latest[key][0]:
-            latest[key] = rank, row
-    rows = [{**{field: row[field] for field in COLUMNS if field != "stock_code"}, "stock_code": stock}
-            for _, row in (latest[key] for key in sorted(latest)) for stock in row["stock_codes"]]
+    rows = []
+    paths = sorted(directory.glob("[0-9][0-9][0-9][0-9]_110*.jsonl"))
+    # Derivation dependencies are confined to a corporate business year. Keep
+    # all years' output, but only one year's raw accounts/corrections in memory.
+    for year, files in groupby(paths, key=lambda path: path.stem[:4]):
+        records = []
+        for path in files:
+            for row in read_rows(path):
+                if str(row["bsns_year"]) != year:
+                    raise ValueError("DART quarterly archive business year disagrees with filename")
+                if row["available_date"] != _filing_date(row["rcept_no"]):
+                    raise ValueError("DART quarterly availability does not match receipt")
+                if row["available_date"] < day:
+                    records.append(row)
+        latest = {}
+        for row in _derive(records):
+            key = row["corp_code"], row["fiscal_quarter"]
+            rank = row["fs_div"] == "CFS", row["available_date"], row["rcept_no"]
+            if key not in latest or rank > latest[key][0]:
+                latest[key] = rank, row
+        for key in sorted(latest):
+            row = latest[key][1]
+            rows.extend(tuple(stock if field == "stock_code" else row[field] for field in COLUMNS)
+                        for stock in row["stock_codes"])
+        del records, latest
+    # Preserve the original corp/quarter order and each filing's alias order.
+    rows.sort(key=lambda row: row[1:3])
     frame = pd.DataFrame(rows, columns=COLUMNS)
     for metric in ACCOUNTS:
         frame[metric] = pd.to_numeric(frame[metric]).astype(float)

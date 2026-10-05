@@ -31,10 +31,13 @@ COMPANY_URL = "https://opendart.fss.or.kr/api/company.json"
 FIELDS = ("corp_name", "stock_code", "corp_cls", "induty_code", "est_dt", "acc_mt")
 
 
-def load_corp_codes(path: str | Path) -> list[dict]:
-    """Read the supplied list without filtering out formerly listed companies."""
+def load_corp_codes(path: str | Path, *, stock_codes=None) -> list[dict]:
+    """Include formerly listed companies by default, or scope to explicit stocks."""
     corps = {}
     stocks = {}
+    selected = None if stock_codes is None else set(stock_codes)
+    if selected is not None and any(not is_stock_code(code) for code in selected):
+        raise ValueError("DART company stock subset contains invalid codes")
     with Path(path).open(encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         if not {"corp_code", "stock_code"}.issubset(reader.fieldnames or []):
@@ -42,6 +45,8 @@ def load_corp_codes(path: str | Path) -> list[dict]:
         for row in reader:
             corp = (row.get("corp_code") or "").strip()
             stock = (row.get("stock_code") or "").strip()
+            if selected is not None and stock not in selected:
+                continue
             if not re.fullmatch(r"[0-9]{8}", corp) or not is_stock_code(stock):
                 raise ValueError("DART company CSV contains invalid corporate or stock code")
             if (corp in corps and corps[corp]["stock_code"] != stock
@@ -114,7 +119,7 @@ class DartCompanyCollector:
         self.data_dir = Path(data_dir)
         self.request_interval = request_interval
 
-    def collect(self, corp_codes_path: str | Path, *, max_requests=3000, execute=False) -> dict:
+    def collect(self, corp_codes_path: str | Path, *, max_requests=3000, execute=False, stock_codes=None) -> dict:
         """Plan by default. max_requests is a per-KST-day ceiling across reruns.
 
         Status 020 blocks this collector for the remainder of that KST day.
@@ -123,7 +128,7 @@ class DartCompanyCollector:
         """
         if type(max_requests) is not int or max_requests < 1:
             raise ValueError("DART company max_requests must be a positive integer")
-        references = load_corp_codes(corp_codes_path)
+        references = load_corp_codes(corp_codes_path, stock_codes=stock_codes)
         directory = self.data_dir / "reference" / "dart_company"
         if not execute:
             return self._collect(references, directory, max_requests, execute=False)

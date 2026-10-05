@@ -1,0 +1,20 @@
+[Unit]
+Description=HQA local HC002 forward shadow recording and evaluation
+
+[Service]
+Type=oneshot
+User=hqa
+Group=hqa
+WorkingDirectory=/opt/hqa
+EnvironmentFile=/etc/hqa/collector.env
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/hqa/venv/bin/python /opt/hqa/scripts/ops/shadow_daily.py --execute
+MemoryMax=800M
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/hqa/data
+PrivateTmp=true
+PrivateNetwork=true
+UMask=0027

@@ -98,6 +98,21 @@ def collect_status(data_dir: str | Path, *, clock=None) -> dict:
     investor_flow = {
         "latest_stored_date": max(flow_dates).isoformat() if flow_dates else None,
         "last_run_failures_count": len(flow_run["failures"]) if flow_run is not None else None}
+    shadow_dir = data_dir / "forward/hegemony_shadow"
+    decisions = sorted((shadow_dir / "decisions").glob("[0-9]" * 6 + ".json"))
+    evaluation = _read_state(shadow_dir / "evaluation.json")
+    shadow_run = _read_state(shadow_dir / "_last_run.json")
+    shadow = {
+        "latest_decision_month": (datetime.strptime(decisions[-1].stem, "%Y%m").strftime("%Y-%m")
+                                  if decisions else None),
+        "evaluated_count": evaluation["summary"]["count"] if evaluation is not None else 0,
+        "last_run": shadow_run["finished_at"] if shadow_run is not None else None,
+        "last_run_result": shadow_run["status"] if shadow_run is not None else None}
+    refresh_run = _read_state(data_dir / "fundamentals/_refresh_last_run.json")
+    fundamentals_refresh = {
+        "last_run": refresh_run["finished_at"] if refresh_run is not None else None,
+        "last_run_result": refresh_run["status"] if refresh_run is not None else None,
+        "requests_used": refresh_run["requests_used"] if refresh_run is not None else None}
     disk_free = shutil.disk_usage(data_dir).free
     low_disk = disk_free < LOW_DISK_BYTES
     flags = [name for name, flagged in (
@@ -113,6 +128,7 @@ def collect_status(data_dir: str | Path, *, clock=None) -> dict:
             "poller_stale": poller_stale,
             "dart_backfill": dart_backfill,
             "investor_flow": investor_flow,
+            "shadow": shadow, "fundamentals_refresh": fundamentals_refresh,
             "krx_newest_date": newest_krx.isoformat() if newest_krx is not None else None,
             "krx_expected_date": expected.isoformat(), "krx_lag_days": lag_days,
             "empty_dates": empty_dates, "calendar_unverified_dates": calendar_unverified,

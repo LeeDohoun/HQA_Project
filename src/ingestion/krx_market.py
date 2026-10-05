@@ -193,17 +193,21 @@ def load_universe(as_of: str, data_dir: str | Path) -> list[dict]:
     return [latest[code] for code in sorted(latest)]
 
 
-def load_prices(codes: list[str] | None, from_date: str, to_date: str, data_dir: str | Path) -> pd.DataFrame:
+def load_prices(codes: list[str] | None, from_date: str, to_date: str, data_dir: str | Path,
+                *, columns=None) -> pd.DataFrame:
     """Load latest stored daily episodes; missing prices/optional fields are never filled.
 
     Multi-day returns must chain (1 + ret_1d), rather than divide raw closes.
     First-day open-to-close returns require open/base_price-adjusted logic in the
     evaluation layer.
+    columns projects fields before accumulating days, bounding metadata memory.
     """
     selected = None if codes is None else set(codes)
-    rows = [row for day in _days(from_date, to_date) for row in load_universe(day.isoformat(), data_dir)
+    rows = [row if columns is None else {key: value for key, value in row.items() if key in columns}
+            for day in _days(from_date, to_date) for row in load_universe(day.isoformat(), data_dir)
             if selected is None or row["stock_code"] in selected]
     frame = pd.DataFrame(rows) if rows else pd.DataFrame(columns=["trade_date", "stock_code", *PRICE_FIELDS])
+    del rows
     frame["trade_date"] = pd.to_datetime(frame["trade_date"])
     for field in (*PRICE_FIELDS, *OPTIONAL_FIELDS, *CHANGE_FIELDS, "base_price"):
         if field in frame:

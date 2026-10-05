@@ -35,7 +35,7 @@ fi
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 project_root=$(cd -- "$script_dir/../.." && pwd)
 cd -- "$project_root"
-data_dir=$("$project_root/venv/bin/python" -B -c 'from src.config.settings import get_data_dir; print(get_data_dir())')
+data_dir="$project_root/data"
 rsync_options=(-az --itemize-changes --rsync-path='sudo -n rsync' -e "$ssh_command")
 if [[ "$execute" == false ]]; then
     rsync_options+=(-n)
@@ -45,4 +45,5 @@ else
 fi
 rsync "${rsync_options[@]}" \
     "$host:/var/lib/hqa/data/disclosures" "$host:/var/lib/hqa/data/market" \
-    "$host:/var/lib/hqa/data/ops" "$data_dir/"
+    "$host:/var/lib/hqa/data/ops" "$host:/var/lib/hqa/data/forward" \
+    "$host:/var/lib/hqa/data/fundamentals" "$host:/var/lib/hqa/data/reference" "$data_dir/"

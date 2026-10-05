@@ -1,7 +1,8 @@
 # NCP 경량 수집 서버 운영
 
 이 서버는 DART 첫 관측 폴러와 과거 전시장 backfill, KRX 전종목 일봉 수집,
-선택적인 KIS 투자자별 수급 조회, 로컬 상태 보고만 실행합니다.
+선택적인 KIS 투자자별 수급 조회, HC002 shadow 기록·평가와 주간 재무 갱신,
+로컬 상태 보고를 실행합니다.
 백엔드·DB·LLM 분석·주문은 실행하지 않습니다. 필수 API 키는
 `DART_API_KEY`, `KRX_OPEN_API_KEY`이며, 수급 수집에만 전용 모의투자 데이터 키
 `KIS_DATA_APP_KEY`, `KIS_DATA_APP_SECRET`을 추가할 수 있습니다. PC의 `.env`, `.env-ai`,
@@ -48,8 +49,10 @@ bash scripts/ops/push_collector_code.sh ubuntu@PUBLIC_IP ~/.ssh/ncp_hqa
 bash scripts/ops/push_collector_code.sh --execute ubuntu@PUBLIC_IP ~/.ssh/ncp_hqa
 ```
 
-`src/`, `scripts/data/`, `scripts/ops/`, `scripts/__init__.py`, `deploy/collector/`,
-루트 requirements 파일만 `/opt/hqa`에 전송합니다. 로컬 수집 데이터, venv,
+`src/`, `scripts/data/`, `scripts/ops/`, `scripts/forward/`, `scripts/__init__.py`,
+`deploy/collector/`, 루트 requirements와 shadow가 import하는 최소 `backtesting/`
+파일만 `/opt/hqa`에 전송합니다. `backtesting/experiments/`에서는 `__init__`,
+`common`, `d001`, `hc001`, `hc002`만 포함합니다. 로컬 수집 데이터, venv,
 `.env*`, 협업 기록, 프론트엔드·백엔드, 연구·테스트, Python 캐시는 제외합니다.
 코드를 갱신할 때도 같은 명령을 사용합니다. 코드 갱신 전에는 아래 중지 명령으로
 수집을 멈추고, 전송·재설치 후 다시 가동하세요.
@@ -293,6 +296,8 @@ JSON과 journal 출력은 동일한 보고서를 담습니다. 환경 파일이�
 | `dart_backfill` | 완료 목록 날짜·상세 접수·건너뛴 접수 건수, KST 오늘의 backfill 요청 수와 제공자 한도 여부 |
 | `investor_flow.latest_stored_date` | 로컬 수급 JSONL의 최신 저장 거래일; 파일이 없으면 null |
 | `investor_flow.last_run_failures_count` | 마지막 실행 요약의 실패 종목 수; 실행 기록이 없으면 null |
+| `shadow` | 최신 결정 월, 평가 완료한 forward 월 수, 마지막 실행 시각·결과 |
+| `fundamentals_refresh` | 마지막 재무·프로필 갱신 시각·결과와 해당 실행의 실제 요청 수 |
 | `krx_newest_date`, `krx_expected_date` | 최신 저장 날짜와 어제까지의 마지막 평일 |
 | `krx_lag_days` | 최신 저장일 이후 기대 날짜까지의 미수집 평일 수. 1보다 크면 경고 |
 | `empty_dates` | KRX 상태 파일의 빈 응답 날짜. 휴장으로 확정된 날짜가 아님 |
@@ -312,12 +317,100 @@ KRX 지연은 거래소 휴일을 제외하지 않은 **평일 수**입니다. �
 검증 범위는 기존 코드에서 미확인 상태입니다. 상태 보고는 모든 저장 일봉 파일을
 순차적으로 읽어 과거 미검증 날짜도 보존합니다. 파일이 잘못된 JSON이면 작업이 실패합니다.
 
+## HC002 forward shadow와 주간 재무 갱신
+
+PC가 꺼져 있어도 모든 반복 작업은 서버 systemd에서 실행됩니다. 키가 준비된 상태로
+설치기를 다시 실행하면 두 타이머도 활성화됩니다. 기존 환경 파일의 여섯 키 허용
+목록은 유지하며 추가 키나 LLM·주문 서비스가 필요하지 않습니다.
+
+| 작업 | 서버 일정 (Asia/Seoul) | 기본 상한 |
+| --- | --- | --- |
+| `hqa-shadow-daily.timer` | 매일 08:55, 12:30 (주말 포함) | DART 요청 0회, `MemoryMax=800M` |
+| `hqa-fundamentals-refresh.timer` | 일요일 03:00 | 재무 400회/주 + 누락 프로필 200회/주 |
+
+두 타이머는 `Persistent=true`입니다. shadow는 08:40 KRX 수집 이후 로컬에 저장된
+최신 날짜가 XKRX 달력의 월 마지막 세션인지 확인합니다. 토요일에 들어온 금요일
+월말 일봉도 대상입니다. 최신 날짜의 모든 종목이 `calendar_status=verified`여야
+하며 그 월의 결정이 이미 있으면 새로 만들지 않습니다. 결정 파일의 `recorded_at`은
+실제로 기록한 KST 시각입니다. 다른 달의 누락 결정을 찾아 채우거나
+`--backfill-label`을 사용하지 않으며, recorder의 현재 완료 세션 대비 3세션 지연
+허용 및 이후 소급 거부를 그대로 따릅니다. 오래된 월말 캐시로 거부된 경우에도
+평가는 실행하고 거부 이유를 JSON에 남깁니다.
+
+결정은 `forward/hegemony_shadow/decisions/YYYYMM.json`, 평가는 같은 디렉터리의
+`evaluation.json`, 마지막 실행은 `_last_run.json`입니다. `research/`와 `.git/`이
+없는 서버에서도 동작하며 사전등록 커밋은 `unknown (server)`로 명시합니다.
+shadow 명령은 종료 코드 0과 JSON 요약을 출력하므로 `status`, `decision`,
+`evaluation` 항목을 확인해야 합니다. 데이터·달력 오류를 정상 결과로 대체하지
+않습니다. 서비스의 `PrivateNetwork=true`는 외부 요청도 차단합니다.
+
+가격은 결정 시 최근 60세션, 평가 시 결정 종가와 다음 20 보유 세션만 프레임으로
+읽고 HC002에 필요한 필드만 남깁니다. `data_snapshot.price_history_columns`는 가격
+해시의 대상 열을 명시합니다. 직접 recorder CLI를 재실행할 때도 `--bounded-window`를
+지정해야 같은 가격 스냅샷을 사용합니다. 재무 파생은 연도별로 처리하되 전체 기간의
+시점별 값은 유지합니다. 청산일에 행이 없는 종목은 이후 파일에서 종목·날짜의 존재만 순차 확인해
+기존 `no_later_price`/마지막 종가 정책을 보존합니다. 수년의 가격 프레임을 만들지
+않습니다. `_last_run.json`의 `peak_rss_mib`는 프로세스의 최대 RSS입니다.
+결정 이력도 한 파일씩 읽고 평가에 필요한 열만 보관해 과거 태그와 메타데이터를
+모두 누적해서 메모리에 올리지 않습니다.
+합성 전시장 데이터(3,000종목, 가격 60+20세션, 재무 2015–2026년)의 최대 RSS는
+별도 프로세스 측정에서 **544.4 MiB**였으며 `tests/test_shadow_ops.py`에서 600 MiB
+미만을 검증합니다. 이는 서버 실측값이 아닙니다. 운영 서버의 메모리는 journal과 이 값을 함께
+확인하세요. 기존 KRX의 특별장 미검증 상태는 이 작업이 임의로 승격하지 않습니다.
+
+주간 재무 작업은 현재·직전 사업연도 네 보고서씩을 기존 `fnlttMultiAcnt` 100개
+회사 배치로 재요청합니다. 완료 배치와 이전 `013`도 명시적으로 재요청해 새 공시와
+정정을 찾습니다. `fundamentals/dart_quarterly/`의 기존 접수번호별 저장·파생 규칙을
+사용해 앞선 접수 이력을 보존합니다. API가 더 이상 반환하지 않는 원본은 복구할
+수 없습니다. 프로필은 최신 KRX 종목 중 `companies.jsonl`에 없는 회사만 요청하고,
+기업 코드 CSV에 매핑이 없는 종목은 `unmapped_stock_codes`에 표시합니다.
+`reference/corp_codes.csv`와 로컬 DART 목록이 필요하며 PC의 백업 경로에 의존하지
+않습니다.
+
+재무와 프로필 각각의 기존 `_quota.json`에서 **KST 월요일부터 일요일까지**의
+요청 시도 수를 합산합니다. 같은 주의 재실행과 실패한 요청도 400·200회에 포함하며
+다른 수동 수집이 같은 모듈 원장을 사용한 경우 그 요청도 포함합니다. 공급자 한도
+응답은 세 원장 중 어디에 기록돼도 그날 추가 갱신을 중단합니다. 갱신기는
+`dart_full/.backfill.lock`으로 야간 backfill과 직렬화하고 세 원장의 그날 합계를
+18,000회로 제한해 폴러와 여유분에 2,000회를 남깁니다. 기존 backfill의 17,000회
+상한과 폴러 일정은 바꾸지 않습니다. KST 자정을 넘기면 새 날짜의 예산으로 추가
+요청을 하지 않고 명확한 오류로 종료합니다. dry run은 키 조회·요청·파일 쓰기를
+하지 않습니다.
+
+전체 두 연도 갱신에 400회보다 많은 배치가 필요하면 마지막 성공 배치 다음부터
+다음 주에 순환합니다. 작은 수동 상한을 사용해도 뒤쪽 보고서·회사와 현재 연도가
+계속 누락되지 않습니다. `next_batch_offset`과 `pending_requests`로 진행을 확인합니다.
+
+회사 수를 N, 배치 수를 B=ceil(N/100), 누락 프로필을 P라 하면 일반적인 주간 요청은
+`min(8×B, 400) + min(P, 200)`회입니다. 예를 들어 N=3,000, 누락이 없으면 **240회/주**,
+월 4~5회의 일요일 기준 **960~1,200회/월**입니다. 기본 최악 상한은 **600회/주**,
+**2,400~3,000회/월**이며 이미 쓴 예산·공급자 한도로 더 적을 수 있습니다.
+갱신일에 backfill 17,000 + 갱신 최대 600 + 폴러 약 1,000 = **약 18,600회**로,
+키 전체의 20,000회/일 안에 약 1,400회의 여유가 남습니다. 실제 요청 수와 남은
+`pending_requests`를 마지막 실행에서 확인하세요.
+
+요청 없이 계획과 상태를 확인합니다. 마지막 실행 기록은
+`fundamentals/_refresh_last_run.json`에 있습니다.
+
+```bash
+sudo -u hqa /opt/hqa/venv/bin/python /opt/hqa/scripts/ops/shadow_daily.py \
+  --data-dir /var/lib/hqa/data
+sudo -u hqa /opt/hqa/venv/bin/python /opt/hqa/scripts/ops/fundamentals_refresh.py \
+  --data-dir /var/lib/hqa/data --max-requests 400
+sudo systemctl list-timers 'hqa-*' --all --no-pager
+sudo systemctl start hqa-collector-status.service
+sudo cat /var/lib/hqa/data/ops/status.json
+sudo journalctl -u hqa-shadow-daily.service -n 30 --no-pager
+sudo journalctl -u hqa-fundamentals-refresh.service -n 30 --no-pager
+```
+
 ## 6. PC로 데이터 가져오기
 
-로컬 HQA venv가 있는 WSL 프로젝트에서 실행합니다. PC의 `get_data_dir()`를 사용하므로
-로컬 환경 설정의 `HQA_DATA_DIR`와 동일한 위치로 가져옵니다. 이 단계에서 로컬 설정을
-읽지만 서버로 전송하지 않습니다. 디렉터리 이름을 유지해 `disclosures/`, `market/`,
-`ops/`만 가져오며 로컬 파일을 삭제하지 않습니다. 최초 수집·상태 보고 후 실행하세요.
+WSL 프로젝트에서 실행합니다. 목적지는 항상 이 PC 저장소의 `data/`이며 로컬 키나
+`HQA_DATA_DIR` 설정을 읽지 않습니다. 디렉터리 이름을 유지해 `disclosures/`,
+`market/` (그 안의 `investor_flow/` 포함), `ops/`, `forward/`, `fundamentals/`,
+`reference/`를 가져오며 로컬 파일을 삭제하지 않습니다. 토큰 캐시는 가져오지
+않습니다. 최초 수집·상태 보고 후 실행하세요.
 
 ```bash
 bash scripts/ops/pull_collector_data.sh ubuntu@PUBLIC_IP ~/.ssh/ncp_hqa
@@ -326,12 +419,16 @@ bash scripts/ops/pull_collector_data.sh --execute ubuntu@PUBLIC_IP ~/.ssh/ncp_hq
 
 수집 데이터는 계속 증가하므로 디스크 공간을 점검하고 별도로 백업합니다. 원격 파일의
 최신 사본을 받는 방식이며, PC에서 같은 수집 파일을 독립적으로 수정한 내용을 병합하지는 않습니다.
+실험 전 PC를 켜고 위 dry run으로 경로를 확인한 뒤 `--execute`로 최신 자료를
+가져옵니다. 실험에는 `--data-dir "$PWD/data"`를 명시해 방금 가져온 재무·프로필·수급을
+사용하세요. 실험의 사전등록·holdout 규칙은 그대로 적용하며 shadow 기록을 실험
+결과나 성과 검증으로 간주하지 않습니다. 반복 수집과 shadow는 PC에서 예약하지 않습니다.
 
 ## 7. 전체 중지와 비용 확인
 
 ```bash
-sudo systemctl disable --now hqa-dart-poller.service hqa-krx-daily.timer hqa-collector-status.timer hqa-dart-backfill.timer hqa-investor-flow.timer
-sudo systemctl stop hqa-krx-daily.service hqa-collector-status.service hqa-dart-backfill.service hqa-investor-flow.service
+sudo systemctl disable --now hqa-dart-poller.service hqa-krx-daily.timer hqa-collector-status.timer hqa-dart-backfill.timer hqa-investor-flow.timer hqa-shadow-daily.timer hqa-fundamentals-refresh.timer
+sudo systemctl stop hqa-krx-daily.service hqa-collector-status.service hqa-dart-backfill.service hqa-investor-flow.service hqa-shadow-daily.service hqa-fundamentals-refresh.service
 sudo systemctl list-timers 'hqa-*' --all --no-pager
 ```
 

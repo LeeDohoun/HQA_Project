@@ -24,6 +24,8 @@ def main(argv=None):
             mode = command.add_mutually_exclusive_group()
             mode.add_argument("--execute", action="store_true", help="Write local research records")
             mode.add_argument("--dry-run", action="store_true", help="Read-only (default)")
+            command.add_argument("--bounded-window", action="store_true",
+                                 help="Load only HC002 price columns and holding windows")
         if name == "decide":
             command.add_argument("--date", help="Month-end YYYY-MM-DD (default: today in KST)")
             command.add_argument("--backfill-label", action="store_true", help="Mark reconstructed; exclude from forward statistics")
@@ -33,14 +35,16 @@ def main(argv=None):
         if args.command == "status":
             payload = shadow.status(args.data_dir)
         elif args.command == "evaluate":
-            payload = {"dry_run": not args.execute, "evaluation": shadow.evaluate(args.data_dir, execute=args.execute)}
+            payload = {"dry_run": not args.execute, "evaluation": shadow.evaluate(
+                args.data_dir, execute=args.execute, bounded_window=args.bounded_window)}
         else:
             day = args.date or shadow._now().date().isoformat()
             if args.date is None and not shadow.is_decision_day(day):
                 print("not a decision day")
                 return 0
             record = shadow.decide(day, args.data_dir, execute=args.execute,
-                                   backfill_label=args.backfill_label, append_rerun=args.append_rerun)
+                                   backfill_label=args.backfill_label, append_rerun=args.append_rerun,
+                                   bounded_window=args.bounded_window)
             payload = {"dry_run": not args.execute, "record": record}
         print(json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False))
         return 0

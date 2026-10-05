@@ -107,8 +107,9 @@ def build_universe(prices, *, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_
     return universe, counts, excluded, coverage
 
 
-def _observations(prices, universe, *, repo_root=PROJECT_ROOT):
-    observations = hc001._observations_for_horizon(prices, universe, HORIZON, repo_root=repo_root)
+def _observations(prices, universe, *, repo_root=PROJECT_ROOT, last_dates=None):
+    observations = hc001._observations_for_horizon(
+        prices, universe, HORIZON, repo_root=repo_root, last_dates=last_dates)
     # Shared metrics group/year-label by trade_date. Label observations with the
     # decision month, preserving the true entry used for execution and costs.
     observations["entry_date"] = observations.trade_date
@@ -124,9 +125,9 @@ def universe_on_decision(history, decision_date, *, data_dir=PROJECT_ROOT / "dat
         first_receipts=None, repo_root=repo_root)
 
 
-def forward_observations(prices, universe, *, repo_root=PROJECT_ROOT):
+def forward_observations(prices, universe, *, repo_root=PROJECT_ROOT, last_dates=None):
     """Expose the unchanged HC002 return, execution exclusion and cost policies."""
-    return _observations(prices, universe, repo_root=repo_root)
+    return _observations(prices, universe, repo_root=repo_root, last_dates=last_dates)
 
 
 def turnover_metrics(frame):
