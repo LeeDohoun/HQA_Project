@@ -1,0 +1,21 @@
+[Unit]
+Description=HQA dedicated PAPER-data daily investor flow quotations
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=hqa
+Group=hqa
+WorkingDirectory=/opt/hqa
+EnvironmentFile=/etc/hqa/collector.env
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/hqa/venv/bin/python /opt/hqa/scripts/ops/investor_flow_daily.py --execute
+TimeoutStartSec=2h
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/hqa/data
+PrivateTmp=true
+UMask=0027

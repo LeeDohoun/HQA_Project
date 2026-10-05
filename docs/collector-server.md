@@ -1,10 +1,11 @@
 # NCP 경량 수집 서버 운영
 
 이 서버는 DART 첫 관측 폴러와 과거 전시장 backfill, KRX 전종목 일봉 수집,
-로컬 상태 보고만 실행합니다.
-백엔드·DB·LLM 분석·KIS 호출·주문은 실행하지 않습니다. 서버에 보관하는 API 키는
-`DART_API_KEY`, `KRX_OPEN_API_KEY` 두 개입니다. PC의 `.env`, `.env-ai`, 계좌 파일,
-KIS·OpenAI 키를 서버에 복사하지 마세요. 아래 외부 연결·설치·실행 명령은 운영자가
+선택적인 KIS 투자자별 수급 조회, 로컬 상태 보고만 실행합니다.
+백엔드·DB·LLM 분석·주문은 실행하지 않습니다. 필수 API 키는
+`DART_API_KEY`, `KRX_OPEN_API_KEY`이며, 수급 수집에만 전용 모의투자 데이터 키
+`KIS_DATA_APP_KEY`, `KIS_DATA_APP_SECRET`을 추가할 수 있습니다. PC의 `.env`, `.env-ai`,
+계좌 파일, 자동매매용 KIS·OpenAI 키를 서버에 복사하지 마세요. 아래 외부 연결·설치·실행 명령은 운영자가
 서버를 가동하기로 결정한 뒤 실행합니다.
 
 ## 1. 서버와 SSH 준비
@@ -74,14 +75,20 @@ sudoedit /etc/hqa/collector.env
 HQA_DATA_DIR=/var/lib/hqa/data
 DART_API_KEY=
 KRX_OPEN_API_KEY=
+KIS_DATA_APP_KEY=
+KIS_DATA_APP_SECRET=
 TZ=Asia/Seoul
 ```
 
 `/etc/hqa`는 `root:hqa`, 0750이고 실제 환경 파일은 `root:hqa`, **0600**입니다.
 systemd 관리자가 환경 파일을 읽고 `hqa` 프로세스에 전달하므로 `hqa`가 이 파일을
 직접 읽을 필요는 없습니다. 설치기는 실제 키 파일을 생성하거나 덮어쓰지 않고
-`collector.env.example`만 복사합니다. 위 네 항목 외의 설정은 거부하며, 쓰기 허용
+`collector.env.example`만 복사합니다. 위 여섯 항목 외의 설정은 거부하며, 쓰기 허용
 경로와 일치하도록 `HQA_DATA_DIR=/var/lib/hqa/data`를 유지해야 합니다.
+선택적인 `KIS_DATA_APP_KEY`, `KIS_DATA_APP_SECRET`은 둘 다 채우거나 둘 다 비워야
+합니다. 하나만 설정하면 설치기가 거부합니다. DART/KRX 필수 키가 준비된 상태에서
+전용 KIS 키 두 값도 있으면 수급 타이머를 활성화하며, 없으면 해당 타이머와 서비스를
+중지·비활성화합니다. 기존 DART/KRX 일정은 그대로 유지됩니다.
 
 ```bash
 sudo bash /opt/hqa/deploy/collector/install.sh
@@ -178,6 +185,89 @@ sudo systemctl stop hqa-dart-backfill.service
 sudo systemctl stop hqa-dart-backfill-manual.service
 ```
 
+### KIS 투자자별 일일 수급 (M-FLOW)
+
+KIS Developers에서 **수집 전용 모의투자** 신청/앱을 별도로 준비하고, 모의투자용
+App Key와 App Secret을 발급합니다. 발급 화면에서 실전투자가 아닌 모의투자인지
+확인하세요. 이 쌍은 시세 조회에만 쓰며, PAPER 자동매매 계정에서 쓰는 앱 키와도
+달라야 합니다. 기존 키를 재사용하거나 실전 계정 키를 넣지 않습니다. 별도 모의투자
+앱/키 발급 가능 여부와 화면의 메뉴 이름은 계정에서 확인해야 합니다.
+
+서버의 `sudoedit /etc/hqa/collector.env`에서 `KIS_DATA_APP_KEY`,
+`KIS_DATA_APP_SECRET` 두 항목을 추가하고 발급받은 쌍을 채웁니다. 셸 명령줄에 값을
+쓰지 마세요. 기존 DART/KRX 키와 데이터 경로는 유지합니다. 운영자가 예약 수집을
+가동하기로 결정한 뒤 다음 명령으로 재설치합니다.
+
+```bash
+sudo bash /opt/hqa/deploy/collector/install.sh
+sudo systemctl list-timers hqa-investor-flow.timer --all --no-pager
+```
+
+`hqa-investor-flow.timer`는 평일 **19:00 Asia/Seoul**, `Persistent=true`입니다.
+서비스는 `hqa` 사용자와 기존 환경 파일·보호 설정을 사용하며 실행 제한은 **2시간**입니다.
+최신 로컬 KRX 전시장 저장일의 종목 목록을 사용합니다. KRX 파일이 없으면 `--codes`로
+명시적인 목록을 줘야 하며, 이 옵션은 저장된 목록이 있어도 수동 범위로 우선합니다.
+기본 요청 속도는 초당 2회이고 종목별 오류는 최대 3회 시도합니다. 한도 응답은
+속도를 절반으로 줄이고 실패 종목을 기록한 뒤 다음 종목을 계속 처리합니다.
+
+먼저 요청·키 조회·저장 없이 계획을 확인하고, 실제 smoke test는 3종목으로 제한합니다.
+두 번째 명령은 API를 호출합니다. 예약 서비스가 실행 중이면 완료 후 테스트하세요.
+
+```bash
+sudo -u hqa /opt/hqa/venv/bin/python /opt/hqa/scripts/ops/investor_flow_daily.py \
+  --data-dir /var/lib/hqa/data --max-stocks 3
+sudo systemd-run --unit=hqa-investor-flow-smoke --wait --pipe --collect \
+  -p User=hqa -p Group=hqa -p WorkingDirectory=/opt/hqa \
+  -p EnvironmentFile=/etc/hqa/collector.env \
+  -p NoNewPrivileges=true -p ProtectSystem=strict -p ProtectHome=true \
+  -p ReadWritePaths=/var/lib/hqa/data -p PrivateTmp=true -p UMask=0027 \
+  -p TimeoutStartSec=2h \
+  /opt/hqa/venv/bin/python /opt/hqa/scripts/ops/investor_flow_daily.py --execute --max-stocks 3
+sudo journalctl -u hqa-investor-flow.service -n 50 --no-pager
+```
+
+수동 종목 목록은 `--codes 005930,000660,012450`처럼 지정합니다. JSON 요약의
+`stocks_attempted`, `stocks_ok`, `stocks_failed`, `rows_saved`, `failures`를 확인하세요.
+종목별 오류를 기록하고 완료한 실행은 **종료 코드 0**이므로 종료 코드만으로 성공을
+판정하지 않습니다. 키 누락·잘못된 로컬 설정/파일은 종료 코드 1로 실패합니다.
+마지막 실행 요약과 실패 목록은 `market/investor_flow/_last_run.json`에 저장되며
+다음 실행이 갱신합니다. dry run은 이 파일도 갱신하지 않습니다.
+
+일자별 데이터는 `market/investor_flow/<YYYY>/<YYYYMMDD>.jsonl`입니다. 종목·거래일별
+동일 값은 건너뛰고 변경된 값은 별도 관측 이력으로 추가합니다. 오늘 행은 **18:30 KST
+이후**만 저장하며 이전 실행에서는 과거 날짜만 저장합니다. `collected_at`,
+`available_at`, 내용 해시 `version`으로 관측 시점을 보존합니다.
+
+FHKST01010900의 다음 응답 계약은 **저장소 코드로 확인되지 않은 가정**입니다.
+실제 모의투자 endpoint 지원 여부, `output` 배열과 약 30거래일 반환, 날짜
+`stck_bsop_date`(YYYYMMDD), 종가 `stck_clpr`, 개인/외국인/기관 순매수 수량
+`prsn_ntby_qty`/`frgn_ntby_qty`/`orgn_ntby_qty`, 순매수 금액
+`prsn_ntby_tr_pbmn`/`frgn_ntby_tr_pbmn`/`orgn_ntby_tr_pbmn`을 smoke test에서
+확인해야 합니다. 누락된 필드나 잘못된 수치는 실패로 기록하며 0으로 대체하지 않습니다.
+수량은 정수, 금액은 부호 있는 십진수 문자열로 검증·저장합니다. 금액의 원/백만원
+단위는 미확인이라 환산하지 않고 `net_value_unit=provider_reported_unverified`로
+표시합니다. 이 단위를 확인하기 전에는 금액을 원 단위로 해석하지 마세요.
+
+보안 경계는 코드에서도 강제합니다. 대상 호스트는
+`https://openapivts.koreainvestment.com:29443`으로 고정하며 실전 도메인을 거부합니다.
+조회 허용 목록은 GET `/uapi/domestic-stock/v1/quotations/inquire-investor`
+(`tr_id=FHKST01010900`, `FID_COND_MRKT_DIV_CODE=J`, `FID_INPUT_ISCD=<종목코드>`)
+하나뿐입니다. 인증용 POST `/oauth2/tokenP`만 별도로 허용하고 주문·계좌 경로와
+HTTP 리다이렉트는 거부합니다. 키의 발급 용도/자동매매 키와의 분리는 운영자가 확인하고,
+코드는 모의 호스트와 허용 경로를 검증합니다.
+
+토큰은 데이터 디렉터리의 `.kis_tokens/`(0700) 아래 키 해시별 **root 또는 hqa 소유
+0600** 캐시에만 보관합니다. 키와 시크릿은 캐시에 저장하지 않고 인증 정보나 원 응답을
+로그·실패 목록에 남기지 않습니다. 토큰 캐시는 PC로 가져오는 `market/`·`ops/` 경로
+밖에 있습니다. 같은 키는 KST 하루 최대 1회 발급을 요청하고 명시된 만료 시점까지
+재사용합니다. 토큰 거절 때만 하루 최대 1회 추가 발급하며, 실패한 발급도 카운터에
+포함합니다. 같은 날 단순 만료로 두 번째 일반 발급을 하지 않습니다. 캐시가 손상되면
+요청 이력을 초기화하지 않고 실패합니다.
+`expires_in`은 Java 참조 코드에서, 토큰 발급 한도 코드 `EGW00133`는 그 코드의
+주석에서 확인했습니다. 절대 만료 필드 `access_token_token_expired`의 형식과
+거절 코드 `EGW00121`/`EGW00123`, 조회 한도 코드 `EGW00201`는 가정으로
+smoke test에서 확인해야 합니다.
+
 ## 5. 상태 파일 확인
 
 ```bash
@@ -194,6 +284,8 @@ JSON과 journal 출력은 동일한 보고서를 담습니다. 환경 파일이�
 | `newest_poll_completed_at` | 그 JSONL 안에서 가장 최근의 폴링 완료 시각 |
 | `poller_stale` | 평일 10:00 KST 이후 오늘 완료 기록이 없으면 true |
 | `dart_backfill` | 완료 목록 날짜·상세 접수·건너뛴 접수 건수, KST 오늘의 backfill 요청 수와 제공자 한도 여부 |
+| `investor_flow.latest_stored_date` | 로컬 수급 JSONL의 최신 저장 거래일; 파일이 없으면 null |
+| `investor_flow.last_run_failures_count` | 마지막 실행 요약의 실패 종목 수; 실행 기록이 없으면 null |
 | `krx_newest_date`, `krx_expected_date` | 최신 저장 날짜와 어제까지의 마지막 평일 |
 | `krx_lag_days` | 최신 저장일 이후 기대 날짜까지의 미수집 평일 수. 1보다 크면 경고 |
 | `empty_dates` | KRX 상태 파일의 빈 응답 날짜. 휴장으로 확정된 날짜가 아님 |
@@ -205,6 +297,9 @@ JSON과 journal 출력은 동일한 보고서를 담습니다. 환경 파일이�
 폴링 기록이 있더라도 마지막 10분의 가동 여부까지 보장하는 지표는 아닙니다.
 `dart_backfill`은 `dart_full/_state.json`과 `_quota.json`만 읽고 목록·본문 파일은
 순회하지 않습니다. 데이터가 아직 없으면 건수는 0, 제공자 한도 여부는 false입니다.
+`investor_flow`는 로컬 날짜 파일명과 `_last_run.json`만 읽고 KIS 키·토큰 캐시나 외부
+API를 읽지 않습니다. 최신 날짜는 전종목 수집 완료를 보장하지 않으므로 실패 수를 함께
+확인합니다.
 KRX 지연은 거래소 휴일을 제외하지 않은 **평일 수**입니다. 달력 검증 상태는
 `src/runner/trading_calendar.py`의 실제 저장 결과를 사용하며, 2026-11-01 이후 특별장
 검증 범위는 기존 코드에서 미확인 상태입니다. 상태 보고는 모든 저장 일봉 파일을
@@ -228,8 +323,8 @@ bash scripts/ops/pull_collector_data.sh --execute ubuntu@PUBLIC_IP ~/.ssh/ncp_hq
 ## 7. 전체 중지와 비용 확인
 
 ```bash
-sudo systemctl disable --now hqa-dart-poller.service hqa-krx-daily.timer hqa-collector-status.timer hqa-dart-backfill.timer
-sudo systemctl stop hqa-krx-daily.service hqa-collector-status.service hqa-dart-backfill.service
+sudo systemctl disable --now hqa-dart-poller.service hqa-krx-daily.timer hqa-collector-status.timer hqa-dart-backfill.timer hqa-investor-flow.timer
+sudo systemctl stop hqa-krx-daily.service hqa-collector-status.service hqa-dart-backfill.service hqa-investor-flow.service
 sudo systemctl list-timers 'hqa-*' --all --no-pager
 ```
 

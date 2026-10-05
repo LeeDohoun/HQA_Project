@@ -90,6 +90,14 @@ def collect_status(data_dir: str | Path, *, clock=None) -> dict:
     for path in krx_files:
         if any(row["calendar_status"] != "verified" for row in _rows(path)):
             calendar_unverified.append(path.stem)
+    flow_dir = data_dir / "market" / "investor_flow"
+    flow_dates = [datetime.strptime(path.stem, "%Y%m%d").date() for path in flow_dir.glob("*/*.jsonl")]
+    flow_run = _read_state(flow_dir / "_last_run.json")
+    if flow_run is not None and not isinstance(flow_run["failures"], list):
+        raise ValueError("investor flow failures must be a list")
+    investor_flow = {
+        "latest_stored_date": max(flow_dates).isoformat() if flow_dates else None,
+        "last_run_failures_count": len(flow_run["failures"]) if flow_run is not None else None}
     disk_free = shutil.disk_usage(data_dir).free
     low_disk = disk_free < LOW_DISK_BYTES
     flags = [name for name, flagged in (
@@ -104,6 +112,7 @@ def collect_status(data_dir: str | Path, *, clock=None) -> dict:
             "newest_poll_completed_at": poll_completed.isoformat() if poll_completed is not None else None,
             "poller_stale": poller_stale,
             "dart_backfill": dart_backfill,
+            "investor_flow": investor_flow,
             "krx_newest_date": newest_krx.isoformat() if newest_krx is not None else None,
             "krx_expected_date": expected.isoformat(), "krx_lag_days": lag_days,
             "empty_dates": empty_dates, "calendar_unverified_dates": calendar_unverified,

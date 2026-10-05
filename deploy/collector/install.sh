@@ -61,14 +61,19 @@ from dotenv import dotenv_values
 
 lines = Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
 if any(line.strip() and not line.lstrip().startswith("#")
-       and not re.fullmatch(r"(?:HQA_DATA_DIR|DART_API_KEY|KRX_OPEN_API_KEY|TZ)=[^\r\n]*", line.strip())
+       and not re.fullmatch(r"(?:HQA_DATA_DIR|DART_API_KEY|KRX_OPEN_API_KEY|KIS_DATA_APP_KEY|KIS_DATA_APP_SECRET|TZ)=[^\r\n]*", line.strip())
        for line in lines):
     print("Use one collector KEY=value assignment per line, without export or other settings.", file=sys.stderr)
     sys.exit(2)
 values = dotenv_values(sys.argv[1], interpolate=False)
-allowed = {"HQA_DATA_DIR", "DART_API_KEY", "KRX_OPEN_API_KEY", "TZ"}
+allowed = {"HQA_DATA_DIR", "DART_API_KEY", "KRX_OPEN_API_KEY", "KIS_DATA_APP_KEY", "KIS_DATA_APP_SECRET", "TZ"}
 if set(values) - allowed:
-    print("collector.env may contain only HQA_DATA_DIR, DART_API_KEY, KRX_OPEN_API_KEY and TZ.", file=sys.stderr)
+    print("collector.env may contain only HQA_DATA_DIR, DART_API_KEY, KRX_OPEN_API_KEY, KIS_DATA_APP_KEY, KIS_DATA_APP_SECRET and TZ.", file=sys.stderr)
+    sys.exit(2)
+data_keys = [isinstance(values.get(name), str) and bool(values[name].strip())
+             for name in ("KIS_DATA_APP_KEY", "KIS_DATA_APP_SECRET")]
+if any(data_keys) and not all(data_keys):
+    print("Set both KIS_DATA_APP_KEY and KIS_DATA_APP_SECRET, or neither.", file=sys.stderr)
     sys.exit(2)
 if not all(isinstance(values.get(name), str) and values[name].strip()
            for name in ("DART_API_KEY", "KRX_OPEN_API_KEY")):
@@ -76,7 +81,7 @@ if not all(isinstance(values.get(name), str) and values[name].strip()
 if values.get("HQA_DATA_DIR") != "/var/lib/hqa/data":
     print("HQA_DATA_DIR must be /var/lib/hqa/data to match systemd write permissions.", file=sys.stderr)
     sys.exit(2)
-sys.exit(0)
+sys.exit(20 if all(data_keys) else 0)
 PY
     then
         env_check=0
@@ -85,14 +90,20 @@ PY
     fi
 fi
 
+investor_flow_enabled=false
+if [[ "$env_check" -eq 20 ]]; then
+    investor_flow_enabled=true
+    env_check=0
+fi
+
 if [[ "$env_check" -ne 0 ]]; then
-    systemctl disable --now hqa-dart-poller.service hqa-krx-daily.timer hqa-collector-status.timer hqa-dart-backfill.timer
-    systemctl stop hqa-krx-daily.service hqa-collector-status.service hqa-dart-backfill.service
+    systemctl disable --now hqa-dart-poller.service hqa-krx-daily.timer hqa-collector-status.timer hqa-dart-backfill.timer hqa-investor-flow.timer
+    systemctl stop hqa-krx-daily.service hqa-collector-status.service hqa-dart-backfill.service hqa-investor-flow.service
     cat <<'NEXT'
 Collectors have not been started. On this server:
   sudo cp -n /etc/hqa/collector.env.example /etc/hqa/collector.env
   sudoedit /etc/hqa/collector.env
-Set both collector keys, keep HQA_DATA_DIR=/var/lib/hqa/data, and include no KIS or LLM settings.
+Set both DART/KRX keys and keep HQA_DATA_DIR=/var/lib/hqa/data. Optional KIS_DATA keys must be a dedicated PAPER-data pair; include no account or LLM settings.
   sudo chown root:hqa /etc/hqa/collector.env
   sudo chmod 600 /etc/hqa/collector.env
   sudo bash /opt/hqa/deploy/collector/install.sh
@@ -104,4 +115,10 @@ NEXT
 fi
 
 systemctl enable --now hqa-dart-poller.service hqa-krx-daily.timer hqa-collector-status.timer hqa-dart-backfill.timer
+if [[ "$investor_flow_enabled" == true ]]; then
+    systemctl enable --now hqa-investor-flow.timer
+else
+    systemctl disable --now hqa-investor-flow.timer
+    systemctl stop hqa-investor-flow.service
+fi
 printf '%s\n' 'Collector poller and timers enabled. Check systemctl status and /var/lib/hqa/data/ops/status.json.'

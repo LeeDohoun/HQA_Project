@@ -12,6 +12,7 @@ import pytest
 from scripts.ops import collector_status as status
 from scripts.ops import dart_backfill_daily as dart_daily
 from scripts.ops import krx_catchup as catchup
+from scripts.ops import investor_flow_daily as flow_daily
 from src.ingestion import dart_backfill
 from src.ingestion import krx_chart
 
@@ -321,6 +322,17 @@ def test_service_units_use_hqa_environment_and_hardening(name):
         assert directive in text.splitlines()
 
 
+def test_investor_flow_service_and_timer():
+    test_service_units_use_hqa_environment_and_hardening("hqa-investor-flow")
+    directory = ROOT / "deploy/collector/systemd"
+    service = (directory / "hqa-investor-flow.service").read_text()
+    assert "TimeoutStartSec=2h" in service.splitlines()
+    assert "scripts/ops/investor_flow_daily.py --execute" in service
+    timer = (directory / "hqa-investor-flow.timer").read_text()
+    for directive in ("OnCalendar=Mon..Fri 19:00 Asia/Seoul", "Persistent=true", "Unit=hqa-investor-flow.service"):
+        assert directive in timer.splitlines()
+
+
 def test_service_schedule_and_poller_restart():
     directory = ROOT / "deploy/collector/systemd"
     dart = (directory / "hqa-dart-poller.service").read_text()
@@ -372,6 +384,129 @@ def test_install_gates_backfill_timer_and_stops_service_with_other_collectors():
     assert "hqa-dart-backfill.service" in disabled.split("systemctl stop", 1)[1].splitlines()[0]
     assert "hqa-dart-backfill.timer" in enabled.splitlines()[0]
     assert 'for unit in /opt/hqa/deploy/collector/systemd/*; do' in installer
+
+
+@pytest.mark.parametrize("settings,gate_code,enabled", [
+    ("", 0, False),
+    ("KIS_DATA_APP_KEY=\nKIS_DATA_APP_SECRET=", 0, False),
+    ("KIS_DATA_APP_KEY='   '\nKIS_DATA_APP_SECRET='   '", 0, False),
+    ("KIS_DATA_APP_KEY=fixture-data-key\nKIS_DATA_APP_SECRET=fixture-data-secret", 20, True),
+    ("KIS_DATA_APP_KEY=fixture-data-key", 2, False),
+    ("KIS_DATA_APP_SECRET=fixture-data-secret", 2, False),
+    ("KIS_DATA_APP_KEY=fixture-data-key\nKIS_DATA_APP_SECRET='   '", 2, False),
+    ("KIS_APP_KEY=fixture-forbidden-key", 2, False),
+])
+def test_install_optional_dedicated_pair_and_timer_gate(tmp_path, settings, gate_code, enabled):
+    installer = (ROOT / "deploy/collector/install.sh").read_text()
+    gate = installer.split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+    path = tmp_path / "collector.env"
+    path.write_text("HQA_DATA_DIR=/var/lib/hqa/data\nTZ=Asia/Seoul\n"
+                    "DART_API_KEY=fixture-dart\nKRX_OPEN_API_KEY=fixture-krx\n" + settings + "\n")
+    checked = subprocess.run([sys.executable, "-c", gate, str(path)], capture_output=True, text=True)
+    assert checked.returncode == gate_code
+    # Exercise the actual shell gate with a local systemctl stub; skip all installation/network work.
+    log = tmp_path / "systemctl.log"
+    script = 'systemctl() { printf "%s\\n" "$*" >> "$TEST_SYSTEMCTL_LOG"; }\n'
+    script += f"env_check={checked.returncode}\n" + installer[installer.index("investor_flow_enabled=false"):]
+    result = subprocess.run(["bash", "-c", script], env={**os.environ, "TEST_SYSTEMCTL_LOG": str(log)},
+                            capture_output=True, text=True)
+    commands = log.read_text().splitlines()
+    assert result.returncode == (2 if gate_code == 2 else 0)
+    assert ("enable --now hqa-investor-flow.timer" in commands) is enabled
+    if not enabled:
+        assert any(command.startswith("disable --now ") and "hqa-investor-flow.timer" in command for command in commands)
+        assert any(command.startswith("stop ") and "hqa-investor-flow.service" in command for command in commands)
+    if gate_code == 0:
+        assert any(command.startswith("enable --now ") and "hqa-krx-daily.timer" in command for command in commands)
+    public = checked.stdout + checked.stderr + result.stdout + result.stderr
+    assert all(value not in public for value in ("fixture-data-key", "fixture-data-secret", "fixture-forbidden-key"))
+
+
+def test_install_missing_base_keys_disables_investor_flow_even_with_dedicated_pair(tmp_path):
+    installer = (ROOT / "deploy/collector/install.sh").read_text()
+    gate = installer.split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+    path = tmp_path / "collector.env"
+    path.write_text("HQA_DATA_DIR=/var/lib/hqa/data\nKIS_DATA_APP_KEY=fixture-data-key\n"
+                    "KIS_DATA_APP_SECRET=fixture-data-secret\n")
+    result = subprocess.run([sys.executable, "-c", gate, str(path)], capture_output=True, text=True)
+    assert result.returncode == 10
+
+
+def test_status_investor_flow_reads_local_dates_and_last_failure_list_only(tmp_path, monkeypatch):
+    directory = tmp_path / "market/investor_flow/2026"
+    directory.mkdir(parents=True)
+    (directory / "20260904.jsonl").touch()
+    (directory / "20260908.jsonl").touch()
+    write_json(directory.parent / "_last_run.json", {"failures": [
+        {"stock_code": "005930", "reason": "empty_output"}, {"stock_code": "000660", "reason": "rate_limited"}]})
+    write_json(tmp_path / ".kis_tokens/never-read.json", {"access_token": "fixture-private-token"})
+    read_text = Path.read_text
+
+    def local_read(path, *args, **kwargs):
+        assert ".kis_tokens" not in path.parts
+        return read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", local_read)
+    report = status.collect_status(tmp_path, clock=lambda: NOW)
+    assert report["investor_flow"] == {"latest_stored_date": "2026-09-08", "last_run_failures_count": 2}
+    assert "fixture-private-token" not in json.dumps(report)
+
+
+def test_status_investor_flow_distinguishes_no_run_from_zero_failures(tmp_path):
+    assert status.collect_status(tmp_path, clock=lambda: NOW)["investor_flow"] == {
+        "latest_stored_date": None, "last_run_failures_count": None}
+    write_json(tmp_path / "market/investor_flow/_last_run.json", {"failures": []})
+    assert status.collect_status(tmp_path, clock=lambda: NOW)["investor_flow"] == {
+        "latest_stored_date": None, "last_run_failures_count": 0}
+
+
+def test_investor_flow_cli_dry_run_uses_krx_and_reads_no_secrets(tmp_path, monkeypatch, capsys):
+    path = tmp_path / "market/krx_daily/2026/20260907.jsonl"
+    path.parent.mkdir(parents=True)
+    path.write_text("".join(json.dumps({"stock_code": code}) + "\n"
+                            for code in ("005930", "000660", "012450", "0009K0")))
+    getenv = flow_daily.os.getenv
+    monkeypatch.setattr(flow_daily.os, "getenv", lambda name, default=None: getenv(name, default)
+                        if name == "HQA_DATA_DIR" else pytest.fail("Dry run read a secret"))
+    flow_daily.main(["--data-dir", str(tmp_path), "--max-stocks", "3"])
+    report = json.loads(capsys.readouterr().out)
+    assert report["dry_run"] and report["stocks_planned"] == 3
+    assert report["stocks_attempted"] == report["rows_saved"] == 0
+    assert not (tmp_path / "market/investor_flow").exists() and not (tmp_path / ".kis_tokens").exists()
+
+
+def test_investor_flow_cli_manual_subset_and_dedicated_environment(tmp_path, monkeypatch, capsys):
+    calls = []
+    monkeypatch.setenv("KIS_DATA_APP_KEY", "fixture-data-key")
+    monkeypatch.setenv("KIS_DATA_APP_SECRET", "fixture-data-secret")
+    monkeypatch.setenv("KIS_APP_KEY", "must-not-use-trading-key")
+
+    class Collector:
+        def __init__(self, app_key, app_secret, *, data_dir):
+            assert (app_key, app_secret, data_dir) == ("fixture-data-key", "fixture-data-secret", tmp_path)
+
+        def collect_day(self, codes, *, execute):
+            calls.append((codes, execute))
+            return {"stocks_attempted": 2, "stocks_ok": 1, "stocks_failed": 1, "rows_saved": 30,
+                    "failures": [{"stock_code": "000660", "reason": "empty_output"}]}
+
+    monkeypatch.setattr(flow_daily, "KisInvestorFlowCollector", Collector)
+    monkeypatch.setattr(flow_daily, "load_stock_codes", lambda *a: pytest.fail("Manual subset loaded the universe"))
+    flow_daily.main(["--execute", "--data-dir", str(tmp_path), "--codes", "005930, 005930, 000660,012450", "--max-stocks", "2"])
+    assert calls == [(["005930", "000660"], True)]
+    output = capsys.readouterr().out
+    assert json.loads(output)["stocks_failed"] == 1
+    assert "fixture-data-key" not in output and "fixture-data-secret" not in output
+
+
+@pytest.mark.parametrize("args", [[], ["--codes", ""], ["--codes", "00593"],
+                                  ["--codes", "005930", "--max-stocks", "0"]])
+def test_investor_flow_cli_invalid_config_fails_before_requests(tmp_path, capsys, args):
+    with pytest.raises(SystemExit) as exited:
+        flow_daily.main(["--data-dir", str(tmp_path), *args])
+    assert exited.value.code == 1
+    assert json.loads(capsys.readouterr().out)["status"] == "error"
+    assert list(tmp_path.iterdir()) == []
 
 
 @pytest.mark.parametrize("now,end", [
