@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "answers"
+  ],
+  "properties": {
+    "answers": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "option",
+          "reason",
+          "confidence"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "q1",
+              "q2",
+              "q3",
+              "q4"
+            ]
+          },
+          "option": {
+            "type": "string",
+            "enum": [
+              "A",
+              "B",
+              "C"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "confidence": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          }
+        }
+      }
+    }
+  }
+}
