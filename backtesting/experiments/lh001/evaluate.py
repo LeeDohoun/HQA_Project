@@ -11,7 +11,8 @@ from backtesting import cost_model, experiment_registry, signal_eval
 from backtesting.experiment_registry import PROJECT_ROOT
 from backtesting.experiments import common, hc001, hc002
 
-from . import EXPERIMENT_ID, VARIANTS, guard_data
+from . import VARIANTS, guard_data
+from .config import LH001
 from .inputs import json_value
 
 MULTIPLIERS = (1.0, 1.5, 2.0)
@@ -69,12 +70,12 @@ def paired_stats(rows, field, cadence="weekly"):
     return newey_west([row[field] for row in rows], positions=[pd.Timestamp(row["decision_date"]).to_period(freq).ordinal for row in rows])
 
 
-def observations(prices, universe, *, repo_root=PROJECT_ROOT, last_dates=None):
+def observations(prices, universe, *, repo_root=PROJECT_ROOT, last_dates=None, config=LH001):
     """Unchanged HC002 holding/cost kernels with an explicit LH001 guard."""
     if prices.empty:
         raise ValueError("prices are required")
     days = pd.DatetimeIndex(prices.index.get_level_values("trade_date").unique()).sort_values()
-    guard_data(days[0], days[-1], repo_root=repo_root)
+    guard_data(days[0], days[-1], repo_root=repo_root, config=config)
     if universe.empty:
         return pd.DataFrame(columns=["decision_date", "stock_code", "gross", "phase", "bucket", "reason", "exit_date",
                                      "avg_trading_value_20d", *[f"cost_{m}" for m in MULTIPLIERS], *signal_eval._RETURN_FLAGS])
@@ -274,9 +275,11 @@ def hc002_verdict(primary, passing):
     return "pass", ["HC002 linked single-use holdout conditions satisfied"]
 
 
-def publish(payload, *, repo_root=PROJECT_ROOT, smoke=False, record=True):
+def publish(payload, *, repo_root=PROJECT_ROOT, smoke=False, record=True, config=LH001):
     """Use shared publication/registry, replacing its legacy IC prose afterwards."""
     payload = json_value(payload)
+    if payload["experiment_id"] != config.experiment_id:
+        raise ValueError("result experiment ID differs from its configuration")
     payload["smoke"] = smoke
     for result in payload["variants"].values():
         # Adapter fields required by common.write_results; 'ic' is explicitly an
@@ -287,8 +290,8 @@ def publish(payload, *, repo_root=PROJECT_ROOT, smoke=False, record=True):
         result.setdefault("skipped_month_count", 0)
         result.setdefault("unadjusted_fallback", 0)
         result.setdefault("delisting_exclusions", 0)
-    paths = common.write_results(EXPERIMENT_ID, payload, repo_root=repo_root)
-    lines = [f"# {EXPERIMENT_ID}: {payload['stage']}", "", f"Smoke: {smoke}; aggregate status: {payload['verdict']}", "",
+    paths = common.write_results(config.experiment_id, payload, repo_root=repo_root)
+    lines = [f"# {config.experiment_id}: {payload['stage']}", "", f"Smoke: {smoke}; aggregate status: {payload['verdict']}", "",
              "No winning variant is selected. Returns are decimal. LLM t: NW lag 4; HC002: its monthly statistics.", "",
              "| variant | verdict | decisions | mean paired net excess | t | random share | cost x1.5 excess |",
              "| --- | --- | ---: | ---: | ---: | ---: | ---: |"]
@@ -304,6 +307,6 @@ def publish(payload, *, repo_root=PROJECT_ROOT, smoke=False, record=True):
     if record and not smoke:
         for arm in VARIANTS:
             result = payload["variants"][arm]
-            experiment_registry.record_trial(EXPERIMENT_ID, arm, result, result["verdict"], repo_root=repo_root,
-                                             note=f"LH001 {payload['stage']}; fixed variant; no selection of winner")
+            experiment_registry.record_trial(config.experiment_id, arm, result, result["verdict"], repo_root=repo_root,
+                                             note=f"{config.name} {payload['stage']}; fixed variant; no selection of winner")
     return payload, paths

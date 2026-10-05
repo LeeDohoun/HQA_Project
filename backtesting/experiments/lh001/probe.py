@@ -33,7 +33,7 @@ def month_ends(month, sessions):
     return ends
 
 
-def read_contamination_facts(months, *, data_dir, sessions):
+def read_contamination_facts(months, *, data_dir, sessions, guard_unprotected=True):
     """The sole swappable pre-holdout exception. No financials, daily paths,
     opens, signals, strategy membership, or strategy returns leave this function.
     Prior-month cap rows must be scanned to identify 30 names; only selected
@@ -43,7 +43,7 @@ def read_contamination_facts(months, *, data_dir, sessions):
     anchors = {str(month): month_ends(month, sessions) for month in months}
     start = min(days[0] for days in anchors.values())
     end = max(days[1] for days in anchors.values())
-    if end < pd.Timestamp("2026-01-01"):
+    if guard_unprotected and end < pd.Timestamp("2026-01-01"):
         guard_data(start, end)
     benchmark_path = Path(data_dir) / "market_context/benchmarks.jsonl"
     if not benchmark_path.is_file():

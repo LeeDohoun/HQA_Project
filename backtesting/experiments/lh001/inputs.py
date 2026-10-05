@@ -17,6 +17,7 @@ from src.research import industry_index, industry_map
 from src.runner.event_evidence import _category, _PATTERNS
 
 from . import guard_data
+from .config import LH001
 
 GROUPS = tuple(sorted(set(industry_map.KSIC_PREFIXES.values())))
 CATEGORIES = tuple(name for name, _ in _PATTERNS) + ("other",)
@@ -49,11 +50,11 @@ def json_value(value):
     return value
 
 
-def load_financials(day, *, data_dir, repo_root=PROJECT_ROOT):
+def load_financials(day, *, data_dir, repo_root=PROJECT_ROOT, config=LH001):
     """HC002's receipt/CFS/derivation policy, without opening future-year files."""
     day = pd.Timestamp(day)
     # Even July+ as-of requests scan earlier 2026 receipt archives.
-    guard_data("2015-01-01", day, repo_root=repo_root)
+    guard_data("2015-01-01", day, repo_root=repo_root, config=config)
     directory = Path(data_dir) / "fundamentals/dart_quarterly"
     if not directory.is_dir():
         raise ValueError("quarterly financial archive is required")
@@ -80,9 +81,9 @@ def load_financials(day, *, data_dir, repo_root=PROJECT_ROOT):
     return frame
 
 
-def load_benchmarks(data_dir, start, end, *, repo_root=PROJECT_ROOT):
+def load_benchmarks(data_dir, start, end, *, repo_root=PROJECT_ROOT, config=LH001):
     """Guarded stored latest price-index rows only."""
-    guard_data(start, end, repo_root=repo_root)
+    guard_data(start, end, repo_root=repo_root, config=config)
     path = Path(data_dir) / "market_context/benchmarks.jsonl"
     if not path.is_file():
         raise ValueError("benchmark archive is required")
@@ -98,8 +99,8 @@ def load_benchmarks(data_dir, start, end, *, repo_root=PROJECT_ROOT):
     return pd.DataFrame(rows, columns=("trade_date", "series", "index_name", "close"))
 
 
-def load_history(start, end, *, data_dir, repo_root=PROJECT_ROOT):
-    guard_data(start, end, repo_root=repo_root)
+def load_history(start, end, *, data_dir, repo_root=PROJECT_ROOT, config=LH001):
+    guard_data(start, end, repo_root=repo_root, config=config)
     # Keep only research columns rather than millions of full provenance rows.
     columns = ("open", "high", "low", "close", "volume", "trading_value", "market_cap", "base_price",
                "stock_name", "market", "calendar_status")
@@ -126,13 +127,13 @@ def load_history(start, end, *, data_dir, repo_root=PROJECT_ROOT):
     return prices
 
 
-def load_last_dates(start, end, *, data_dir, repo_root=PROJECT_ROOT):
+def load_last_dates(start, end, *, data_dir, repo_root=PROJECT_ROOT, config=LH001):
     """Presence dates only, within the stage's allowed price span.
 
     HC002 distinguishes a temporary missing exit from no later stored row. This
     bounded scan preserves that policy without loading future closes into inputs.
     """
-    guard_data(start, end, repo_root=repo_root)
+    guard_data(start, end, repo_root=repo_root, config=config)
     latest = {}
     for path in sorted((Path(data_dir) / "market/krx_daily").glob("*/*.jsonl")):
         if len(path.stem) != 8 or not path.stem.isdigit():
@@ -183,12 +184,12 @@ def close_universe(history, day, known, profiles):
     return eligible, report
 
 
-def disclosure_counts(data_dir, sessions, codes, *, repo_root=PROJECT_ROOT):
+def disclosure_counts(data_dir, sessions, codes, *, repo_root=PROJECT_ROOT, config=LH001):
     sessions = pd.DatetimeIndex(sessions)[-60:]
     if len(sessions) < 60:
         return {code: {"counts": None, "titles": [], "coverage": {"complete": False, "days": 0, "expected": 60}}
                 for code in codes}
-    guard_data(sessions[0], sessions[-1], repo_root=repo_root)
+    guard_data(sessions[0], sessions[-1], repo_root=repo_root, config=config)
     expected = pd.date_range(sessions[0], sessions[-1])
     directory = Path(data_dir) / "disclosures/dart_full/list"
     completed, rows = 0, {}
@@ -223,22 +224,22 @@ def _growth(returns, horizon):
     return float((1 + window).prod() - 1) if len(window) == horizon and window.notna().all() else None
 
 
-def build_inputs(prices, decision_date, *, data_dir, repo_root=PROJECT_ROOT, known=None, profiles=None, benchmarks=None):
+def build_inputs(prices, decision_date, *, data_dir, repo_root=PROJECT_ROOT, known=None, profiles=None, benchmarks=None, config=LH001):
     day = pd.Timestamp(decision_date)
     history = prices.loc[prices.index.get_level_values("trade_date") <= day].sort_index()
     if history.empty or history.index.has_duplicates:
         raise ValueError("unique close-known prices are required")
     days = pd.DatetimeIndex(history.index.get_level_values("trade_date").unique()).sort_values()
-    guard_data(days[0], day, repo_root=repo_root)
+    guard_data(days[0], day, repo_root=repo_root, config=config)
     if known is None:
-        known = load_financials(day, data_dir=data_dir, repo_root=repo_root)
+        known = load_financials(day, data_dir=data_dir, repo_root=repo_root, config=config)
     else:
         known = known.loc[pd.to_datetime(known.available_date) < day].copy()
     if profiles is None:
         profiles = hc001._industries(data_dir)
     universe, coverage = close_universe(history, day, known, profiles)
     if benchmarks is None:
-        benchmarks = load_benchmarks(data_dir, days[0], day, repo_root=repo_root)
+        benchmarks = load_benchmarks(data_dir, days[0], day, repo_root=repo_root, config=config)
     benchmarks = benchmarks.loc[pd.to_datetime(benchmarks.trade_date) <= day]
     raw = history.copy()
     raw["industry"] = [profiles.get(code, industry_map.UNCLASSIFIED) for code in raw.index.get_level_values("stock_code")]
@@ -261,7 +262,7 @@ def build_inputs(prices, decision_date, *, data_dir, repo_root=PROJECT_ROOT, kno
     aggregate = hc001.phase_signals(known)
     # Listings have receipt dates, not publication times: same-day reports may
     # have arrived after the close. Use the prior 60 completed sessions only.
-    disclosures = disclosure_counts(data_dir, days[days < day], set(universe.index), repo_root=repo_root)
+    disclosures = disclosure_counts(data_dir, days[days < day], set(universe.index), repo_root=repo_root, config=config)
     stocks = []
     cap_pct = universe.market_cap.rank(pct=True, method="average") * 100
     trading_pct = universe.trading_value.rank(pct=True, method="average") * 100
@@ -394,9 +395,9 @@ def render(bundle, *, anonymised, codes=None, industry_only=False, texts=None, f
     return rendered, {mapping[code]: code for code in sorted(chosen)}
 
 
-def business_texts(codes, decision_date, data_dir, *, loader=None):
+def business_texts(codes, decision_date, data_dir, *, loader=None, repo_root=PROJECT_ROOT, config=LH001):
     if loader is None:
-        guard_data("2015-01-01", decision_date)
+        guard_data("2015-01-01", decision_date, repo_root=repo_root, config=config)
         from src.ingestion.dart_business_text import load_business_text
         loader = load_business_text
     output = {}

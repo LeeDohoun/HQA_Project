@@ -4,6 +4,7 @@ from __future__ import annotations
 from itertools import combinations
 
 from . import inputs
+from .config import LH001
 
 
 def validate_selection(output, shown_ids, *, count, avoid=0):
@@ -52,13 +53,13 @@ def _empty(reason, pool=None):
             "jaccard": None, "invalid_calls": 0, "invalid_by_call": {}, "text_missing": 0, "calls": [], "reason": reason}
 
 
-def _repeated(runner, bundle, arm, codes, *, repeats, anonymised, text_loader=None, stage):
+def _repeated(runner, bundle, arm, codes, *, repeats, anonymised, text_loader=None, stage, config=LH001):
     is_text, is_c = arm.endswith("text"), arm.startswith("c")
     required = 10 if is_text else 30
     avoid = 10 if is_c and not is_text else 0
     if len(codes) < required + avoid:
         return _empty("insufficient_candidates", list(codes))
-    texts = inputs.business_texts(codes, bundle["decision_date"], runner.directory.parents[1], loader=text_loader) if is_text else None
+    texts = inputs.business_texts(codes, bundle["decision_date"], runner.directory.parents[1], loader=text_loader, config=config) if is_text else None
     rendered, mapping = inputs.render(bundle, anonymised=anonymised, codes=codes, texts=texts, final_window=stage == "final")
     template = f"v1_{'c' if is_c else 'b'}_{'text' if is_text else 'num'}.txt"
     schema = f"v1_{'c_num' if avoid else 'text' if is_text else 'b_num'}.schema.json"
@@ -84,7 +85,7 @@ def _repeated(runner, bundle, arm, codes, *, repeats, anonymised, text_loader=No
             "repeat_selections": [[mapping[identity] for identity in ranking[:10]] for ranking in rankings]}
 
 
-def run_decision(runner, bundle, *, final, anonymised=None, text_loader=None, stage=None, c_only=False):
+def run_decision(runner, bundle, *, final, anonymised=None, text_loader=None, stage=None, c_only=False, config=LH001):
     repeats = 3 if final else 1
     anonymised = not final if anonymised is None else anonymised
     stage = stage or ("final" if final else "screening")
@@ -98,7 +99,7 @@ def run_decision(runner, bundle, *, final, anonymised=None, text_loader=None, st
             selected = aggregate([[row["id"] for row in call["output"]["ranked"]] for call in calls], 3)
             sectors = {groups[identity] for identity in selected}
             pool = cap_codes(bundle, [row["stock_code"] for row in bundle["stocks"] if row["industry"] in sectors])
-            results["b_num"] = _repeated(runner, bundle, "b_num", pool, repeats=repeats, anonymised=anonymised, stage=stage)
+            results["b_num"] = _repeated(runner, bundle, "b_num", pool, repeats=repeats, anonymised=anonymised, stage=stage, config=config)
         else:
             selected = []
             results["b_num"] = _empty("invalid_stage1")
@@ -111,11 +112,11 @@ def run_decision(runner, bundle, *, final, anonymised=None, text_loader=None, st
         if final:
             candidates = results["b_num"]["candidates"]
             results["b_text"] = _repeated(runner, bundle, "b_text", candidates, repeats=repeats, anonymised=False,
-                                           text_loader=text_loader, stage=stage) if len(candidates) == 30 else _empty("no_numeric_candidates")
+                                           text_loader=text_loader, stage=stage, config=config) if len(candidates) == 30 else _empty("no_numeric_candidates")
     c_pool = cap_codes(bundle, bundle["a_codes"])
-    results["c_num"] = _repeated(runner, bundle, "c_num", c_pool, repeats=repeats, anonymised=anonymised, stage=stage)
+    results["c_num"] = _repeated(runner, bundle, "c_num", c_pool, repeats=repeats, anonymised=anonymised, stage=stage, config=config)
     if final:
         candidates = results["c_num"]["candidates"]
         results["c_text"] = _repeated(runner, bundle, "c_text", candidates, repeats=repeats, anonymised=False,
-                                      text_loader=text_loader, stage=stage) if len(candidates) == 30 else _empty("no_numeric_candidates")
+                                      text_loader=text_loader, stage=stage, config=config) if len(candidates) == 30 else _empty("no_numeric_candidates")
     return results

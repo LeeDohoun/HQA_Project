@@ -15,6 +15,7 @@ from backtesting.experiment_registry import PROJECT_ROOT
 from src.ingestion.storage import atomic_write, file_lock
 
 from . import CODEX_VERSION, MODEL, PROMPT_DIR, PROMPT_VERSION, workspace
+from .config import LH001
 from .inputs import digest
 
 
@@ -32,11 +33,11 @@ def read_json(path):
 
 def prompt_hashes(prompt_dir=PROMPT_DIR):
     return {path.name: hashlib.sha256(path.read_bytes()).hexdigest()
-            for path in sorted(Path(prompt_dir).glob("v1*")) if path.is_file()}
+            for path in sorted(Path(prompt_dir).glob("v[12]*")) if path.is_file()}
 
 
 def check_committed(prompt_dir, repo_root):
-    for path in sorted(Path(prompt_dir).glob("v1*")):
+    for path in sorted(Path(prompt_dir).glob("v[12]*")):
         relative = path.resolve().relative_to(Path(repo_root).resolve()).as_posix()
         for arguments in (("ls-files", "--error-unmatch", "--", relative),
                           ("diff", "--quiet", "HEAD", "--", relative)):
@@ -81,10 +82,11 @@ def inspect_events(stream):
 
 
 class LlmRunner:
-    def __init__(self, *, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT, prompt_dir=PROMPT_DIR,
-                 subprocess_call=None, timeout=300, enforce_committed=True):
-        self.directory = workspace(data_dir)
-        self.repo_root, self.prompt_dir = Path(repo_root), Path(prompt_dir)
+    def __init__(self, *, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT, prompt_dir=None,
+                 subprocess_call=None, timeout=300, enforce_committed=True, config=LH001):
+        self.config = config
+        self.directory = workspace(data_dir, config)
+        self.repo_root, self.prompt_dir = Path(repo_root), Path(config.prompt_dir if prompt_dir is None else prompt_dir)
         self.subprocess_call = subprocess.run if subprocess_call is None else subprocess_call
         self.timeout, self.enforce_committed = timeout, enforce_committed
         self.model = MODEL
@@ -95,7 +97,7 @@ class LlmRunner:
         path = self.directory / "budget.json"
         if not path.exists() and any((self.directory / "calls").glob("*.json")):
             raise StageStopped("persistent budget is missing while call records exist; refuse to reset it")
-        return read_json(path) if path.exists() else {"used": 0, "cap": 1100}
+        return read_json(path) if path.exists() else {"used": 0, "cap": self.config.budget_cap}
 
     def _identity(self, cwd):
         if (self.directory / "invalidated.json").exists():
@@ -109,6 +111,8 @@ class LlmRunner:
             raise StageStopped(f"Codex version changed or differs from preregistration: {version}")
         self.version = version
         manifest = {"model": self.model, "codex_version": version, "prompt_version": PROMPT_VERSION, "hashes": self.hashes}
+        if self.config != LH001:
+            manifest.update(experiment_id=self.config.experiment_id, probe_version=self.config.probe_version)
         path = self.directory / "manifest.json"
         if path.exists() and read_json(path) != manifest:
             raise StageStopped("model/version/prompts differ from frozen experiment manifest")
@@ -118,19 +122,23 @@ class LlmRunner:
     def call(self, template, rendered_input, schema_name, repeat_index, *, validate=None, stage=None):
         schema = read_json(self.prompt_dir / schema_name)
         Draft202012Validator.check_schema(schema)
-        instructions = (self.prompt_dir / "v1_common.txt").read_text(encoding="utf-8") + "\n" + (self.prompt_dir / template).read_text(encoding="utf-8")
+        probe_v2 = self.config.probe_version == "v2" and template == "v2_probe.txt"
+        instructions = (self.prompt_dir / template).read_text(encoding="utf-8")
+        if not probe_v2:
+            instructions = (self.prompt_dir / "v1_common.txt").read_text(encoding="utf-8") + "\n" + instructions
         prompt = instructions + "\n<UNTRUSTED_DATA>\n" + rendered_input + "\n</UNTRUSTED_DATA>"
         # The prompt goes through stdin ("-"): execve limits each argument to
         # MAX_ARG_STRLEN, and business-text inputs exceed it. Never truncate.
-        version = PROMPT_VERSION + "/" + template + "/" + digest(instructions)
-        key = digest([version, schema, rendered_input, repeat_index])
+        version = (self.config.probe_version if probe_v2 else PROMPT_VERSION) + "/" + template + "/" + digest(instructions)
+        identity = [version, schema, rendered_input, repeat_index]
+        key = digest(identity if self.config == LH001 else [self.config.experiment_id, *identity])
         input_hash = digest(rendered_input)
         cache_path = self.directory / "calls" / f"{key}.json"
         self.directory.mkdir(parents=True, exist_ok=True)
         with file_lock(self.directory / ".calls.lock"):
             if self.enforce_committed:
                 check_committed(self.prompt_dir, self.repo_root)
-            with tempfile.TemporaryDirectory(prefix="lh001-work-", dir="/tmp") as cwd:
+            with tempfile.TemporaryDirectory(prefix=self.config.name.lower() + "-work-", dir="/tmp") as cwd:
                 if Path(cwd).resolve().is_relative_to(self.repo_root.resolve()):
                     raise StageStopped("Codex work directory must be outside repository")
                 self._identity(cwd)
@@ -152,13 +160,13 @@ class LlmRunner:
                     return {**stored, "cache_hit": True}
                 while sum(attempt["state"] == "invalid" for attempt in stored["attempts"]) < 3:
                     budget = self.budget()
-                    if budget["cap"] != 1100 or type(budget["used"]) is not int or not 0 <= budget["used"] < 1100:
-                        raise StageStopped("hard real-call budget cap (1100) reached or budget is invalid")
+                    if budget["cap"] != self.config.budget_cap or type(budget["used"]) is not int or not 0 <= budget["used"] < self.config.budget_cap:
+                        raise StageStopped(f"hard real-call budget cap ({self.config.budget_cap}) reached or budget is invalid")
                     budget["used"] += 1
                     save_json(self.directory / "budget.json", budget)
                     started = time.perf_counter()
                     attempt = {"call_number": budget["used"], "state": "invalid", "seconds": None, "event_summary": None}
-                    with tempfile.TemporaryDirectory(prefix="lh001-artifacts-", dir="/tmp") as artifacts:
+                    with tempfile.TemporaryDirectory(prefix=self.config.name.lower() + "-artifacts-", dir="/tmp") as artifacts:
                         schema_path, output_path = Path(artifacts) / "schema.json", Path(artifacts) / "output.json"
                         save_json(schema_path, schema)
                         command = ["codex", "exec", "-m", self.model, "-c", "model_reasoning_effort=medium",
@@ -166,7 +174,7 @@ class LlmRunner:
                                    "--output-schema", str(schema_path), "-o", str(output_path),
                                    "-"]
                         try:
-                            with tempfile.TemporaryDirectory(prefix="lh001-attempt-", dir="/tmp") as attempt_cwd:
+                            with tempfile.TemporaryDirectory(prefix=self.config.name.lower() + "-attempt-", dir="/tmp") as attempt_cwd:
                                 result = self.subprocess_call(command, cwd=attempt_cwd, input=prompt,
                                                               capture_output=True, text=True, timeout=self.timeout, check=False)
                             summary, messages = inspect_events(result.stdout)

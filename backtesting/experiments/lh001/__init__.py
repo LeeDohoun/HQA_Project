@@ -4,14 +4,15 @@ import os
 
 from backtesting import holdout
 from backtesting.experiment_registry import PROJECT_ROOT
+from .config import ExperimentConfig, LH001, LH002
 
-EXPERIMENT_ID = "LH001_llm_hegemony_judge"
+EXPERIMENT_ID = LH001.experiment_id
 VARIANTS = ("b_num", "b_text", "c_num", "c_text", "hc002_holdout")
 MODEL = "gpt-6-luna"
 CODEX_VERSION = "codex-cli 0.160.0"
 PROMPT_VERSION = "v1"
 FINAL_END = "2026-10-30"
-PROMPT_DIR = PROJECT_ROOT / "research/experiments" / EXPERIMENT_ID / "prompts"
+PROMPT_DIR = LH001.prompt_dir
 ASSUMPTIONS = [
     "The dedicated probe reader may read 2026 market-level facts before opening the holdout. This is contamination measurement, not strategy evaluation; it does not call guard_period or consume a holdout claim. Reviewed and accepted by the coordinator on 2026-10-05; the read is limited to KOSPI month-end levels, sector index returns and top-30 stock month-end closes.",
     "B_num random controls use the entire HC002 universe capped at the top 300 by decision-close 20-session ADV, irrespective of the three selected industries. C_num uses the displayed capped A pool; text uses its fixed 30. The ambiguous B universe/same-300 wording remains a coordinator decision.",
@@ -31,20 +32,30 @@ ASSUMPTIONS = [
 ]
 
 
-def workspace(data_dir):
-    return Path(data_dir) / "research/lh001"
+def experiment_assumptions(config=LH001):
+    if config == LH001:
+        return ASSUMPTIONS
+    notes = list(ASSUMPTIONS)
+    notes[1] = "LH002 section 2 fixes B_num random controls to the entire HC002 universe capped at the top 300 by decision-close 20-session ADV, irrespective of selected industries. C_num uses the displayed capped A pool; text uses its fixed 30."
+    notes[8] = "Probe stock returns are ratios of the two month-end closes, not strategy returns; stock splits can affect these facts. Five disjoint triples are drawn from the prior month-end top-30 common stocks. Two disjoint sector triples use KOSPI sector index rows, excluding names beginning with 코스피/코스닥, with pairwise separation of at least 3 percentage points."
+    notes[9] = "LH002 probe v2 needs all 27 months and eight valid answers each. The 2024-01..06 positive control must pass a one-sided exact binomial test against 1/3 (p<0.05). A contaminated month has at least seven correct answers. The earliest January-May 2026 start must have no contaminated month through September and pooled p>=0.05. The 2025 months are boundary information only. Zero estimated variance gives an undefined t, never an infinite passing t; NW remains Bartlett lag 4 with no small-sample correction."
+    return notes
 
 
-def guard_data(start, end, *, repo_root=PROJECT_ROOT):
+def workspace(data_dir, config=LH001):
+    return Path(data_dir) / config.workspace_subdir
+
+
+def guard_data(start, end, *, repo_root=PROJECT_ROOT, config=LH001):
     """Never let a helper implicitly claim protected data outside a session."""
     import pandas as pd
     first, last = pd.Timestamp(start).date(), pd.Timestamp(end).date()
     if first <= holdout.HOLDOUT_END and last >= holdout.HOLDOUT_START:
         root = Path(repo_root).resolve()
-        if not any(s._open and s._pid == os.getpid() and s.experiment_id == EXPERIMENT_ID and s.repo_root == root
+        if not any(s._open and s._pid == os.getpid() and s.experiment_id == config.experiment_id and s.repo_root == root
                    and s.ledger_path == (root / holdout.LEDGER_PATH).resolve()
                    for s in holdout._SESSIONS.get()):
-            raise ValueError("LH001 protected source reads require an open HoldoutSession")
-        holdout.guard_period(first, last, experiment_id=EXPERIMENT_ID, repo_root=repo_root)
+            raise ValueError(f"{config.name} protected source reads require an open HoldoutSession")
+        holdout.guard_period(first, last, experiment_id=config.experiment_id, repo_root=repo_root)
     else:
         holdout.guard_period(first, last, repo_root=repo_root)
