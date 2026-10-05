@@ -11,11 +11,74 @@ import pytest
 
 from backtesting import experiment_registry
 from backtesting.experiments import common
+from src.research import market_regimes
 
 
 EXPERIMENT_ID = "D001_momentum_lowvol"
 NET_METRICS = {"net_metric": "net_excess", "net_at_cost_1_5_metric": "net_excess_at_cost_1_5"}
 REGISTRATION = Path(__file__).resolve().parents[1] / "research/experiments" / EXPERIMENT_ID / "preregistration.md"
+
+
+@pytest.mark.parametrize("day,dimension,expected", [
+    ("2020-03-15", "short_sale", "before_documented_intervals"),
+    ("2020-03-16", "short_sale", "full_ban_2020"),
+    ("2021-05-02", "short_sale", "full_ban_2020"),
+    ("2021-05-03", "short_sale", "partial_kospi200_kosdaq150"),
+    ("2023-11-05", "short_sale", "partial_kospi200_kosdaq150"),
+    ("2023-11-06", "short_sale", "full_ban_2023"),
+    ("2025-03-30", "short_sale", "full_ban_2023"),
+    ("2025-03-31", "short_sale", "full_resumption"),
+    ("2025-03-03", "nxt", "pre_launch"), ("2025-03-04", "nxt", "launched"),
+    ("2026-09-13", "krx_after_hours_continuous", "pre_launch"),
+    ("2026-09-14", "krx_after_hours_continuous", "launched"),
+    ("2015-06-14", "price_limit", "15_percent"), ("2015-06-15", "price_limit", "30_percent"),
+    ("2023-01-24", "tick", "market_specific"), ("2023-01-25", "tick", "unified"),
+])
+def test_market_regime_boundaries(day, dimension, expected):
+    assert market_regimes.regime_label(day)[dimension] == expected
+    assert market_regimes.regime_label(pd.Timestamp(day).date())[dimension] == expected
+
+
+def test_regime_splits_preserve_observations_and_keep_full_bans_separate():
+    series = pd.Series([1.0, 2.0, 3.0, 4.0], index=pd.to_datetime(
+        ["2020-03-16", "2023-11-06", "2023-11-06", "2025-03-31"]), name="primary")
+    before = series.copy()
+    splits = market_regimes.split_by_regime(series)
+    assert list(splits) == ["full_ban_2020", "full_ban_2023", "full_resumption"]
+    pd.testing.assert_series_equal(splits["full_ban_2023"], series.iloc[1:3])
+    pd.testing.assert_series_equal(pd.concat(splits.values()), before)
+    assert market_regimes.split_by_regime(series.iloc[:0]) == {}
+    with pytest.raises(ValueError, match="unknown regime"):
+        market_regimes.split_by_regime(series, "unknown")
+
+
+@pytest.mark.parametrize("day", [None, "NaT", "2025-03-31T12:00:00", "2025-03-31T00:00:00+09:00"])
+def test_invalid_regime_dates(day):
+    with pytest.raises(ValueError, match="regime date"):
+        market_regimes.regime_label(day)
+
+
+def test_v2_repricing_preserves_cash_weights_returns_dates_and_original_costs():
+    from backtesting.cost_model import round_trip_cost
+
+    day = pd.Timestamp("2019-05-30")
+    observations = pd.DataFrame({"entry_date": day, "stock_code": ["000010", "000020"],
+        "gross": [0.1, 0.0], "avg_trading_value_20d": 1e9,
+        **{f"cost_{m}": [round_trip_cost(12000, "KOSDAQ", day.date(), 1e9, multiplier=m), 0.0]
+           for m in (1.0, 1.5, 2.0)}})
+    prices = pd.DataFrame({"open": [12000, np.nan], "market": ["KOSDAQ", None]},
+        index=pd.MultiIndex.from_product([[day], observations.stock_code], names=["trade_date", "stock_code"]))
+    before = observations.copy(deep=True)
+    adjusted = common.reprice_costs_v2(observations, prices, "entry_date", pd.Series([True, False]))
+    pd.testing.assert_frame_equal(observations, before)
+    pd.testing.assert_frame_equal(adjusted.drop(columns=[f"cost_{m}" for m in (1.0, 1.5, 2.0)]),
+                                  before.drop(columns=[f"cost_{m}" for m in (1.0, 1.5, 2.0)]))
+    for m in (1.0, 1.5, 2.0):
+        assert adjusted.loc[0, f"cost_{m}"] == round_trip_cost(12000, "KOSDAQ", day.date(), 1e9,
+                                                              multiplier=m, model_version="v2")
+        assert adjusted.loc[1, f"cost_{m}"] == 0
+    with pytest.raises(ValueError, match="price"):
+        common.reprice_costs_v2(observations, prices.iloc[:0], "entry_date", pd.Series([True, False]))
 
 
 def git(root, *args):

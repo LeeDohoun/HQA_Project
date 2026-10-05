@@ -18,7 +18,7 @@ from backtesting import capacity, cost_model, experiment_registry, signal_eval
 from backtesting.experiment_registry import PROJECT_ROOT
 from backtesting.experiments import common, d001, hc001
 from src.ingestion import dart_quarterly
-from src.research import industry_map
+from src.research import industry_map, market_regimes
 
 
 EXPERIMENT_ID = "R001_industry_adjusted_reversal"
@@ -60,6 +60,8 @@ INTERPRETATIONS = {
         "delisting_sensitive": {"metric": "delisting_sensitivity.verdict", "definition": "Recalculate portfolios, U, controls, NW, Holm and all pass gates with presumed delistings at -100%. Different verdicts produce delisting_sensitive and never pass."},
     },
     "metrics": {
+        "cost_model_v2": common.COST_MODEL_V2_INTERPRETATION,
+        "short_sale_regimes": "Reporting-only splits of primary net excess by documented FSC short-sale intervals, using decision dates; no subgroup verdicts.",
         "statistics": "count is finite monthly observations; mean is arithmetic; std is sample dispersion only. standard_error, t_stat and p_value use NW/Bartlett lag 1 with no small-sample correction. by_year uses decision years. Undefined statistics are null, except judged p=1.",
         "per_rebalance": "Decision, entry and scheduled exit dates, U/E/selected code lists and equal capital weight audit the fixed sets. gross is selected mean before costs, universe_gross is U mean before costs; net_m and excess_m subtract the indicated costs and then U. Cash retains its weight. Selected valuations show actual mark date and execution/exit flags.",
         "skipped_months": "Reasons for absent calendar/price sessions, fewer than ten E members or uncomputable fixed-weight returns; no survivor-only return is calculated.",
@@ -436,7 +438,10 @@ def portfolio_metrics(frame, variant, *, worthless=False, controls=True):
     net = np.array([row["net_1.0"] for row in rows])
     wealth = np.r_[1.0, np.cumprod(1 + net)]
     ban = lambda row: "inside" if "2023-11-06" <= row["decision_date"] <= "2025-03-30" else "outside"
+    dated_rows = pd.Series(rows, index=[row["decision_date"] for row in rows], dtype=object)
     return {"excess": excess, "per_rebalance": rows, "skipped_months": skipped,
+            "short_sale_regimes": {label: _statistics(group.tolist(), "excess_1.0")
+                                    for label, group in market_regimes.split_by_regime(dated_rows).items()},
             "cost_sensitivity": {str(m): {"top_net": _statistics(rows, f"net_{m}")["mean"],
                                          "top_net_excess": _statistics(rows, f"excess_{m}")["mean"],
                                          "excess": _statistics(rows, f"excess_{m}")} for m in COST_MULTIPLIERS},
@@ -497,6 +502,19 @@ def apply_delisting_sensitivity(results, sensitivity):
         if sensitive:
             result["verdict"] = "delisting_sensitive"
             result["reasons"] = ["last-trading-close and -100% delisting re-runs have different verdicts"]
+
+
+def cost_model_v2_metrics(observations, prices):
+    # Positive registered costs identify filled slots; cash and missing windows
+    # retain zero costs. An empty universe has no cost columns to reprice.
+    adjusted = common.reprice_costs_v2(observations, prices, "entry_date",
+                                     observations["cost_1.0"].gt(0)) if not observations.empty else observations.copy()
+    variants = {}
+    for name in VARIANTS:
+        metrics = portfolio_metrics(adjusted, name, controls=False)
+        variants[name] = {key: metrics[key] for key in ("excess", "cost_sensitivity", "per_rebalance")}
+    return {"used_for_judgement": False, "interpretation": common.COST_MODEL_V2_INTERPRETATION,
+            "variants": variants}
 
 
 def write_results(payload, *, repo_root=PROJECT_ROOT):
@@ -582,6 +600,7 @@ def run_experiment(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT, pr
                "variants": variants, "common_skipped_months": excluded, "counts": {"by_month": counts,
                    **{flag: int(observations[flag].sum()) if not observations.empty else 0 for flag in ("cash_entry", "stale_exit", "trading_halt", "delisted", "limit_down_exit")},
                    "return_reasons": observations.return_reason.dropna().value_counts().to_dict() if not observations.empty else {}},
+               "cost_model_v2": cost_model_v2_metrics(observations, prices),
                "coverage": {"planned_months": len(MONTHS), "first_session": days.min().date().isoformat(), "last_session": days.max().date().isoformat(),
                             "sessions": len(days), "stocks": int(prices.index.get_level_values("stock_code").nunique()), "price_rows": len(prices),
                             "quarterly_directory_exists": (data_dir / "fundamentals/dart_quarterly").is_dir(), "quarterly_archives": len(sources["quarterly_archives"]),

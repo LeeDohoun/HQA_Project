@@ -30,8 +30,10 @@ def archive(data_dir, rows):
         (directory / name).write_text("".join(json.dumps(row) + "\n" for row in records), encoding="utf-8")
 
 
-def market():
+def market(*, krx_sessions=False):
     dates = pd.bdate_range("2024-01-02", "2025-12-31")
+    if krx_sessions:
+        dates = dates.intersection(hc001._session_calendar())
     index = pd.MultiIndex.from_product([dates, ["000010", "000020"]], names=["trade_date", "stock_code"])
     prices = pd.DataFrame({"open": 10000.0, "close": 10000.0, "base_price": 10000.0,
                            "volume": 10000.0, "ret_1d": np.tile([0.001, 0.0001], len(dates)),
@@ -254,7 +256,7 @@ def test_december_design_and_january_validation_are_labelled_by_decision():
 def test_synthetic_runner_records_only_two_variants_and_wires_primary(tmp_path, monkeypatch, has_financials):
     registration = experiment_registry.verify_preregistration(hc002.EXPERIMENT_ID)
     monkeypatch.setattr(experiment_registry, "verify_preregistration", lambda *args, **kwargs: registration)
-    prices, dates = market()
+    prices, dates = market(krx_sessions=True)
     archive(tmp_path / "data", [(2023, 100, 10, "2023-05-15", 1),
                                 (2024, 150, 30, "2024-05-15", 1)] if has_financials else [])
     calls = []
@@ -263,7 +265,8 @@ def test_synthetic_runner_records_only_two_variants_and_wires_primary(tmp_path, 
         calls.append((inputs.copy(), kwargs.copy()))
         return judge(fields, inputs, **kwargs)
     monkeypatch.setattr(common, "judge", capture)
-    calendar = pd.bdate_range(dates[0], "2026-03-31")
+    calendar = hc001._session_calendar()
+    calendar = calendar[calendar >= dates[0]]
     result = hc002.run_experiment(prices=prices, sessions=calendar, data_dir=tmp_path / "data", repo_root=tmp_path)
     primary = result["variants"]["phase2_ew"]
     assert result["selected_variant"] == "phase2_ew" and result["verdict"] == "insufficient"
@@ -274,6 +277,11 @@ def test_synthetic_runner_records_only_two_variants_and_wires_primary(tmp_path, 
     assert calls[0][1]["net_metric"] == hc002.NET_METRIC
     assert calls[0][1]["net_at_cost_1_5_metric"] == hc002.NET_AT_COST_1_5_METRIC
     assert result["turnover_based"]["used_for_judgement"] is False
+    v2 = result["cost_model_v2"]
+    assert v2["used_for_judgement"] is False and "Post-registration" in v2["interpretation"]
+    assert "verdict" not in v2 and "judgement_inputs" not in v2
+    assert set(v2["cost_sensitivity"]) == {"1.0", "1.5", "2.0"}
+    assert sum(group["count"] for group in primary["short_sale_regimes"].values()) == primary["excess"]["count"]
     if has_financials:
         assert primary["excess"]["count"] == 19  # May-Dec 2024, Jan-Nov 2025.
         assert result["turnover_based"]["excess"]["mean"] > primary["excess"]["mean"]
@@ -290,6 +298,29 @@ def test_synthetic_runner_records_only_two_variants_and_wires_primary(tmp_path, 
     assert "관측 단위는 월입니다" in summary and "초과수익 t" in summary and "판정 미사용" in summary
     assert "월별 IC 한 개를 관측 한 회" not in summary
     assert not (tmp_path / "research/experiments/holdout_ledger.jsonl").exists()
+
+
+def test_v2_diagnostic_reprices_same_hc002_portfolio_without_mutating_primary():
+    frame = metric_frame().iloc[:4].copy()
+    frame["entry_date"] = np.repeat(pd.to_datetime(["2019-05-30", "2020-06-01"]), 2)
+    index = pd.MultiIndex.from_frame(frame[["entry_date", "stock_code"]]).set_names(["trade_date", "stock_code"])
+    prices = pd.DataFrame({"open": 12000.0, "market": "KOSDAQ"}, index=index)
+    for m in (1.0, 1.5, 2.0):
+        frame[f"cost_{m}"] = [cost_model.round_trip_cost(12000, "KOSDAQ", day.date(), 2e9, multiplier=m)
+                              for day in frame.entry_date]
+    before = frame.copy(deep=True)
+    primary = hc001.portfolio_metrics(frame)
+    v2 = hc002.cost_model_v2_metrics(frame, prices)
+    pd.testing.assert_frame_equal(frame, before)
+    assert hc001.portfolio_metrics(frame) == primary
+    for old, new in zip(primary["per_rebalance"], v2["per_rebalance"], strict=True):
+        assert {key: new[key] for key in ("trade_date", "count", "universe_count", "gross", "universe_gross")} == {
+            key: old[key] for key in ("trade_date", "count", "universe_count", "gross", "universe_gross")}
+        day = frame.loc[frame.trade_date.eq(pd.Timestamp(old["trade_date"])), "entry_date"].iloc[0]
+        for m in (1.0, 1.5, 2.0):
+            cost = cost_model.round_trip_cost(12000, "KOSDAQ", day.date(), 2e9, multiplier=m, model_version="v2")
+            assert new[f"net_{m}"] == pytest.approx(new["gross"] - cost)
+    assert v2["excess"]["mean"] < primary["excess"]["mean"]
 
 
 def test_holdout_guard_precedes_financial_loading_and_recording(monkeypatch):

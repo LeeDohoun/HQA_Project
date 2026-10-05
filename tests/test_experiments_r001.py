@@ -30,8 +30,10 @@ def registration(monkeypatch):
     return registration
 
 
-def market(start="2023-10-02", end="2024-04-30", size=20):
+def market(start="2023-10-02", end="2024-04-30", size=20, *, krx_sessions=False):
     days = pd.bdate_range(start, end)
+    if krx_sessions:
+        days = days.intersection(r001.hc001._session_calendar())
     codes = [f"{(i + 1) * 10:06d}" for i in range(size)]
     index = pd.MultiIndex.from_product([days, codes], names=["trade_date", "stock_code"])
     prices = pd.DataFrame({"open": 10000.0, "close": 10000.0, "base_price": 10000.0,
@@ -521,7 +523,7 @@ def test_cfs_default_is_not_replaced_with_complete_ofs(tmp_path):
 
 
 def test_runner_records_exactly_three_rows_hashes_interpretations_and_secondary_comparison(tmp_path, monkeypatch, registration):
-    prices, days, codes = market("2023-10-02", "2025-12-31")
+    prices, days, codes = market("2023-10-02", "2025-12-31", krx_sessions=True)
     prices["ret_1d"] = np.tile(np.linspace(-0.002, 0.002, len(codes)), len(days))
     company = profiles(tmp_path / "data", codes)
     archive_dir = archives(tmp_path / "data", [])
@@ -547,7 +549,7 @@ def test_runner_records_exactly_three_rows_hashes_interpretations_and_secondary_
         return original_open(path, *args, **kwargs)
     monkeypatch.setattr(Path, "open", guarded_open)
     monkeypatch.setattr(common, "judge", lambda *args, **kwargs: pytest.fail("R001 must not call common.judge"))
-    result = r001.run_experiment(prices=prices, sessions=pd.bdate_range(days[0], "2026-03-31"),
+    result = r001.run_experiment(prices=prices, sessions=r001.hc001._session_calendar()[r001.hc001._session_calendar() >= days[0]],
                                   data_dir=tmp_path / "data", repo_root=tmp_path)
     assert result["selected_variant"] == "r21" and result["verdict"] == "insufficient"
     assert result["coverage"]["planned_months"] == 118
@@ -555,6 +557,14 @@ def test_runner_records_exactly_three_rows_hashes_interpretations_and_secondary_
     assert result["variants"]["r21_profitable"]["judgement_inputs"]["p_value"] == 1
     assert result["source_hashes"]["company_profiles"][str(company)] == hashlib.sha256(company.read_bytes()).hexdigest()
     assert result["source_hashes"]["krx_daily"] == {} and result["source_hashes"]["dart_listing_files"] == {}
+    v2 = result["cost_model_v2"]
+    assert v2["used_for_judgement"] is False and "Post-registration" in v2["interpretation"]
+    assert set(v2["variants"]) == set(r001.VARIANTS)
+    for name, diagnostic in v2["variants"].items():
+        assert "verdict" not in diagnostic and "judgement_inputs" not in diagnostic
+        assert set(diagnostic["cost_sensitivity"]) == {"1.0", "1.5", "2.0"}
+        primary = result["variants"][name]
+        assert sum(group["count"] for group in primary["short_sale_regimes"].values()) == primary["excess"]["count"]
     assert len(result["source_hashes"]["supplied_price_frame"]) == 64
     for variant in r001.VARIANTS:
         metrics = result["variants"][variant]
@@ -575,8 +585,37 @@ def test_runner_records_exactly_three_rows_hashes_interpretations_and_secondary_
     assert not (tmp_path / "research/experiments/holdout_ledger.jsonl").exists()
 
 
+def test_v2_diagnostic_preserves_r001_names_weights_cash_and_primary_verdicts(fields):
+    frame = metric_frame(months=2)
+    frame["entry_date"] = np.repeat(pd.to_datetime(["2022-02-03", "2022-03-02"]), 20)
+    frame.loc[0, ["cash_entry", "gross", "gap"]] = [True, 0.0, 0.0]
+    index = pd.MultiIndex.from_frame(frame[["entry_date", "stock_code"]]).set_names(["trade_date", "stock_code"])
+    prices = pd.DataFrame({"open": 150000.0, "market": "KOSPI"}, index=index)
+    for m in r001.COST_MULTIPLIERS:
+        frame[f"cost_{m}"] = [cost_model.round_trip_cost(150000, "KOSPI", day.date(), 2e9, multiplier=m) if not cash else 0.0
+                              for day, cash in zip(frame.entry_date, frame.cash_entry)]
+    before = frame.copy(deep=True)
+    baseline = {name: r001.portfolio_metrics(frame, name) for name in r001.VARIANTS}
+    r001.judge_variants(baseline, fields, 3)
+    diagnostic = r001.cost_model_v2_metrics(frame, prices)
+    pd.testing.assert_frame_equal(frame, before)
+    after = {name: r001.portfolio_metrics(frame, name) for name in r001.VARIANTS}
+    r001.judge_variants(after, fields, 3)
+    assert after == baseline
+    for name in r001.VARIANTS:
+        for old, new in zip(baseline[name]["per_rebalance"], diagnostic["variants"][name]["per_rebalance"], strict=True):
+            for key in ("decision_date", "entry_date", "exit_date", "selected_codes", "selected_weight", "valuations", "gross", "universe_gross"):
+                assert new[key] == old[key]
+            group = frame.loc[frame.decision_date.eq(pd.Timestamp(old["decision_date"])) & frame[f"selected_{name}"]]
+            for m in r001.COST_MULTIPLIERS:
+                costs = [cost_model.round_trip_cost(150000, "KOSPI", day.date(), 2e9, multiplier=m, model_version="v2")
+                         if not cash else 0.0 for day, cash in zip(group.entry_date, group.cash_entry)]
+                assert new[f"net_{m}"] == pytest.approx(np.mean(group.gross.to_numpy() - costs))
+    assert diagnostic["variants"]["r21"]["excess"]["mean"] < baseline["r21"]["excess"]["mean"]
+
+
 def test_runner_profitable_variant_uses_financial_e_and_all_quarterly_hashes(tmp_path, registration):
-    prices, days, codes = market(size=20)
+    prices, days, codes = market(size=20, krx_sessions=True)
     prices["ret_1d"] = np.tile(np.linspace(-0.005, 0.005, len(codes)), len(days))
     profiles(tmp_path / "data", codes)
     financial_rows = [filing(2023, quarter, f"2024-01-{quarter + 1:02d}", code=code)
@@ -609,7 +648,7 @@ def test_writer_reports_delisting_sensitive_without_mapping_it_to_pass(tmp_path,
 
 
 def test_local_latest_episodes_are_loaded_and_all_read_sources_are_hashed(tmp_path, monkeypatch, registration):
-    prices, days, codes = market("2023-10-02", "2024-03-31", size=12)
+    prices, days, codes = market("2023-10-02", "2024-03-31", size=12, krx_sessions=True)
     profiles(tmp_path / "data", codes)
     archive_dir = archives(tmp_path / "data", [filing(2023, 1, "2023-05-15")])
     price_dir = tmp_path / "data/market/krx_daily/2023"
@@ -629,7 +668,8 @@ def test_local_latest_episodes_are_loaded_and_all_read_sources_are_hashed(tmp_pa
     forbidden.write_text("must not load holdout prices")
     loaded = d001._load_prices(tmp_path / "data/market/krx_daily", r001.PRICE_START, r001.PRICE_END)
     assert loaded.xs(codes[0], level="stock_code").ret_1d.eq(-0.01).all()
-    monkeypatch.setattr(r001.hc001, "_session_calendar", lambda: pd.bdate_range(days[0], "2026-03-31"))
+    calendar = r001.hc001._session_calendar()
+    monkeypatch.setattr(r001.hc001, "_session_calendar", lambda: calendar[calendar >= days[0]])
     result = r001.run_experiment(data_dir=tmp_path / "data", repo_root=tmp_path)
     expected = {str(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in source_files}
     assert result["source_hashes"]["krx_daily"] == expected
@@ -639,7 +679,7 @@ def test_local_latest_episodes_are_loaded_and_all_read_sources_are_hashed(tmp_pa
 
 
 def test_source_mutation_fails_before_any_trial_is_written(tmp_path, monkeypatch, registration):
-    prices, days, codes = market()
+    prices, days, codes = market(krx_sessions=True)
     company = profiles(tmp_path / "data", codes)
     original = r001.portfolio_metrics
     def mutate(*args, **kwargs):

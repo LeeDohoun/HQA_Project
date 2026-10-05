@@ -17,6 +17,7 @@ from backtesting import cost_model, experiment_registry, signal_eval
 from backtesting.experiment_registry import PROJECT_ROOT
 from backtesting.experiments import common, hc001, hc002
 from src.ingestion.storage import read_rows
+from src.research import market_regimes
 
 
 EXPERIMENT_ID = "HF001_hegemony_filters"
@@ -47,6 +48,8 @@ ASSUMPTIONS = [
 INTERPRETATIONS = {
     "note": "HF001 is follow-up exploration. Its primary is monthly filtered net minus pre-filter net, not IC or standalone profitability; f_both is fixed primary, all three variants are judged.",
     "metrics": {
+        "cost_model_v2": common.COST_MODEL_V2_INTERPRETATION,
+        "short_sale_regimes": "Reporting-only splits of the primary filtered-minus-baseline net metric by documented FSC short-sale intervals, using decision dates; no subgroup verdicts.",
         "sets": "U and decision P are HC002 eligible and phase-2 codes; removed/remaining partition P. No replacement names. hc002_phase2_equal is an execution assertion.",
         "primary": "count/mean/std summarize finite monthly differences; std is sample ddof=1. standard_error/t_stat/p_one_sided use NW Bartlett lag 1 and a one-sided standard normal upper tail. Long-run variance has divisor n, no small-sample correction.",
         "holm_p": "Holm step-down adjusted p over exactly f_vol, f_raise, f_both, including p=1 for undefined tests, separately for each delisting valuation.",
@@ -408,6 +411,9 @@ def variant_metrics(frame, variant, *, loss=False, diagnostics=True):
               "cash_months": sum(row["cash"] for row in rows), "skipped_month_count": len(hc002.MONTHS) - len(rows)}
     result["by_year"] = {year: _cohort_summary([row for row in rows if row["decision_date"].startswith(year)])
                          for year in sorted({row["decision_date"][:4] for row in rows})}
+    dated_rows = pd.Series(rows, index=[row["decision_date"] for row in rows], dtype=object)
+    result["short_sale_regimes"] = {label: _cohort_summary(group.tolist())
+                                    for label, group in market_regimes.split_by_regime(dated_rows).items()}
     for period, start, end in (("design", "2017-05-01", "2024-12-31"), ("validation", "2025-01-01", "2025-11-30")):
         result[period] = _cohort_summary([row for row in rows if start <= row["decision_date"] <= end])
     design, validation = result["design"]["primary"]["mean"], result["validation"]["primary"]["mean"]
@@ -483,6 +489,16 @@ def evaluate(frame, fields, trial_count_after_run):
             main[name].update(verdict="delisting_sensitive", reasons=[
                 f"last-close verdict {main[name]['base_verdict']} differs from -100% delisting verdict {sensitivity[name]['verdict']}"])
     return main, sensitivity
+
+
+def cost_model_v2_metrics(observations, prices):
+    adjusted = common.reprice_costs_v2(observations, prices, "trade_date", observations.filled.astype(bool))
+    variants = {}
+    for name in VARIANTS:
+        rows, _ = _monthly(adjusted, name)
+        variants[name] = {**_cohort_summary(rows), "per_month": rows}
+    return {"used_for_judgement": False, "interpretation": common.COST_MODEL_V2_INTERPRETATION,
+            "variants": variants}
 
 
 def _digest(path):
@@ -565,6 +581,7 @@ def run_experiment(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT, pr
                "reasons": primary["reasons"], "prereg_commit": registration.commit_hash,
                "prereg_sha256": _digest(Path(repo_root) / "research/experiments" / EXPERIMENT_ID / "preregistration.md"),
                "variants": variants, "delisting_sensitivity": {"gross_return": -1.0, "variants": sensitivity},
+               "cost_model_v2": cost_model_v2_metrics(observations, prices),
                "interpretations": INTERPRETATIONS, "assumptions": ASSUMPTIONS, "source_hashes": hashes,
                "selections": reports, "skipped_months": excluded,
                "counts": {"hc002_by_month": counts, "rights_events": event_counts,

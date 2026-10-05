@@ -17,8 +17,10 @@ from backtesting.experiments import common, hc001, hc002, hf001
 from src.ingestion import dart_quarterly
 
 
-def market(start="2023-10-02", end="2025-12-31", codes=None):
+def market(start="2023-10-02", end="2025-12-31", codes=None, *, krx_sessions=False):
     days = pd.bdate_range(start, end)
+    if krx_sessions:
+        days = days.intersection(hc001._session_calendar())
     codes = codes or [f"{number * 10:06d}" for number in range(1, 11)]
     index = pd.MultiIndex.from_product([days, codes], names=["trade_date", "stock_code"])
     logs = np.where(np.arange(len(days))[:, None] % 2, 1, -1) * np.arange(1, len(codes) + 1)[None, :] / 1000
@@ -609,7 +611,7 @@ def test_source_hashes_cover_actual_files_and_latest_daily_versions(tmp_path):
 def test_runner_records_exactly_three_rows_finite_results_interpretations_and_hashes(registered_repo, monkeypatch, existing_trials, threshold):
     root = registered_repo
     data = root / "data"
-    prices, days = market("2024-01-01", codes=["000010", "000020"])
+    prices, days = market("2024-01-01", codes=["000010", "000020"], krx_sessions=True)
     financials(data, ["000010", "000020"])
     listing_archive(data, "2023-01-01", "2025-11-30", [listing_row("2024-05-30")])
     registry = root / experiment_registry.REGISTRY_PATH
@@ -627,6 +629,14 @@ def test_runner_records_exactly_three_rows_finite_results_interpretations_and_ha
     assert result["coverage"]["planned_months"] == 103
     assert result["source_hashes"]["quarterly"] and result["source_hashes"]["dart_listings"]
     assert result["source_hashes"]["in_memory_prices"]
+    v2 = result["cost_model_v2"]
+    assert v2["used_for_judgement"] is False and "not used for verdicts" in v2["interpretation"]
+    assert set(v2["variants"]) == set(hf001.VARIANTS)
+    for name, diagnostic in v2["variants"].items():
+        assert "verdict" not in diagnostic and "judgement_inputs" not in diagnostic
+        assert set(diagnostic["cost_sensitivity"]) == {"1.0", "1.5", "2.0"}
+        primary = result["variants"][name]
+        assert sum(group["primary"]["count"] for group in primary["short_sale_regimes"].values()) == primary["primary"]["count"]
     with registry.open() as handle:
         trials = list(csv.DictReader(handle))
     assert len(trials) == existing_trials + 3
@@ -642,6 +652,44 @@ def test_runner_records_exactly_three_rows_finite_results_interpretations_and_ha
     assert "NW t" in summary and "Holm p" in summary and "interpretations" in summary and "assumptions" in summary
     assert "월별 IC 한 개" not in summary
     assert not (root / "research/experiments/holdout_ledger.jsonl").exists()
+
+
+def test_v2_diagnostic_preserves_hf001_fixed_sets_cash_and_primary_verdicts(fields):
+    frame = metric_frame(months=3, stocks=3)
+    frame["trade_date"] = np.repeat(pd.to_datetime(["2022-01-03", "2022-02-03", "2022-03-02"]), 3)
+    frame["avg_trading_value_20d"] = 2e9
+    frame["filled"] = True
+    frame.loc[4, ["filled", "gross", "gross_delisting_loss"]] = [False, 0.0, 0.0]
+    frame.loc[frame.decision_date.eq(frame.decision_date.max()), list(hf001.VARIANTS)] = True
+    index = pd.MultiIndex.from_frame(frame[["trade_date", "stock_code"]])
+    prices = pd.DataFrame({"open": np.tile([12000.0, 150000.0, 150000.0], 3),
+                           "market": np.tile(["KOSDAQ", "KOSPI", "KOSPI"], 3)}, index=index)
+    for m in hf001.MULTIPLIERS:
+        frame[f"cost_{m}"] = [cost_model.round_trip_cost(float(p), market, day.date(), 2e9, multiplier=m) if filled else 0.0
+                              for p, market, day, filled in zip(prices.open, prices.market, frame.trade_date, frame.filled)]
+    before = frame.copy(deep=True)
+    baseline, baseline_loss = hf001.evaluate(frame, fields, 3)
+    diagnostic = hf001.cost_model_v2_metrics(frame, prices)
+    pd.testing.assert_frame_equal(frame, before)
+    after, after_loss = hf001.evaluate(frame, fields, 3)
+    assert after == baseline and after_loss == baseline_loss
+    for name in hf001.VARIANTS:
+        original, rerun = baseline[name]["per_month"], diagnostic["variants"][name]["per_month"]
+        for old, new in zip(original, rerun, strict=True):
+            for key in ("decision_date", "P", "removed", "remaining", "cash"):
+                assert new[key] == old[key]
+            group = frame.loc[frame.decision_date.eq(pd.Timestamp(old["decision_date"]))]
+            for m in hf001.MULTIPLIERS:
+                nets = []
+                for row in group.itertuples():
+                    price = prices.loc[(row.trade_date, row.stock_code)]
+                    cost = cost_model.round_trip_cost(float(price.open), price.market, row.trade_date.date(), 2e9,
+                                                      multiplier=m, model_version="v2") if row.filled else 0.0
+                    nets.append(row.gross - cost)
+                filtered = [net for net, removed in zip(nets, group[name]) if not removed]
+                assert new["costs"][str(m)]["baseline_net"] == pytest.approx(np.mean(nets))
+                assert new["costs"][str(m)]["filtered_net"] == pytest.approx(np.mean(filtered) if filtered else 0)
+    assert diagnostic["variants"]["f_both"]["primary"]["mean"] != pytest.approx(baseline["f_both"]["primary"]["mean"])
 
 
 def test_holdout_guard_precedes_reading_sources_and_financials(monkeypatch):

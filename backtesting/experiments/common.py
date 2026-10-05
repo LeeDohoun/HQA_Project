@@ -8,8 +8,32 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from backtesting import experiment_registry, holdout
+from backtesting import cost_model, experiment_registry, holdout
 from backtesting.experiment_registry import PROJECT_ROOT, REGISTRY_PATH
+
+
+COST_MODEL_V2_INTERPRETATION = (
+    "Post-registration diagnostic, not used for verdicts. Same portfolio names, weights, "
+    "cash slots and gross returns; recompute full entry-date round-trip costs with v2 "
+    "(dated market ticks and T+2 settlement tax) at multipliers 1/1.5/2. "
+    "The registered primary costs and all judgement inputs remain v1."
+)
+
+
+def reprice_costs_v2(observations, prices, entry_column, charged):
+    """Copy fixed observations and reprice only their already charged entries."""
+    adjusted = observations.copy()
+    if not charged.any():
+        return adjusted
+    rows = observations.loc[charged]
+    index = pd.MultiIndex.from_arrays([rows[entry_column], rows.stock_code],
+                                      names=["trade_date", "stock_code"])
+    entries = prices.reindex(index)
+    for multiplier in (1.0, 1.5, 2.0):
+        adjusted.loc[charged, f"cost_{multiplier}"] = cost_model.round_trip_cost_vectorized(
+            entries.open.to_numpy(), entries.market.to_numpy(), rows[entry_column].to_numpy(),
+            rows.avg_trading_value_20d.to_numpy(), multiplier=multiplier, model_version="v2")
+    return adjusted
 
 
 def load_preregistration(experiment_id, *, repo_root=PROJECT_ROOT) -> dict:

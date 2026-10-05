@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
 from datetime import date
+import itertools
+import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -184,3 +187,111 @@ def test_vectorized_empty_arrays_and_mismatched_shapes():
     assert actual.shape == (0,)
     with pytest.raises(ValueError):
         round_trip_cost_vectorized(np.array([10000.0, 10000.0]), ["KOSPI"] * 3, [2024], np.array([1e9]))
+
+
+def test_v1_exact_golden_grid_captured_before_v2():
+    golden = json.loads((Path(__file__).parent / "fixtures/cost_model_v1_golden.json").read_text())
+    inputs = list(itertools.product(*golden["grid"].values()))
+    for (price, market, day, adv, multiplier), expected in zip(inputs, golden["expected"], strict=True):
+        for version in (None, "v1"):
+            actual = [one_way_cost(price, market, day, adv, side, multiplier=multiplier,
+                                   model_version=version).hex() for side in ("buy", "sell")]
+            actual.append(round_trip_cost(price, market, day, adv, multiplier=multiplier,
+                                          model_version=version).hex())
+            assert actual == expected
+    for multiplier in golden["grid"]["multipliers"]:
+        selected = [(args, expected) for args, expected in zip(inputs, golden["expected"])
+                    if args[-1] == multiplier]
+        prices, markets, days, adv, _ = zip(*(args for args, _ in selected))
+        actual = round_trip_cost_vectorized(prices, markets, days, adv, multiplier=multiplier)
+        assert [value.hex() for value in actual] == [expected[2] for _, expected in selected]
+
+
+@pytest.mark.parametrize("market", ["KOSPI", "KOSDAQ"])
+@pytest.mark.parametrize("price,legacy_kospi,legacy_kosdaq,unified", [
+    (999, 1, 1, 1), (1000, 5, 5, 1), (1999, 5, 5, 1), (2000, 5, 5, 5),
+    (4999, 5, 5, 5), (5000, 10, 10, 10), (9999, 10, 10, 10),
+    (10000, 50, 50, 10), (19999, 50, 50, 10), (20000, 50, 50, 50),
+    (49999, 50, 50, 50), (50000, 100, 100, 100), (99999, 100, 100, 100),
+    (100000, 500, 100, 100), (199999, 500, 100, 100), (200000, 500, 100, 500),
+    (499999, 500, 100, 500), (500000, 1000, 100, 1000), (1000000, 1000, 100, 1000),
+])
+def test_v2_dated_market_tick_tables(market, price, legacy_kospi, legacy_kosdaq, unified):
+    expected = legacy_kospi if market == "KOSPI" else legacy_kosdaq
+    assert tick_size(price, market, "20230124", model_version="v2") == expected
+    assert tick_size(price, market, "20230125", model_version="v2") == unified
+    assert tick_size(price, market, "20230124") == unified
+
+
+@pytest.mark.parametrize("day,settlement,tax", [
+    ("20190529", "2019-05-31", 0.0030), ("20190530", "2019-06-03", 0.0025),
+    ("20190531", "2019-06-04", 0.0025), ("20190603", "2019-06-05", 0.0025),
+    ("20241227", "2025-01-02", 0.0015), ("20251229", "2026-01-02", 0.0020),
+])
+@pytest.mark.parametrize("market", ["KOSPI", "KOSDAQ"])
+def test_v2_settlement_tax_uses_two_krx_sessions(day, settlement, tax, market):
+    from src.runner.trading_calendar import _calendar
+
+    parsed = date.fromisoformat(f"{day[:4]}-{day[4:6]}-{day[6:]}")
+    sessions = _calendar(parsed.year).sessions_in_range(parsed, settlement)
+    assert len(sessions) == 3 and sessions[2].date().isoformat() == settlement
+    assert cost_model._settlement_date(parsed).isoformat() == settlement
+    assert one_way_cost(12000, market, day, 1e9, "sell", multiplier=0, model_version="v2") == tax
+    assert one_way_cost(12000, market, day, 1e9, "buy", multiplier=0, model_version="v2") == 0
+
+
+@pytest.mark.parametrize("multiplier", [0.0, 1.0, 1.5, 2.0])
+@pytest.mark.parametrize("date_format", ["date", "string", "numpy"])
+def test_v2_vectorized_scalar_exact_with_broadcasts(multiplier, date_format):
+    dates = np.array(["2019-05-30", "2020-06-01", "2023-01-25", "2024-12-27", "2025-12-29"],
+                     dtype="datetime64[D]")
+    inputs = dates.astype(object) if date_format == "date" else dates
+    if date_format == "string":
+        inputs = [day.strftime("%Y%m%d") for day in dates.astype(object)]
+    prices = np.array([[999, 12000, 150000, 500000, 1000000], [1000, 10000, 100000, 200000, 500000]])
+    markets = np.array([["KOSPI"], ["KOSDAQ"]])
+    config = CostConfig(commission_rate=0.0004, slippage_rates=(0.004, 0.002, 0.001, 0.0003), model_version="v2")
+    expected = [[round_trip_cost(float(price), market, day, 1e9, config, multiplier)
+                 for price, day in zip(row, dates.astype(object))] for row, [market] in zip(prices, markets)]
+    actual = round_trip_cost_vectorized(prices, markets, inputs, 1e9, config, multiplier)
+    np.testing.assert_array_equal(actual, expected)
+    explicit = round_trip_cost_vectorized(prices, markets, inputs, 1e9,
+        CostConfig(commission_rate=0.0004, slippage_rates=(0.004, 0.002, 0.001, 0.0003)), multiplier, model_version="v2")
+    np.testing.assert_array_equal(actual, explicit)
+    scalar_array = round_trip_cost_vectorized(12000.0, "KOSDAQ", "20190530", 1e9, config, multiplier)
+    assert scalar_array == round_trip_cost(12000.0, "KOSDAQ", "20190530", 1e9, config, multiplier)
+
+
+def test_v2_requires_market_and_full_session_date_and_known_tax_year():
+    with pytest.raises(ValueError, match="model_version"):
+        CostConfig(model_version="v3")
+    with pytest.raises(ValueError, match="model_version"):
+        tick_size(12000, model_version="v3")
+    for market in (None, "NYSE"):
+        with pytest.raises(ValueError, match="market"):
+            tick_size(12000, market, "20240102", model_version="v2")
+        with pytest.raises(ValueError, match="market"):
+            round_trip_cost(12000, market, "20240102", 1e9, model_version="v2")
+        with pytest.raises(ValueError, match="market"):
+            round_trip_cost_vectorized([12000], market, ["20240102"], 1e9, model_version="v2")
+    with pytest.raises(ValueError, match="trade_date"):
+        tick_size(12000, "KOSDAQ", model_version="v2")
+    assert tick_size(12000, "ignored", "ignored", model_version="v1") == 10
+    for day in ("20250101", "20241228"):
+        with pytest.raises(ValueError, match="KRX session"):
+            round_trip_cost(12000, "KOSDAQ", day, 1e9, model_version="v2")
+        with pytest.raises(ValueError, match="KRX session"):
+            round_trip_cost_vectorized([12000], "KOSDAQ", [day], 1e9, model_version="v2")
+    with pytest.raises(ValueError, match="full trade dates"):
+        round_trip_cost_vectorized([12000], "KOSDAQ", [2024], 1e9, model_version="v2")
+    for call in (round_trip_cost, round_trip_cost_vectorized):
+        with pytest.raises(ValueError, match="unknown tax year"):
+            call(12000, "KOSDAQ", "20261229", 1e9, model_version="v2")
+
+
+def test_version_override_and_v2_empty_arrays():
+    assert round_trip_cost(12000, "KOSDAQ", "20190530", 1e9, CostConfig(model_version="v2"),
+                           model_version="v1") == round_trip_cost(12000, "KOSDAQ", "20190530", 1e9)
+    actual = round_trip_cost_vectorized(np.array([], dtype=float), [], np.array([], dtype="datetime64[D]"),
+                                       np.array([], dtype=float), model_version="v2")
+    assert actual.shape == (0,)

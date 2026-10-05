@@ -13,6 +13,7 @@ import pandas as pd
 from backtesting import cost_model, experiment_registry, signal_eval
 from backtesting.experiment_registry import PROJECT_ROOT
 from backtesting.experiments import common, hc001
+from src.research import market_regimes
 
 
 EXPERIMENT_ID = "HC002_operating_leverage_monthly"
@@ -22,13 +23,14 @@ MONTHS = pd.period_range("2017-05", "2025-11", freq="M")
 NET_METRIC = hc001.NET_METRIC
 NET_AT_COST_1_5_METRIC = hc001.NET_AT_COST_1_5_METRIC
 INTERPRETATIONS = {
-    "note": "HC002 사전등록의 월별 관측과 전액 왕복 비용을 적용합니다. 회전율 비용은 보조 결과이며 판정에 사용하지 않습니다.",
+    "note": "HC002 사전등록의 월별 관측과 전액 왕복 v1 비용을 적용합니다. 회전율 비용은 보조 결과이며 판정에 사용하지 않습니다. cost_model_v2는 사후등록 진단이며 판정에 사용하지 않습니다. short_sale_regimes는 의사결정일 기준 주 지표의 보고용 분할입니다.",
     "criteria": {
         name: {key: value.replace("60세션", "20세션").replace("리밸런싱", "월별 관측")
                .replace("2016~2024", "2017-05~2024-12").replace("2025년", "2025-01~2025-11")
                for key, value in interpretation.items()}
         for name, interpretation in hc001.INTERPRETATIONS["criteria"].items()
     },
+    "cost_model_v2": common.COST_MODEL_V2_INTERPRETATION,
 }
 
 
@@ -149,6 +151,14 @@ def turnover_metrics(frame):
             "used_for_judgement": False}
 
 
+def cost_model_v2_metrics(observations, prices):
+    adjusted = common.reprice_costs_v2(observations, prices, "entry_date",
+                                     np.isfinite(observations.gross.astype(float)))
+    metrics = hc001.portfolio_metrics(adjusted)
+    return {"used_for_judgement": False, "interpretation": common.COST_MODEL_V2_INTERPRETATION,
+            **{key: metrics[key] for key in ("excess", "cost_sensitivity", "per_rebalance")}}
+
+
 def _write_results(payload, *, repo_root):
     paths = common.write_results(EXPERIMENT_ID, payload, repo_root=repo_root)
     summary = paths[1].read_text(encoding="utf-8")
@@ -195,6 +205,10 @@ def run_experiment(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT, pr
     primary.update(ic=ic, verdict=verdict, reasons=reasons, judgement_inputs=inputs,
                    skipped_month_count=len(MONTHS) - primary["excess"]["count"], **return_counts,
                    delisting_exclusions=return_counts["no_later_price"])
+    monthly_excess = pd.Series([row["excess_1.0"] for row in primary["per_rebalance"]],
+                              index=[row["trade_date"] for row in primary["per_rebalance"]], dtype=float)
+    primary["short_sale_regimes"] = {label: signal_eval._summary(values)
+                                    for label, values in market_regimes.split_by_regime(monthly_excess).items()}
     diagnostic = {"ic": ic, "verdict": "diagnostic", "cost_sensitivity": {
         str(m): {"top_net": None, "top_net_excess": None} for m in (1.0, 1.5, 2.0)},
         "random_control": {"share_of_controls": None}, "skipped_month_count": len(MONTHS) - ic["count"],
@@ -213,6 +227,7 @@ def run_experiment(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT, pr
     payload = {"experiment_id": EXPERIMENT_ID, "selected_variant": "phase2_ew", "verdict": verdict, "reasons": reasons,
                "variants": {"phase2_ew": primary, "score_ic": diagnostic}, "interpretations": INTERPRETATIONS,
                "turnover_based": turnover_metrics(observations),
+               "cost_model_v2": cost_model_v2_metrics(observations, prices),
                "secondary_phases": {str(phase): hc001.portfolio_metrics(observations, phase) for phase in (1, 3, 4)},
                "liquidity_buckets": buckets, "skipped_months": skipped,
                "counts": {"by_month": counts, "holdout_horizon_exclusions": sum(row["reason"] == "holdout_horizon" for row in excluded),
