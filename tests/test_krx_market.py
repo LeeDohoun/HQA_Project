@@ -1,5 +1,7 @@
 import hashlib
 import json
+import re
+import stat
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
@@ -9,6 +11,7 @@ import pytest
 import requests
 
 from scripts.data import krx_market as cli
+from scripts.data import krx_relabel_calendar as relabel
 from src.ingestion import krx_chart, krx_market as market
 from src.ingestion.storage import read_rows
 
@@ -301,9 +304,6 @@ def test_concurrent_identical_saves_do_not_duplicate_or_lose_stocks(tmp_path):
 
 
 @pytest.mark.parametrize("day,status", [
-    ("20211118", "unverified_special_session"),
-    ("20221117", "unverified_special_session"),
-    ("20231116", "unverified_special_session"),
     ("20261102", "unverified_special_session"),
     ("20260906", "exchange_calendar_mismatch"),
 ])
@@ -356,19 +356,21 @@ def test_unrelated_calendar_value_error_propagates(monkeypatch):
 
 @pytest.mark.parametrize("changes", [{"TDD_CLSPRC": "-1"}, {"ISU_NM": ""}, {"MKTCAP": "-1"},
                                      {"FLUC_RT": "NaN"}, {"CMPPREVDD_PRC": "--1"}])
-def test_unverified_calendar_does_not_bypass_row_validation(changes):
+def test_unverified_calendar_does_not_bypass_row_validation(changes, monkeypatch):
+    monkeypatch.setattr(krx_chart, "_now", lambda: datetime(2026, 12, 1, tzinfo=timezone.utc))
     with pytest.raises(ValueError):
-        collect(raw(day="20231116", **changes), day="20231116")
+        collect(raw(day="20261102", **changes), day="20261102")
 
 
-def test_backfill_saves_calendar_issues_and_continues_to_verified_day(tmp_path):
+def test_backfill_saves_verified_november_and_continues_to_december(tmp_path):
     session = Session(response(raw(day="20231130")), response(raw("035720", day="20231130")),
                       response(raw(day="20231201")), response())
     summary = market.KrxMarketCollector("fixture-key", session).backfill(
         "20231130", "20231201", tmp_path, execute=True)
-    assert summary["calendar_unverified"] == ["20231130"]
+    assert summary["calendar_unverified"] == []
     assert summary["fetched"] == 2 and summary["saved_rows"] == 3
-    assert all("bar_at" not in row for row in market.load_universe("20231130", tmp_path))
+    assert all(row["calendar_status"] == "verified" and row["bar_at"] == "2023-11-30T15:30:00+09:00"
+               for row in market.load_universe("20231130", tmp_path))
     assert market.load_universe("20231201", tmp_path)[0]["calendar_status"] == "verified"
 
 
@@ -434,3 +436,94 @@ def test_missing_change_fields_are_not_invented(tmp_path, changes, expected):
         assert pd.isna(frame["base_price"].iloc[0])
     empty = market.load_prices([], "20260904", "20260904", tmp_path)
     assert empty.empty and {"ret_1d", "base_price"} <= set(empty.columns)
+
+
+@pytest.mark.parametrize("day,hour", [
+    ("20211118", "16"), ("20221117", "16"), ("20231116", "16"),
+    ("20211101", "15"), ("20221101", "15"), ("20231101", "15"),
+])
+def test_relabel_dry_run_execute_and_idempotence_preserve_nonmetadata_bytes(tmp_path, day, hour):
+    row = collect(raw(day=day, FLUC_RT="-1.25", CMPPREVDD_PRC="-10", ACC_TRDVAL="10,000"), day=day)[0]
+    verified = {**row, "stock_code": "000001"}
+    row["calendar_status"] = "unverified_special_session"
+    row.pop("bar_at")
+    row["available_at"] = "2026-09-09T00:00:00+00:00"
+    market.save_day([row, verified], tmp_path)
+    path = day_path(tmp_path, day)
+    # Preserve even noncanonical JSON tokens and nested metadata byte-for-byte.
+    original = path.read_bytes().replace(b'"open": "1000"', b'"open" : "\\u0031000"', 1)
+    path.write_bytes(original)
+    path.chmod(0o640)
+    mode = stat.S_IMODE(path.stat().st_mode)
+    path.with_suffix(".jsonl.lock").unlink()
+
+    still_unverified = {**row, "trade_date": "2026-09-06", "collected_at": NOW.isoformat()}
+    market.save_day([still_unverified], tmp_path)
+    still_path = day_path(tmp_path, "20260906")
+    still_bytes = still_path.read_bytes()
+    snapshot = {entry: entry.read_bytes() for entry in tmp_path.rglob("*") if entry.is_file()}
+    expected = [{"year": int(day[:4]), "files": 1, "rows_changed": 1, "rows_still_unverified": 0},
+                {"year": 2026, "files": 1, "rows_changed": 0, "rows_still_unverified": 1}]
+    assert relabel.relabel_calendar(tmp_path) == expected
+    assert {entry: entry.read_bytes() for entry in tmp_path.rglob("*") if entry.is_file()} == snapshot
+    assert stat.S_IMODE(path.stat().st_mode) == mode
+
+    assert relabel.relabel_calendar(tmp_path, execute=True) == expected
+    updated = path.read_bytes()
+    changed = read_rows(path)[0]
+    assert changed["calendar_status"] == "verified"
+    assert changed["bar_at"] == row["trade_date"] + f"T{hour}:30:00+09:00"
+    assert changed["available_at"] == row["collected_at"]
+    assert {key: value for key, value in changed.items() if key not in {"calendar_status", "bar_at", "available_at"}} == {
+        key: value for key, value in json.loads(original.splitlines()[0]).items()
+        if key not in {"calendar_status", "bar_at", "available_at"}}
+    assert updated.splitlines(keepends=True)[1] == original.splitlines(keepends=True)[1]
+    for field in (*market.PRICE_FIELDS, *market.OPTIONAL_FIELDS, *market.CHANGE_FIELDS, "base_price", "version"):
+        pattern = rb'"' + field.encode() + rb'"\s*:\s*"[^"\r\n]*"'
+        assert re.findall(pattern, updated) == re.findall(pattern, original)
+    assert stat.S_IMODE(path.stat().st_mode) == mode
+    assert still_path.read_bytes() == still_bytes
+
+    expected[0]["rows_changed"] = 0
+    assert relabel.relabel_calendar(tmp_path, execute=True) == expected
+    assert path.read_bytes() == updated and still_path.read_bytes() == still_bytes
+
+
+@pytest.mark.parametrize("execute", [False, True])
+@pytest.mark.parametrize("symlink", [False, True])
+def test_relabel_refuses_backup_directory_including_aliases(tmp_path, execute, symlink):
+    backup = tmp_path / "HQA_data_backup_20260913"
+    backup.mkdir()
+    target = backup
+    if symlink:
+        target = tmp_path / "alias"
+        target.symlink_to(backup, target_is_directory=True)
+    with pytest.raises(ValueError, match="Refusing.*backup"):
+        relabel.relabel_calendar(target, execute=execute)
+    assert list(backup.iterdir()) == []
+
+
+def test_relabel_cli_defaults_to_dry_run_without_network_or_env(tmp_path, monkeypatch, capsys):
+    row = collect(raw(day="20231116"), day="20231116")[0]
+    row["calendar_status"] = "unverified_special_session"
+    row.pop("bar_at")
+    market.save_day([row], tmp_path)
+    before = day_path(tmp_path, "20231116").read_bytes()
+    monkeypatch.setenv("HQA_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr("sys.argv", ["krx_relabel_calendar"])
+    monkeypatch.setattr(krx_chart.requests, "Session", lambda: pytest.fail("Unexpected network session"))
+    relabel.main()
+    assert json.loads(capsys.readouterr().out) == {
+        "year": 2023, "files": 1, "rows_changed": 1, "rows_still_unverified": 0}
+    assert day_path(tmp_path, "20231116").read_bytes() == before
+
+
+def test_relabel_invalid_observation_fails_without_rewriting(tmp_path):
+    row = collect(raw(day="20231116"), day="20231116")[0]
+    row.update(calendar_status="unverified_special_session", collected_at="2023-11-16T16:00:00+09:00")
+    market.save_day([row], tmp_path)
+    path = day_path(tmp_path, "20231116")
+    before = path.read_bytes()
+    with pytest.raises(ValueError, match="completed market close"):
+        relabel.relabel_calendar(tmp_path, execute=True)
+    assert path.read_bytes() == before

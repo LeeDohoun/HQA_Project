@@ -7,9 +7,30 @@ from functools import lru_cache
 import exchange_calendars as calendars
 import pandas as pd
 
-CALENDAR_VERSION = "exchange-calendars:" + calendars.__version__ + ":XKRX:krx-notices-2024-2025-v1"
+CALENDAR_VERSION = "exchange-calendars:" + calendars.__version__ + ":XKRX:krx-notices-2021-2025-v2"
 SPECIAL_SESSION_REVIEW_REQUIRED_FROM = "2026-11-01"
 SPECIAL_CLOSES = {
+    "2021-11-18": {
+        "close": "2021-11-18T16:30:00+09:00", "published_at": "2021-11-04T10:00:00+09:00",
+        "source_urls": {
+            "KOSPI": "https://kind.krx.co.kr/external/2021/11/04/000107/20211104000121/99303.htm",
+            "KOSDAQ": "https://kind.krx.co.kr/external/2021/11/04/000104/20211101000204/70780.htm",
+        },
+    },
+    "2022-11-17": {
+        "close": "2022-11-17T16:30:00+09:00", "published_at": "2022-11-03T10:00:00+09:00",
+        "source_urls": {
+            "KOSPI": "https://kind.krx.co.kr/external/2022/11/03/000103/20221102001061/99303.htm",
+            "KOSDAQ": "https://kind.krx.co.kr/external/2022/11/03/000105/20221019000846/70780.htm",
+        },
+    },
+    "2023-11-16": {
+        "close": "2023-11-16T16:30:00+09:00", "published_at": "2023-11-02T10:00:00+09:00",
+        "source_urls": {
+            "KOSPI": "https://kind.krx.co.kr/external/2023/11/02/000068/20231102000001/99303.htm",
+            "KOSDAQ": "https://kind.krx.co.kr/external/2023/11/02/000075/20231101001384/70780.htm",
+        },
+    },
     "2024-11-14": {
         "close": "2024-11-14T16:30:00+09:00", "published_at": "2024-10-31T10:00:00+09:00",
         "source_urls": {
@@ -30,8 +51,7 @@ SPECIAL_CLOSES = {
 def _check_special_session_coverage(day: str) -> None:
     # The dependency's CSAT table ends in 2020. These are review boundaries,
     # not inferred exam dates or invented market hours.
-    if day >= SPECIAL_SESSION_REVIEW_REQUIRED_FROM or (
-            "2021" <= day[:4] <= "2023" and day[5:7] == "11"):
+    if day >= SPECIAL_SESSION_REVIEW_REQUIRED_FROM:
         raise ValueError(f"calendar_special_session_coverage_unverified:{day}:official_KRX_notice_required")
 
 

@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from src.runner.analysis_data import price_features
-from src.runner.trading_calendar import CALENDAR_VERSION, SPECIAL_CLOSES, completed_daily_sessions, daily_session_close
+from src.runner.trading_calendar import CALENDAR_VERSION, SPECIAL_CLOSES, _calendar, completed_daily_sessions, daily_session_close
 
 NOW = datetime(2026, 9, 4, 8, tzinfo=timezone.utc)
 
@@ -61,7 +61,7 @@ def test_special_close_is_resolved_by_the_calendar_not_a_fixed_1530_clock():
     assert price_features(rows, during_session)[1][-1]["trade_date"] == "2020-12-02"
 
 
-@pytest.mark.parametrize("day", ["2024-11-14", "2025-11-13"])
+@pytest.mark.parametrize("day", ["2021-11-18", "2022-11-17", "2023-11-16", "2024-11-14", "2025-11-13"])
 def test_verified_krx_notices_override_missing_recent_csat_special_closes(day):
     close = daily_session_close(day)
     assert close.isoformat() == day + "T07:30:00+00:00"
@@ -71,6 +71,26 @@ def test_verified_krx_notices_override_missing_recent_csat_special_closes(day):
     assert set(notice["source_urls"]) == {"KOSPI", "KOSDAQ"}
     assert all(url.startswith("https://kind.krx.co.kr/external/") for url in notice["source_urls"].values())
     assert datetime.fromisoformat(notice["published_at"]) < close
+
+
+@pytest.mark.parametrize("day", ["2016-11-17", "2017-11-23", "2018-11-15", "2019-11-14", "2020-12-03"])
+def test_dependency_already_covers_2016_to_2020_csat_closes(day):
+    assert day not in SPECIAL_CLOSES
+    assert _calendar(int(day[:4])).session_close(day).isoformat() == day + "T07:30:00+00:00"
+    assert daily_session_close(day).isoformat() == day + "T07:30:00+00:00"
+
+
+@pytest.mark.parametrize("day", ["2021-11-18", "2022-11-17", "2023-11-16"])
+def test_recent_csat_notices_override_dependency_regular_close(day):
+    assert _calendar(int(day[:4])).session_close(day).isoformat() == day + "T06:30:00+00:00"
+    assert daily_session_close(day).isoformat() == day + "T07:30:00+00:00"
+
+
+@pytest.mark.parametrize("day", ["2021-11-01", "2022-11-01", "2023-11-01"])
+def test_ordinary_november_sessions_are_verified_with_regular_close(day):
+    close = daily_session_close(day)
+    assert close.isoformat() == day + "T06:30:00+00:00"
+    assert completed_daily_sessions(close, 1)[-1] == (day, close)
 
 
 @pytest.mark.parametrize("day", ["2026-09-05", "2026-09-25"])
@@ -137,7 +157,7 @@ def test_calendar_range_and_naive_as_of_fail_clearly():
         completed_daily_sessions(datetime(2026, 9, 4))
 
 
-@pytest.mark.parametrize("day", ["2021-11-18", "2022-11-17", "2023-11-16", "2026-11-19"])
+@pytest.mark.parametrize("day", ["2026-11-02", "2026-11-19", "2027-01-04"])
 def test_unverified_special_session_periods_fail_instead_of_guessing_normal_close(day):
     with pytest.raises(ValueError, match="calendar_special_session_coverage_unverified"):
         daily_session_close(day)
