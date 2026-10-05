@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from datetime import date
 from types import SimpleNamespace
 
@@ -384,3 +385,158 @@ def test_event_study_uses_vector_cost_without_scalar_calls(monkeypatch):
     monkeypatch.setattr(cost_model, "round_trip_cost", scalar_call)
     result = run_event_study(events, prices, benchmarks, horizons=(1,), n_controls=2)
     assert result["horizons"]["1"]["overall"]["count"] == 1
+
+
+def test_default_index_close_output_is_byte_identical():
+    prices, benchmarks, events = sample(days=15)
+    kwargs = dict(horizons=(1, 3, 5), feature="size", n_buckets=4, n_controls=10, seed=3)
+    original = run_event_study(events, prices, benchmarks, **kwargs)
+    explicit = run_event_study(events, prices, benchmarks, benchmark_mode="index_close", **kwargs)
+    encoded = json.dumps(original, allow_nan=False).encode()
+    assert json.dumps(explicit, allow_nan=False).encode() == encoded
+    # Captured from the unmodified implementation with this seeded input.
+    assert hashlib.sha256(encoded).hexdigest() == "40fc619164b95d0cf9ddc8736c4b905d693e51cc4bfaab1463b1c7ddb1ea3023"
+
+
+def test_universe_open_benchmark_removes_entry_overnight_gap_in_events_and_controls():
+    prices, benchmarks, events, dates = holding_sample()
+    prices.loc[dates[1], ["open", "close"]] = [120, 126]
+    prices.loc[dates[2], ["close", "ret_1d"]] = [128.52, 0.02]
+    benchmarks.loc[benchmarks.trade_date == dates[1], "close"] = 1260
+    benchmarks.loc[benchmarks.trade_date == dates[2], "close"] = 1285.2
+    kwargs = dict(horizons=(1, 2), n_controls=20)
+    legacy = run_event_study(events, prices, benchmarks, **kwargs)
+    aligned = run_event_study(events, prices, benchmarks, benchmark_mode="universe_open_ew", **kwargs)
+    assert aligned["benchmark_mode"] == "universe_open_ew"
+    for h, gross, index_return in ((1, 0.05, 0.26), (2, 0.071, 0.2852)):
+        old, new = legacy["horizons"][str(h)], aligned["horizons"][str(h)]
+        assert old["events"][0]["abnormal"] == pytest.approx(gross - index_return)
+        assert new["events"][0]["gross"] == pytest.approx(gross)
+        assert new["events"][0]["abnormal"] == pytest.approx(0)
+        assert new["random_control"]["p05"] == pytest.approx(0)
+        assert new["random_control"]["p95"] == pytest.approx(0)
+    # No index open or even index closes are needed for the new mode.
+    assert aligned == run_event_study(events, prices, benchmarks.iloc[:0], benchmark_mode="universe_open_ew", **kwargs)
+
+
+def naive_market_return(prices, entry, exit_date, market, missing_exit, limit_fill):
+    """Scalar reference: entry-only membership, independent per-stock valuation."""
+    values = []
+    dates = prices.index.get_level_values("trade_date").unique()
+    previous = dates[dates.get_loc(entry) - 1]
+    for code in prices.index.get_level_values("stock_code").unique():
+        stock = prices.xs(code, level="stock_code")
+        if entry not in stock.index:
+            continue
+        start = stock.loc[entry]
+        if start.market != market or not np.isfinite(start.open) or start.open <= 0 or not np.isfinite(start.volume) or start.volume <= 0:
+            continue
+        def base(day):
+            value = stock.loc[day].get("base_price", np.nan)
+            before = dates[dates.get_loc(day) - 1] if day != dates[0] else None
+            return stock.loc[before, "close"] if pd.isna(value) and before in stock.index else value
+
+        reference = base(entry)
+        if limit_fill == "exclude" and np.isfinite(reference) and reference > 0 and start.open >= reference * 1.295:
+            continue
+        def positive_close(day):
+            return np.isfinite(stock.loc[day, "close"]) and stock.loc[day, "close"] > 0
+
+        def limit_down(day):
+            reference = base(day)
+            return limit_fill == "exclude" and np.isfinite(reference) and reference > 0 and stock.loc[day, "close"] <= reference * 0.705
+
+        def tradable(day):
+            volume = stock.loc[day, "volume"]
+            return positive_close(day) and np.isfinite(volume) and volume > 0 and not limit_down(day)
+
+        actual = exit_date
+        if exit_date not in stock.index or not tradable(exit_date):
+            if missing_exit == "drop" or exit_date not in stock.index and stock.index.max() < exit_date:
+                continue
+            candidates = [day for day in stock.index if entry <= day <= exit_date and positive_close(day) and not limit_down(day)
+                          and (exit_date not in stock.index or not limit_down(exit_date) or tradable(day))]
+            actual = max(candidates) if candidates else entry
+            if not positive_close(actual):
+                continue
+        gross = stock.loc[actual, "close"] / start.open - 1
+        chain_days = dates[(dates > entry) & (dates <= actual)]
+        factors = stock.reindex(chain_days).get("ret_1d")
+        if positive_close(entry) and "ret_1d" in stock and np.isfinite(factors).all():
+            gross = start.close / start.open * np.prod(1 + factors) - 1
+        values.append(gross)
+    return float(np.mean(values))
+
+
+@pytest.mark.parametrize("missing_exit", ["last_close", "drop"])
+@pytest.mark.parametrize("limit_fill", ["exclude", "assume_fill"])
+@pytest.mark.parametrize("adjusted", [True, False])
+def test_vectorized_universe_benchmark_matches_naive_loop(missing_exit, limit_fill, adjusted):
+    prices, benchmarks, _ = sample(days=10, stocks=10)
+    dates = prices.index.get_level_values("trade_date").unique()
+    prices[["open", "high", "low", "close"]] = 100.0
+    prices["base_price"] = 100.0
+    prices["ret_1d"] = 0.01
+    # Distinct market returns and a split where chaining differs from raw ratios.
+    for number in range(10):
+        prices.loc[(dates[1:], f"{number:06d}"), "close"] = 101 + number
+    prices.loc[(dates[2], "000002"), ["open", "close", "base_price"]] = [51, 51.51, 51]
+    prices.loc[(dates[3], "000002"), ["close", "base_price"]] = [52, 51.51]
+    prices.loc[(dates[2], "000003"), "ret_1d"] = np.nan
+    # Entry-only exclusions must prevent these large future returns entering EW.
+    prices.loc[(dates[1], "000004"), "volume"] = 0
+    prices.loc[(dates[3], "000004"), "close"] = 10000
+    prices.loc[(dates[1], "000005"), "open"] = np.nan
+    prices.loc[(dates[1], "000006"), ["open", "close"]] = [129.5, 200]
+    # Stale valuations, no-later-price exclusions, and a limit-down exit.
+    prices.loc[(dates[3], "000007"), "volume"] = 0
+    prices.loc[(dates[3], "000008"), ["close", "ret_1d"]] = [70, -0.3]
+    prices = prices.drop([(dates[3], "000000"), *[(day, "000009") for day in dates[3:]]])
+    if not adjusted:
+        prices = prices.drop(columns="ret_1d")
+    events = pd.DataFrame([{"event_id": f"{entry}-{code}", "stock_code": code, "available_at": day.date()}
+                           for entry, day in enumerate(dates[:3]) for code in ("000000", "000001", "000002")])
+    result = run_event_study(events, prices, benchmarks, horizons=(1, 3), n_controls=20,
+                             missing_exit=missing_exit, limit_fill=limit_fill, benchmark_mode="universe_open_ew")
+    rows = [row for horizon in result["horizons"].values() for row in horizon["events"]]
+    assert rows
+    for row in rows:
+        entry, exit_date = pd.Timestamp(row["entry_date"]), pd.Timestamp(row["exit_date"])
+        market = prices.loc[(entry, row["stock_code"]), "market"]
+        expected = naive_market_return(prices, entry, exit_date, market, missing_exit, limit_fill)
+        assert row["gross"] - row["abnormal"] == pytest.approx(expected)
+    json.dumps(result, allow_nan=False)
+
+
+def test_universe_benchmark_batches_repeated_events_and_stale_endpoints(monkeypatch):
+    from backtesting import event_study
+
+    prices, benchmarks, events, dates = holding_sample()
+    prices = prices.drop((dates[4], "000000"))
+    events = pd.concat([events.assign(event_id=str(i)) for i in range(1000)], ignore_index=True)
+    original = event_study._holding_window
+    lengths = []
+    def counted(data, h, missing_exit):
+        lengths.append(h)
+        return original(data, h, missing_exit)
+
+    monkeypatch.setattr(event_study, "_holding_window", counted)
+    result = run_event_study(events, prices, benchmarks, horizons=(4,), n_controls=2,
+                             benchmark_mode="universe_open_ew")
+    assert result["horizons"]["4"]["overall"]["count"] == 1000
+    assert lengths == [4, 3]
+
+
+def test_unknown_benchmark_mode_fails():
+    prices, benchmarks, events, _ = holding_sample()
+    with pytest.raises(ValueError, match="benchmark_mode"):
+        run_event_study(events, prices, benchmarks, benchmark_mode="index_open")
+
+
+def test_empty_events_with_universe_benchmark_return_empty_json_metrics():
+    prices, benchmarks, events, _ = holding_sample()
+    result = run_event_study(events.iloc[:0], prices, benchmarks, horizons=(1,), n_controls=2,
+                             benchmark_mode="universe_open_ew")
+    assert result["benchmark_mode"] == "universe_open_ew"
+    assert result["horizons"]["1"]["overall"]["count"] == 0
+    json.dumps(result, allow_nan=False)

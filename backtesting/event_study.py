@@ -61,17 +61,43 @@ def _feature_groups(events, feature, n_buckets):
     return values
 
 
+def _universe_open_ew(data, window, entries, h, missing_exit):
+    """Cache market means per entry/valuation date, including controls' dates."""
+    entries = np.asarray(sorted(entry for entry in entries if entry + h <= len(data["sessions"])), dtype=int)
+    row, column = np.nonzero(window["reason"][entries] == None)
+    lengths = window["exit_position"][entries[row], column] - entries[row] + 1
+    result = {}
+    for length in np.unique(lengths):
+        selected = np.unique(entries[row[lengths == length]])
+        # Stale event exits shorten the benchmark window too. Each constituent
+        # applies the same missing-exit policy at that valuation endpoint.
+        valuation = window if length == h else _holding_window(data, int(length), missing_exit)
+        market_row, market_column = np.nonzero(valuation["reason"][selected] == None)
+        entry = selected[market_row]
+        members = pd.DataFrame({"entry": entry, "exit": entry + length - 1,
+                                "market": data["market"][entry, market_column],
+                                "gross": valuation["gross"][entry, market_column]})
+        result.update(members.groupby(["entry", "exit", "market"]).gross.mean().to_dict())
+    return result
+
+
 def run_event_study(
     events: pd.DataFrame, prices: pd.DataFrame, benchmarks: pd.DataFrame, *, horizons=(1, 3, 5, 20),
     feature=None, n_buckets=5, n_controls=200, seed=0, cost_multiplier=1.0, experiment_id=None,
-    missing_exit="last_close", limit_fill="exclude",
+    missing_exit="last_close", limit_fill="exclude", benchmark_mode="index_close",
     repo_root: str | Path = PROJECT_ROOT, ledger_path: str | Path = holdout.LEDGER_PATH,
 ) -> dict:
     """Evaluate date-only events next session, timed pre-09:00 KST events same session.
 
     h counts entry as session 1. ADV ends at the session before entry. Abnormal
-    returns subtract a close-to-close market proxy, so the benchmark includes the
-    overnight move preceding the stock's open-to-close holding period. Controls
+    returns in the legacy default index_close mode subtract a close-to-close index
+    proxy. This biases abnormal returns by including the entry day's overnight
+    gap, which the stock leg does not hold. New preregistrations should choose
+    universe_open_ew: equal-weight same-market entry-tradable stocks from the
+    caller's price frame (including its common-share filters), held from entry
+    open to the event's valuation close with the same return/exit policies.
+    benchmark_mode is recorded for universe_open_ew; legacy index_close outputs
+    keep their original schema for byte-identical reproducibility. Controls
     sample with replacement from entry-tradable names, without exit survivorship
     filtering; missing control exits/benchmarks are counted. Clustered t-statistics
     first average events within entry date; reported means remain event-weighted.
@@ -82,6 +108,8 @@ def run_event_study(
     """
     horizons = _horizons(horizons)
     _execution_policies(missing_exit, limit_fill)
+    if benchmark_mode not in ("index_close", "universe_open_ew"):
+        raise ValueError("benchmark_mode must be index_close or universe_open_ew")
     _positive_int(n_buckets, "n_buckets")
     _positive_int(n_controls, "n_controls")
     if not np.isfinite(cost_multiplier) or cost_multiplier < 0:
@@ -129,6 +157,8 @@ def run_event_study(
     rng = np.random.default_rng(seed)
     output = {"price_basis": holding["price_basis"], "missing_exit": missing_exit,
               "limit_fill": limit_fill, "horizons": {}}
+    if benchmark_mode == "universe_open_ew":
+        output["benchmark_mode"] = benchmark_mode
     entry_pools = {}
     for entry in set(plans):
         if entry < len(sessions):
@@ -151,15 +181,20 @@ def run_event_study(
         exit_date = sessions[window["exit_position"][entry, column]]
         if entry == 0:
             return None, "missing_previous_session"
-        previous = sessions[entry - 1]
         market = holding["market"][entry, column]
-        start_benchmark = benchmark.get((previous, market), np.nan)
-        end_benchmark = benchmark.get((exit_date, market), np.nan)
-        if not np.isfinite([start_benchmark, end_benchmark]).all() or min(start_benchmark, end_benchmark) <= 0:
-            return None, "missing_benchmark"
-        # Benchmark close-to-close is an approximation to the stock open-to-close window.
+        if benchmark_mode == "index_close":
+            previous = sessions[entry - 1]
+            start_benchmark = benchmark.get((previous, market), np.nan)
+            end_benchmark = benchmark.get((exit_date, market), np.nan)
+            if not np.isfinite([start_benchmark, end_benchmark]).all() or min(start_benchmark, end_benchmark) <= 0:
+                return None, "missing_benchmark"
+            benchmark_return = float(end_benchmark / start_benchmark - 1)
+        else:
+            benchmark_return = universe_benchmark.get((entry, window["exit_position"][entry, column], market), np.nan)
+            if not np.isfinite(benchmark_return):
+                return None, "missing_benchmark"
         gross = float(window["gross"][entry, column])
-        abnormal = gross - float(end_benchmark / start_benchmark - 1)
+        abnormal = gross - benchmark_return
         return {"entry_date": entry_date.date().isoformat(), "exit_date": exit_date.date().isoformat(),
                 "scheduled_exit_date": sessions[exit_index].date().isoformat(),
                 "gross": gross, "abnormal": abnormal,
@@ -168,6 +203,8 @@ def run_event_study(
 
     for h in horizons:
         window = _holding_window(holding, h, missing_exit)
+        if benchmark_mode == "universe_open_ew":
+            universe_benchmark = _universe_open_ew(holding, window, entry_pools, h, missing_exit)
         rows, excluded = [], Counter()
         included_entries = []
         cost_prices, cost_markets, cost_years, cost_adv = [], [], [], []
