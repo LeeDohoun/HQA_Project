@@ -42,6 +42,26 @@ def _git(repo_root: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
+def _own_history(root: Path, experiment_id: str, relative: str) -> list[str]:
+    """Commits of this experiment's preregistration, following renames within its directory.
+
+    ``git log --follow`` also follows a file copied or renamed from another experiment's
+    directory. That source commit belongs to the other experiment, so history stops at
+    the commit that brought the file into this experiment's directory.
+    """
+    own_dir = f"research/experiments/{experiment_id}/"
+    output = _git(root, "log", "--follow", "--name-status", "--format=@@%H|%cI", "--", relative)
+    commits: list[str] = []
+    for block in output.split("@@")[1:]:
+        lines = [line for line in block.splitlines() if line.strip()]
+        commits.append(lines[0])
+        statuses = [line.split("\t") for line in lines[1:]]
+        if any(parts[0][:1] in {"R", "C"} and len(parts) == 3 and not parts[1].startswith(own_dir)
+               for parts in statuses):
+            break
+    return commits
+
+
 def verify_preregistration(experiment_id: str, repo_root: str | Path = PROJECT_ROOT) -> Preregistration:
     _validate_experiment_id(experiment_id)
     root = Path(repo_root).resolve()
@@ -52,7 +72,7 @@ def verify_preregistration(experiment_id: str, repo_root: str | Path = PROJECT_R
     _git(root, "ls-files", "--error-unmatch", "--", relative.as_posix())
     _git(root, "diff", "--quiet", "--", relative.as_posix())
     _git(root, "diff", "--cached", "--quiet", "--", relative.as_posix())
-    commits = _git(root, "log", "--format=%H|%cI", "--follow", "--", relative.as_posix()).splitlines()
+    commits = _own_history(root, experiment_id, relative.as_posix())
     if not commits:
         raise ValueError("preregistration has not been committed")
     if len(commits) != 1:

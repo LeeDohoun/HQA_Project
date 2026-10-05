@@ -224,3 +224,42 @@ def test_concurrent_appends_preserve_every_trial(repo):
         rows = list(csv.DictReader(handle))
     assert {row["variant"] for row in rows} == {f"v{i}" for i in range(8)}
     assert trial_count("D001", repo_root=root) == 8
+
+
+def test_registration_copied_from_another_experiment_counts_only_its_own_commit(repo):
+    root, path, fields = repo
+    _commit(root, path)
+    fields["experiment_id"] = "D002"
+    copy = root / "research/experiments/D002/preregistration.md"
+    copy.parent.mkdir(parents=True)
+    copy.write_text(path.read_text(encoding="utf-8").replace("experiment_id: D001", "experiment_id: D002"),
+                    encoding="utf-8")
+    _commit(root, copy)
+    assert _git(root, "log", "--follow", "--format=%H", "--", str(copy.relative_to(root))).count("\n") >= 1
+    assert verify_preregistration("D002", root).fields["experiment_id"] == "D002"
+    assert verify_preregistration("D001", root).fields["experiment_id"] == "D001"
+
+
+def test_copied_registration_edited_after_its_own_commit_is_rejected(repo):
+    root, path, fields = repo
+    _commit(root, path)
+    copy = root / "research/experiments/D002/preregistration.md"
+    copy.parent.mkdir(parents=True)
+    copy.write_text(path.read_text(encoding="utf-8").replace("experiment_id: D001", "experiment_id: D002"),
+                    encoding="utf-8")
+    _commit(root, copy)
+    copy.write_text(copy.read_text(encoding="utf-8") + "수정\n", encoding="utf-8")
+    _commit(root, copy)
+    with pytest.raises(ValueError, match="new experiment_id"):
+        verify_preregistration("D002", root)
+
+
+def test_rename_within_own_directory_is_still_followed(repo):
+    root, path, fields = repo
+    _commit(root, path)
+    _git(root, "mv", "research/experiments/D001/preregistration.md", "research/experiments/D001/tmp.md")
+    _git(root, "commit", "-qm", "rename away")
+    _git(root, "mv", "research/experiments/D001/tmp.md", "research/experiments/D001/preregistration.md")
+    _git(root, "commit", "-qm", "rename back")
+    with pytest.raises(ValueError, match="new experiment_id"):
+        verify_preregistration("D001", root)
