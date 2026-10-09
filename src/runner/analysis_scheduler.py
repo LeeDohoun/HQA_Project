@@ -24,7 +24,7 @@ class BackendAutoTradeTargetClient:
         if not resolved_url:
             raise ValueError("BACKEND_INTERNAL_BASE_URL is required")
         self.base_url = resolved_url.rstrip("/")
-        self.internal_token = internal_token if internal_token is not None else os.getenv("HQA_INTERNAL_TOKEN", "")
+        self.internal_token = (internal_token if internal_token is not None else os.getenv("HQA_INTERNAL_TOKEN", "")).strip()
         self.timeout = timeout
 
     def fetch_targets(self) -> List[Dict[str, Any]]:
@@ -140,7 +140,9 @@ class AnalysisScheduler:
                     "selected": int(result.get("selected_count") or 0),
                     "submitted": int(submit_result.get("submitted") or 0),
                     "failed": int(submit_result.get("failed") or 0),
-                    "error": submit_result.get("error"),
+                    # The submitter reports per-plan reasons in failures/skipped_plans, not error.
+                    "error": submit_result.get("error") or ("; ".join(submit_result.get("failures") or [])[:1000] or None),
+                    "skipped_plans": list(submit_result.get("skipped_plans") or []),
                 }
             )
 
