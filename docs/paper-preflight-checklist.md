@@ -83,11 +83,13 @@ venv/bin/python -m scripts.data.build --theme-key 2차전지 --stats
 
 아래 단계는 아직 실제 키로 돌려 보지 못한 부분입니다. 순서대로 확인하고, 실패하면 다음 단계로 넘어가지 않습니다.
 
-1. **KIS 모의투자 연결:** 잔고와 시세만 조회합니다. `test_order`는 실제 모의 매수 주문을 넣으므로 필요할 때만 돌리고, 넣었다면 취소합니다.
+1. **KIS 모의투자 연결:** `.env`의 `KIS_PAPER_APP_KEY`, `KIS_PAPER_APP_SECRET`, `KIS_PAPER_ACCOUNT_NO`(8자리 또는 8-2자리)로 조회만 합니다. 토큰과 시세는 앱키·시크릿만으로 확인하고, 잔고·매수 가능 금액·당일 주문 조회는 계좌번호까지 씁니다. 요청 형식과 거래 코드(tr_id)는 백엔드와 같습니다. 계좌번호 형식이 틀리면 건너뛰지 않고 오류로 알립니다. 키·토큰·계좌번호는 출력하지 않습니다.
 
    ```bash
-   RUN_KIS_LIVE_TESTS=1 venv/bin/python -m pytest -q tests/test_kis_paper_trading.py -k "balance or price"
+   RUN_KIS_LIVE_TESTS=1 venv/bin/python -m pytest -q tests/test_kis_paper_trading.py
    ```
+
+   주문 경로까지 보려면 `RUN_KIS_ORDER_TEST=1`을 더합니다. 시세보다 10% 낮은 1주 지정가 매수를 넣고 바로 취소합니다(장중에만). 취소가 실패하면 KIS 앱에서 주문을 확인해 직접 취소하세요. `venv/bin/python tests/test_kis_paper_trading.py`로 실행하면 짧은 보고서가 나옵니다. KIS는 토큰을 앱키당 1분에 한 번만 발급하므로, 연달아 실행하면 1분을 기다린 뒤 진행합니다.
 
 2. **백엔드 내부 API:** 등록한 PAPER 사용자로 계좌 스냅샷(`/api/v1/internal/trading/account-snapshots`)과 시세(`/api/v1/internal/market/price-snapshots`)가 `success=true`, `source=kis`로 오는지 봅니다.
 3. **AI 서버:** 워커 하나로 띄우고 `/health`의 `calendar_warnings`와 `/internal/status`(내부 토큰)의 예산 상태를 확인합니다.
