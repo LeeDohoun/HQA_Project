@@ -379,7 +379,7 @@ venv/bin/python scripts/research/build_agent_architecture_validation.py --source
 
 - **예정 청산과 일부 매도의 순환 (`d137a69`, `5251220`):** 1·3번과 모니터의 예정 청산 대기가 맞물렸습니다. 일부 매도가 걸린 채 예정 청산이 도래하면 백엔드는 그 주문을 취소하고 예정 청산을 한 번 거부합니다. 예정 청산이 60초 쉬는 동안 모니터가 일부 매도를 다시 냈고(체결 없이 취소된 일부 매도는 다시 실행 가능), 예정 청산이 재시도될 때 그 주문을 또 취소하는 일이 되풀이될 수 있었습니다. 지정가가 체결되지 않는 하락장에서는 전량 청산이 계속 미뤄집니다. 이제 예정 청산이 도래해 있는 동안에는 그 계획의 일부 매도가 나가지 않습니다. 거부된 예정 청산은 손절처럼 다음 폴링(20초)에 다시 보냅니다. 가격 손절·무효화는 지금처럼 바로 나갑니다.
 - **소모된 트리거의 응답 (`9357cd4`):** 체결까지 끝난 트리거를 다시 보내면 백엔드가 '접수됨(중복)'으로 답했습니다. 그래서 1차 익절이 체결된 뒤에도 모니터가 그 그룹을 60초마다 다시 보내기만 했고, 2차 익절은 나가지 않았습니다. 모니터 단위 테스트는 이 경우 백엔드가 거부한다고 가정해 놓쳤습니다. 이제 소모된 트리거는 `TRIGGER_ALREADY_CONSUMED`로 거부되고(중복 표시는 유지), 모니터가 그 그룹을 정리한 뒤 다음 단계로 넘어갑니다.
-- **종단 시뮬레이션 (`78ef5b3`, `PaperLifecycleSimulationTest`, `scripts/paper_lifecycle_sim.py`):** 실제 Python 모니터를 실제 백엔드 주문 수명주기와 저장소에 붙이고, 저장소는 메모리로, KIS는 모의 브로커로, 시계는 시뮬레이션 시간으로 바꿔 돌립니다. 바로 위의 두 문제를 이것으로 찾았습니다. 시나리오는 13개이고, 백엔드 20초 주기 작업을 모니터 폴링과 맞춘 경우와 10초 어긋난 경우로 각각 돌립니다. 다룬 상황은 일부 매도 뒤 손절, 하락장의 예정 청산, 익절 단계, 진입과 손절, 체결 없이 만료된 일부 매도, 계획 재발행, 손절선 근처 등락, 진입 부분 체결 뒤 손절, KIS 초당 한도, 체결 기록 전 손절, 진입 무효화, 진입 만료, 만료 시점에 걸린 진입 주문입니다. 131개 점검이 모두 통과합니다. 키와 DB 없이 돌고, 기본 `mvn test`에서는 건너뜁니다(실행 방법은 `docs/paper-preflight-checklist.md` 2장 5번).
+- **종단 시뮬레이션 (`78ef5b3`, `3e2ea3e`, `PaperLifecycleSimulationTest`, `scripts/paper_lifecycle_sim.py`):** 실제 Python 모니터와 계획 게시 코드를 실제 백엔드 주문 수명주기와 저장소에 붙여 돌립니다. JSON은 운영과 같은 설정을 쓰고, 저장소는 메모리로, KIS는 모의 브로커로, 시계는 시뮬레이션 시간으로 바꿉니다. 바로 위의 두 문제를 이것으로 찾았습니다. 시나리오는 16개이고, 백엔드 20초 주기 작업을 모니터 폴링과 맞춘 경우와 10초 어긋난 경우로 각각 돌립니다. 다룬 상황은 일부 매도 뒤 손절, 하락장의 예정 청산, 익절 단계, 진입과 손절, 체결 없이 만료된 일부 매도, 계획 재발행, 손절선 근처 등락, 진입 부분 체결 뒤 손절, KIS 초당 한도, 체결 기록 전 손절, 진입 무효화, 진입 만료, 만료 시점에 걸린 진입 주문입니다. 게시 시나리오 3개는 실제 `submit_trade_signals`로 낸 계획이 Java 검증을 통과해 거래까지 이어지는지, 사이클마다 같은 계획이 버전만 올라가고 손절선이 내려가지 않는지, 같은 요청 재전송이 중복으로 처리되는지, 주문이 걸린 동안의 계획 교체가 사유와 함께 거부되고 기존 계획이 보호를 이어 가는지 확인합니다. 167개 점검이 모두 통과합니다. 키와 DB 없이 돌고, 기본 `mvn test`에서는 건너뜁니다(실행 방법은 `docs/paper-preflight-checklist.md` 2장 5번).
 
 **운영에서 달라지는 점**
 
@@ -387,7 +387,7 @@ venv/bin/python scripts/research/build_agent_architecture_validation.py --source
 - 체결 없이 만료된 일부 매도는 조건이 계속 맞으면 다음 폴링에 다시 나갑니다. 주문 수명이 2분이라 같은 조건에서 2분여에 한 번 이상 나가지 않습니다.
 - 지정가가 체결되지 않는 하락장에서는 보호 매도가 2분 수명이 끝나야 새 가격으로 다시 나갑니다(시뮬레이션에서 재주문 간격 약 140초). 아래 '결정이 필요한 것' 참고.
 
-**검증:** Python 1,354개 통과·3개 건너뜀, 백엔드 127개 실행·실패 0·건너뜀 3, 종단 시뮬레이션 131개 점검 통과. 커밋 각각에서 따로 돌려도 통과합니다.
+**검증:** Python 1,354개 통과·3개 건너뜀, 백엔드 127개 실행·실패 0·건너뜀 3, 종단 시뮬레이션 167개 점검 통과. 커밋 각각에서 따로 돌려도 통과합니다.
 
 **결정이 필요한 것**
 
@@ -468,3 +468,5 @@ venv/bin/python scripts/research/build_agent_architecture_validation.py --source
 | `9357cd4` | 2026-10-09 | 독립 검토 | fix(paper): report a consumed trigger as refused even when its order filled |
 | `5251220` | 2026-10-09 | 독립 검토 | fix(monitor): send a refused planned exit again on the next poll |
 | `78ef5b3` | 2026-10-09 | 독립 검토 | test(paper): simulate the monitor against the real order lifecycle end to end |
+| `40a802d` | 2026-10-09 | 독립 검토 | docs: record the simulation, its two findings and the protective-sell decision |
+| `3e2ea3e` | 2026-10-09 | 독립 검토 | test(paper): publish plans through the real submitter in the simulation |

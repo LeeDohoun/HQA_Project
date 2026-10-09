@@ -48,7 +48,7 @@
    mvn -f backend/pom.xml test
    ```
 
-5. 모니터나 주문 수명주기를 바꿨다면 종단 시뮬레이션도 돌립니다. 실제 Python 모니터를 실제 백엔드 주문 로직(메모리 저장소, 모의 KIS)에 붙여 손절·익절 단계·예정 청산·진입·만료·KIS 한도 시나리오 13개를 돌립니다. 키와 DB 없이 1분 안에 끝나고, 결과는 `backend/target/paper-lifecycle-sim.txt`에 남습니다.
+5. 모니터, 계획 게시, 주문 수명주기를 바꿨다면 종단 시뮬레이션도 돌립니다. 실제 Python 모니터와 게시 코드를 실제 백엔드 주문 로직(운영과 같은 JSON 설정, 메모리 저장소, 모의 KIS)에 붙여 손절·익절 단계·예정 청산·진입·만료·KIS 한도·계획 게시 시나리오 16개를 돌립니다. 키와 DB 없이 1분 안에 끝나고, 결과는 `backend/target/paper-lifecycle-sim.txt`에 남습니다.
 
    ```bash
    cd backend && HQA_SIM_PYTHON=$PWD/../venv/bin/python mvn -q test -Dtest=PaperLifecycleSimulationTest
@@ -157,6 +157,7 @@ venv/bin/python -m backtesting paper-runtime --audit data/paper_audit.sqlite3 --
 | `rejections`의 `PRICE_DRIFT_EXCEEDED`, `ENTRY_...` | 진입 거부(매매 판단) | 정상. 반복되면 계획의 진입 범위 확인 |
 | 매도 거부 `KIS_RATE_LIMITED`, `ORDER_NOT_SENT_RATE_QUEUE_FULL` | KIS 초당 한도 | 다음 폴링에서 다시 보냄. 계속되면 보유 종목 수와 분석 사이클 시각 확인 |
 | 매도 거부 `ORDER_RECONCILIATION_REQUIRED`(1~2회) | 같은 계획의 다른 매도 주문(일부 매도, 다른 청산 그룹)이 아직 걸려 있어 백엔드가 취소하고, 취소가 확인되면 이 청산이 나감 | 정상. 2분 넘게 이어지면 계획의 `unresolvedOrders`를 보고 UNKNOWN이면 아래 결과 불명 주문 처리 |
+| 사이클 요약의 게시 실패 `HTTP_409 ... ORDER_RECONCILIATION_REQUIRED_BEFORE_PLAN_UPDATE` | 그 종목에 주문이 걸려 있는 동안에는 백엔드가 계획 교체를 받지 않음. 기존 계획이 계속 보호함 | 정상. 주문이 끝난 뒤 다음 사이클에서 갱신됨. 같은 종목에서 계속되면 `unresolvedOrders` 확인 |
 | `MARKET_CLOSED` 오류(검증된 장중) | Python과 백엔드 캘린더 불일치 | `HQA_KRX_CLOSED_DATES`/`HQA_KRX_SPECIAL_SESSIONS`와 `trading_calendar.py` 비교 |
 | 예산 차단, 미정산 요청 | LLM 예산 원장 | `scripts.llm_budget`(`settle`/`release`/`acknowledge-overrun`). 원장은 지우지 않음 |
 | 모니터 `status: failed`, `consecutive_failures` 증가 | 백엔드·네트워크 장애 | 모니터는 계속 재시도함. 백엔드 상태 확인 |

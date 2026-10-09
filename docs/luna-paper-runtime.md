@@ -279,10 +279,11 @@ isolation against PostgreSQL. Set `HQA_TEST_DATABASE_URL` (a JDBC URL),
 database when running Maven. Flyway runs before these tests; test rows roll back.
 Without that URL, the two PostgreSQL tests are skipped.
 
-`PaperLifecycleSimulationTest` runs the real Python monitor
-(`scripts/paper_lifecycle_sim.py`) against the real order lifecycle and store over
-in-memory repositories and a simulated KIS paper broker, through stop, take-profit
-tier, planned-exit, entry, expiry and rate-limit scenarios. It needs no keys or
+`PaperLifecycleSimulationTest` runs the real Python monitor and plan submitter
+(`scripts/paper_lifecycle_sim.py`) against the real order lifecycle and store, with
+the backend's JSON settings, in-memory repositories and a simulated KIS paper broker,
+through stop, take-profit tier, planned-exit, entry, expiry, rate-limit and plan
+publication scenarios. It needs no keys or
 database and is skipped unless `HQA_SIM_PYTHON` names the project's Python, e.g.
 `HQA_SIM_PYTHON=$PWD/../venv/bin/python mvn -q test -Dtest=PaperLifecycleSimulationTest`
 from `backend/`. Its report is `backend/target/paper-lifecycle-sim.txt`.
