@@ -1,11 +1,12 @@
-# AI·데이터 변경 내역 (feat/dohoon-changes, 2026-09)
+# AI·데이터 변경 내역 (feat/dohoon-changes, 2026-09~10)
 
 `feat/dohoon-changes` 브랜치에서 AI 분석, 데이터 수집, 백테스트를 무엇을, 왜, 어떻게 바꿨는지 정리한 문서입니다. 코드를 열지 않고도 바뀐 동작과 운영 시 주의할 점을 알 수 있게 썼습니다. 각 변경의 자세한 근거는 괄호 안 커밋의 메시지(`git show <커밋>`)에 있습니다.
 
-- **기간:** 2026-09-21 ~ 2026-09-29
-- **구성:** `main`에서 분기 → `ai-data-main` 작업 이식 4개 커밋(`498e6e3`~`54e581e`) → 점검·수정 30개 커밋(`2088844`~`8ef0e83`)
-- **규모 (수정 30개 커밋):** 64개 파일, +3,142 / −298줄, 그중 테스트 파일 23개. Spring 백엔드와 프론트엔드 코드는 바꾸지 않았습니다.
-- **테스트:** 오프라인 1,247개 통과, 3개 건너뜀. 30개 커밋 각각에서 따로 돌려도 통과합니다.
+- **기간:** 2026-09-21 ~ 2026-09-29, 그리고 PAPER 준비 작업 2026-10-09 ([7장](#7-10월-paper-준비-작업-2026-10-09))
+- **구성:** `main`에서 분기 → `ai-data-main` 작업 이식 4개 커밋(`498e6e3`~`54e581e`) → 점검·수정 30개 커밋(`2088844`~`8ef0e83`) → 10월 PAPER 준비 9개 커밋(`22db295`~`f4bd145`)
+- **규모 (9월 수정 30개 커밋):** 64개 파일, +3,142 / −298줄, 그중 테스트 파일 23개. 9월에는 Spring 백엔드와 프론트엔드 코드를 바꾸지 않았습니다.
+- **규모 (10월 9개 커밋):** 36개 파일, +2,168 / −173줄, 그중 테스트 파일 14개. Spring 백엔드도 수정했습니다(주문 수명주기, 세션 캘린더, 운영자 도구).
+- **테스트:** 9월 기준 오프라인 1,247개 통과, 3개 건너뜀. 10월 작업 뒤 Python 1,317개 통과·5개 건너뜀, 백엔드 `mvn test` 117개 실행·실패 0·건너뜀 2. 커밋 각각에서 따로 돌려도 통과합니다.
 - **데이터:** 수집 데이터, 가격, 예산 원장, 실험 결과는 커밋하지 않았습니다. 실제 실행은 Git이 추적하지 않는 `.local/`에서 했습니다.
 
 ## 진행 순서
@@ -89,7 +90,7 @@
   - 전문가 요청에 기대 역할, 종목코드, 0–100 점수 척도를 명시했습니다. 이전에는 로컬 모델이 세 역할 모두 "analyst"로 답했습니다.
   - 기술 지표와 가격 요인에 인용 가능한 source ID를 붙였습니다.
   - 분석 기간보다 오래된 회계연도는 조용히 건너뜁니다.
-  - 런타임 `PROMPT_VERSION`은 `hqa-fixed-dag-v7-role-contract`입니다.
+  - 런타임 `PROMPT_VERSION`은 9월 기준 `hqa-fixed-dag-v7-role-contract`였고, 10월에 `hqa-fixed-dag-v8-backend-plan-rules`로 바뀌었습니다([7.2](#72-분석과-계획-게시)).
 - **증거 오류 요약** (`752daf5`): 사용할 수 없는 증거 행을 한 줄씩 gap으로 넣지 않고, 사유별로 `invalid_evidence:<사유>:count=N:first=<문서ID>` 하나만 남깁니다. 날짜가 상대 표기뿐인 뉴스가 많아도 프롬프트가 한도를 넘지 않습니다.
 - **거래정지 봉** (`4b485bf`)
   - KRX와 네이버는 거래정지일을 시가·고가·저가 0, 전일 종가, 거래량 0으로 줍니다. 이런 봉은 종가로 평평한 무거래 봉으로 받습니다.
@@ -208,7 +209,7 @@ venv/bin/python scripts/research/build_agent_architecture_validation.py --source
 
 ## 4. 호환성 주의
 
-- **캐시 재계산:** 런타임 `PROMPT_VERSION`(`hqa-fixed-dag-v7-role-contract`)과 백테스트 프롬프트 버전(v3·v4)이 바뀌어 기존 LLM 캐시는 다시 계산됩니다. `CALENDAR_VERSION`도 바뀌었습니다.
+- **캐시 재계산:** 런타임 `PROMPT_VERSION`(9월 `hqa-fixed-dag-v7-role-contract`, 10월 `hqa-fixed-dag-v8-backend-plan-rules`)과 백테스트 프롬프트 버전(v3·v4)이 바뀌어 기존 LLM 캐시는 다시 계산됩니다. `CALENDAR_VERSION`도 바뀌었습니다.
 - **연구 결과:** `execution.model_version`이 없는 저장 결과는 연구 실행기가 다시 실행합니다. 같은 출력 위치를 써도 이전 수치가 섞이지 않습니다.
 - **gap 형식:** 증거 오류 gap은 `invalid_evidence:<사유>:count=N:first=<문서ID>` 형식입니다.
 - **예산 원장:** 스키마는 제자리에서 이전되고 기존 기록은 지워지지 않습니다. 미정산 개수에는 `reserved` 요청도 포함됩니다.
@@ -240,10 +241,77 @@ venv/bin/python scripts/research/build_agent_architecture_validation.py --source
 
 1. **2026-11-19 수능일:** KRX 공지가 나오면 `SPECIAL_CLOSES`에 개장·폐장 시각을 추가해야 합니다. 추가하지 않으면 그날 분석이 멈추고(fail closed), 10월 29일부터 `/health`에 경고가 뜹니다.
 2. **연구 수치 재실행:** 수정된 엔진과 v4 프롬프트로 다시 돌려야 하며, LLM 호출이 필요합니다.
-3. **실제로 돌려 보지 못한 부분:** 로컬에 KRX·OpenAI·KIS 키가 없어 KRX 가격 수집, 시장 맥락, 백엔드 연동, 계좌·RiskManager 사이클은 오프라인 테스트로만 검증했습니다.
+3. **실제로 돌려 보지 못한 부분:** 로컬에 KRX·OpenAI·KIS 키가 없어 KRX 가격 수집, 시장 맥락, 실제 백엔드·KIS 연동은 아직 돌려 보지 못했습니다. 10월에 계좌·RiskManager·게시 사이클은 가짜 백엔드로 리허설했습니다([7.5](#75-검증)).
 4. **영숫자 종목코드:** 수집, 분석 계약, 백엔드 관심종목 검증(`^\d{6}$`) 어디에서도 아직 지원하지 않습니다.
 5. **백엔드(Java) 작업:** PAPER 평가에 필요한 기준선 실행, 수수료, 섹터 데이터, 일별 자산 스냅샷이 없습니다. Docker Compose는 AI 컨테이너에 `.env` 전체를 넘깁니다.
 6. **범위 제한:** 재무는 연간 보고서만 씁니다. 수집 기간이 전날에 끝나도록 설계돼 있어, 당일 뉴스는 다음 날 수집 뒤에 반영됩니다.
+
+## 7. 10월 PAPER 준비 작업 (2026-10-09)
+
+모의투자(PAPER)를 돌리기 전에, 분석 → 계획 게시 → 모니터 → 백엔드 주문으로 이어지는 루프를 언어 경계를 넘어 다시 점검했습니다. 기준은 "실행 중 한 곳의 문제가 다른 계좌·종목의 보호(손절·청산)를 막지 않는가"와 "백엔드가 거부할 계획을 만들지 않는가"입니다. 운영 순서와 점검표는 [PAPER 사전 점검표](paper-preflight-checklist.md)에 따로 정리했습니다.
+
+### 7.1 백엔드 주문 수명주기 (`259a473`, `337c86c`, `f4bd145`)
+
+| 항목 | 이전 | 이후 |
+|---|---|---|
+| 조건이 계속 참인 손절 트리거 | 매 폴링마다 다시 보내면 자신이 낸 매도 주문을 취소 | 진행 중인 매도는 유지하고 중복으로 응답, 진입 매수만 취소 |
+| KIS 초당 한도(EGW00201)·큐 초과 | 결과 불명(UNKNOWN)으로 기록되어 운영자 개입 전까지 손절이 막힘 | 거부(REJECTED)로 기록, 일시적 거부는 진입·부분매도 그룹을 소모하지 않음 |
+| 부분매도(REDUCE) | 15분마다 계획이 새 버전으로 오면 50% → 25% → 12.5%… 반복 매도 | 같은 내용의 그룹은 버전이 바뀌어도 포지션당 한 번 |
+| 보유 포지션의 예정 청산 시각 | 계획이 갱신될 때마다 뒤로 밀림 | 더 늦어지지 않음 |
+| 자동매매 끄기 | 손절·청산까지 거부 | 신규 진입만 막음 |
+| 주문 가능 시간 | 평일 09:00–15:30 고정, 공휴일도 장중으로 판단 | `HQA_KRX_CLOSED_DATES`(기본값: Python 캘린더의 휴장일)와 `HQA_KRX_SPECIAL_SESSIONS` 반영 |
+| 브로커 주문번호 없는 UNKNOWN 주문 | DB를 직접 고치기 전까지 그 계획의 모든 트리거가 보류 | `scripts/paper_orders.py`로 KIS 주문내역과 대조해 연결하거나 미접수 기록 |
+
+- 저장된 계획 하나가 깨져 있어도 `/signals/active` 전체가 400이 되지 않습니다(`INVALID_STORED_CONDITIONS`로 표시).
+- 모니터용 활성 계획 응답에 계획별 미해결 주문(`unresolvedOrders`)이 들어갑니다.
+- 모든 KIS 호출에 제한 시간이 있고, 토큰 발급은 사용자 전체가 아니라 자격증명별로 직렬화됩니다. 시세 캐시는 10초입니다.
+
+### 7.2 분석과 계획 게시 (`afc0edf`, `b90ef92`)
+
+| 항목 | 이전 | 이후 |
+|---|---|---|
+| RiskManager 계획 하나가 불량 | 계좌 전체 실패(보유 종목 보호 갱신도 안 나감) | 그 계획만 사유와 함께 `rejected_plans`로, 나머지는 게시 |
+| 계획 규칙 위반(손절<진입<목표, 불리한 방향 무효화 등) | JSON 스키마로 표현할 수 없어 strict 디코딩으로도 막히지 않고 계좌 전체가 파싱 실패 | 파싱 단계에서 그 계획만 따로 빼고 사유 기록(모델이 보는 스키마는 그대로) |
+| 시세 하나 실패 | 계좌 전체 실패 | 신규 후보는 `omitted_candidates`로 제외, 보유 종목은 계좌 스냅샷의 KIS 가격으로 보호 계획 유지(이 가격으로는 매수 불가) |
+| 분석할 수 없는 보유 종목(영숫자 코드 등) | 계좌 스냅샷 전체 실패 | `unsupportedHoldings`로 따로 보고 |
+| 백엔드가 거부할 계획 | 요청 전체가 거부됨 | 15분 넘는 진입·만료된 진입은 사유와 함께 건너뜀, 손절이 낮아지는 보유 계획은 기존 손절 유지, SELL은 다음 점검에서 청산 |
+| 진입 불가 계좌(진입 자격 없음·모니터 용량 초과) | 신규 후보 5개도 시세 조회·RiskManager 검토 | 보유 종목만 검토(비용·KIS 호출 절약) |
+
+- 계획 규칙: 조건 그룹 ID는 ASCII(`planned-exit`는 예약어), 무효화 조건은 불리한 움직임(`<`, `<=`)만, `pnl_rate`는 보유 포지션에만, BUY 진입 가격 조건은 진입가의 3% 이내(백엔드 가격 이탈 한도). 프롬프트 버전은 `hqa-fixed-dag-v8-backend-plan-rules`입니다.
+- 게시 실패는 백엔드의 상태 코드와 본문으로 기록하고, 제한 시간 초과는 한 번 재시도합니다(그래도 실패하면 `outcome_unknown_after_retry`). 스케줄러 요약에 실패 사유와 건너뛴 계획이 남습니다.
+
+### 7.3 시그널 모니터 (`9237f07`)
+
+- **세션:** 검증된 KRX 장중에만 진입을 보냅니다. 시간이 검증되지 않은 평일(공지 전인 2026-11-19 수능일 등)에는 09:00–16:30 동안 보호 트리거만 보내고, 장 밖에서는 백엔드·KIS를 호출하지 않습니다.
+- **순서:** 보호 트리거(손절·청산·부분매도·무효화)는 평가 즉시 보내고, 진입은 폴링 끝에 보냅니다.
+- **체결 직후:** 진입이 체결됐지만 백엔드가 아직 기록하지 않은 계획(WAITING_ENTRY + 보유 수량)은 손절을 평가하고 두 번째 진입은 보내지 않습니다.
+- **반복 억제:** 같은 계획 상태로는 극복할 수 없는 거부(소모된 진입, 오래된 버전 등)는 계획이 바뀔 때까지 다시 보내지 않고, 접수된 트리거는 60초 동안 쉽니다. 진입 거부는 매매 판단으로 `rejections`에만, 매도 거부는 오류로 기록합니다.
+- **보호 판정:** 보유 종목은 백엔드가 실제로 매도할 수 있는 OPEN 계획이 있어야 보호된 것으로 봅니다. 아니면 `reason`과 함께 `missing_protection`으로 보고합니다(`no_active_plan`, `entry_fill_unrecorded`(60초 유예), `plan_conditions_unreadable`, `protection_blocked:<사유>`, `plan_without_exit`, `partially_managed:<관리>/<보유>`).
+- 용량 초과는 모든 보유 종목을 계속 시세 조회하면서 보고하고, HTTP 오류에는 백엔드 설명이 남고, 감사 기록 실패가 완료된 폴링을 실패로 바꾸지 않습니다.
+
+### 7.4 수집 (`22db295`, `78ca2c5`, `765db51`)
+
+- `scripts.data.loop`는 `--themes`가 없으면 저장된 `raw/theme_targets/<key>.jsonl` 전부를 각자의 키로 수집합니다. 이전 기본값(영문 키워드)은 저장된 목록과 맞지 않아 아무것도 수집하지 못했습니다.
+- `--market-context`를 주면 KST 08:00 이후 하루 한 번 KOSPI·KOSDAQ 지수(최근 10일)를 갱신합니다. `KRX_OPEN_API_KEY`가 필요합니다.
+- DART 기업코드 갱신 실패 시 원인을 키를 가린 채 기록합니다(10-09에 OpenDART가 `status=800` 점검 중이었음).
+
+### 7.5 검증
+
+| 확인 | 결과 |
+|---|---|
+| Python 테스트 | 1,317개 통과, 5개 건너뜀(실제 KIS 모의투자 테스트 3개는 `RUN_KIS_LIVE_TESTS=1`일 때만, 토크나이저 테스트 2개는 로컬 tiktoken 캐시가 있을 때만 실행). 커밋 각각 통과 |
+| 백엔드 `mvn test`(JDK 17) | 117개 실행, 실패 0, 건너뜀 2(PostgreSQL 연결 테스트) |
+| 가짜 백엔드 리허설(실데이터, 2계좌, Ollama `qwen3:14b`) | 9개 전문가 결과 정상. 로컬 RiskManager는 16K 컨텍스트에서 출력이 반복·잘려 두 계좌 모두 실패로 닫힘(주문 0건, 의도대로). 32K에서는 보유 종목 계획은 맞았으나 예정 청산 시각 규칙 위반 → 이 결과로 계획별 분리 파싱을 추가 |
+| 결정적 RiskManager로 재생(새 코드, 같은 실데이터) | 2계좌 처리, 계획 3건 게시·실패 0. 진입 밴드 5%로 만든 불량 BUY는 두 계좌 모두 사유와 함께 제외. 게시된 3건 모두 백엔드 저장 규칙(`PaperTradeStore.save`·`TradeConditions.validate`)을 옮긴 검사기 통과 |
+| `signal_monitor --once`(가짜 백엔드, 한글날) | 세션 `closed`, 계획 없는 보유 종목을 `missing_protection`/`no_active_plan`으로 보고 |
+
+### 7.6 남은 과제(10월 기준)
+
+1. **2026-11-19 수능일:** KRX 공지가 나오면 Python `SPECIAL_CLOSES`와 백엔드 `HQA_KRX_SPECIAL_SESSIONS` 둘 다에 넣어야 합니다. 10월 29일부터 경고가 뜹니다.
+2. **실제 연동 미확인:** KIS 모의투자 주문·체결·취소, OpenAI `gpt-5.6-luna`, KRX Open API는 키가 없어 아직 실제로 돌려 보지 못했습니다. PAPER 시작 전 점검표의 연동 확인 단계를 먼저 거쳐야 합니다.
+3. **보호 매도 가격:** 백엔드는 현재가 지정가로 매도합니다. 급락 중에는 체결되지 않고 2분 뒤 취소·재주문될 수 있어, 관찰 기간에 체결률을 확인해야 합니다.
+4. **KIS 호출 예산:** 계정당 초당 1회 중 분석 사이클(보유+신규 최대 15종목 시세)과 모니터(20초마다 보유·계획 시세)가 겹치면 큐(20초) 초과로 일부 시세가 실패할 수 있습니다. 보유 10종목 가까이에서 관찰이 필요합니다.
+5. 9월 남은 과제의 연구 재실행, 영숫자 종목코드, PAPER 기준선(백엔드) 항목은 그대로입니다.
 
 ## 부록: 커밋 목록
 
@@ -283,3 +351,12 @@ venv/bin/python scripts/research/build_agent_architecture_validation.py --source
 | `4b485bf` | 2026-09-29 | 수정 | fix(analysis): treat halted sessions as no-trade bars instead of voiding the history |
 | `162b4db` | 2026-09-29 | 수정 | fix(research): never reuse pre-fix results or partial agent answers as current evidence |
 | `8ef0e83` | 2026-09-29 | 수정 | fix(research): keep rule factors out of the agent ablation and derive every claim |
+| `22db295` | 2026-10-09 | PAPER 준비 | fix(collect): log why a corp-code refresh failed, with the key redacted |
+| `78ca2c5` | 2026-10-09 | PAPER 준비 | fix(collect): make the collection loop maintain the saved theme universe |
+| `765db51` | 2026-10-09 | PAPER 준비 | feat(collect): let the collection loop refresh market indices once a day |
+| `259a473` | 2026-10-09 | PAPER 준비 | fix(paper): stop the order lifecycle from cancelling, freezing or repeating protection |
+| `afc0edf` | 2026-10-09 | PAPER 준비 | fix(signals): publish only plans the backend can accept, and say why others were skipped |
+| `b90ef92` | 2026-10-09 | PAPER 준비 | fix(analysis): one bad plan, quote or holding no longer fails the whole account |
+| `9237f07` | 2026-10-09 | PAPER 준비 | fix(monitor): protect first, follow the KRX session and report protection that cannot sell |
+| `337c86c` | 2026-10-09 | PAPER 준비 | fix(backend): default the KRX closed dates to the Python calendar's |
+| `f4bd145` | 2026-10-09 | PAPER 준비 | feat(paper): let an operator resolve UNKNOWN orders, verified against KIS |

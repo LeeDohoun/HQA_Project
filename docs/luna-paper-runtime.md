@@ -15,6 +15,10 @@ The 120-second analysis and 30-second monitoring p95 values are acceptance targe
 not measured API guarantees. The 30-second target covers quote acquisition,
 condition evaluation and order request, not exchange fill time.
 
+The operator's start-up order, first-run integration checks, daily checks and
+incident handling are in the [PAPER pre-flight checklist](paper-preflight-checklist.md)
+(Korean).
+
 ## Configuration
 
 Use `.env.example` as the configuration reference. Supply credentials through the
@@ -123,7 +127,22 @@ newer protection. Entry-only loss and price-drift gates do not block protective 
 An accepted order is not a fill. The reconciliation worker queries cumulative fills,
 protects partial fills, confirms cancellations, and preserves reservations for
 uncertain submissions. An UNKNOWN order without a confirmed broker ID requires
-operator investigation; never resubmit it by guessing the previous result.
+operator investigation; never resubmit it by guessing the previous result. Until it
+is resolved every trigger of its plan, protective sells included, waits for it, and
+the monitor reports the holding as `protection_blocked:order_without_broker_id`.
+Look the order up in the KIS paper order history and record the finding:
+
+```bash
+venv/bin/python -m scripts.paper_orders unknown
+venv/bin/python -m scripts.paper_orders adopt <execution_id> <ODNO> --note "where it was found"
+venv/bin/python -m scripts.paper_orders not-submitted <execution_id> --note "how absence was confirmed"
+```
+
+The backend checks both against the KIS order history for the submission date
+before changing anything: `adopt` needs that order number with the same stock, side
+and quantity, not claimed by another execution, and reconciliation then resumes;
+`not-submitted` is refused while KIS lists an order from that time that could be
+this one, and releases the order's reservation.
 
 REST monitoring uses per-account capacity admission. The initial conservative
 configuration allows ten unique monitored symbols per account (one request/second,
@@ -142,7 +161,33 @@ hqa.paper-reconciliation-poll-ms=20000
 
 The monitor also enumerates enabled accounts with no active plans, quotes every
 observed holding, and records `uncovered_holdings` and `missing_protection` errors.
-It never invents a plan or order to conceal missing protection.
+It never invents a plan or order to conceal missing protection. A holding counts as
+protected only by an OPEN plan the backend can sell; each uncovered holding carries
+a `reason`: `no_active_plan`, `entry_fill_unrecorded` (an entry filled but not yet
+reconciled, reported only after 60 s), `plan_conditions_unreadable`,
+`protection_blocked:<reason>` (an UNKNOWN order or a reconciliation fault that needs
+an operator), `plan_without_exit` or `partially_managed:<managed>/<held>` (shares
+bought outside HQA). Capacity overload adds `monitor_capacity_exceeded:<n>/<cap>`.
+
+The monitor follows the KRX calendar in `src/runner/trading_calendar.py`. Entries go
+out only inside the verified session. On a weekday whose hours are unverified (a
+pending KRX notice, or a calendar past its review horizon) protective triggers still
+go out between 09:00 and 16:30 KST and the backend's own session check decides.
+Outside the session the loop makes no backend or KIS calls; `--once` still evaluates
+and reports, sending nothing. Protective triggers go out as soon as they are
+evaluated, before any entry. A rejection that the same plan version and status
+cannot overcome (consumed entry or reduction, stale version, wrong plan state) is
+not re-sent until the plan changes, and an accepted trigger rests 60 s while its
+order works. Each poll report lists `session`, `deferred`, `quiet`, `rejections`
+(refused entries are trading decisions, not monitoring failures) and `settled`.
+
+The backend gates orders by its own calendar: weekdays 09:00-15:30 KST minus
+`HQA_KRX_CLOSED_DATES`, whose default lists the Python calendar's weekday closures
+through its review horizon (a test keeps them equal), with official special sessions
+in `HQA_KRX_SPECIAL_SESSIONS` (`YYYY-MM-DD@HH:MM-HH:MM`). When KRX publishes a
+special-session notice, add it to both: `SPECIAL_CLOSES` in the Python calendar (open,
+close, publication time and source URLs) and `HQA_KRX_SPECIAL_SESSIONS` for the
+backend, e.g. `2026-11-19@10:00-16:30` for the 2027 CSAT day once its notice confirms.
 
 Start the AI service after installing requirements:
 

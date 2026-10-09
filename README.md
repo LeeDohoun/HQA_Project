@@ -122,4 +122,5 @@ Python 테스트는 기본적으로 외부 네트워크 접속을 차단합니�
 - [공시·뉴스와 주가 반응](docs/event-data-pipeline.md)
 - [시장·업종 비교](docs/market-context-data.md)
 - [Luna PAPER 운영](docs/luna-paper-runtime.md)
-- [AI·데이터 변경 내역 (2026-09)](docs/ai-data-changes-2026-09.md)
+- [PAPER 사전 점검표](docs/paper-preflight-checklist.md)
+- [AI·데이터 변경 내역 (2026-09~10)](docs/ai-data-changes-2026-09.md)
