@@ -1373,12 +1373,13 @@ def _evaluable_rebalance_dates(
 ) -> List[str]:
     """The real last trading day of each week or month that still has hold_days of data after it.
 
-    The common calendar drops each stock's last hold_days bars; picking the "last day" of a
-    period from it made the cut-off itself a rebalance (e.g. a September cohort on the 7th
-    that overlapped August's), so the period ends come from the uncut calendar."""
+    The common calendar drops each stock's last hold_days bars and stops at to_ymd; picking
+    the "last day" of a period from it made either cut a rebalance (e.g. a September cohort
+    on the 7th that overlapped August's, or December 30 when the run ends on the 31st), so
+    period ends come from the calendar cut at neither end, then must lie in the run."""
     full = sorted({idx.strftime("%Y%m%d") for df in prices.values() for idx in df.index
-                   if from_ymd <= idx.strftime("%Y%m%d") <= to_ymd})
-    evaluable = set(common_calendar)
+                   if idx.strftime("%Y%m%d") >= from_ymd})
+    evaluable = set(common_calendar)   # already within from_ymd..to_ymd
     return [ymd for ymd in _select_rebalance_dates(full, rebalance) if ymd in evaluable]
 
 

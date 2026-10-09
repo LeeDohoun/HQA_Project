@@ -104,3 +104,18 @@ def test_technical_baseline_sweeps_use_explicit_dates_instead_of_default_periods
     assert seen["periods"] == [{"name": "custom", "from_date": "20260102", "to_date": "20261008"}]
     technical_baseline.main(["--data-dir", str(tmp_path)])
     assert [period["name"] for period in seen["periods"]] == ["full", "2023", "2024", "2025", "2026q1"]
+
+
+def test_a_run_ending_mid_week_or_mid_month_does_not_rebalance_on_its_end_date():
+    pd = pytest.importorskip("pandas")
+    from backtesting.leader_backtest import _build_common_calendar, _evaluable_rebalance_dates
+
+    closed = {"20251225", "20251231", "20260101"}
+    index = pd.DatetimeIndex([day for day in pd.bdate_range("2025-10-01", "2026-03-31") if day.strftime("%Y%m%d") not in closed])
+    prices = {"000001": pd.DataFrame({"close": range(len(index))}, index=index)}
+    calendar = _build_common_calendar(prices, "20251001", "20251231", 5)
+    weeks = _evaluable_rebalance_dates(prices, "20251001", "20251231", calendar, "W")
+    # The week of Dec 29 ends on Jan 2, after the run: Dec 30 is only the run's last session.
+    assert weeks[-1] == "20251226"
+    months = _evaluable_rebalance_dates(prices, "20251001", "20251215", _build_common_calendar(prices, "20251001", "20251215", 5), "M")
+    assert months[-1] == "20251128"   # December ends after the run
