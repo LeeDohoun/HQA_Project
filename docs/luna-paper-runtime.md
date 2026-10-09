@@ -197,8 +197,10 @@ evaluated first, then a due planned exit, then reductions. A rejection that the 
 plan version and status cannot overcome (consumed entry or reduction, stale version,
 wrong plan state) is not re-sent until the plan changes; the monitor passes over that
 group and sends the plan's next matching one. A refused planned exit is retried after
-60 s, and an accepted trigger rests 60 s while its order works, holding back the
-plan's other groups so they do not cancel that order. Each poll report lists `session`, `deferred`, `quiet`, `rejections`
+60 s while price exits keep being evaluated; the plan's reductions wait with it, since
+the backend would cancel a reduction's order for the full exit. An accepted trigger
+rests 60 s while its order works, holding back the plan's other groups so they do not
+cancel that order. Each poll report lists `session`, `deferred`, `quiet`, `rejections`
 (refused entries are trading decisions, not monitoring failures) and `settled`.
 
 The backend gates orders by its own calendar: weekdays 09:00-15:30 KST minus
