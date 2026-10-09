@@ -3,10 +3,10 @@
 `feat/dohoon-changes` 브랜치에서 AI 분석, 데이터 수집, 백테스트를 무엇을, 왜, 어떻게 바꿨는지 정리한 문서입니다. 코드를 열지 않고도 바뀐 동작과 운영 시 주의할 점을 알 수 있게 썼습니다. 각 변경의 자세한 근거는 괄호 안 커밋의 메시지(`git show <커밋>`)에 있습니다.
 
 - **기간:** 2026-09-21 ~ 2026-09-29, 그리고 PAPER 준비 작업 2026-10-09 ([7장](#7-10월-paper-준비-작업-2026-10-09))
-- **구성:** `main`에서 분기 → `ai-data-main` 작업 이식 4개 커밋(`498e6e3`~`54e581e`) → 점검·수정 30개 커밋(`2088844`~`8ef0e83`) → 10월 PAPER 준비 9개 커밋(`22db295`~`f4bd145`) → 10월 전체 점검 10개 커밋(`7d2c0f9`~`f5a0e12`, [7.7](#77-전체-점검-2026-10-09-저녁))
+- **구성:** `main`에서 분기 → `ai-data-main` 작업 이식 4개 커밋(`498e6e3`~`54e581e`) → 점검·수정 30개 커밋(`2088844`~`8ef0e83`) → 10월 PAPER 준비 9개 커밋(`22db295`~`f4bd145`) → 10월 전체 점검 17개 커밋(`7d2c0f9`~`a8889bc`, [7.7](#77-전체-점검-2026-10-09-저녁))
 - **규모 (9월 수정 30개 커밋):** 64개 파일, +3,142 / −298줄, 그중 테스트 파일 23개. 9월에는 Spring 백엔드와 프론트엔드 코드를 바꾸지 않았습니다.
 - **규모 (10월 9개 커밋):** 36개 파일, +2,168 / −173줄, 그중 테스트 파일 14개. Spring 백엔드도 수정했습니다(주문 수명주기, 세션 캘린더, 운영자 도구).
-- **테스트:** 9월 기준 오프라인 1,247개 통과, 3개 건너뜀. 10월 작업 뒤 Python 1,344개 통과·3개 건너뜀(실제 KIS 테스트), 백엔드 `mvn test` 117개 실행·실패 0·건너뜀 2. 커밋 각각에서 따로 돌려도 통과합니다.
+- **테스트:** 9월 기준 오프라인 1,247개 통과, 3개 건너뜀. 10월 작업 뒤 Python 1,347개 통과·3개 건너뜀(실제 KIS 테스트), 백엔드 `mvn test` 119개 실행·실패 0·건너뜀 2. 커밋 각각에서 따로 돌려도 통과합니다.
 - **데이터:** 수집 데이터, 가격, 예산 원장, 실험 결과는 커밋하지 않았습니다. 실제 실행은 Git이 추적하지 않는 `.local/`에서 했습니다.
 
 ## 진행 순서
@@ -338,6 +338,9 @@ venv/bin/python scripts/research/build_agent_architecture_validation.py --source
 | 재수집 뒤 전문가 입력 | 9개 입력 해시가 모두 동일 → 장중 수집 루프가 돌아도 역할 캐시 재사용(비용 반복 없음) |
 | 운영 모델 요청 왕복(가짜 HTTP 전송) | 실제 `AccountDecision`·`SpecialistResult` 스키마가 strict 변환과 래퍼 검사를 통과하고, 규칙 위반 계획은 파싱 단계에서 분리 |
 | 로컬 산출물의 비밀값 | 로그·감사 DB·리포트 188개 파일에서 내부 토큰·DART 키 0건 |
+| KIS 모의 API 코드(백엔드) | 주문 `VTTC0012U`·`VTTC0011U`, 정정·취소 `VTTC0013U`, 체결 조회 `VTTC0081R`과 요청 필드를 한국투자증권 공식 저장소 예제와 대조 → 일치(실전용 분기의 옛 코드는 실전 차단으로 실행되지 않음) |
+| 내구 시험 | 분석 서비스 230회 연속(메모리 증가 없음, 결과 매번 동일, 게시 페이로드 백엔드 규칙 위반 0), 모니터 `run_forever` 3분(20초 간격 9회, 오류 0, 같은 트리거 재전송 정확히 60초 간격), 수집 루프 3회(원천 행 수·인덱스 세대 수 불변) |
+| 연구·백테스트 명령 | `validate --preset smoke --mock-llm`, `technical-baseline`, `sweep`, 연구 실행기 `--dry-run`, 문서에 나온 모든 `python -m` 명령의 `--help` 정상 |
 | 실제 토크나이저(o200k) 입력 크기 | Chartist 최대 입력이 12,000 한도 안. RM 행은 실제 4,356~5,092토큰이고 오프라인 추정치는 실제의 1.25~1.36배(과소추정 없음). 설계 최대 계좌(15행, 최악 크기 행)는 실제 58,103토큰 < 128,000 |
 
 **발견해서 고친 것**
@@ -347,6 +350,8 @@ venv/bin/python scripts/research/build_agent_architecture_validation.py --source
 - **백테스트 리밸런싱일 (`7d827f3`):** 보유 기간만큼 잘라 낸 달력에서 주·월 마지막 날을 골라, 잘린 경계(예: 9월 7일)가 월말로 뽑히며 겹치는 코호트가 하나 더 생겼습니다(주간·5일 실행에서 총수익 21.4% → 12.1%). 실제 기간 말일 가운데 보유 기간만큼 데이터가 남은 날만 씁니다.
 - **수집 루프 로그 (`7d2c0f9`):** 호스트에서 `nohup ... > log`로 띄우면 진행 메시지가 버퍼에 남아 몇 시간씩 보이지 않았습니다. 줄 단위 버퍼링으로 바꿨습니다(Docker는 원래 괜찮음).
 - **분리된 계획의 사유 (`f5a0e12`):** 실제 사이클에서 `Input should be greater than 0`이 필드 이름 없이 반복돼 원인을 알 수 없었습니다. 이제 `entry_price: Input should be greater than 0`처럼 필드 위치를 붙입니다.
+- **설정 값의 공백·슬래시 (`f3948f7`, `5fcd0ba`, `9facc2e`):** Python 클라이언트는 내부 토큰의 앞뒤 공백을 지우는데 AI 서버와 백엔드는 원래 값으로 비교해, `.env`의 공백이나 `\r` 하나로 인증이 양쪽에서 깨질 수 있었습니다(받는 쪽도 정규화). `AI_SERVER_URL` 끝의 `/`는 백엔드 요청 경로를 `//runtime/...`로 만들어 404가 됐고(확인함), `BACKEND_SIGNAL_URL` 끝의 `/`는 모든 계획 게시를 실패시켰습니다. 둘 다 끝의 `/`를 지웁니다.
+- **도구 (`763aeaf`, `a8889bc`):** `technical-baseline`의 비교 모드가 `--from-date`/`--to-date`를 무시하고 기본 기간(2023~2026년 1분기)을 돌던 문제, 문서대로 `pytest -q`만 실행하면 깨끗한 환경에서 테스트 하나가 `OPENAI_API_KEY` 없이 실패하던 문제를 고쳤습니다.
 - **기타 (`ac8d31c`, `bc4cc0a`, `b8ebffc`):** 원격 스케줄러 토큰의 공백 제거, `.env.example`에 백엔드 캘린더·RM 입력 한도 변수 추가, 겹친 사이클 요청이 하나로 합쳐지는지 지키는 테스트, 사이클 요약에 거부된 계획과 검토하지 못한 후보 표시, 운영 스키마 왕복 테스트.
 
 **바꾸지 않은 것**
@@ -414,3 +419,10 @@ venv/bin/python scripts/research/build_agent_architecture_validation.py --source
 | `7d827f3` | 2026-10-09 | 전체 점검 | fix(backtest): rebalance on real week and month ends, never on the data cut-off |
 | `5284348` | 2026-10-09 | 전체 점검 | docs(backtest): record the capital-sleeve and period-end rules and the close-entry assumption |
 | `f5a0e12` | 2026-10-09 | 전체 점검 | fix(analysis): name the fields a set-aside RiskManager plan broke |
+| `738ed7a` | 2026-10-09 | 전체 점검 | docs: record the evening checks, their fixes and the live cycle results |
+| `8ee907f` | 2026-10-09 | 전체 점검 | test(analysis): check the RiskManager estimate and largest account with the real tokenizer |
+| `763aeaf` | 2026-10-09 | 전체 점검 | fix(backtest): let technical-baseline sweeps honor explicit dates |
+| `f3948f7` | 2026-10-09 | 전체 점검 | fix(auth): ignore surrounding whitespace in the internal token on the receiving side too |
+| `5fcd0ba` | 2026-10-09 | 전체 점검 | fix(backend): drop trailing slashes from AI_SERVER_URL |
+| `9facc2e` | 2026-10-09 | 전체 점검 | fix(signals): accept a trailing slash in BACKEND_SIGNAL_URL |
+| `a8889bc` | 2026-10-09 | 전체 점검 | test: make the runtime-service test independent of the developer's OPENAI_API_KEY |
