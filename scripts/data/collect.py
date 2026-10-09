@@ -64,10 +64,13 @@ def _ensure_fresh_corp_codes_csv(csv_path: str, *, max_age_days: int = 7) -> boo
     try:
         _refresh_corp_codes_csv(str(path))
     except Exception as exc:
+        # Keep the cause (e.g. "provider error status=800", OpenDART maintenance) without the key.
+        key = (os.getenv("DART_API_KEY") or "").strip()
+        cause = f"{type(exc).__name__}: {str(exc).replace(key, '[REDACTED]') if key else exc}"[:200]
         if exists:
-            print(f"[WARN][DART] corp_codes.csv refresh failed; existing file retained: {type(exc).__name__}")
+            print(f"[WARN][DART] corp_codes.csv refresh failed; existing file retained: {cause}")
         else:
-            print(f"[WARN][DART] corp_codes.csv creation failed: {type(exc).__name__}")
+            print(f"[WARN][DART] corp_codes.csv creation failed: {cause}")
         return False
 
     print(f"[DART] corp_codes.csv 자동 갱신 완료: {path}")

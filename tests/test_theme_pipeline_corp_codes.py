@@ -106,3 +106,22 @@ def test_alphanumeric_krx_listings_are_skipped_not_fatal(capsys):
     malformed = xml.replace(b"0126Z0", b"12Z!")
     with pytest.raises(ValueError, match="invalid corporate or stock code"):
         _parse_corp_codes(malformed)
+
+
+def test_failed_refresh_keeps_the_file_and_logs_the_cause_without_the_key(tmp_path, monkeypatch, capsys):
+    csv_path = tmp_path / "corp_codes.csv"
+    _write_corp_codes(csv_path)
+    old_timestamp = time.time() - (8 * 24 * 60 * 60)
+    os.utime(csv_path, (old_timestamp, old_timestamp))
+
+    def maintenance(path: str) -> None:  # OpenDART answers status 800 during maintenance
+        raise ValueError("DART corpCode provider error status=800 for crtfc_key=secret-dart-key")
+
+    monkeypatch.setenv("DART_API_KEY", "secret-dart-key")
+    monkeypatch.setattr(theme_pipeline, "_refresh_corp_codes_csv", maintenance)
+
+    assert theme_pipeline._ensure_fresh_corp_codes_csv(str(csv_path), max_age_days=7) is False
+    output = capsys.readouterr().out
+    assert "existing file retained: ValueError: DART corpCode provider error status=800" in output
+    assert "secret-dart-key" not in output and "[REDACTED]" in output
+    assert csv_path.exists()
