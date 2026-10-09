@@ -48,6 +48,12 @@
    mvn -f backend/pom.xml test
    ```
 
+5. 모니터나 주문 수명주기를 바꿨다면 종단 시뮬레이션도 돌립니다. 실제 Python 모니터를 실제 백엔드 주문 로직(메모리 저장소, 모의 KIS)에 붙여 손절·익절 단계·예정 청산·진입·만료·KIS 한도 시나리오 13개를 돌립니다. 키와 DB 없이 1분 안에 끝나고, 결과는 `backend/target/paper-lifecycle-sim.txt`에 남습니다.
+
+   ```bash
+   cd backend && HQA_SIM_PYTHON=$PWD/../venv/bin/python mvn -q test -Dtest=PaperLifecycleSimulationTest
+   ```
+
 ## 3. 데이터 준비
 
 가격 선별에는 종목마다 완료된 일봉이 151개 이상 필요합니다. 수집 기간은 전날(KST)에 끝나도록 설계돼 있습니다.
