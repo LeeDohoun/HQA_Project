@@ -3,10 +3,10 @@
 `feat/dohoon-changes` 브랜치에서 AI 분석, 데이터 수집, 백테스트를 무엇을, 왜, 어떻게 바꿨는지 정리한 문서입니다. 코드를 열지 않고도 바뀐 동작과 운영 시 주의할 점을 알 수 있게 썼습니다. 각 변경의 자세한 근거는 괄호 안 커밋의 메시지(`git show <커밋>`)에 있습니다.
 
 - **기간:** 2026-09-21 ~ 2026-09-29, 그리고 PAPER 준비 작업 2026-10-09 ([7장](#7-10월-paper-준비-작업-2026-10-09))
-- **구성:** `main`에서 분기 → `ai-data-main` 작업 이식 4개 커밋(`498e6e3`~`54e581e`) → 점검·수정 30개 커밋(`2088844`~`8ef0e83`) → 10월 PAPER 준비 9개 커밋(`22db295`~`f4bd145`)
+- **구성:** `main`에서 분기 → `ai-data-main` 작업 이식 4개 커밋(`498e6e3`~`54e581e`) → 점검·수정 30개 커밋(`2088844`~`8ef0e83`) → 10월 PAPER 준비 9개 커밋(`22db295`~`f4bd145`) → 10월 전체 점검 10개 커밋(`7d2c0f9`~`f5a0e12`, [7.7](#77-전체-점검-2026-10-09-저녁))
 - **규모 (9월 수정 30개 커밋):** 64개 파일, +3,142 / −298줄, 그중 테스트 파일 23개. 9월에는 Spring 백엔드와 프론트엔드 코드를 바꾸지 않았습니다.
 - **규모 (10월 9개 커밋):** 36개 파일, +2,168 / −173줄, 그중 테스트 파일 14개. Spring 백엔드도 수정했습니다(주문 수명주기, 세션 캘린더, 운영자 도구).
-- **테스트:** 9월 기준 오프라인 1,247개 통과, 3개 건너뜀. 10월 작업 뒤 Python 1,317개 통과·5개 건너뜀, 백엔드 `mvn test` 117개 실행·실패 0·건너뜀 2. 커밋 각각에서 따로 돌려도 통과합니다.
+- **테스트:** 9월 기준 오프라인 1,247개 통과, 3개 건너뜀. 10월 작업 뒤 Python 1,340개 통과·5개 건너뜀, 백엔드 `mvn test` 117개 실행·실패 0·건너뜀 2. 커밋 각각에서 따로 돌려도 통과합니다.
 - **데이터:** 수집 데이터, 가격, 예산 원장, 실험 결과는 커밋하지 않았습니다. 실제 실행은 Git이 추적하지 않는 `.local/`에서 했습니다.
 
 ## 진행 순서
@@ -313,6 +313,50 @@ venv/bin/python scripts/research/build_agent_architecture_validation.py --source
 4. **KIS 호출 예산:** 계정당 초당 1회 중 분석 사이클(보유+신규 최대 15종목 시세)과 모니터(20초마다 보유·계획 시세)가 겹치면 큐(20초) 초과로 일부 시세가 실패할 수 있습니다. 보유 10종목 가까이에서 관찰이 필요합니다.
 5. 9월 남은 과제의 연구 재실행, 영숫자 종목코드, PAPER 기준선(백엔드) 항목은 그대로입니다.
 
+### 7.7 전체 점검 (2026-10-09 저녁)
+
+구성 전체를 다시 확인하고, 수집과 AI 경로를 실제로 돌려 본 결과입니다.
+
+**점검한 것과 결과**
+
+| 확인 | 결과 |
+|---|---|
+| 모듈 import(깨끗한 환경, 123개) | 전부 성공, 데이터 폴더에 쓰기 없음 |
+| 환경 변수 대조(코드가 읽는 값 vs `.env.example`) | 백엔드 캘린더 변수 2개 누락 → 추가. 나머지는 백엔드 DB 설정·백테스트 전용 |
+| 운영 모델 설정(OpenAI 경로, 오프라인 생성) | 전문가 low·1,200토큰·45초, RiskManager medium·12,000토큰·180초, 재시도 0. 문서와 일치 |
+| Docker Compose 구성 | 경고 없이 해석됨 |
+| 프론트엔드 `next build` | 성공(lint·타입 검사 포함, 경고 없음) |
+| 실제 수집(DART + 네이버, 증분) | 27초, `done`, 문서 80건·레코드 262건. 원천 파일 중복 0, 증분 반복 시 행 수 불변 |
+| 분석 데이터 적재 | 3종목 모두 300봉(10-08 종가), 증거 8건, 재무 `ready`, 오류 0 |
+| 수집 루프 1회(저장된 테마) | 동작. 단, 출력이 파일로 갈 때 버퍼에 갇히는 문제 발견 → 수정 |
+| AI 서버(현재 코드) | `/health` 정상, 인증 401·403·404 정상 |
+| AI 서버 실제 사이클(Ollama `qwen3:14b`, 가짜 백엔드, 2계좌) | 64분. 전문가 9건 정상. RM 응답 2건 모두 파싱 성공. 로컬 모델의 계획 6건은 계약 위반(예정 청산 = 진입 만료, 가격 0)으로 하나씩 사유와 함께 분리되고, 두 계좌 모두 `completed`(이전에는 계좌 전체 실패). 게시·주문 0건 |
+| 종목 미리보기(사이클 직후) | 1초. 사이클의 전문가 결과 캐시 재사용 |
+| RM 입력 맞춤(실제 데이터 행, 한도 20,000으로 강제) | 두 계좌 모두 점수가 가장 낮은 신규 후보 1건이 `risk_manager_input_budget`로 빠지고, 보유 종목은 남아 게시까지 정상 |
+| 모니터 HTTP 시나리오(가짜 백엔드) | 진입 → 손절 우선 → 무효화 거부(오류) → 60초 휴지 → 소모된 진입 억제, 모두 설계대로 |
+| 장후 평가 도구 | 새 모니터 보고 형식을 정상 집계 |
+| 재수집 뒤 전문가 입력 | 9개 입력 해시가 모두 동일 → 장중 수집 루프가 돌아도 역할 캐시 재사용(비용 반복 없음) |
+| 운영 모델 요청 왕복(가짜 HTTP 전송) | 실제 `AccountDecision`·`SpecialistResult` 스키마가 strict 변환과 래퍼 검사를 통과하고, 규칙 위반 계획은 파싱 단계에서 분리 |
+| 로컬 산출물의 비밀값 | 로그·감사 DB·리포트 188개 파일에서 내부 토큰·DART 키 0건 |
+
+**발견해서 고친 것**
+
+- **RiskManager 입력 한도 (`d74d1ac`):** 운영 모델은 호출 전에 입력 토큰을 세고 한도를 넘으면 거부합니다. RiskManager 입력은 한도에 맞추지 않았고, 32,000토큰 한도에는 약 6행만 들어갔습니다. 보유 2종목 이상에 신규 5종목이면 매 사이클 같은 이유로 실패할 수 있었습니다(로컬 Ollama에는 이 관문이 없어 리허설에서 드러나지 않음). 기본 한도를 128,000토큰으로 올리고(공식 컨텍스트 창 1,050,000토큰, 비용은 실제 입력에 비례), 넘치면 점수가 낮은 신규 후보부터 빼고(`risk_manager_input_budget`) 보유 종목은 이벤트만 줄이도록 했습니다.
+- **백테스트의 겹친 보유 (`417316a`):** 리밸런싱 간격보다 보유 기간이 길면(주간+20일, 연구용 월간+60일) 동시에 열린 여러 코호트를 모두 원금에 복리로 곱했습니다. 같은 데이터의 주간·20일 실행이 +71.6%, MDD −91.6%로 나왔고, 수정 후 +16.3%, −46.0%입니다. 겹치지 않는 설정(주간+5일, 월간+20일)은 결과가 같습니다. 실행 모델 버전을 바꿔 저장된 연구 결과는 재사용되지 않습니다. **장기(월간·60일) 연구 수치는 이 수정 뒤에 다시 돌려야 합니다.**
+- **백테스트 리밸런싱일 (`7d827f3`):** 보유 기간만큼 잘라 낸 달력에서 주·월 마지막 날을 골라, 잘린 경계(예: 9월 7일)가 월말로 뽑히며 겹치는 코호트가 하나 더 생겼습니다(주간·5일 실행에서 총수익 21.4% → 12.1%). 실제 기간 말일 가운데 보유 기간만큼 데이터가 남은 날만 씁니다.
+- **수집 루프 로그 (`7d2c0f9`):** 호스트에서 `nohup ... > log`로 띄우면 진행 메시지가 버퍼에 남아 몇 시간씩 보이지 않았습니다. 줄 단위 버퍼링으로 바꿨습니다(Docker는 원래 괜찮음).
+- **분리된 계획의 사유 (`f5a0e12`):** 실제 사이클에서 `Input should be greater than 0`이 필드 이름 없이 반복돼 원인을 알 수 없었습니다. 이제 `entry_price: Input should be greater than 0`처럼 필드 위치를 붙입니다.
+- **기타 (`ac8d31c`, `bc4cc0a`, `b8ebffc`):** 원격 스케줄러 토큰의 공백 제거, `.env.example`에 백엔드 캘린더·RM 입력 한도 변수 추가, 겹친 사이클 요청이 하나로 합쳐지는지 지키는 테스트, 사이클 요약에 거부된 계획과 검토하지 못한 후보 표시, 운영 스키마 왕복 테스트.
+
+**바꾸지 않은 것**
+
+- 백테스트 진입은 기준일 종가이고 신호도 같은 종가로 계산합니다(README에 문서화된 방법론). 같은 봉 체결 가정이라 다음 날 시가 진입보다 낙관적일 수 있어, 연구 재실행 때 시가 진입과 비교해 보기를 권합니다.
+
+**확인하지 못한 것**
+
+- 백엔드 jar 패키징: 받아 두지 않은 Maven 플러그인이 필요해 오프라인으로는 불가(컴파일·테스트는 통과, jar는 Docker 빌드에서 생성).
+- 실제 KIS·OpenAI·KRX 연동, 실제 토크나이저로 재는 입력 크기 테스트 2개(로컬 tiktoken 캐시 없음).
+
 ## 부록: 커밋 목록
 
 | 커밋 | 날짜 | 구분 | 제목 |
@@ -360,3 +404,12 @@ venv/bin/python scripts/research/build_agent_architecture_validation.py --source
 | `9237f07` | 2026-10-09 | PAPER 준비 | fix(monitor): protect first, follow the KRX session and report protection that cannot sell |
 | `337c86c` | 2026-10-09 | PAPER 준비 | fix(backend): default the KRX closed dates to the Python calendar's |
 | `f4bd145` | 2026-10-09 | PAPER 준비 | feat(paper): let an operator resolve UNKNOWN orders, verified against KIS |
+| `7d2c0f9` | 2026-10-09 | 전체 점검 | fix(collect): line-buffer the collection loop so a redirected log shows progress |
+| `ac8d31c` | 2026-10-09 | 전체 점검 | fix(runtime): strip the remote scheduler token and document the backend calendar settings |
+| `d74d1ac` | 2026-10-09 | 전체 점검 | fix(analysis): fit the RiskManager call to its input limit, sized for the designed account |
+| `bc4cc0a` | 2026-10-09 | 전체 점검 | feat(runtime): name refused plans and unreviewed stocks in the cycle summary |
+| `417316a` | 2026-10-09 | 전체 점검 | fix(backtest): stop compounding overlapping holdings on the full capital |
+| `b8ebffc` | 2026-10-09 | 전체 점검 | test(llm): round-trip the real decision and specialist schemas through the Responses API |
+| `7d827f3` | 2026-10-09 | 전체 점검 | fix(backtest): rebalance on real week and month ends, never on the data cut-off |
+| `5284348` | 2026-10-09 | 전체 점검 | docs(backtest): record the capital-sleeve and period-end rules and the close-entry assumption |
+| `f5a0e12` | 2026-10-09 | 전체 점검 | fix(analysis): name the fields a set-aside RiskManager plan broke |

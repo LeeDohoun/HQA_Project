@@ -16,6 +16,7 @@
 |---|---|---|
 | `OPENAI_API_KEY` | AI 서버 | `gpt-5.6-luna` 사용 가능. 비용 집계를 위해 전용 프로젝트 권장 |
 | `HQA_LLM_MONTHLY_BUDGET_USD` / `HQA_LLM_OPERATING_TARGET_USD` | AI 서버 | 기본 100 / 90달러. 일반 분석은 90에서 멈추고 보유 종목 보호는 100까지 |
+| `HQA_LLM_RPM` / `HQA_LLM_TPM` | AI 서버 | OpenAI 프로젝트의 실제 한도로 설정. 기본 120 RPM·200,000 TPM은 보수적이라, 사이클마다 전문가 입력이 최대 약 80만 토큰이면 첫 사이클이 몇 분 늦어짐(공식 Build 등급 기본 5,000 RPM·2,000,000 TPM) |
 | `HQA_INTERNAL_TOKEN` | AI 서버, 백엔드, 모니터, 스케줄러 | 세 곳 모두 같은 값, 앞뒤 공백 없이 |
 | `HQA_KIS_ENC_KEY` | 백엔드 | KIS 자격증명 암호화 키. 바꾸면 저장된 계좌 지문을 다시 검토해야 함 |
 | 사용자별 KIS 모의투자 앱키·시크릿·계좌 | 백엔드 자격증명 등록 | 사용자 하나에 계좌 하나, 앱키 공유 금지. AI 서버는 증권사 자격증명을 받지 않음 |
@@ -90,7 +91,7 @@ venv/bin/python -m scripts.data.build --theme-key 2차전지 --stats
    venv/bin/python -m src.runner.signal_monitor --once
    ```
 
-6. **분석 사이클 1회:** `--forever` 없이 실행하면 한 번만 돕니다. 계좌별 `submitted`, `failed`, `error`, `skipped_plans`와 감사 기록의 `rejected_plans`, `omitted_candidates`를 확인합니다.
+6. **분석 사이클 1회:** `--forever` 없이 실행하면 한 번만 돕니다. 계좌별 `submitted`, `failed`, `error`, `skipped_plans`, `rejected_plans`, `omitted_candidates`를 확인합니다. 원격 클라이언트는 900초까지만 기다리므로, 그보다 오래 걸리면 결과는 AI 서버의 `/runtime/tasks/<id>`에서 봅니다.
 
    ```bash
    AI_SERVER_URL=http://localhost:8001 venv/bin/python -m src.runner.analysis_scheduler
@@ -127,7 +128,7 @@ Docker Compose에서는 `docker compose --profile paper up`이 5·6(모니터, �
 **장중**
 
 - 모니터 로그(`signal_monitor {...}`): `slo_met`, `errors`, `uncovered_holdings`의 `reason`, `max_quote_age_seconds`, `elapsed_seconds`(목표 30초 이내).
-- 분석 사이클 요약: 실패한 계좌의 `error`, 건너뛴 계획(`skipped_plans`), 거부된 계획(`rejected_plans`). 보유 종목 계획이 거부되면 그 종목은 이전 계획을 유지합니다.
+- 분석 사이클 요약: 실패한 계좌의 `error`, 건너뛴 계획(`skipped_plans`), 거부된 계획(`rejected_plans`), 검토하지 못한 후보(`omitted_candidates`). 보유 종목 계획이 거부되면 그 종목은 이전 계획을 유지합니다. `omitted_candidates`에 `risk_manager_input_budget`이 자주 보이면 RiskManager 입력이 한도에 차 있다는 뜻이니, 감사 기록의 `risk_manager_input`(추정치와 예산)을 확인합니다.
 
 **장 후**
 
