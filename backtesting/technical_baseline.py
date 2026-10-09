@@ -50,7 +50,7 @@ from backtesting.leader_backtest import (
     _round_trip_cost_bps,
     _round_trip_cost_return,
     _score_universe,
-    _select_rebalance_dates,
+    _evaluable_rebalance_dates,
     _stock_names_from_prices,
     _write_result,
     load_document_signals,
@@ -177,7 +177,7 @@ def run_technical_baseline(
     common_calendar = _build_common_calendar(prices, from_ymd, to_ymd, hold_days)
     market_dates = _market_dates(prices)
     ineligible_counts: Dict[str, int] = defaultdict(int)
-    rebalance_dates = _select_rebalance_dates(common_calendar, rebalance)
+    rebalance_dates = _evaluable_rebalance_dates(prices, from_ymd, to_ymd, common_calendar, rebalance)
     doc_index = _index_docs(docs)
     if not rebalance_dates:
         raise ValueError(f"no rebalance dates in period: {from_ymd}..{to_ymd}")

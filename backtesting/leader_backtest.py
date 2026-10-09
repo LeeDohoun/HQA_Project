@@ -190,7 +190,7 @@ def run_leader_backtest(
     common_calendar = _build_common_calendar(prices, from_ymd, to_ymd, hold_days)
     market_dates = _market_dates(prices)
     ineligible_counts: Dict[str, int] = defaultdict(int)
-    rebalance_dates = _select_rebalance_dates(common_calendar, rebalance)
+    rebalance_dates = _evaluable_rebalance_dates(prices, from_ymd, to_ymd, common_calendar, rebalance)
     if not rebalance_dates:
         raise ValueError(f"no rebalance dates in period: {from_ymd}..{to_ymd}")
 
@@ -888,7 +888,8 @@ PRICE_BASIS_BREAK_RETURN = 0.305  # beyond the KRX +/-30% daily limit
 # an older engine must not be resumed as if they were current (proof_validation).
 # overlap-sleeves (2026-10-09): holdings that outlast the rebalance interval share capital
 # through equal sleeves instead of compounding every overlapping cohort on full capital.
-EXECUTION_MODEL_VERSION = "2026-10-09:prior-day-evidence:halts-kept:gap-fills:open-take-profit:overlap-sleeves"
+# true-period-ends (2026-10-09): rebalances fall on real week/month ends, never on the data cut-off.
+EXECUTION_MODEL_VERSION = "2026-10-09:prior-day-evidence:halts-kept:gap-fills:open-take-profit:overlap-sleeves:true-period-ends"
 SAME_DAY_OHLC_POLICY = "take_profit_at_open_beyond_target_else_stop_or_trailing_stop_before_take_profit"
 
 
@@ -1361,6 +1362,24 @@ def _build_common_calendar(
             if from_ymd <= ymd <= to_ymd:
                 dates.add(ymd)
     return sorted(dates)
+
+
+def _evaluable_rebalance_dates(
+    prices: Dict[str, pd.DataFrame],
+    from_ymd: str,
+    to_ymd: str,
+    common_calendar: List[str],
+    rebalance: str,
+) -> List[str]:
+    """The real last trading day of each week or month that still has hold_days of data after it.
+
+    The common calendar drops each stock's last hold_days bars; picking the "last day" of a
+    period from it made the cut-off itself a rebalance (e.g. a September cohort on the 7th
+    that overlapped August's), so the period ends come from the uncut calendar."""
+    full = sorted({idx.strftime("%Y%m%d") for df in prices.values() for idx in df.index
+                   if from_ymd <= idx.strftime("%Y%m%d") <= to_ymd})
+    evaluable = set(common_calendar)
+    return [ymd for ymd in _select_rebalance_dates(full, rebalance) if ymd in evaluable]
 
 
 def _select_rebalance_dates(calendar: List[str], rebalance: str) -> List[str]:

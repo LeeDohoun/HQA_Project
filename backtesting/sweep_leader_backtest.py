@@ -45,7 +45,7 @@ from backtesting.leader_backtest import (
     _positions_to_trades,
     _require_ymd,
     _score_universe,
-    _select_rebalance_dates,
+    _evaluable_rebalance_dates,
     _stock_names_from_prices,
     _write_result,
     load_document_signals,
@@ -223,7 +223,7 @@ def _run_loaded_backtest(
     common_calendar = _build_common_calendar(prices, from_ymd, to_ymd, hold_days)
     market_dates = _market_dates(prices)
     ineligible_counts: Dict[str, int] = defaultdict(int)
-    rebalance_dates = _select_rebalance_dates(common_calendar, rebalance)
+    rebalance_dates = _evaluable_rebalance_dates(prices, from_ymd, to_ymd, common_calendar, rebalance)
 
     positions: List[Dict[str, Any]] = []
     equity_curve: List[Dict[str, Any]] = []

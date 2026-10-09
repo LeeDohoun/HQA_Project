@@ -78,3 +78,17 @@ def test_non_overlapping_schedules_keep_plain_compounding(tmp_path):
     assert result["period"]["capital_sleeves"] == 1
     assert result["equity_curve"][-1]["equity"] == pytest.approx(_compounded(result["periods"], 1), rel=1e-3)
     assert math.isfinite(result["metrics"]["mdd_pct"])
+
+
+def test_rebalances_fall_on_real_period_ends_never_on_the_data_cut_off():
+    pd = pytest.importorskip("pandas")
+    from backtesting.leader_backtest import _build_common_calendar, _evaluable_rebalance_dates
+
+    index = pd.bdate_range("2025-01-01", "2025-06-17")   # data ends mid-June
+    prices = {"000001": pd.DataFrame({"close": range(len(index))}, index=index)}
+    calendar = _build_common_calendar(prices, "20250101", "20251231", 20)
+    months = _evaluable_rebalance_dates(prices, "20250101", "20251231", calendar, "M")
+    # May 30 has fewer than 20 sessions after it; the cut-off (around May 20) is not a month end.
+    assert months == ["20250131", "20250228", "20250331", "20250430"]
+    weeks = _evaluable_rebalance_dates(prices, "20250101", "20251231", calendar, "W")
+    assert all(pd.Timestamp(day).dayofweek == 4 for day in weeks)   # every week here ends on a Friday
