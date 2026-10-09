@@ -27,6 +27,9 @@ SETTLED_REJECTIONS = {"STALE_PLAN_VERSION", "UNKNOWN_CONDITION_GROUP", "ACCOUNT_
 SETTLED_BY_TYPE = {"ENTRY": {"TRIGGER_ALREADY_CONSUMED", "ENTRY_EXPIRED", "HOLDING_ALREADY_EXISTS",
                              "SIGNAL_PRICE_REQUIRED", "DAILY_BUY_LIMIT_EXCEEDED"},
                    "REDUCE": {"TRIGGER_ALREADY_CONSUMED"}}
+# Refused sells that are not monitoring failures: the price moved back, the reduction already
+# ran, or a newer plan version replaced this one (the next poll sees it).
+BENIGN_PROTECTIVE_REJECTIONS = {"CONDITION_NO_LONGER_MATCHES", "TRIGGER_ALREADY_CONSUMED", "STALE_PLAN_VERSION"}
 # A condition stays true poll after poll; an accepted order is left to work (and to the
 # backend's 20-second reconciliation) this long before the same trigger is sent again.
 ACCEPTED_TRIGGER_QUIET_SECONDS = 60
@@ -236,6 +239,7 @@ class SignalMonitor:
         # Keyed by (signal, plan version, plan status, trigger type, group).
         self._settled: Dict[Tuple[Any, ...], str] = {}
         self._accepted_at: Dict[Tuple[Any, ...], datetime] = {}
+        self._refused_exit_at: Dict[Tuple[Any, ...], datetime] = {}
 
     def poll_once(self) -> int:
         started = time.monotonic()
@@ -294,7 +298,19 @@ class SignalMonitor:
                         if not -5 <= account_age <= 30:
                             raise ValueError("Account snapshot expired during price retrieval")
                 checked += 1
-                match = self._matching_condition(signal, snapshot)
+                plan_key = (signal_id, signal.get("planVersion"), str(signal.get("status") or ""))
+
+                def passed_over(trigger_type: str, group_id: str, plan_key=plan_key, signal_id=signal_id) -> bool:
+                    refused = self._refused_exit_at.get((*plan_key, trigger_type, group_id))
+                    if refused is not None and (now - refused).total_seconds() < ACCEPTED_TRIGGER_QUIET_SECONDS:
+                        return True   # a refused planned exit rests; the plan's other groups run
+                    reason = self._settled.get((*plan_key, trigger_type, group_id))
+                    if reason is not None:
+                        settled.append({"signal_id": signal_id, "trigger_type": trigger_type,
+                                        "group_id": group_id, "reason": reason})
+                    return reason is not None
+
+                match = self._matching_condition(signal, snapshot, passed_over)
                 if match is None:
                     continue
                 trigger_type, condition = match
@@ -311,10 +327,6 @@ class SignalMonitor:
                 logger.error("Signal monitor failed for %s: %s", signal_id, exc)
                 continue
             key = (signal_id, signal.get("planVersion"), str(signal.get("status") or ""), trigger_type, trigger["groupId"])
-            if key in self._settled:
-                settled.append({"signal_id": signal_id, "trigger_type": trigger_type, "group_id": trigger["groupId"],
-                                "reason": self._settled[key]})
-                continue
             accepted_at = self._accepted_at.get(key)
             if accepted_at is not None and (now - accepted_at).total_seconds() < ACCEPTED_TRIGGER_QUIET_SECONDS:
                 quiet += 1
@@ -358,14 +370,19 @@ class SignalMonitor:
         try:
             outcome = self.backend_client.trigger_signal(signal_id, trigger)
         except TriggerRejected as exc:
-            if exc.reason in SETTLED_REJECTIONS or exc.reason in SETTLED_BY_TYPE.get(trigger_type, ()):
+            if trigger["groupId"] == "planned-exit":
+                # A backend whose clock is a moment behind refuses a just-due planned exit as an
+                # unknown group: it rests like an accepted trigger and is retried, while the
+                # plan's other groups keep being evaluated.
+                self._refused_exit_at[key] = self.clock()
+            elif exc.reason in SETTLED_REJECTIONS or exc.reason in SETTLED_BY_TYPE.get(trigger_type, ()):
                 self._settled[key] = exc.reason
             rejections.append({"signal_id": signal_id, "trigger_type": trigger_type,
                                "group_id": trigger["groupId"], "reason": exc.reason})
             # A refused entry is a trading decision; a refused sell leaves the position exposed,
             # unless the price moved back or, on a day of unverified hours, the backend's
             # session had not yet opened or had already closed.
-            expected = {"CONDITION_NO_LONGER_MATCHES"} | ({"MARKET_CLOSED"} if session == "protect" else set())
+            expected = BENIGN_PROTECTIVE_REJECTIONS | ({"MARKET_CLOSED"} if session == "protect" else set())
             if trigger_type != "ENTRY" and exc.reason not in expected:
                 errors.append({"signal_id": signal_id, "error": str(exc)})
             logger.warning("Signal monitor trigger for %s refused: %s %s", signal_id, trigger_type, exc.reason)
@@ -382,6 +399,8 @@ class SignalMonitor:
         self._settled = {key: reason for key, reason in self._settled.items() if key[:2] in active}
         self._accepted_at = {key: at for key, at in self._accepted_at.items() if key[:2] in active
                              and (now - at).total_seconds() < ACCEPTED_TRIGGER_QUIET_SECONDS}
+        self._refused_exit_at = {key: at for key, at in self._refused_exit_at.items() if key[:2] in active
+                                 and (now - at).total_seconds() < ACCEPTED_TRIGGER_QUIET_SECONDS}
 
     def run_forever(self) -> None:
         consecutive_failures = 0
@@ -420,7 +439,9 @@ class SignalMonitor:
             except Exception:
                 logger.exception("signal_monitor could not record the failed poll")
 
-    def _matching_condition(self, signal: Dict[str, Any], snapshot: Snapshot) -> Optional[Tuple[str, Condition]]:
+    def _matching_condition(self, signal: Dict[str, Any], snapshot: Snapshot,
+                            skip: Optional[Callable[[str, str], bool]] = None) -> Optional[Tuple[str, Condition]]:
+        """The plan's first matching group, passing over groups `skip` reports settled."""
         status = str(signal.get("status") or "")
         payload = signal.get("conditionPayload") or signal.get("condition_payload") or {}
         if not isinstance(payload, dict):
@@ -430,7 +451,7 @@ class SignalMonitor:
         if version not in {1, 2}:
             raise ValueError(f"Unsupported condition schema: {version}")
         if status == "WAITING_ENTRY":
-            invalidation = _first_match("INVALIDATION", payload.get("invalidation_conditions"), snapshot, version)
+            invalidation = _first_match("INVALIDATION", payload.get("invalidation_conditions"), snapshot, version, skip=skip)
             if invalidation:
                 return invalidation
             held = snapshot.get("holding_quantity")
@@ -438,21 +459,26 @@ class SignalMonitor:
                 # The shares are already held: the entry filled before the backend recorded it
                 # (or they were bought outside HQA). Its stop applies now and no second entry
                 # is sent; the backend reconciles the fill before it acts on the trigger.
-                return _first_match("EXIT", payload.get("exit_conditions"), snapshot, version)
+                return _first_match("EXIT", payload.get("exit_conditions"), snapshot, version, skip=skip)
             entry_until = signal.get("entryValidUntil") or signal.get("expiresAt")
             if version == 2 and not entry_until:
                 raise ValueError("Missing entry validity deadline")
             if entry_until and self.clock() >= _timestamp(entry_until):
                 return None
-            return _first_match("ENTRY", payload.get("entry_conditions"), snapshot, version)
+            return _first_match("ENTRY", payload.get("entry_conditions"), snapshot, version, skip=skip)
         if status in {"OPEN", "WAITING_EXIT", "PARTIALLY_FILLED"}:
-            planned_exit = signal.get("plannedExitAt")
-            if version == 2 and planned_exit and self.clock() >= _timestamp(planned_exit):
-                return "EXIT", {"id": "planned-exit"}
+            # Full exits by price, then the time exit, then partial reductions: a refused planned
+            # exit must never stand in front of a stop that the price has already crossed.
             missing_inputs: List[str] = []
-            for trigger_type in ("EXIT", "INVALIDATION", "REDUCE"):
+            for trigger_type in ("EXIT", "INVALIDATION", "PLANNED", "REDUCE"):
+                if trigger_type == "PLANNED":
+                    planned_exit = signal.get("plannedExitAt")
+                    if (version == 2 and planned_exit and self.clock() >= _timestamp(planned_exit)
+                            and not (skip and skip("EXIT", "planned-exit"))):
+                        return "EXIT", {"id": "planned-exit"}
+                    continue
                 match = _first_match(trigger_type, payload.get(trigger_type.lower() + "_conditions"),
-                                     snapshot, version, missing_inputs=missing_inputs)
+                                     snapshot, version, missing_inputs=missing_inputs, skip=skip)
                 if match:
                     return match
             if missing_inputs:
@@ -461,11 +487,12 @@ class SignalMonitor:
 
 
 def _first_match(trigger_type: str, conditions: Any, snapshot: Snapshot, version: int = 1,
-                 *, missing_inputs: Optional[List[str]] = None) -> Optional[Tuple[str, Condition]]:
+                 *, missing_inputs: Optional[List[str]] = None,
+                 skip: Optional[Callable[[str, str], bool]] = None) -> Optional[Tuple[str, Condition]]:
     if not isinstance(conditions, Iterable) or isinstance(conditions, (str, bytes, dict)):
         return None
     missing: List[str] = []
-    for condition in conditions:
+    for index, condition in enumerate(conditions):
         if version == 2:
             if not isinstance(condition, dict) or not condition.get("id") or not isinstance(condition.get("all"), list) or not condition["all"]:
                 raise ValueError("Invalid v2 condition group")
@@ -481,9 +508,13 @@ def _first_match(trigger_type: str, conditions: Any, snapshot: Snapshot, version
                 missing.extend(group_missing)
                 continue
             if all(evaluate_condition(atom, snapshot) for atom in condition["all"]):
+                if skip and skip(trigger_type, str(condition["id"])):
+                    continue
                 return trigger_type, condition
             continue
         if isinstance(condition, dict) and evaluate_condition(condition, snapshot):
+            if skip and skip(trigger_type, f"legacy-{trigger_type.lower()}-{index}"):
+                continue
             return trigger_type, condition
     if missing:
         if missing_inputs is None:

@@ -746,3 +746,66 @@ def test_market_closed_refusals_are_errors_only_when_the_hours_were_verified(ses
     monitor.poll_once()
     assert monitor.last_report["rejections"][0]["reason"] == "MARKET_CLOSED"
     assert bool(monitor.last_report["errors"]) is is_error
+
+
+def _tiered_plan(**updates):
+    plan = _v2_signal(status="OPEN", plannedExitAt=(NOW + timedelta(days=3)).isoformat(), conditionPayload={
+        "schema_version": 2, "entry_conditions": [], "invalidation_conditions": [],
+        "exit_conditions": [_group("stop", ("<=", 90))],
+        "reduce_conditions": [
+            {"id": "take-profit-1", "reduce_fraction": 0.5, "all": [{"field": "pnl_rate", "operator": ">=", "value": 5.0}]},
+            {"id": "take-profit-2", "reduce_fraction": 0.5, "all": [{"field": "pnl_rate", "operator": ">=", "value": 10.0}]}]})
+    plan.update(updates)
+    return plan
+
+
+def _priced(price):
+    return lambda _: {"current_price": price, "pnl_rate": (price / 100 - 1) * 100, "holding_quantity": 10,
+                      "snapshot_at": NOW.isoformat()}
+
+
+def test_a_consumed_take_profit_tier_lets_the_next_tier_go_out():
+    backend = ScriptedBackend([_tiered_plan()], [TriggerRejected("TRIGGER_ALREADY_CONSUMED")])
+    monitor = SignalMonitor(backend, _priced(112), clock=lambda: NOW)
+    monitor.poll_once()
+    assert not monitor.last_report["errors"]          # an already-run reduction is not a failure
+    monitor.poll_once()
+    assert [trigger["groupId"] for _, trigger in backend.triggers] == ["take-profit-1", "take-profit-2"]
+    assert monitor.last_report["settled"][0]["group_id"] == "take-profit-1"
+
+
+def test_a_due_planned_exit_never_stands_in_front_of_a_crossed_stop():
+    plan = _tiered_plan(plannedExitAt=(NOW - timedelta(seconds=1)).isoformat())
+    backend = ScriptedBackend([plan], [])
+    monitor = SignalMonitor(backend, _priced(85), clock=lambda: NOW)
+    assert monitor.poll_once() == 1
+    assert backend.triggers[0][1]["groupId"] == "stop"
+
+
+def test_a_refused_planned_exit_rests_while_the_plans_other_groups_run_then_retries():
+    clock = [NOW]
+    plan = _tiered_plan(plannedExitAt=(NOW - timedelta(seconds=1)).isoformat())
+    backend = ScriptedBackend([plan], [TriggerRejected("UNKNOWN_CONDITION_GROUP")])
+    monitor = SignalMonitor(backend, lambda _: {"current_price": 112, "pnl_rate": 12.0, "holding_quantity": 10,
+                                                "snapshot_at": clock[0].isoformat()}, clock=lambda: clock[0])
+    monitor.poll_once()                                 # planned exit refused (backend clock behind)
+    clock[0] = NOW + timedelta(seconds=20)
+    monitor.poll_once()                                 # it rests: the take-profit tier runs
+    clock[0] = NOW + timedelta(seconds=61)
+    monitor.poll_once()                                 # retried after the rest
+    assert [trigger["groupId"] for _, trigger in backend.triggers] == ["planned-exit", "take-profit-1", "planned-exit"]
+    assert not monitor.last_report["settled"]
+
+
+def test_an_order_working_for_one_exit_group_is_not_crowded_by_another_group():
+    clock = [NOW]
+    plan = _v2_signal(status="OPEN", conditionPayload={"schema_version": 2, "exit_conditions": [
+        _group("stop", ("<=", 90)), _group("hard-floor", ("<=", 88))]})
+    backend = ScriptedBackend([plan], [])
+    monitor = SignalMonitor(backend, lambda _: {"current_price": 85, "holding_quantity": 10,
+                                                "snapshot_at": clock[0].isoformat()}, clock=lambda: clock[0])
+    monitor.poll_once()
+    clock[0] = NOW + timedelta(seconds=20)
+    monitor.poll_once()                                 # "stop" rests; "hard-floor" must not cancel its order
+    assert [trigger["groupId"] for _, trigger in backend.triggers] == ["stop"]
+    assert monitor.last_report["quiet"] == 1
