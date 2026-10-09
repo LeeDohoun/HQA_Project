@@ -814,8 +814,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-dir", default="")
     parser.add_argument("--baseline", choices=sorted(BASELINE_SPECS), default="")
     parser.add_argument("--baselines", default="rsi_oversold,bollinger_lower")
-    parser.add_argument("--from-date", default="20230101")
-    parser.add_argument("--to-date", default="20260331")
+    # Without --periods, explicit dates make one custom period for --baselines too; they
+    # used to be ignored there, so the sweep silently ran its default 2023-2026Q1 periods.
+    parser.add_argument("--from-date", default="")
+    parser.add_argument("--to-date", default="")
     parser.add_argument("--periods", default="")
     parser.add_argument("--rebalance", default="W")
     parser.add_argument("--top-n", type=int, default=3)
@@ -869,8 +871,8 @@ def main(argv: list[str] | None = None) -> int:
         result = run_technical_baseline(
             **common_kwargs,
             baseline=args.baseline,
-            from_date=args.from_date,
-            to_date=args.to_date,
+            from_date=args.from_date or "20230101",
+            to_date=args.to_date or "20260331",
             task_id=args.task_id,
         )
         print(json.dumps({"task_id": result["task_id"], "metrics": result["metrics"]}, ensure_ascii=False, indent=2))
@@ -878,7 +880,9 @@ def main(argv: list[str] | None = None) -> int:
 
     summary = run_baseline_sweep(
         **common_kwargs,
-        periods=_parse_periods(args.periods) if args.periods else _default_periods(),
+        periods=(_parse_periods(args.periods) if args.periods
+                 else [{"name": "custom", "from_date": args.from_date or "20230101", "to_date": args.to_date or "20260331"}]
+                 if args.from_date or args.to_date else _default_periods()),
         baselines=_parse_list(args.baselines),
     )
     print(json.dumps(summary["artifacts"], ensure_ascii=False, indent=2))

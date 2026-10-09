@@ -92,3 +92,15 @@ def test_rebalances_fall_on_real_period_ends_never_on_the_data_cut_off():
     assert months == ["20250131", "20250228", "20250331", "20250430"]
     weeks = _evaluable_rebalance_dates(prices, "20250101", "20251231", calendar, "W")
     assert all(pd.Timestamp(day).dayofweek == 4 for day in weeks)   # every week here ends on a Friday
+
+
+def test_technical_baseline_sweeps_use_explicit_dates_instead_of_default_periods(monkeypatch, tmp_path):
+    from backtesting import technical_baseline
+
+    seen = {}
+    monkeypatch.setattr(technical_baseline, "run_baseline_sweep",
+                        lambda **kwargs: seen.update(kwargs) or {"artifacts": {}})
+    technical_baseline.main(["--data-dir", str(tmp_path), "--from-date", "20260102", "--to-date", "20261008"])
+    assert seen["periods"] == [{"name": "custom", "from_date": "20260102", "to_date": "20261008"}]
+    technical_baseline.main(["--data-dir", str(tmp_path)])
+    assert [period["name"] for period in seen["periods"]] == ["full", "2023", "2024", "2025", "2026q1"]
