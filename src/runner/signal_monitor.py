@@ -372,8 +372,9 @@ class SignalMonitor:
         except TriggerRejected as exc:
             if trigger["groupId"] == "planned-exit":
                 # A backend whose clock is a moment behind refuses a just-due planned exit as an
-                # unknown group: it rests like an accepted trigger and is retried, while the
-                # plan's other groups keep being evaluated.
+                # unknown group, and one cancelling another order of the plan refuses it until
+                # the cancellation is confirmed: it rests like an accepted trigger and is
+                # retried, while the plan's price exits keep being evaluated.
                 self._refused_exit_at[key] = self.clock()
             elif exc.reason in SETTLED_REJECTIONS or exc.reason in SETTLED_BY_TYPE.get(trigger_type, ()):
                 self._settled[key] = exc.reason
@@ -468,13 +469,17 @@ class SignalMonitor:
             return _first_match("ENTRY", payload.get("entry_conditions"), snapshot, version, skip=skip)
         if status in {"OPEN", "WAITING_EXIT", "PARTIALLY_FILLED"}:
             # Full exits by price, then the time exit, then partial reductions: a refused planned
-            # exit must never stand in front of a stop that the price has already crossed.
+            # exit must never stand in front of a stop that the price has already crossed. While a
+            # due planned exit waits to be retried, the plan's reductions wait with it: the backend
+            # cancels a working reduction for the full exit, and a reduction sent in the meantime
+            # would be cancelled again on every retry.
             missing_inputs: List[str] = []
             for trigger_type in ("EXIT", "INVALIDATION", "PLANNED", "REDUCE"):
                 if trigger_type == "PLANNED":
                     planned_exit = signal.get("plannedExitAt")
-                    if (version == 2 and planned_exit and self.clock() >= _timestamp(planned_exit)
-                            and not (skip and skip("EXIT", "planned-exit"))):
+                    if version == 2 and planned_exit and self.clock() >= _timestamp(planned_exit):
+                        if skip and skip("EXIT", "planned-exit"):
+                            break
                         return "EXIT", {"id": "planned-exit"}
                     continue
                 match = _first_match(trigger_type, payload.get(trigger_type.lower() + "_conditions"),

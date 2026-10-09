@@ -782,19 +782,31 @@ def test_a_due_planned_exit_never_stands_in_front_of_a_crossed_stop():
     assert backend.triggers[0][1]["groupId"] == "stop"
 
 
-def test_a_refused_planned_exit_rests_while_the_plans_other_groups_run_then_retries():
+def test_a_refused_planned_exit_rests_with_the_plans_reductions_then_retries():
     clock = [NOW]
     plan = _tiered_plan(plannedExitAt=(NOW - timedelta(seconds=1)).isoformat())
-    backend = ScriptedBackend([plan], [TriggerRejected("UNKNOWN_CONDITION_GROUP")])
+    backend = ScriptedBackend([plan], [TriggerRejected("ORDER_RECONCILIATION_REQUIRED")])
     monitor = SignalMonitor(backend, lambda _: {"current_price": 112, "pnl_rate": 12.0, "holding_quantity": 10,
                                                 "snapshot_at": clock[0].isoformat()}, clock=lambda: clock[0])
-    monitor.poll_once()                                 # planned exit refused (backend clock behind)
+    monitor.poll_once()                                 # refused while the backend cancels a working reduction
     clock[0] = NOW + timedelta(seconds=20)
-    monitor.poll_once()                                 # it rests: the take-profit tier runs
+    monitor.poll_once()                                 # it rests, and the take-profit tiers wait with it
     clock[0] = NOW + timedelta(seconds=61)
     monitor.poll_once()                                 # retried after the rest
-    assert [trigger["groupId"] for _, trigger in backend.triggers] == ["planned-exit", "take-profit-1", "planned-exit"]
+    assert [trigger["groupId"] for _, trigger in backend.triggers] == ["planned-exit", "planned-exit"]
     assert not monitor.last_report["settled"]
+
+
+def test_a_crossed_stop_goes_out_while_a_refused_planned_exit_rests():
+    clock, price = [NOW], [112.0]
+    plan = _tiered_plan(plannedExitAt=(NOW - timedelta(seconds=1)).isoformat())
+    backend = ScriptedBackend([plan], [TriggerRejected("UNKNOWN_CONDITION_GROUP")])
+    monitor = SignalMonitor(backend, lambda _: {"current_price": price[0], "pnl_rate": price[0] - 100, "holding_quantity": 10,
+                                                "snapshot_at": clock[0].isoformat()}, clock=lambda: clock[0])
+    monitor.poll_once()                                 # planned exit refused (backend clock behind)
+    clock[0], price[0] = NOW + timedelta(seconds=20), 85.0
+    monitor.poll_once()
+    assert [trigger["groupId"] for _, trigger in backend.triggers] == ["planned-exit", "stop"]
 
 
 def test_an_order_working_for_one_exit_group_is_not_crowded_by_another_group():
