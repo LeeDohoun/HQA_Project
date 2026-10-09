@@ -20,6 +20,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from backtesting.metrics import SleevedEquity, sleeve_count
 from backtesting.leader_backtest import (
     EXECUTION_MODEL_VERSION,
     SAME_DAY_OHLC_POLICY,
@@ -189,13 +190,15 @@ def run_technical_baseline(
     signal_skip_counts: Dict[str, int] = defaultdict(int)
     equity = 1.0
     benchmark_equity = 1.0
+    strategy_sleeves = SleevedEquity(sleeve_count(rebalance, hold_days))
+    benchmark_sleeves = SleevedEquity(sleeve_count(rebalance, hold_days))
     round_trip_cost = _round_trip_cost_return(
         transaction_cost_bps=transaction_cost_bps,
         slippage_bps=slippage_bps,
         market_impact_bps=market_impact_bps,
     )
 
-    for as_of_ymd in rebalance_dates:
+    for rebalance_index, as_of_ymd in enumerate(rebalance_dates):
         active_targets = _active_target_by_code(target_by_code, memberships, as_of_ymd)
         if len(active_targets) < top_n:
             warnings.append(f"{as_of_ymd}: active theme universe {len(active_targets)} < top_n {top_n}")
@@ -241,7 +244,7 @@ def run_technical_baseline(
 
         if risk_off_reason:
             warnings.append(f"{as_of_ymd}: {risk_off_reason}")
-            benchmark_equity *= 1.0 + benchmark_net_return
+            benchmark_equity = benchmark_sleeves.add(rebalance_index, benchmark_net_return)
             period_rows.append(
                 _period_payload(
                     as_of_ymd=as_of_ymd,
@@ -270,8 +273,8 @@ def run_technical_baseline(
         selected_return = float(np.mean([row["realized_return"] for row in selected]))
         selected_net_return = selected_return - round_trip_cost
         portfolio_exit_date = _latest_exit_date(selected)
-        equity *= 1.0 + selected_net_return
-        benchmark_equity *= 1.0 + benchmark_net_return
+        equity = strategy_sleeves.add(rebalance_index, selected_net_return)
+        benchmark_equity = benchmark_sleeves.add(rebalance_index, benchmark_net_return)
 
         period_rows.append(
             _period_payload(
@@ -334,6 +337,7 @@ def run_technical_baseline(
             "rebalance": rebalance,
             "rebalance_count": len(period_rows),
             "hold_days": hold_days,
+            "capital_sleeves": sleeve_count(rebalance, hold_days),
         },
         "strategy": {
             "name": baseline,

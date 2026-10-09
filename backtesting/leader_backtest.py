@@ -27,7 +27,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from backtesting.metrics import max_drawdown as _max_drawdown
+from backtesting.metrics import SleevedEquity, max_drawdown as _max_drawdown, sleeve_count
 from backtesting.temporal_evidence import normalize_ymd
 from src.config.settings import get_data_dir
 from src.ingestion.theme_membership import (
@@ -201,13 +201,15 @@ def run_leader_backtest(
     risk_reject_counts: Dict[str, int] = defaultdict(int)
     equity = 1.0
     benchmark_equity = 1.0
+    strategy_sleeves = SleevedEquity(sleeve_count(rebalance, hold_days))
+    benchmark_sleeves = SleevedEquity(sleeve_count(rebalance, hold_days))
     round_trip_cost = _round_trip_cost_return(
         transaction_cost_bps=transaction_cost_bps,
         slippage_bps=slippage_bps,
         market_impact_bps=market_impact_bps,
     )
 
-    for as_of_ymd in rebalance_dates:
+    for rebalance_index, as_of_ymd in enumerate(rebalance_dates):
         active_target_by_code = _active_target_by_code(target_by_code, memberships, as_of_ymd)
         if len(active_target_by_code) < top_n:
             warnings.append(
@@ -241,7 +243,7 @@ def run_leader_backtest(
 
         if risk_off_reason:
             warnings.append(f"{as_of_ymd}: {risk_off_reason}")
-            benchmark_equity *= 1.0 + benchmark_net_return
+            benchmark_equity = benchmark_sleeves.add(rebalance_index, benchmark_net_return)
             period_rows.append(
                 {
                     "as_of_date": _fmt_ymd(as_of_ymd),
@@ -289,8 +291,8 @@ def run_leader_backtest(
         selected_net_return = selected_return - round_trip_cost
         portfolio_exit_date = _latest_exit_date(selected)
 
-        equity *= 1.0 + selected_net_return
-        benchmark_equity *= 1.0 + benchmark_net_return
+        equity = strategy_sleeves.add(rebalance_index, selected_net_return)
+        benchmark_equity = benchmark_sleeves.add(rebalance_index, benchmark_net_return)
 
         period_rows.append(
             {
@@ -390,6 +392,7 @@ def run_leader_backtest(
             "rebalance": rebalance,
             "rebalance_count": len(period_rows),
             "hold_days": hold_days,
+            "capital_sleeves": sleeve_count(rebalance, hold_days),
         },
         "strategy": {
             "name": "ai_theme_leader_momentum_v1",
@@ -883,7 +886,9 @@ def _simulate_exit(
 PRICE_BASIS_BREAK_RETURN = 0.305  # beyond the KRX +/-30% daily limit
 # Bump when fills, exits, eligibility or point-in-time rules change: results written by
 # an older engine must not be resumed as if they were current (proof_validation).
-EXECUTION_MODEL_VERSION = "2026-09-29:prior-day-evidence:halts-kept:gap-fills:open-take-profit"
+# overlap-sleeves (2026-10-09): holdings that outlast the rebalance interval share capital
+# through equal sleeves instead of compounding every overlapping cohort on full capital.
+EXECUTION_MODEL_VERSION = "2026-10-09:prior-day-evidence:halts-kept:gap-fills:open-take-profit:overlap-sleeves"
 SAME_DAY_OHLC_POLICY = "take_profit_at_open_beyond_target_else_stop_or_trailing_stop_before_take_profit"
 
 

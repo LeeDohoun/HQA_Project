@@ -1,0 +1,80 @@
+"""Holdings that outlast the rebalance interval share capital through equal sleeves."""
+from __future__ import annotations
+
+import json
+import math
+from pathlib import Path
+
+import pytest
+
+from backtesting.metrics import SleevedEquity, sleeve_count
+
+
+@pytest.mark.parametrize("rebalance,hold_days,expected", [
+    ("W", 5, 1), ("weekly", 20, 4), ("M", 20, 1), ("M", 60, 3), ("D", 5, 5), ("W", 10, 2),
+    ("monthly", 60, 3),   # the date selection treats any other label as month-end
+])
+def test_sleeves_cover_every_rebalance_a_holding_spans(rebalance, hold_days, expected):
+    assert sleeve_count(rebalance, hold_days) == expected
+
+
+def test_one_sleeve_is_plain_compounding_and_overlapping_cohorts_share_capital():
+    single, four = SleevedEquity(1), SleevedEquity(4)
+    for index in range(4):
+        single.add(index, 0.10)
+        four.add(index, 0.10)
+    assert single.equity == pytest.approx(1.1 ** 4)
+    # Four overlapping cohorts each earned 10% on a quarter of the capital: 10% in total.
+    assert four.equity == pytest.approx(1.10)
+    with pytest.raises(ValueError):
+        SleevedEquity(0)
+
+
+def _write_jsonl(path: Path, rows):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows), encoding="utf-8")
+
+
+def _run(tmp_path, hold_days):
+    pd = pytest.importorskip("pandas")
+    from backtesting.leader_backtest import run_leader_backtest
+
+    data = tmp_path / f"h{hold_days}"
+    _write_jsonl(data / "raw" / "theme_targets" / "ai.jsonl", [
+        {"stock_name": name, "stock_code": code} for name, code in (("Alpha", "000001"), ("Beta", "000002"), ("Gamma", "000003"))])
+    rows = []
+    for i, day in enumerate(pd.bdate_range("2025-01-01", periods=120)):
+        for name, code, slope in (("Alpha", "000001", 2.0), ("Beta", "000002", 0.4), ("Gamma", "000003", -0.2)):
+            close = 100 + i * slope
+            rows.append({"source_type": "chart", "stock_name": name, "stock_code": code,
+                         "timestamp": day.strftime("%Y-%m-%dT00:00:00"), "open": close - 1, "high": close + 2,
+                         "low": close - 2, "close": close, "volume": 1000 + i})
+    _write_jsonl(data / "market_data" / "ai" / "chart.jsonl", rows)
+    return run_leader_backtest(data_dir=data, theme="AI", theme_key="ai", from_date="20250301", to_date="20250530",
+                               rebalance="W", top_n=1, hold_days=hold_days, min_history_days=20,
+                               output_dir=data / "results", task_id=f"bt-overlap-h{hold_days}")
+
+
+def _compounded(periods, sleeves):
+    values = [1.0] * sleeves
+    for index, period in enumerate(periods):
+        values[index % sleeves] *= 1 + period["portfolio_return_pct"] / 100
+    return sum(values) / sleeves
+
+
+def test_weekly_rebalancing_with_20_day_holds_no_longer_compounds_every_overlapping_cohort(tmp_path):
+    result = _run(tmp_path, 20)
+    periods = result["periods"]
+    assert result["period"]["capital_sleeves"] == 4 and len(periods) >= 8
+    final = result["equity_curve"][-1]["equity"]
+    assert final == pytest.approx(_compounded(periods, 4), rel=1e-3)   # periods keep 2-decimal percents
+    # The old engine compounded each overlapping 20-day cohort on the full capital.
+    assert final < _compounded(periods, 1)
+    assert result["metrics"]["total_return_pct"] == pytest.approx((final - 1) * 100, abs=0.01)
+
+
+def test_non_overlapping_schedules_keep_plain_compounding(tmp_path):
+    result = _run(tmp_path, 5)
+    assert result["period"]["capital_sleeves"] == 1
+    assert result["equity_curve"][-1]["equity"] == pytest.approx(_compounded(result["periods"], 1), rel=1e-3)
+    assert math.isfinite(result["metrics"]["mdd_pct"])
