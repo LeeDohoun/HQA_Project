@@ -127,6 +127,16 @@ an unentered plan or exits managed holdings. An explicit held HOLD plan adopts o
 updates protection without buying again. Backend account snapshots supply the
 authoritative 20% concentration limit and entry eligibility.
 
+A reduction runs once for the same content, across reissued plan versions: a partial
+fill, an order still working and a broker refusal count as done. One that sold
+nothing because its limit order expired or was cancelled unfilled, was never sent, or
+was confirmed not submitted by an operator may run again. A protective trigger
+cancels a still-working entry BUY. A working SELL is kept when it belongs to the same
+trigger (the monitor re-sends a condition that stays true) or when the new trigger is
+a reduction; otherwise, such as a partial reduction or another exit group's order the
+price has left, it is cancelled and the exit follows once the cancellation is
+confirmed.
+
 Entry validity lasts at most 15 minutes from analysis. Existing positions remain
 managed after that time. Duplicate and stale plan/trigger requests must not change
 newer protection. Entry-only loss and price-drift gates do not block protective sells.
@@ -182,15 +192,19 @@ pending KRX notice, or a calendar past its review horizon) protective triggers s
 go out between 09:00 and 16:30 KST and the backend's own session check decides.
 Outside the session the loop makes no backend or KIS calls; `--once` still evaluates
 and reports, sending nothing. Protective triggers go out as soon as they are
-evaluated, before any entry. A rejection that the same plan version and status
-cannot overcome (consumed entry or reduction, stale version, wrong plan state) is
-not re-sent until the plan changes, and an accepted trigger rests 60 s while its
-order works. Each poll report lists `session`, `deferred`, `quiet`, `rejections`
+evaluated, before any entry. Within a plan, price exits and invalidations are
+evaluated first, then a due planned exit, then reductions. A rejection that the same
+plan version and status cannot overcome (consumed entry or reduction, stale version,
+wrong plan state) is not re-sent until the plan changes; the monitor passes over that
+group and sends the plan's next matching one. A refused planned exit is retried after
+60 s, and an accepted trigger rests 60 s while its order works, holding back the
+plan's other groups so they do not cancel that order. Each poll report lists `session`, `deferred`, `quiet`, `rejections`
 (refused entries are trading decisions, not monitoring failures) and `settled`.
 
 The backend gates orders by its own calendar: weekdays 09:00-15:30 KST minus
 `HQA_KRX_CLOSED_DATES`, whose default lists the Python calendar's weekday closures
-through its review horizon (a test keeps them equal), with official special sessions
+through its review horizon (a test keeps them equal; unset or blank keeps the default,
+a nonblank value replaces it), with official special sessions
 in `HQA_KRX_SPECIAL_SESSIONS` (`YYYY-MM-DD@HH:MM-HH:MM`). When KRX publishes a
 special-session notice, add it to both: `SPECIAL_CLOSES` in the Python calendar (open,
 close, publication time and source URLs) and `HQA_KRX_SPECIAL_SESSIONS` for the
