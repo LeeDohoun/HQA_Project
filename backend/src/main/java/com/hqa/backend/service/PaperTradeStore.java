@@ -224,13 +224,15 @@ public class PaperTradeStore {
                 fingerprint = TradeConditions.fingerprint(group);
                 String marker = ":REDUCE:" + groupId + ":" + fingerprint + ":";
                 if (history.stream().anyMatch(item -> item.getTriggerKey() != null && item.getTriggerKey().contains(marker)
-                        && !("REJECTED".equals(item.getStatus()) && TRANSIENT_REJECTIONS.contains(item.getRejectReason())))) {
+                        && reductionSpent(item))) {
                     throw new IllegalStateException("TRIGGER_ALREADY_CONSUMED");
                 }
             }
         }
-        boolean consumed = previous.stream().anyMatch(item -> !("REJECTED".equals(item.getStatus())
-                && TRANSIENT_REJECTIONS.contains(item.getRejectReason())));
+        boolean consumed = type == TradeConditions.TriggerType.REDUCE
+                ? previous.stream().anyMatch(PaperTradeStore::reductionSpent)
+                : previous.stream().anyMatch(item -> !("REJECTED".equals(item.getStatus())
+                        && TRANSIENT_REJECTIONS.contains(item.getRejectReason())));
         if (consumed && (buy || type == TradeConditions.TriggerType.REDUCE)) {
             throw new IllegalStateException("TRIGGER_ALREADY_CONSUMED");
         }
@@ -450,6 +452,20 @@ public class PaperTradeStore {
         execution.setRejectReason("OPERATOR_CONFIRMED_NOT_SUBMITTED");
         execution.setKisResponse(operatorRecord(execution, "CONFIRMED_NOT_SUBMITTED", note, now));
         return releaseFromOperator(execution);
+    }
+
+    /**
+     * A reduction that sold nothing because its limit order expired or was cancelled unfilled, was
+     * never sent, or was confirmed by an operator as never submitted did not happen and may run
+     * again. One that sold, is still in flight, or was judged and refused by the broker counts as
+     * done: a partial fill is not reduced twice, and a refused order is not re-sent every poll.
+     */
+    private static boolean reductionSpent(TradeSignalExecution item) {
+        int filled = item.getFilledQuantity() == null ? 0 : item.getFilledQuantity();
+        if (filled > 0) return true;
+        if ("CANCELLED".equals(item.getStatus())) return false;
+        return !("REJECTED".equals(item.getStatus()) && (TRANSIENT_REJECTIONS.contains(item.getRejectReason())
+                || "OPERATOR_CONFIRMED_NOT_SUBMITTED".equals(item.getRejectReason())));
     }
 
     /** Only an UNKNOWN order without a broker ID waits for an operator; nothing else may be changed this way. */

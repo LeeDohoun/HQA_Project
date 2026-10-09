@@ -315,6 +315,39 @@ class PaperTradeStoreTest {
     }
 
     @Test
+    void aReductionThatSoldNothingMayRunAgainInTheSameAndLaterVersions() {
+        TradeSignal signal = store.save(reduceHold(1, 0.5, now.plusDays(3)), account(10), now);
+        when(signals.findByUserIdAndStatusIn("u1", PaperTradeStore.ACTIVE)).thenReturn(List.of(signal));
+        var expired = store.claim(signal.getId(), 1, TradeConditions.TriggerType.REDUCE, "trim", account(10), 105, 0, 0, 0.5, now);
+        store.acknowledge(expired.getId(), Map.of("success", true, "response", Map.of("rt_cd", "0", "output", Map.of("ODNO", "o1"))));
+        store.observeFill(expired.getId(), 0, 0, 0, true, "org", now);          // the limit order expired unfilled
+        assertThat(expired.getStatus()).isEqualTo("CANCELLED");
+        var retry = store.claim(signal.getId(), 1, TradeConditions.TriggerType.REDUCE, "trim", account(10), 100, 0, 0, 0.5, now);
+        assertThat(retry.getSubmittedQuantity()).isEqualTo(5);                   // the same version may try again
+        store.acknowledge(retry.getId(), Map.of("success", false, "unknown", true, "error", "timeout"));
+        store.confirmNotSubmitted(retry.getId(), "not in the KIS order history", now);   // it never reached KIS
+        store.save(reduceHold(2, 0.5, now.plusDays(3)), account(10), now.plusSeconds(2));
+        var next = store.claim(signal.getId(), 2, TradeConditions.TriggerType.REDUCE, "trim", account(10),
+                100, 0, 0, 0.5, now.plusSeconds(2));
+        assertThat(next.getSubmittedQuantity()).isEqualTo(5);                    // and so may the next version
+        store.acknowledge(next.getId(), Map.of("success", false, "response", Map.of("rt_cd", "1", "msg_cd", "APBK0013")));
+        assertThatThrownBy(() -> store.claim(signal.getId(), 2, TradeConditions.TriggerType.REDUCE, "trim", account(10),
+                100, 0, 0, 0.5, now.plusSeconds(2))).hasMessage("TRIGGER_ALREADY_CONSUMED");   // a broker refusal is final
+    }
+
+    @Test
+    void aPartlyFilledReductionCountsAsDoneSoTheRemainderIsNotReducedTwice() {
+        TradeSignal signal = store.save(reduceHold(1, 0.5, now.plusDays(3)), account(10), now);
+        when(signals.findByUserIdAndStatusIn("u1", PaperTradeStore.ACTIVE)).thenReturn(List.of(signal));
+        var first = store.claim(signal.getId(), 1, TradeConditions.TriggerType.REDUCE, "trim", account(10), 100, 0, 0, 0.5, now);
+        store.acknowledge(first.getId(), Map.of("success", true, "response", Map.of("rt_cd", "0", "output", Map.of("ODNO", "o1"))));
+        store.observeFill(first.getId(), 2, 100, 0, true, "org", now);          // 2 of 5 sold, then cancelled
+        store.save(reduceHold(2, 0.5, now.plusDays(3)), account(8), now.plusSeconds(2));
+        assertThatThrownBy(() -> store.claim(signal.getId(), 2, TradeConditions.TriggerType.REDUCE, "trim", account(8),
+                100, 0, 0, 0.5, now.plusSeconds(2))).hasMessage("TRIGGER_ALREADY_CONSUMED");
+    }
+
+    @Test
     void aHeldPositionsPlannedExitNeverMovesLater() {
         TradeSignal signal = store.save(reduceHold(1, 0.5, now.plusDays(3)), account(10), now);
         when(signals.findByUserIdAndStatusIn("u1", PaperTradeStore.ACTIVE)).thenReturn(List.of(signal));
