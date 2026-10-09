@@ -1196,3 +1196,21 @@ def test_the_risk_manager_budget_follows_a_local_context_window():
     reserve = 128_000 - engine._risk_manager_budget()
     engine.models["risk_manager"].num_ctx = 32_768
     assert engine._risk_manager_budget() == 32_768 - 12_000 - reserve
+
+
+def test_the_cycle_summary_names_refused_plans_and_unreviewed_stocks():
+    class Backend:
+        def fetch_targets(self):
+            return [{"userId": "a"}]
+
+    class Engine:
+        def run_cycle(self, targets):
+            return {"accounts": {"a": {"status": "completed", "plans": [], "selected_count": 0,
+                    "rejected_plans": [{"stock_code": "000002", "action": "BUY", "reason": "BUY blocked: no live KIS quote"}],
+                    "omitted_candidates": [{"stock_code": "000003", "reason": "risk_manager_input_budget"}]}}}
+
+    summary = AnalysisScheduler(backend_client=Backend(), analysis_service=Engine(),
+                                submitter=lambda **kwargs: {"submitted": 0, "failed": 0}).run_once()
+    target = summary["targets"][0]
+    assert target["rejected_plans"] == ["000002:BUY blocked: no live KIS quote"]
+    assert target["omitted_candidates"] == ["000003:risk_manager_input_budget"]

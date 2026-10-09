@@ -143,6 +143,11 @@ class AnalysisScheduler:
                     # The submitter reports per-plan reasons in failures/skipped_plans, not error.
                     "error": submit_result.get("error") or ("; ".join(submit_result.get("failures") or [])[:1000] or None),
                     "skipped_plans": list(submit_result.get("skipped_plans") or []),
+                    # Plans the account review refused and stocks it could not review (failed
+                    # quote, input budget), with reasons, so they show in the cycle log.
+                    "rejected_plans": [f"{row.get('stock_code')}:{row.get('reason')}" for row in result.get("rejected_plans") or []],
+                    "omitted_candidates": [f"{row.get('stock_code')}:{row.get('reason')}"
+                                           for row in result.get("omitted_candidates") or []],
                 }
             )
 
