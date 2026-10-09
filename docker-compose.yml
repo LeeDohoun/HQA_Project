@@ -9,6 +9,24 @@
 #   - postgres: 로컬 개발 DB
 # ==========================================
 
+# The backend alone talks to KIS. Whatever .env holds, the AI-side containers below get no
+# broker credentials and not HQA_KIS_ENC_KEY, which decrypts the ones stored in the backend DB
+# (the AI service reads news and disclosures with an LLM). Python KIS tools run outside Compose
+# keep using .env; inside it, /chat answers live-quote questions as not configured.
+x-no-broker-secrets: &no-broker-secrets
+  KIS_APP_KEY: ""
+  KIS_APP_SECRET: ""
+  KIS_ACCOUNT_NO: ""
+  KIS_API_KEY: ""
+  KIS_API_SECRET: ""
+  KIS_PAPER_APP_KEY: ""
+  KIS_PAPER_APP_SECRET: ""
+  KIS_PAPER_ACCOUNT_NO: ""
+  KIS_VTS_APP_KEY: ""
+  KIS_VTS_APP_SECRET: ""
+  KIS_VTS_ACCOUNT_NO: ""
+  HQA_KIS_ENC_KEY: ""
+
 services:
   # ── Spring Boot Backend ──
   backend:
@@ -75,14 +93,15 @@ services:
     env_file:
       - .env
     environment:
-      - ENV=production
-      - PORT=8001
-      - REDIS_URL=redis://redis:6379/0
-      - LLM_PROVIDER=openai
-      - HQA_DATA_DIR=/app/data
-      - HQA_LLM_BUDGET_PATH=/app/data/llm_budget.sqlite3
-      - HQA_PAPER_AUDIT_PATH=/app/data/paper_audit.sqlite3
-      - BACKEND_INTERNAL_BASE_URL=http://backend:8000
+      <<: *no-broker-secrets
+      ENV: production
+      PORT: "8001"
+      REDIS_URL: redis://redis:6379/0
+      LLM_PROVIDER: openai
+      HQA_DATA_DIR: /app/data
+      HQA_LLM_BUDGET_PATH: /app/data/llm_budget.sqlite3
+      HQA_PAPER_AUDIT_PATH: /app/data/paper_audit.sqlite3
+      BACKEND_INTERNAL_BASE_URL: http://backend:8000
     depends_on:
       redis:
         condition: service_healthy
@@ -101,7 +120,8 @@ services:
     env_file:
       - .env
     environment:
-      - AI_SERVER_URL=http://ai:8001
+      <<: *no-broker-secrets
+      AI_SERVER_URL: http://ai:8001
     command: ["python", "-m", "src.runner.analysis_scheduler", "--forever"]
     healthcheck:
       disable: true
@@ -122,9 +142,10 @@ services:
     env_file:
       - .env
     environment:
-      - BACKEND_INTERNAL_BASE_URL=http://backend:8000
-      - HQA_DATA_DIR=/app/data
-      - HQA_PAPER_AUDIT_PATH=/app/data/paper_audit.sqlite3
+      <<: *no-broker-secrets
+      BACKEND_INTERNAL_BASE_URL: http://backend:8000
+      HQA_DATA_DIR: /app/data
+      HQA_PAPER_AUDIT_PATH: /app/data/paper_audit.sqlite3
     command: ["python", "-m", "src.runner.signal_monitor"]
     volumes:
       - hqa-data:/app/data
