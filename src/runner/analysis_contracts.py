@@ -166,7 +166,9 @@ class AccountDecision(Contract):
                 code = item.get("stock_code") if isinstance(item, dict) else None
                 invalid.append({"stock_code": code if isinstance(code, str) else None,
                                 "action": item.get("action") if isinstance(item, dict) else None,
-                                "reason": "plan contract: " + "; ".join(error["msg"] for error in exc.errors()[:3]),
+                                "reason": "plan contract: " + "; ".join(
+                                    (".".join(map(str, error["loc"])) + ": " if error["loc"] else "") + error["msg"]
+                                    for error in exc.errors()[:3]),
                                 "plan": item})
         codes = [plan.stock_code for plan in valid] + [plan["stock_code"] for plan in invalid]
         if None in codes or len(set(codes)) != len(codes):

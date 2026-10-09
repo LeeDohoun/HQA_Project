@@ -1214,3 +1214,12 @@ def test_the_cycle_summary_names_refused_plans_and_unreviewed_stocks():
     target = summary["targets"][0]
     assert target["rejected_plans"] == ["000002:BUY blocked: no live KIS quote"]
     assert target["omitted_candidates"] == ["000003:risk_manager_input_budget"]
+
+
+def test_a_set_aside_plan_names_the_fields_it_broke():
+    from src.runner.analysis_contracts import AccountDecision
+
+    hold = dict(buy_plan(), stock_code="000002", action="HOLD", position_size_pct=0.0, entry_price=0.0)
+    decision = AccountDecision.model_validate({"plans": [buy_plan(), hold], "reasoning": "r"})
+    assert [plan.stock_code for plan in decision.plans] == ["000001"]
+    assert decision.invalid_plans[0]["reason"] == "plan contract: entry_price: Input should be greater than 0"
