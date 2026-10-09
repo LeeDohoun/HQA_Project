@@ -239,7 +239,6 @@ class SignalMonitor:
         # Keyed by (signal, plan version, plan status, trigger type, group).
         self._settled: Dict[Tuple[Any, ...], str] = {}
         self._accepted_at: Dict[Tuple[Any, ...], datetime] = {}
-        self._refused_exit_at: Dict[Tuple[Any, ...], datetime] = {}
 
     def poll_once(self) -> int:
         started = time.monotonic()
@@ -301,9 +300,6 @@ class SignalMonitor:
                 plan_key = (signal_id, signal.get("planVersion"), str(signal.get("status") or ""))
 
                 def passed_over(trigger_type: str, group_id: str, plan_key=plan_key, signal_id=signal_id) -> bool:
-                    refused = self._refused_exit_at.get((*plan_key, trigger_type, group_id))
-                    if refused is not None and (now - refused).total_seconds() < ACCEPTED_TRIGGER_QUIET_SECONDS:
-                        return True   # a refused planned exit rests; the plan's other groups run
                     reason = self._settled.get((*plan_key, trigger_type, group_id))
                     if reason is not None:
                         settled.append({"signal_id": signal_id, "trigger_type": trigger_type,
@@ -370,13 +366,12 @@ class SignalMonitor:
         try:
             outcome = self.backend_client.trigger_signal(signal_id, trigger)
         except TriggerRejected as exc:
-            if trigger["groupId"] == "planned-exit":
-                # A backend whose clock is a moment behind refuses a just-due planned exit as an
-                # unknown group, and one cancelling another order of the plan refuses it until
-                # the cancellation is confirmed: it rests like an accepted trigger and is
-                # retried, while the plan's price exits keep being evaluated.
-                self._refused_exit_at[key] = self.clock()
-            elif exc.reason in SETTLED_REJECTIONS or exc.reason in SETTLED_BY_TYPE.get(trigger_type, ()):
+            # A due planned exit is never settled: a backend whose clock is a moment behind
+            # refuses it as an unknown group, and one cancelling another order of the plan
+            # refuses it until the cancellation is confirmed. Like a stop, it is sent again on
+            # the next poll.
+            if trigger["groupId"] != "planned-exit" and (
+                    exc.reason in SETTLED_REJECTIONS or exc.reason in SETTLED_BY_TYPE.get(trigger_type, ())):
                 self._settled[key] = exc.reason
             rejections.append({"signal_id": signal_id, "trigger_type": trigger_type,
                                "group_id": trigger["groupId"], "reason": exc.reason})
@@ -400,8 +395,6 @@ class SignalMonitor:
         self._settled = {key: reason for key, reason in self._settled.items() if key[:2] in active}
         self._accepted_at = {key: at for key, at in self._accepted_at.items() if key[:2] in active
                              and (now - at).total_seconds() < ACCEPTED_TRIGGER_QUIET_SECONDS}
-        self._refused_exit_at = {key: at for key, at in self._refused_exit_at.items() if key[:2] in active
-                                 and (now - at).total_seconds() < ACCEPTED_TRIGGER_QUIET_SECONDS}
 
     def run_forever(self) -> None:
         consecutive_failures = 0
@@ -469,17 +462,14 @@ class SignalMonitor:
             return _first_match("ENTRY", payload.get("entry_conditions"), snapshot, version, skip=skip)
         if status in {"OPEN", "WAITING_EXIT", "PARTIALLY_FILLED"}:
             # Full exits by price, then the time exit, then partial reductions: a refused planned
-            # exit must never stand in front of a stop that the price has already crossed. While a
-            # due planned exit waits to be retried, the plan's reductions wait with it: the backend
-            # cancels a working reduction for the full exit, and a reduction sent in the meantime
-            # would be cancelled again on every retry.
+            # exit must never stand in front of a stop that the price has already crossed, and
+            # while a planned exit is due the plan's reductions wait (the backend cancels a
+            # working reduction for the full exit, so one sent meanwhile would be cancelled again).
             missing_inputs: List[str] = []
             for trigger_type in ("EXIT", "INVALIDATION", "PLANNED", "REDUCE"):
                 if trigger_type == "PLANNED":
                     planned_exit = signal.get("plannedExitAt")
                     if version == 2 and planned_exit and self.clock() >= _timestamp(planned_exit):
-                        if skip and skip("EXIT", "planned-exit"):
-                            break
                         return "EXIT", {"id": "planned-exit"}
                     continue
                 match = _first_match(trigger_type, payload.get(trigger_type.lower() + "_conditions"),

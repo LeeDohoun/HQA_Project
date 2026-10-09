@@ -782,7 +782,7 @@ def test_a_due_planned_exit_never_stands_in_front_of_a_crossed_stop():
     assert backend.triggers[0][1]["groupId"] == "stop"
 
 
-def test_a_refused_planned_exit_rests_with_the_plans_reductions_then_retries():
+def test_a_refused_planned_exit_is_sent_again_next_poll_while_the_reductions_wait():
     clock = [NOW]
     plan = _tiered_plan(plannedExitAt=(NOW - timedelta(seconds=1)).isoformat())
     backend = ScriptedBackend([plan], [TriggerRejected("ORDER_RECONCILIATION_REQUIRED")])
@@ -790,14 +790,24 @@ def test_a_refused_planned_exit_rests_with_the_plans_reductions_then_retries():
                                                 "snapshot_at": clock[0].isoformat()}, clock=lambda: clock[0])
     monitor.poll_once()                                 # refused while the backend cancels a working reduction
     clock[0] = NOW + timedelta(seconds=20)
-    monitor.poll_once()                                 # it rests, and the take-profit tiers wait with it
-    clock[0] = NOW + timedelta(seconds=61)
-    monitor.poll_once()                                 # retried after the rest
+    monitor.poll_once()                                 # sent again; the take-profit tiers wait while it is due
     assert [trigger["groupId"] for _, trigger in backend.triggers] == ["planned-exit", "planned-exit"]
     assert not monitor.last_report["settled"]
 
 
-def test_a_crossed_stop_goes_out_while_a_refused_planned_exit_rests():
+def test_a_planned_exit_refused_as_an_unknown_group_is_not_settled():
+    clock = [NOW]
+    plan = _tiered_plan(plannedExitAt=(NOW - timedelta(seconds=1)).isoformat())
+    backend = ScriptedBackend([plan], [TriggerRejected("UNKNOWN_CONDITION_GROUP")])   # backend clock behind
+    monitor = SignalMonitor(backend, lambda _: {"current_price": 100, "pnl_rate": 0.0, "holding_quantity": 10,
+                                                "snapshot_at": clock[0].isoformat()}, clock=lambda: clock[0])
+    monitor.poll_once()
+    clock[0] = NOW + timedelta(seconds=20)
+    monitor.poll_once()
+    assert [trigger["groupId"] for _, trigger in backend.triggers] == ["planned-exit", "planned-exit"]
+
+
+def test_a_crossed_stop_goes_out_ahead_of_a_refused_planned_exit():
     clock, price = [NOW], [112.0]
     plan = _tiered_plan(plannedExitAt=(NOW - timedelta(seconds=1)).isoformat())
     backend = ScriptedBackend([plan], [TriggerRejected("UNKNOWN_CONDITION_GROUP")])
