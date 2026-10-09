@@ -1126,3 +1126,73 @@ def test_an_overlapping_cycle_request_is_coalesced_not_run_twice():
         assert first.result(5)["processed"] == 1
     assert SlowEngine.runs == 1
     assert server._analysis_scheduler.cache_info().maxsize == 1   # one scheduler, so one lock, per server
+
+
+def _risk_payload(calls):
+    return next(payload for role, payload in reversed(calls) if role == "risk_manager")
+
+
+def _set_risk_budget(engine, payload_tokens):
+    """Give the RiskManager an input limit whose payload budget is exactly payload_tokens."""
+    model = engine.models["risk_manager"]
+    model.hqa_input_limit = 128_000
+    model.hqa_input_limit = payload_tokens + (128_000 - engine._risk_manager_budget())
+
+
+def test_risk_manager_rows_beyond_the_input_budget_drop_the_lowest_ranked_new_stocks_first():
+    from src.runner.shared_analysis import _payload_tokens
+
+    engine, calls = service()
+    engine.run_cycle([{"userId": "a"}])
+    full = _risk_payload(calls)
+    assert [row["stock_code"] for row in full["candidates"]] == ["000025", "000024", "000023", "000022", "000021", "000001"]
+    target = {**full, "candidates": [row for row in full["candidates"] if row["stock_code"] not in {"000021", "000022"}]}
+    _set_risk_budget(engine, _payload_tokens(target))
+    account = engine.run_cycle([{"userId": "a"}])["accounts"]["a"]
+    assert account["status"] == "completed"
+    assert [row["stock_code"] for row in _risk_payload(calls)["candidates"]] == ["000025", "000024", "000023", "000001"]
+    assert account["omitted_candidates"] == [{"stock_code": "000021", "reason": "risk_manager_input_budget"},
+                                             {"stock_code": "000022", "reason": "risk_manager_input_budget"}]
+    assert "000001" in {plan["stock_code"] for plan in account["plans"]}
+    assert account["risk_manager_input"]["estimated_tokens"] <= account["risk_manager_input"]["budget"]
+
+
+def test_a_holding_too_large_for_the_budget_is_shown_with_fewer_events_never_left_out():
+    from src.runner.shared_analysis import _payload_tokens
+
+    engine, calls = service(data=EventData())
+    engine.run_cycle([{"userId": "a"}])
+    full = _risk_payload(calls)
+    [row] = full["candidates"]
+    assert row["stock_code"] == "000001" and len(row["event_reactions"]) == 1
+    _set_risk_budget(engine, _payload_tokens(full) - 1)
+    account = engine.run_cycle([{"userId": "a"}])["accounts"]["a"]
+    assert account["status"] == "completed"
+    [shown] = _risk_payload(calls)["candidates"]
+    assert shown["event_reactions"] == [] and shown["omitted_event_count"] == row["omitted_event_count"] + 1
+    assert row["event_reactions"][0]["event_id"] not in shown["source_ids"]   # sources match what is shown
+    _set_risk_budget(engine, 10)
+    account = engine.run_cycle([{"userId": "a"}])["accounts"]["a"]
+    assert account["status"] == "failed" and account["error"].startswith("risk_manager_input_budget_exceeded:")
+
+
+def test_an_account_without_holdings_whose_new_stocks_do_not_fit_reports_them_instead_of_calling():
+    class NoHoldings(Accounts):
+        def fetch_accounts(self, ids):
+            return {user: snapshot(user) for user in ids}
+
+    engine, calls = service(accounts=NoHoldings())
+    _set_risk_budget(engine, 10)
+    account = engine.run_cycle([{"userId": "a"}])["accounts"]["a"]
+    assert account["status"] == "completed" and account["plans"] == []
+    assert account["reason"] == "risk_manager_input_budget"
+    assert {row["stock_code"] for row in account["omitted_candidates"]} == {"000021", "000022", "000023", "000024", "000025"}
+    assert not any(role == "risk_manager" for role, _ in calls)
+
+
+def test_the_risk_manager_budget_follows_a_local_context_window():
+    engine, _ = service()
+    engine.models["risk_manager"].hqa_input_limit = 128_000
+    reserve = 128_000 - engine._risk_manager_budget()
+    engine.models["risk_manager"].num_ctx = 32_768
+    assert engine._risk_manager_budget() == 32_768 - 12_000 - reserve

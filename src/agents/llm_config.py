@@ -46,7 +46,10 @@ _ROLE_LIMITS = {
     "analyst": RoleLimits("low", 12_000, 1_200),
     "quant": RoleLimits("low", 12_000, 1_200),
     "chartist": RoleLimits("low", 12_000, 1_200),
-    "risk_manager": RoleLimits("medium", 32_000, 12_000),
+    # One RiskManager call carries every holding (up to the 10 monitored symbols) and up to
+    # five new stocks, about 4-5k tokens a row; 32k fitted only about six rows. Spend follows
+    # the counted input, not this ceiling.
+    "risk_manager": RoleLimits("medium", 128_000, 12_000),
     "summary": RoleLimits("none", 16_000, 800),
     "instruct": RoleLimits("low", 12_000, 1_200),
     "thinking": RoleLimits("medium", 32_000, 12_000),

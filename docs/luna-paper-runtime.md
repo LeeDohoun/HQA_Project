@@ -43,6 +43,13 @@ project quota; conservative defaults can reject or delay a full cold-start burst
 Experts use low reasoning, summary uses none, and RiskManager uses medium. Output
 ceilings include reasoning: experts 1,200, summary 800, RiskManager 12,000 tokens.
 Truncated structured output fails validation; holdings are never silently omitted.
+Input limits are 12,000 tokens for experts and 128,000 for the RiskManager
+(`HQA_LLM_<ROLE>_MAX_INPUT_TOKENS`); spend follows the counted input, not the limit.
+One RiskManager call carries every holding and up to five new stocks, about 4-5k tokens
+a row. If the rows still exceed the limit by the conservative offline estimate, the
+lowest-ranked new stocks are left out first (`omitted_candidates` with
+`risk_manager_input_budget`); a holding is never left out, only shown with fewer of its
+events. Each account result reports `risk_manager_input` (estimate and budget).
 
 The budget uses UTC calendar months: ordinary analysis stops at the $90 operating
 target; holding-priority work can use the remaining amount up to $100. Reservations

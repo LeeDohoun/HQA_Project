@@ -398,3 +398,17 @@ def test_max_event_benchmark_prompts_fit_role_input_budget_offline(role, full_be
     assert estimated_tokens < limit, f"{role} offline estimate {estimated_tokens} exceeds {limit}"
     if role == "risk_manager":
         assert limit - estimated_tokens >= 5000
+
+
+def test_the_designed_largest_account_fits_the_risk_manager_budget_offline(full_benchmark_prompts):
+    """10 holdings (the monitored-symbol capacity) plus 5 new stocks, each row as large as the
+    maximum-event benchmark rows, must fit by the conservative offline estimate, so the
+    budget step never drops a stock from an account the design allows."""
+    from src.runner.shared_analysis import _payload_tokens
+
+    payload = json.loads(full_benchmark_prompts["risk_manager"][-1][1])
+    rows = payload["candidates"]
+    largest = max(rows, key=lambda row: _payload_tokens({"candidates": [row]}))
+    designed = {**payload, "candidates": [{**largest, "stock_code": f"{index:06d}"} for index in range(15)]}
+    engine, _ = service(FullBenchmarkData(), ScopedAccounts())
+    assert _payload_tokens(designed) <= engine._risk_manager_budget()
