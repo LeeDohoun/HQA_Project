@@ -277,7 +277,10 @@ venv/bin/python -m backtesting paper-runtime --audit data/paper_audit.sqlite3 --
 isolation against PostgreSQL. Set `HQA_TEST_DATABASE_URL` (a JDBC URL),
 `HQA_TEST_DATABASE_USERNAME` and `HQA_TEST_DATABASE_PASSWORD` to an isolated test
 database when running Maven. Flyway runs before these tests; test rows roll back.
-Without that URL, the two PostgreSQL tests are skipped.
+`PaperTradeStorePostgresTest` uses the same settings to check that the account lock
+serializes concurrent plan saves and trigger claims: one sell order per plan, no cash
+reserved twice, one active plan per stock. Its calls commit like production, and it
+removes its rows afterwards. Without that URL, the six PostgreSQL tests are skipped.
 
 `PaperLifecycleSimulationTest` runs the real Python monitor and plan submitter
 (`scripts/paper_lifecycle_sim.py`) against the real order lifecycle and store, with

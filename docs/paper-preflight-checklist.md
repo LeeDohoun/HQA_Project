@@ -42,10 +42,16 @@
    hqa.paper-reconciliation-poll-ms=20000
    ```
 
-4. 백엔드 테스트를 돌립니다(JDK 17). PostgreSQL 연결 테스트 2개는 `HQA_TEST_DATABASE_URL`을 줄 때만 실행됩니다.
+4. 백엔드 테스트를 돌립니다(JDK 17). PostgreSQL 테스트 6개(분석 결과 기록 2개, 동시 게시·주문 4개)는 `HQA_TEST_DATABASE_URL`, `HQA_TEST_DATABASE_USERNAME`, `HQA_TEST_DATABASE_PASSWORD`를 줄 때만 실행됩니다. 운영 DB가 아닌 시험용 DB를 쓰세요. 동시성 테스트는 실제로 커밋한 뒤 자기 행을 지웁니다.
 
    ```bash
    mvn -f backend/pom.xml test
+   ```
+
+   로컬 PostgreSQL(예: Homebrew `postgresql@16`)의 시험용 DB로 돌리는 예입니다.
+
+   ```bash
+   HQA_TEST_DATABASE_URL=jdbc:postgresql://127.0.0.1:5432/hqa_test HQA_TEST_DATABASE_USERNAME=$USER HQA_TEST_DATABASE_PASSWORD= mvn -f backend/pom.xml test
    ```
 
 5. 모니터, 계획 게시, 주문 수명주기를 바꿨다면 종단 시뮬레이션도 돌립니다. 실제 Python 모니터와 게시 코드를 실제 백엔드 주문 로직(운영과 같은 JSON 설정, 메모리 저장소, 모의 KIS)에 붙여 손절·익절 단계·예정 청산·진입·만료·KIS 한도·계획 게시 시나리오 16개를 돌립니다. 키와 DB 없이 1분 안에 끝나고, 결과는 `backend/target/paper-lifecycle-sim.txt`에 남습니다.
