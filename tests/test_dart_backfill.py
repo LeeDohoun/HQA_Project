@@ -516,7 +516,10 @@ def test_provider_errors_stop_in_every_stage_without_marking_details_done(tmp_pa
     payloads = ([error] if where == "listing" else [page(1, [selected, row(2, title=selected["report_nm"])]), {"status": "013"},
         error if where == "structured" else f"<result><status>{status}</status><message>{KEY}</message></result>".encode()])
     summary, session = run(tmp_path, *payloads)
-    assert summary["status"] == "error" and f"status={status}" in summary["error"]
+    if status == "800":
+        assert summary["status"] == "provider_maintenance" and summary["reason"] == "provider_status_800"
+    else:
+        assert summary["status"] == "error" and f"status={status}" in summary["error"]
     assert len(session.calls) == summary["requests_made"] == (1 if where == "listing" else 3)
     assert quota(tmp_path)["2026-09-04"]["requests"] == summary["requests_made"]
     assert summary["documents_not_found"] == 0
@@ -915,3 +918,63 @@ def test_invalid_options_fail_before_requests_or_writes(tmp_path, changes):
     with pytest.raises(ValueError):
         run(tmp_path, **changes)
     assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("xml", [True, False])
+def test_maintenance_stops_details_without_item_completion_or_retries(tmp_path, xml):
+    items = [row(n, title="실적발표") for n in (1, 2)]
+    module.write_rows(archive(tmp_path), items)
+    maintenance = b"<result><status>800</status><message>maintenance</message></result>" if xml else {"status": "800", "message": KEY}
+    clock = FakeClock()
+    result, session = run(tmp_path, maintenance, stage="details", clock=clock, max_retries=3)
+    assert result["status"] == "provider_maintenance" and len(session.calls) == 1
+    assert result["details_saved"] == result["documents_not_found"] == result["bodies_unavailable"] == 0
+    assert result["known_pending_details"] == 2
+    assert state(tmp_path)["completed_detail_rcept_nos"] == []
+    assert not archive(tmp_path, "docs").exists()
+    assert quota(tmp_path)[START.date().isoformat()] == {"requests": 1, "provider_limited": False}
+    observed = json.loads((root(tmp_path) / "_provider_maintenance.json").read_text())["endpoints"]["document.xml"]
+    assert observed["first_seen_at"] == observed["last_seen_at"] == clock().isoformat()
+    clock.now += timedelta(days=1)
+    repeated, second = run(tmp_path, maintenance, stage="details", clock=clock)
+    assert repeated["known_pending_details"] == 2 and len(second.calls) == 1
+    updated = json.loads((root(tmp_path) / "_provider_maintenance.json").read_text())["endpoints"]["document.xml"]
+    assert updated["first_seen_at"] == observed["first_seen_at"] and updated["last_seen_at"] == clock().isoformat()
+    resumed, recovered = run(tmp_path, document(), document(), stage="details", clock=clock)
+    assert resumed["status"] == "ok" and resumed["details_saved"] == 2 and len(recovered.calls) == 2
+    assert not json.loads((root(tmp_path) / "_provider_maintenance.json").read_text())["endpoints"]["document.xml"]["active"]
+
+
+def test_structured_maintenance_does_not_complete_a_detail(tmp_path):
+    module.write_rows(archive(tmp_path), [row(1, title="주요사항보고서(전환사채권발행결정)")])
+    result, session = run(tmp_path, {"status": "800"}, stage="details")
+    assert result["status"] == "provider_maintenance" and len(session.calls) == 1
+    assert not session.calls[0][0].endswith("document.xml")
+    assert result["known_pending_details"] == 1 and state(tmp_path)["completed_detail_rcept_nos"] == []
+    assert not archive(tmp_path, "docs").exists()
+
+
+def test_backfill_cli_maintenance_exits_zero(tmp_path, monkeypatch, capsys):
+    module.write_rows(archive(tmp_path), [row(1, title="실적발표")])
+    session, clock = FakeSession(b"<result><status>800</status></result>"), FakeClock()
+    monkeypatch.setattr(cli, "load_project_env", lambda: None)
+    monkeypatch.setattr(cli, "os", SimpleNamespace(getenv=lambda key, default=None: KEY if key == "DART_API_KEY" else default))
+    monkeypatch.setattr(cli, "backfill", lambda *args, **kwargs: backfill(*args, **kwargs,
+        session=session, clock=clock, sleeper=clock.sleep))
+    monkeypatch.setattr("sys.argv", ["dart_backfill", "--from-date", DAY, "--to-date", DAY,
+        "--stage", "details", "--data-dir", str(tmp_path), "--execute"])
+    assert cli.main() is None
+    assert json.loads(capsys.readouterr().out)["status"] == "provider_maintenance"
+
+
+def test_successful_listing_does_not_clear_document_maintenance(tmp_path):
+    module.write_rows(archive(tmp_path), [row(1, title="실적발표")])
+    maintenance = '<result><status>800</status><message>시스템 점검으로 인한 서비스가 중지 중입니다</message></result>'.encode()
+    result, _ = run(tmp_path, maintenance, stage="details")
+    assert result["status"] == "provider_maintenance"
+    listed, _ = run(tmp_path, {"status": "013"}, {"status": "013"}, stage="list",
+                    from_date="20230104", to_date="20230104")
+    assert listed["status"] == "ok"
+    observed = json.loads((root(tmp_path) / "_provider_maintenance.json").read_text())
+    assert observed["endpoints"]["document.xml"]["active"]
+    assert state(tmp_path)["completed_detail_rcept_nos"] == []

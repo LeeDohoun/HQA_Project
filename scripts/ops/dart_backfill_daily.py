@@ -37,7 +37,7 @@ def daily_backfill(data_dir: str | Path, *, execute=False, api_key=None,
     steps = (("listing", "list", None), ("priority_details", "details", priority_categories),
              ("all_details", "details", None))
     for name, stage, categories in steps:
-        if summary["status"] in {"quota_reached", "error"}:
+        if summary["status"] in {"quota_reached", "provider_maintenance", "error"}:
             summary["steps"][name] = {"status": "not_run", "reason": summary["status"], "requests_made": 0}
             continue
         # Dry-run backfill prints its own plan; the ops entry point prints one combined summary.
@@ -48,7 +48,7 @@ def daily_backfill(data_dir: str | Path, *, execute=False, api_key=None,
         part.setdefault("requests_made", 0)
         summary["steps"][name] = part
         summary["requests_made"] += part.get("requests_made", 0)
-        if part["status"] in {"quota_reached", "error"}:
+        if part["status"] in {"quota_reached", "provider_maintenance", "error"}:
             summary["status"] = part["status"]
     return summary
 

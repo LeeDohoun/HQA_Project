@@ -381,3 +381,115 @@ def test_receipt_number_prefix_is_not_the_publication_date(tmp_path, short_range
     result, session = fetch(tmp_path, lambda url, params: zip_body() if url.endswith("document.xml") else {"status": "000", "list": [structured(row)]})
     assert result["status"] == "ok" and row["rcept_no"] in dart.structured_record(tmp_path, CORP)["rows"]
     assert session.calls[-1][1]["rcept_no"] == "20160531000001"
+
+
+@pytest.mark.parametrize("xml", [True, False])
+def test_document_maintenance_finishes_structured_stage_and_leaves_receipts_pending(tmp_path, short_range, xml):
+    rows = [item(), item(number=2, corp_code="00000002")]
+    listing_archive(tmp_path, *rows)
+    maintenance = b"<result><status>800</status><message>maintenance</message></result>" if xml else {"status": "800", "message": KEY}
+
+    def handler(url, params):
+        if url.endswith("document.xml"):
+            return maintenance
+        return {"status": "000", "list": [structured(row) for row in rows if row["corp_code"] == params["corp_code"]]}
+
+    result, session = fetch(tmp_path, handler)
+    assert result["status"] == "provider_maintenance"
+    assert result["stages"] == {
+        "structured": {"status": "ok", "requests_made": 2, "saved": 2},
+        "documents": {"status": "provider_maintenance", "requests_made": 1, "saved": 0}}
+    assert [url.rsplit("/", 1)[-1] for url, _ in session.calls] == ["tsstkAqDecsn.json"] * 2 + ["document.xml"]
+    assert all(dart.structured_record(tmp_path, row["corp_code"])["complete"] for row in rows)
+    assert all(dart.document_record(tmp_path, row["rcept_no"]) is None for row in rows)
+    assert result["original_documents_missing"] == 2
+    assert not (tmp_path / "disclosures/dart_full/_state.json").exists()
+    observed = json.loads((tmp_path / "disclosures/dart_full/_provider_maintenance.json").read_text())
+    assert observed["endpoints"]["document.xml"]["active"]
+    assert KEY not in json.dumps(observed)
+    again, attempts = fetch(tmp_path, handler)
+    assert again["status"] == "provider_maintenance" and len(attempts.calls) == 1
+    recovered, resumed = fetch(tmp_path, lambda *args: zip_body())
+    assert recovered["status"] == "ok" and len(resumed.calls) == 2
+    observed = json.loads((tmp_path / "disclosures/dart_full/_provider_maintenance.json").read_text())
+    assert not observed["endpoints"]["document.xml"]["active"]
+
+
+def test_structured_maintenance_never_checkpoints_request_or_marks_complete(tmp_path, short_range):
+    listing_archive(tmp_path, item())
+    result, session = fetch(tmp_path, lambda *args: {"status": "800"})
+    assert result["status"] == "provider_maintenance" and len(session.calls) == 1
+    assert result["stages"]["structured"] == {"status": "provider_maintenance", "requests_made": 1, "saved": 0}
+    assert result["stages"]["documents"]["status"] == "not_run"
+    assert dart.structured_record(tmp_path, CORP) is None
+    assert dart.document_record(tmp_path, item()["rcept_no"]) is None
+    resumed, _ = fetch(tmp_path, lambda url, params: zip_body() if url.endswith("document.xml") else {"status": "000", "list": [structured()]})
+    assert resumed["status"] == "ok" and resumed["requests_made"] == 2
+
+
+@pytest.mark.parametrize("execute", [True, False])
+def test_skip_documents_only_runs_structured_stage(tmp_path, short_range, execute):
+    listing_archive(tmp_path, item())
+    session = FakeSession(lambda url, params: {"status": "000", "list": [structured()]}
+                          if url.endswith("tsstkAqDecsn.json") else pytest.fail("documents must be skipped"))
+    result = dart.fetch(data_dir=tmp_path, execute=execute, api_key=KEY, session=session,
+                        clock=lambda: NOW, sleeper=lambda _: None, skip_documents=True)
+    assert result["status"] == ("ok" if execute else "dry_run")
+    assert result["stages"]["documents"] == {"status": "skipped", "requests_made": 0, "saved": 0}
+    assert result["structured_saved"] == len(session.calls) == int(execute)
+    assert result["original_documents_missing"] == 1
+    assert dart.document_record(tmp_path, item()["rcept_no"]) is None
+
+
+@pytest.mark.parametrize("skip", [True, False])
+def test_buyback_cli_maintenance_exits_zero_and_passes_skip_documents(tmp_path, short_range, monkeypatch, capsys, skip):
+    from scripts.data import dart_buyback as cli
+    listing_archive(tmp_path, item())
+    session = FakeSession(lambda url, params: {"status": "800"} if url.endswith("document.xml")
+                          else {"status": "000", "list": [structured()]})
+    original = dart.fetch
+    monkeypatch.setenv("DART_API_KEY", KEY)
+    monkeypatch.setattr(dart, "fetch", lambda **kwargs: original(**kwargs, session=session,
+        clock=lambda: NOW, sleeper=lambda _: None))
+    args = ["fetch", "--data-dir", str(tmp_path), "--execute"] + (["--skip-documents"] if skip else [])
+    assert cli.main(args) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == ("ok" if skip else "provider_maintenance")
+    assert len(session.calls) == (1 if skip else 2)
+
+
+def test_streaming_plan_equals_previous_full_archive_plan(tmp_path, short_range, monkeypatch):
+    rows = [item(), item(number=2, stock_code=""), item("20160603", corp_code="00000002"),
+            item(number=4, report_nm="자기주식취득결정 취소"),
+            item("20160603", number=5, report_nm="신탁 자기주식취득결정"),
+            item("20160604", number=6, report_nm="기타공시", rcept_no="20160601000006")]
+    listing_archive(tmp_path, *rows, {**rows[0], "collected_at": "different observation"})
+    # Reference the previous loader's projected full rows and archive counts.
+    fields = ("rcept_no", "rcept_dt", "report_nm", "corp_code", "stock_code", "corp_name", "corp_cls")
+    full_rows = sorted(({field: row.get(field) for field in fields} for row in rows),
+                       key=lambda row: (row["rcept_dt"], row["rcept_no"]))
+    counts = {"raw_rows": 7, "duplicate_receipts": 1, "unique_receipts": 6,
+              "title_candidates": 3, "receipt_prefix_differs_from_public_date": 1, "withdrawal_titles": 1}
+    candidates, files, actual_counts = dart.load_listings(tmp_path, candidates_only=True)
+    assert candidates == [row for row in full_rows if dart.title_matches(row["report_nm"])]
+    assert actual_counts == counts
+    actual = dart.plan(tmp_path)
+    monkeypatch.setattr(dart, "load_listings", lambda *args, **kwargs: (full_rows, files, counts))
+    assert dart.plan(tmp_path) == actual
+
+
+@pytest.mark.parametrize("cross_day", [False, True])
+def test_streaming_rejects_conflicting_non_candidate_receipts(tmp_path, short_range, cross_day):
+    first = item(report_nm="기타공시")
+    second = {**first, "corp_name": "conflict"}
+    if cross_day:
+        second["rcept_dt"] = "20160603"
+    listing_archive(tmp_path, first, second)
+    with pytest.raises(ValueError, match="conflicting"):
+        dart.plan(tmp_path)
+
+
+def test_shared_payload_classifies_800_as_distinct_maintenance():
+    from src.ingestion.dart_api import DartProviderMaintenance, read_dart_payload
+    with pytest.raises(DartProviderMaintenance, match="status=800"):
+        read_dart_payload(FakeResponse({"status": "800", "message": KEY}))

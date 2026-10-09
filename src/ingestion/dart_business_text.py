@@ -18,7 +18,7 @@ from zipfile import BadZipFile, ZipFile
 from src.utils.stock_codes import is_stock_code
 
 from .dart import BeautifulSoup, DartDisclosureCollector
-from .dart_api import DartAPIError
+from .dart_api import DartAPIError, DartProviderMaintenance
 from .dart_backfill import DartBackfillCollector, KST, _date, _QuotaReached, _write_json
 from .storage import file_lock, read_rows
 
@@ -293,6 +293,7 @@ def _download_sections(collector, receipt: str) -> dict:
         raise DartAPIError("DART official document ZIP extraction failed") from None
     if best is None:
         raise DartAPIError("DART official document has no usable body")
+    collector._provider_status("000")
     return {**record, **best, "status": "000"}
 
 
@@ -351,6 +352,8 @@ class BusinessTextCollector:
                     summary["remaining"] -= 1
             except _QuotaReached as error:
                 summary.update(status="quota_reached", reason=str(error))
+            except DartProviderMaintenance:
+                summary.update(status="provider_maintenance", reason="provider_status_800")
             finally:
                 summary["requests_made"] = collector.requests_made
                 if collector._owns_session and collector.session is not None:

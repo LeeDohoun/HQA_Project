@@ -63,12 +63,19 @@ def collect_status(data_dir: str | Path, *, clock=None) -> dict:
     backfill_state = _read_state(backfill_dir / "_state.json")
     backfill_quota = _read_state(backfill_dir / "_quota.json")
     today_quota = backfill_quota["days"].get(today.isoformat()) if backfill_quota is not None else None
+    maintenance = _read_state(backfill_dir / "_provider_maintenance.json")
+    endpoints = maintenance["endpoints"] if maintenance is not None else {}
+    active = sorted(name for name, entry in endpoints.items() if entry["active"])
     dart_backfill = {
         "completed_listing_days": len(backfill_state["completed_listing_days"]) if backfill_state is not None else 0,
         "completed_detail_receipts": len(backfill_state["completed_detail_rcept_nos"]) if backfill_state is not None else 0,
         "skipped_receipts": len(backfill_state.get("skipped_missing_stock_code_rcept_nos", [])) if backfill_state is not None else 0,
         "requests_today": today_quota["requests"] if today_quota is not None else 0,
-        "provider_limited": today_quota["provider_limited"] if today_quota is not None else False}
+        "provider_limited": today_quota["provider_limited"] if today_quota is not None else False,
+        "provider_maintenance": {
+            "active": bool(active), "endpoints": active,
+            "first_seen_at": min(_timestamp(entry["first_seen_at"]) for entry in endpoints.values()).isoformat() if endpoints else None,
+            "last_seen_at": max(_timestamp(entry["last_seen_at"]) for entry in endpoints.values()).isoformat() if endpoints else None}}
 
     krx_dir = data_dir / "market" / "krx_daily"
     krx_state = _read_state(krx_dir / "_state.json")
@@ -119,6 +126,7 @@ def collect_status(data_dir: str | Path, *, clock=None) -> dict:
         ("poller_stale", poller_stale), ("krx_store_empty", newest_krx is None),
         ("krx_lag_days", lag_days is not None and lag_days > 1),
         ("empty_dates", bool(empty_dates)), ("calendar_unverified_dates", bool(calendar_unverified)),
+        ("dart_provider_maintenance", bool(active)),
         ("low_disk", low_disk)) if flagged]
     return {"generated_at": now.isoformat(), "data_dir": str(data_dir),
             "dart_last_completed_date": completed_date.isoformat() if completed_date is not None else None,

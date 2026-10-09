@@ -15,7 +15,7 @@ from zipfile import BadZipFile, ZipFile
 import requests
 
 from .dart import DartDisclosureCollector
-from .dart_api import DartAPIError, read_dart_payload
+from .dart_api import DartAPIError, DartProviderMaintenance, read_dart_payload
 from .dart_poller import KST, _kst, _validate_page, listing_params
 from .storage import atomic_write, file_lock, read_rows, write_rows
 
@@ -191,6 +191,25 @@ class DartBackfillCollector(DartDisclosureCollector):
                 raise ValueError("DART invalid saved daily quota")
         self.requests_made = 0
         self._request_day = None
+        self._request_endpoint = None
+
+    def _provider_status(self, status):
+        path = self.directory / "_provider_maintenance.json"
+        if status != "800" and not path.exists():
+            return
+        state = _read_json(path, {"endpoints": {}})
+        endpoints = state["endpoints"]
+        endpoint = self._request_endpoint
+        if status == "800":
+            now = _kst(self.clock()).isoformat()
+            previous = endpoints.get(endpoint, {})
+            endpoints[endpoint] = {"first_seen_at": previous.get("first_seen_at", now),
+                                   "last_seen_at": now, "active": True}
+        elif endpoint in endpoints and endpoints[endpoint]["active"]:
+            endpoints[endpoint].update(active=False, recovered_at=_kst(self.clock()).isoformat())
+        else:
+            return
+        _write_json(path, state)
 
     def _redacted(self, value):
         value = self._redact_api_keys(value)
@@ -202,6 +221,7 @@ class DartBackfillCollector(DartDisclosureCollector):
         return value
 
     def _request(self, url: str, params: dict):
+        self._request_endpoint = url.rsplit("/", 1)[-1]
         for attempt in range(self.max_retries):
             self.sleeper(self.request_interval)
             day = _kst(self.clock()).date().isoformat()
@@ -231,13 +251,19 @@ class DartBackfillCollector(DartDisclosureCollector):
                 raise DartAPIError("DART transport failure") from None
 
     def _payload(self, payload: dict, *, allow_file_not_found=False) -> dict:
+        if isinstance(payload, dict) and payload.get("status") == "800":
+            self._provider_status("800")
+            raise DartProviderMaintenance()
         if isinstance(payload, dict) and payload.get("status") == "020":
             self.quota["days"][self._request_day]["provider_limited"] = True
             _write_json(self.directory / "_quota.json", self.quota)
             raise _QuotaReached("provider_status_020")
         if allow_file_not_found and isinstance(payload, dict) and payload.get("status") == "014":
+            self._provider_status("014")
             return self._redacted(payload)
-        return self._redacted(read_dart_payload(SimpleNamespace(json=lambda: payload)))
+        result = self._redacted(read_dart_payload(SimpleNamespace(json=lambda: payload)))
+        self._provider_status(result["status"])
+        return result
 
     def _json_payload(self, response, *, allow_file_not_found=False) -> dict:
         try:
@@ -330,6 +356,7 @@ class DartBackfillCollector(DartDisclosureCollector):
             raise DartAPIError("DART official document ZIP extraction failed") from None
         if not best_text:
             raise DartAPIError("DART official document has no usable body")
+        self._provider_status("000")
         return self._redacted(best_text), quality
 
     def _detail(self, item: dict) -> dict:
@@ -418,6 +445,8 @@ class DartBackfillCollector(DartDisclosureCollector):
                             "dart_014_file_not_found", "dart_014_structured_file_not_found"}
         except _QuotaReached as error:
             summary.update(status="quota_reached", reason=str(error))
+        except DartProviderMaintenance:
+            summary.update(status="provider_maintenance", reason="provider_status_800")
         except DartAPIError as error:
             summary.update(status="error", error=self._redacted(str(error)))
         finally:

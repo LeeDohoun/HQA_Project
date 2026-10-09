@@ -16,7 +16,7 @@ from pathlib import Path
 from xml.etree import ElementTree
 from zipfile import BadZipFile, ZipFile
 
-from .dart_api import DartAPIError
+from .dart_api import DartAPIError, DartProviderMaintenance
 from .dart_backfill import (DEFAULT_DATA_DIR, DEFAULT_MAX_REQUESTS, KST,
                             DartBackfillCollector, _QuotaReached, _date, _write_json)
 from .storage import file_lock, read_rows
@@ -75,9 +75,10 @@ def listing_files(data_dir):
             if re.fullmatch(r"[0-9]{8}", path.stem) and START <= path.stem <= END}
 
 
-def load_listings(data_dir):
+def load_listings(data_dir, *, candidates_only=False):
     files, receipts = listing_files(data_dir), {}
-    raw_count = 0
+    identities = {} if candidates_only else receipts
+    raw_count = prefix_differs = withdrawals = title_count = 0
     for day, path in files.items():
         _date(day)
         for row in read_rows(path):
@@ -92,15 +93,27 @@ def load_listings(data_dir):
             # Observation metadata can differ; event identity cannot.
             item = {name: row.get(name) for name in ("rcept_no", "rcept_dt", "report_nm", "corp_code",
                                                      "stock_code", "corp_name", "corp_cls")}
-            if receipt in receipts and receipts[receipt] != item:
+            # Keep compact identities for all receipts, but only candidate rows
+            # in collector plans. Full listings remain available to research callers.
+            identity = int(receipt) if candidates_only else receipt
+            digest = bytes.fromhex(row_digest(item)) if candidates_only else item
+            if identity in identities and identities[identity] != digest:
                 raise ValueError("conflicting DART listing receipt")
-            receipts[receipt] = item
+            if identity in identities:
+                continue
+            identities[identity] = digest
+            matches = title_matches(item["report_nm"])
+            title_count += matches
+            prefix_differs += receipt[:8] != day
+            title = compact(item["report_nm"])
+            withdrawals += "자기주식" in title and any(word in title for word in ("철회", "취소"))
+            if not candidates_only or matches:
+                receipts[receipt] = item
     rows = sorted(receipts.values(), key=lambda row: (row["rcept_dt"], row["rcept_no"]))
-    return rows, files, {"raw_rows": raw_count, "duplicate_receipts": raw_count - len(rows),
-                        "unique_receipts": len(rows), "title_candidates": sum(title_matches(row["report_nm"]) for row in rows),
-                        "receipt_prefix_differs_from_public_date": sum(row["rcept_no"][:8] != row["rcept_dt"] for row in rows),
-                        "withdrawal_titles": sum("자기주식" in compact(row["report_nm"]) and
-                            any(word in compact(row["report_nm"]) for word in ("철회", "취소")) for row in rows)}
+    return rows, files, {"raw_rows": raw_count, "duplicate_receipts": raw_count - len(identities),
+                        "unique_receipts": len(identities), "title_candidates": title_count,
+                        "receipt_prefix_differs_from_public_date": prefix_differs,
+                        "withdrawal_titles": withdrawals}
 
 
 def _path(data_dir, kind, identity):
@@ -146,13 +159,12 @@ def document_record(data_dir, receipt):
 
 
 def plan(data_dir=DEFAULT_DATA_DIR):
-    listings, files, counts = load_listings(data_dir)
+    listings, files, counts = load_listings(data_dir, candidates_only=True)
     candidates = [row for row in listings if title_matches(row["report_nm"])]
     corporations = sorted({row["corp_code"] for row in candidates})
     saved = {corp: structured_record(data_dir, corp) for corp in corporations}
     complete = [corp for corp, record in saved.items() if record and record["complete"]]
-    documents = {row["rcept_no"]: document_record(data_dir, row["rcept_no"]) for row in candidates}
-    missing = [receipt for receipt, record in documents.items() if record is None]
+    missing = [row["rcept_no"] for row in candidates if document_record(data_dir, row["rcept_no"]) is None]
     targets = {(row["corp_code"], row["rcept_dt"]) for row in candidates}
     requests = sum(not any(request["bgn_de"] == request["end_de"] == day
                            and request["page_no"] == 1 for request in (saved[corp] or {}).get("requests", []))
@@ -164,7 +176,7 @@ def plan(data_dir=DEFAULT_DATA_DIR):
                 "last_day": max(files) if files else None,
                 "days_by_year": {str(year): sum(day.startswith(str(year)) for day in files) for year in range(2016, 2026)}},
             "counts": counts, "corp_codes": corporations, "structured_corporations_complete": len(complete),
-            "original_documents_stored": len(documents) - len(missing), "original_documents_missing": len(missing),
+            "original_documents_stored": len(candidates) - len(missing), "original_documents_missing": len(missing),
             "estimated_requests_still_needed": requests + len(missing),
             "estimated_structured_requests": requests, "estimated_document_requests": len(missing),
             "estimate_note": "One exact-day initial request per distinct candidate corporation/receipt date plus missing documents; lower bound, paging can add requests. Missing listing days can add corporations/events.",
@@ -294,44 +306,65 @@ def _fetch_document(collector, receipt, row):
                 text = collector._redacted(max(candidates, key=lambda item: item[0])[1])
         except (BadZipFile, RuntimeError, OSError, KeyError):
             raise DartAPIError("DART buyback ZIP extraction failed") from None
+    collector._provider_status(status)
     return {"version": VERSION, "rcept_no": receipt, "status": status, "text": text,
             "text_sha256": hashlib.sha256(text.encode()).hexdigest(), "raw_sha256": hashlib.sha256(blob).hexdigest(),
             "byte_size": len(blob), "fetched_at": collector.clock().isoformat(), "verification": verify_values(row, text)}
 
 
 def fetch(*, data_dir=DEFAULT_DATA_DIR, execute=False, api_key=None, session=None,
-          max_requests=DEFAULT_MAX_REQUESTS, clock=None, sleeper=None):
+          max_requests=DEFAULT_MAX_REQUESTS, clock=None, sleeper=None, skip_documents=False):
     if type(max_requests) is not int or max_requests < 1:
         raise ValueError("DART max_requests must be a positive integer")
     summary = {**plan(data_dir), "requests_made": 0, "structured_saved": 0, "documents_saved": 0}
+    summary["stages"] = {
+        "structured": {"status": "dry_run", "requests_made": 0, "saved": 0},
+        "documents": {"status": "skipped" if skip_documents else "dry_run", "requests_made": 0, "saved": 0}}
     if not execute:
         return summary
     if not isinstance(api_key, str) or not api_key.strip():
         raise ValueError("DART API key is required for execution")
     directory = Path(data_dir) / "disclosures/dart_full"
     with file_lock(directory / ".backfill.lock"):
-        listings, _, _ = load_listings(data_dir)
+        listings, _, _ = load_listings(data_dir, candidates_only=True)
         candidates = [item for item in listings if title_matches(item["report_nm"])]
         collector = DartBackfillCollector(api_key, directory, {}, {}, session=session,
             clock=clock or (lambda: datetime.now(KST)), sleeper=sleeper or time.sleep,
             max_requests=max_requests, request_interval=0.2, max_retries=1, timeout=20)
         summary.update(status="ok", dry_run=False)
+        stage = "structured"
+        stage_start = 0
+        summary["stages"][stage]["status"] = "ok"
+        if not skip_documents:
+            summary["stages"]["documents"]["status"] = "not_run"
         try:
             for corp in sorted({item["corp_code"] for item in candidates}):
                 items = [item for item in candidates if item["corp_code"] == corp]
                 previous = structured_record(data_dir, corp)
-                archive = _fetch_structured(collector, corp, items, data_dir)
+                _fetch_structured(collector, corp, items, data_dir)
                 summary["structured_saved"] += not previous or not previous["complete"]
-                for item in items:
+            summary["stages"][stage].update(requests_made=collector.requests_made, saved=summary["structured_saved"])
+            stage = "documents"
+            stage_start = collector.requests_made
+            if not skip_documents:
+                summary["stages"][stage]["status"] = "ok"
+                for item in candidates:
                     receipt = item["rcept_no"]
                     if document_record(data_dir, receipt) is not None:
                         continue
+                    archive = structured_record(data_dir, item["corp_code"])
                     row = archive["rows"].get(receipt, {}).get("row")
                     _write_json(_path(data_dir, "documents", receipt), _fetch_document(collector, receipt, row))
                     summary["documents_saved"] += 1
         except _QuotaReached as error:
             summary.update(status="quota_reached", reason=str(error))
+            summary["stages"][stage]["status"] = "quota_reached"
+        except DartProviderMaintenance:
+            summary.update(status="provider_maintenance", reason="provider_status_800")
+            summary["stages"][stage]["status"] = "provider_maintenance"
         finally:
+            summary["stages"][stage].update(requests_made=collector.requests_made - stage_start,
+                saved=summary["structured_saved" if stage == "structured" else "documents_saved"])
             summary["requests_made"] = collector.requests_made
             if collector._owns_session and collector.session is not None:
                 collector.session.close()

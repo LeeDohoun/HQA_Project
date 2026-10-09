@@ -667,7 +667,8 @@ def test_status_backfill_uses_checkpoints_and_kst_quota_only(tmp_path, monkeypat
     monkeypatch.setattr(Path, "glob", guarded_glob)
     report = status.collect_status(tmp_path, clock=lambda: datetime.fromisoformat("2026-09-07T15:20:00+00:00"))
     assert report["dart_backfill"] == {"completed_listing_days": 2, "completed_detail_receipts": 1,
-        "skipped_receipts": 2, "requests_today": 1234, "provider_limited": limited}
+        "skipped_receipts": 2, "requests_today": 1234, "provider_limited": limited,
+        "provider_maintenance": {"active": False, "endpoints": [], "first_seen_at": None, "last_seen_at": None}}
 
 
 @pytest.mark.parametrize("previous_day", [False, True])
@@ -677,7 +678,8 @@ def test_status_backfill_without_today_quota_or_progress(tmp_path, previous_day)
             "2026-09-07": {"requests": 17_000, "provider_limited": True}}})
     report = status.collect_status(tmp_path, clock=lambda: NOW)
     assert report["dart_backfill"] == {"completed_listing_days": 0, "completed_detail_receipts": 0,
-        "skipped_receipts": 0, "requests_today": 0, "provider_limited": False}
+        "skipped_receipts": 0, "requests_today": 0, "provider_limited": False,
+        "provider_maintenance": {"active": False, "endpoints": [], "first_seen_at": None, "last_seen_at": None}}
 
 
 @pytest.mark.parametrize("script", ["push_collector_code.sh", "pull_collector_data.sh"])
@@ -778,3 +780,27 @@ def test_status_shadow_and_refresh_are_local_and_distinguish_no_runs(tmp_path):
                                  "last_run": NOW.isoformat(), "last_run_result": "error"}
     assert report["fundamentals_refresh"] == {"last_run": NOW.isoformat(),
         "last_run_result": "quota_reached", "requests_used": 600}
+
+
+def test_dart_daily_maintenance_stops_remaining_stages_and_exits_zero(tmp_path, monkeypatch, capsys):
+    payloads = dart_daily_payloads()[:2] + [b"<result><status>800</status></result>"]
+    calls, directory = dart_daily_fixture(tmp_path, monkeypatch, payloads)
+    assert dart_daily.main(["--data-dir", str(tmp_path), "--execute"]) is None
+    report = json.loads(capsys.readouterr().out)
+    assert report["status"] == "provider_maintenance" and len(calls) == report["requests_made"] == 3
+    assert report["steps"]["priority_details"]["status"] == "provider_maintenance"
+    assert report["steps"]["all_details"] == {"status": "not_run", "reason": "provider_maintenance", "requests_made": 0}
+    assert json.loads((directory / "_state.json").read_text())["completed_detail_rcept_nos"] == []
+    maintenance = status.collect_status(tmp_path, clock=lambda: NOW)["dart_backfill"]["provider_maintenance"]
+    assert maintenance["active"] and maintenance["endpoints"] == ["document.xml"]
+
+
+@pytest.mark.parametrize("active", [True, False])
+def test_status_surfaces_maintenance_first_last_seen_and_flag(tmp_path, active):
+    first, last = "2026-10-08T10:00:00+09:00", "2026-10-10T10:00:00+09:00"
+    write_json(tmp_path / "disclosures/dart_full/_provider_maintenance.json", {"endpoints": {
+        "document.xml": {"active": active, "first_seen_at": first, "last_seen_at": last}}})
+    report = status.collect_status(tmp_path, clock=lambda: datetime.fromisoformat(last))
+    assert report["dart_backfill"]["provider_maintenance"] == {
+        "active": active, "endpoints": ["document.xml"] if active else [], "first_seen_at": first, "last_seen_at": last}
+    assert ("dart_provider_maintenance" in report["flags"]) == active

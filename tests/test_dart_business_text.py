@@ -457,7 +457,7 @@ def test_concurrent_fetches_respect_the_persisted_shared_cap(tmp_path):
     assert quota(tmp_path)[NOW.date().isoformat()]["requests"] == 1
 
 
-@pytest.mark.parametrize("response", [{"status": "010", "message": KEY}, b"<result><status>800</status></result>",
+@pytest.mark.parametrize("response", [{"status": "010", "message": KEY},
                                       b"PKinvalid", b"<result><status>", b"unexpected body"])
 def test_invalid_provider_responses_fail_without_caching_or_exposing_secrets(tmp_path, response):
     receipt = row("20260515")["rcept_no"]
@@ -587,3 +587,43 @@ def test_cli_missing_or_malformed_requests_are_errors(tmp_path, monkeypatch, cap
     with pytest.raises(SystemExit) as error:
         cli.main()
     assert error.value.code == 1 and json.loads(capsys.readouterr().out)["status"] == "error"
+
+
+@pytest.mark.parametrize("xml", [True, False])
+def test_maintenance_leaves_all_receipts_pending_and_retries_next_run(tmp_path, monkeypatch, xml):
+    receipts = [row("20260515", number=n)["rcept_no"] for n in (1, 2)]
+    maintenance = b"<result><status>800</status></result>" if xml else {"status": "800", "message": KEY}
+    result, session = fetch(tmp_path, receipts, maintenance)
+    assert result["status"] == "provider_maintenance" and len(session.calls) == 1
+    assert result["saved"] == result["errors"] == 0 and result["remaining"] == 2
+    assert all(not saved_path(tmp_path, receipt).exists() for receipt in receipts)
+    assert quota(tmp_path)[NOW.date().isoformat()] == {"requests": 1, "provider_limited": False}
+    monkeypatch.setattr(module, "_now", lambda: NOW + timedelta(days=1))
+    resumed, retried = fetch(tmp_path, receipts, zip_document(), zip_document())
+    assert resumed["status"] == "ok" and resumed["saved"] == 2 and len(retried.calls) == 2
+    assert resumed["errors"] == resumed["remaining"] == 0
+
+
+def test_maintenance_preserves_earlier_saved_business_text(tmp_path):
+    receipts = [row("20260515", number=n)["rcept_no"] for n in (1, 2, 3)]
+    result, session = fetch(tmp_path, receipts, zip_document(), {"status": "800"})
+    assert result["status"] == "provider_maintenance" and len(session.calls) == 2
+    assert result["saved"] == 1 and result["remaining"] == 2 and result["errors"] == 0
+    assert saved_path(tmp_path, receipts[0]).exists()
+    assert all(not saved_path(tmp_path, receipt).exists() for receipt in receipts[1:])
+
+
+def test_business_text_cli_maintenance_exits_zero(tmp_path, monkeypatch, capsys):
+    report = row("20260515")
+    listings(tmp_path, report)
+    requests_file = tmp_path / "requests.jsonl"
+    write_rows(requests_file, [{"stock_code": STOCK, "decision_date": "20260529"}])
+    session = FakeSession(b"<result><status>800</status></result>")
+    monkeypatch.setattr(cli, "load_project_env", lambda: None)
+    monkeypatch.setattr(cli, "os", SimpleNamespace(getenv=lambda key, default=None: KEY if key == "DART_API_KEY" else default))
+    monkeypatch.setattr(cli, "BusinessTextCollector", lambda key: BusinessTextCollector(key, session))
+    monkeypatch.setattr("sys.argv", ["dart_business_text", "fetch", "--requests-file", str(requests_file),
+        "--data-dir", str(tmp_path), "--max-requests", "10", "--execute"])
+    assert cli.main() is None
+    assert json.loads(capsys.readouterr().out)["status"] == "provider_maintenance"
+    assert not saved_path(tmp_path, report["rcept_no"]).exists()
