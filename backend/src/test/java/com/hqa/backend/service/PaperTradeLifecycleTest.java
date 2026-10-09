@@ -214,6 +214,27 @@ class PaperTradeLifecycleTest {
         assertThat(rows.get(1)).containsEntry("conditionPayload", null).containsEntry("rejectReason", "INVALID_STORED_CONDITIONS");
     }
 
+    @Test
+    void activeRowsListEachPlansUnresolvedOrdersSoTheMonitorCanReportBlockedProtection() {
+        TradeSignalExecution unknown = execution();
+        unknown.setStatus("UNKNOWN");
+        unknown.setOrderId(null);
+        TradeSignalExecution other = execution();
+        other.setSignalId("someone-else");
+        other.setStatus("ORDER_SUBMITTED");
+        other.setOrderId("0000123");
+        when(executions.findByStatusInOrderBySubmittedAtAsc(PaperTradeStore.UNRESOLVED)).thenReturn(List.of(unknown, other));
+        when(signals.findByStatusIn(eq(PaperTradeStore.ACTIVE), any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(signal)));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) lifecycle.active(0, 200).get("signals");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> orders = (List<Map<String, Object>>) rows.get(0).get("unresolvedOrders");
+        assertThat(orders).hasSize(1);
+        assertThat(orders.get(0)).containsEntry("status", "UNKNOWN").containsEntry("orderSide", "SELL")
+                .containsEntry("brokerOrderKnown", false);
+    }
+
     private TradeSignalExecution execution() {
         TradeSignalExecution intent = new TradeSignalExecution();
         ReflectionTestUtils.setField(intent, "id", "e1");

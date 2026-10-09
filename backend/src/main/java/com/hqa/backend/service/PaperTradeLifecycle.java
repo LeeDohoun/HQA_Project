@@ -14,6 +14,7 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -192,8 +193,20 @@ public class PaperTradeLifecycle {
         if (page < 0 || size < 1 || size > 500) throw new IllegalArgumentException("Invalid active signal page");
         var result = signals.findByStatusIn(PaperTradeStore.ACTIVE,
                 PageRequest.of(page, size, Sort.by("createdAt").ascending().and(Sort.by("id").ascending())));
+        // A plan's unresolved orders hold back every trigger until they are reconciled; an
+        // UNKNOWN order (no broker ID) needs an operator, so the monitor reports it.
+        Map<String, List<Map<String, Object>>> unresolved = new HashMap<>();
+        for (TradeSignalExecution execution : executions.findByStatusInOrderBySubmittedAtAsc(PaperTradeStore.UNRESOLVED)) {
+            Map<String, Object> order = new LinkedHashMap<>();
+            order.put("status", execution.getStatus());
+            order.put("orderSide", execution.getOrderSide());
+            order.put("brokerOrderKnown", execution.getOrderId() != null && !execution.getOrderId().isBlank());
+            order.put("submittedAt", execution.getSubmittedAt());
+            unresolved.computeIfAbsent(execution.getSignalId(), ignored -> new ArrayList<>()).add(order);
+        }
         Map<String, Object> response = new LinkedHashMap<>();
-        response.put("signals", result.getContent().stream().map(this::monitorRow).toList());
+        response.put("signals", result.getContent().stream()
+                .map(signal -> monitorRow(signal, unresolved.getOrDefault(signal.getId(), List.of()))).toList());
         response.put("hasMore", result.hasNext());
         response.put("nextPage", result.hasNext() ? page + 1 : null);
         return response;
@@ -283,7 +296,7 @@ public class PaperTradeLifecycle {
         }
     }
 
-    private Map<String, Object> monitorRow(TradeSignal signal) {
+    private Map<String, Object> monitorRow(TradeSignal signal, List<Map<String, Object>> unresolvedOrders) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("signalId", signal.getId());
         row.put("userId", signal.getUserId());
@@ -310,6 +323,7 @@ public class PaperTradeLifecycle {
         }
         row.put("conditionPayload", conditions);
         row.put("rejectReason", reason);
+        row.put("unresolvedOrders", unresolvedOrders);
         return row;
     }
     private Map<String, Object> account(String userId) {
