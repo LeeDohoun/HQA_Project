@@ -158,6 +158,43 @@ class PaperTradeLifecycleTest {
     }
 
     @Test
+    void aStopCancelsAWorkingReductionSoTheFullExitCanFollow() {
+        TradeSignalExecution reduction = workingSell("s1:1:REDUCE:trim:abc:0", 5);
+        when(store.markCancelRequested("e1")).thenReturn(true);
+        when(kis.cancelPaperOrder(anyString(), any(), anyString(), anyString(), anyString(), anyInt()))
+                .thenReturn(Map.of("success", true));
+        assertThat(lifecycle.triggerResponse("s1", request("EXIT", 1, "stop"))).containsEntry("accepted", false)
+                .containsEntry("rejectReason", "ORDER_RECONCILIATION_REQUIRED");
+        verify(kis).cancelPaperOrder("u1", user.getSecret(), "token", reduction.getOrderId(), "org", 5);
+        verify(kis, never()).paperOrder(anyString(), any(), anyString(), anyString(), anyInt(), anyLong(), anyString());
+    }
+
+    @Test
+    void aStopCancelsAnotherExitGroupsSellThatThePriceHasLeft() {
+        workingSell("s1:1:EXIT:take-profit:0", 10);
+        when(store.markCancelRequested("e1")).thenReturn(true);
+        when(kis.cancelPaperOrder(anyString(), any(), anyString(), anyString(), anyString(), anyInt()))
+                .thenReturn(Map.of("success", true));
+        assertThat(lifecycle.triggerResponse("s1", request("EXIT", 1, "stop"))).containsEntry("accepted", false)
+                .containsEntry("rejectReason", "ORDER_RECONCILIATION_REQUIRED");
+        verify(kis).cancelPaperOrder("u1", user.getSecret(), "token", "order1", "org", 10);
+    }
+
+    @Test
+    void aReductionLeavesAWorkingExitSellAlone() throws Exception {
+        signal.setConditionPayload(mapper.writeValueAsString(Map.of("schema_version", 2,
+                "exit_conditions", List.of(Map.of("id", "stop", "all", List.of(Map.of("field", "pnl_rate", "operator", "<=", "value", -5)))),
+                "reduce_conditions", List.of(Map.of("id", "trim", "reduce_fraction", 0.5,
+                        "all", List.of(Map.of("field", "pnl_rate", "operator", "<=", "value", -5)))))));
+        workingSell("s1:1:EXIT:stop:0", 10);
+        assertThat(lifecycle.triggerResponse("s1", request("REDUCE", 1, "trim"))).containsEntry("accepted", false)
+                .containsEntry("rejectReason", "ORDER_RECONCILIATION_REQUIRED");
+        verify(store, never()).markCancelRequested(anyString());
+        verify(kis, never()).cancelPaperOrder(anyString(), any(), anyString(), anyString(), anyString(), anyInt());
+        verify(kis, never()).paperOrder(anyString(), any(), anyString(), anyString(), anyInt(), anyLong(), anyString());
+    }
+
+    @Test
     void protectiveTriggerStillCancelsAWorkingEntryBuy() {
         TradeSignalExecution entry = execution();
         entry.setOrderSide("BUY");
@@ -318,6 +355,22 @@ class PaperTradeLifecycleTest {
         intent.setAccountBinding("binding");
         intent.setStatus("INTENT");
         return intent;
+    }
+    /** A SELL still working at the broker for this plan, with nothing filled yet. */
+    private TradeSignalExecution workingSell(String triggerKey, int quantity) {
+        TradeSignalExecution working = execution();
+        working.setTriggerKey(triggerKey);
+        working.setSubmittedQuantity(quantity);
+        working.setStatus("ORDER_SUBMITTED");
+        working.setOrderExpiresAt(now.plusMinutes(2));
+        when(executions.findByUserIdAndStatusIn("u1", PaperTradeStore.UNRESOLVED)).thenReturn(List.of(working));
+        when(executions.findBySignalId("s1")).thenReturn(List.of(working));
+        when(kis.paperOrders(anyString(), any(), anyString(), any(), any())).thenReturn(List.of(Map.ofEntries(
+                Map.entry("odno", "order1"), Map.entry("ord_dt", "20260904"), Map.entry("pdno", "005930"),
+                Map.entry("sll_buy_dvsn_cd", "01"), Map.entry("ord_qty", String.valueOf(quantity)), Map.entry("tot_ccld_qty", "0"),
+                Map.entry("rmn_qty", String.valueOf(quantity)), Map.entry("cnc_cfrm_qty", "0"), Map.entry("rjct_qty", "0"),
+                Map.entry("cncl_yn", "N"), Map.entry("avg_prvs", "0"), Map.entry("ord_gno_brno", "org"))));
+        return working;
     }
     private Map<String, Object> request(String type, Number version, String group) {
         return Map.of("triggerType", type, "planVersion", version, "groupId", group);

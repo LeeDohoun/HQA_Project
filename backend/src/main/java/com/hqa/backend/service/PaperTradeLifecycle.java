@@ -129,11 +129,17 @@ public class PaperTradeLifecycle {
                 return signals.findById(signalId);
             }
             if (!pending.isEmpty()) {
-                // A protective trigger may cancel a still-working entry BUY, but a working SELL is the
-                // protection already in flight: the monitor re-sends a condition that stays true every
-                // poll, and cancelling it would leave the position unprotected between polls.
-                boolean workingSell = pending.stream().anyMatch(item -> "SELL".equals(item.getOrderSide()));
-                if (type != TradeConditions.TriggerType.ENTRY) reconcileAccount(user.getUserId(), workingSell ? null : signalId);
+                // A protective trigger cancels a still-working entry BUY. A working SELL is kept when it
+                // is this same trigger (the monitor re-sends a condition that stays true every poll, and
+                // cancelling it would leave the position unprotected between polls) or when this trigger
+                // is only a reduction. Otherwise it is cancelled so this exit can follow: a partial
+                // reduction, or another group's limit order the falling price has left, must not hold
+                // back a full stop until it expires.
+                String base = signalId + ":" + version + ":" + type.name() + ":" + groupId + ":";
+                boolean keepWorkingSell = pending.stream().anyMatch(item -> "SELL".equals(item.getOrderSide())
+                        && (type == TradeConditions.TriggerType.REDUCE
+                            || (item.getTriggerKey() != null && item.getTriggerKey().startsWith(base))));
+                if (type != TradeConditions.TriggerType.ENTRY) reconcileAccount(user.getUserId(), keepWorkingSell ? null : signalId);
                 throw new IllegalStateException("ORDER_RECONCILIATION_REQUIRED");
             }
             long powerCash = 0;
