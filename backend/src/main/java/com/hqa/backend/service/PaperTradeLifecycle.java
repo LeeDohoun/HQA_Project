@@ -184,9 +184,13 @@ public class PaperTradeLifecycle {
                 .contains(reason == null ? "" : reason);
         boolean invalidated = "INVALIDATION".equals(request.get("triggerType")) && "EXPIRED".equals(signal.getStatus())
                 && "ENTRY_EXPIRED_OR_INVALIDATED".equals(reason);
+        // A trigger whose order is still being worked or reconciled is reported as accepted. One
+        // already consumed is refused, even when its order filled, so the monitor stops sending it
+        // and moves on to the plan's next group: a filled first take-profit tier must not hold
+        // back the second.
         boolean accepted = invalidated || (execution != null
                 && Set.of("ORDER_SUBMITTED", "PARTIALLY_FILLED", "FILLED").contains(status)
-                && (reason == null || deduplicated));
+                && (reason == null || "ORDER_RECONCILIATION_REQUIRED".equals(reason)));
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("signalId", signalId);
         result.put("status", signal.getStatus());

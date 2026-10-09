@@ -195,6 +195,25 @@ class PaperTradeLifecycleTest {
     }
 
     @Test
+    void aFilledReductionIsReportedAsConsumedSoTheMonitorMovesOnToTheNextTier() throws Exception {
+        signal.setConditionPayload(mapper.writeValueAsString(Map.of("schema_version", 2,
+                "exit_conditions", List.of(Map.of("id", "stop", "all", List.of(Map.of("field", "pnl_rate", "operator", "<=", "value", -50)))),
+                "reduce_conditions", List.of(Map.of("id", "tp1", "reduce_fraction", 0.5,
+                        "all", List.of(Map.of("field", "pnl_rate", "operator", "<=", "value", -5)))))));
+        TradeSignalExecution filled = execution();
+        filled.setTriggerKey("s1:1:REDUCE:tp1:abc:0");
+        filled.setStatus("FILLED");
+        filled.setFilledQuantity(5);
+        when(executions.findBySignalId("s1")).thenReturn(List.of(filled));
+        when(store.claim(eq("s1"), eq(1), eq(TradeConditions.TriggerType.REDUCE), eq("tp1"), anyMap(), anyLong(),
+                anyLong(), anyLong(), eq(0.5), eq(now))).thenThrow(new IllegalStateException("TRIGGER_ALREADY_CONSUMED"));
+        assertThat(lifecycle.triggerResponse("s1", request("REDUCE", 1, "tp1"))).containsEntry("accepted", false)
+                .containsEntry("deduplicated", true).containsEntry("rejectReason", "TRIGGER_ALREADY_CONSUMED")
+                .containsEntry("executionStatus", "FILLED");
+        verify(kis, never()).paperOrder(anyString(), any(), anyString(), anyString(), anyInt(), anyLong(), anyString());
+    }
+
+    @Test
     void protectiveTriggerStillCancelsAWorkingEntryBuy() {
         TradeSignalExecution entry = execution();
         entry.setOrderSide("BUY");
