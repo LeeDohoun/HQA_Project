@@ -12,7 +12,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 KST = timezone(timedelta(hours=9))
-DEFAULT_THEMES = ["ai", "battery", "bio", "defense", "robot", "semiconductor"]
 # Only structured provider signals count. Bare numbers such as "429" and words such
 # as "한도" also appear in receipt numbers, counts and news titles.
 RATE_LIMIT_PATTERNS = [
@@ -50,7 +49,15 @@ def _sleep_until_next_day(resume_hour: int, resume_minute: int) -> None:
     time.sleep(wait_seconds)
 
 
-def _run_once(theme: str, enabled_sources: str) -> tuple[int, str]:
+def _saved_themes() -> list[str]:
+    """Theme keys whose curated target lists exist in the data directory. The loop keeps
+    these current by default instead of discovering new themes from fixed keywords."""
+    from src.config.settings import get_data_dir
+
+    return sorted(path.stem for path in (Path(get_data_dir()) / "raw" / "theme_targets").glob("*.jsonl"))
+
+
+def _run_once(theme: str, enabled_sources: str, theme_key: str = "") -> tuple[int, str]:
     cmd = [
         sys.executable,
         "-m",
@@ -60,6 +67,8 @@ def _run_once(theme: str, enabled_sources: str) -> tuple[int, str]:
         "--enabled-sources",
         enabled_sources,
     ]
+    if theme_key:
+        cmd += ["--theme-key", theme_key]
     proc = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT)
     output = f"{proc.stdout}\n{proc.stderr}".strip()
     return proc.returncode, output
@@ -67,7 +76,8 @@ def _run_once(theme: str, enabled_sources: str) -> tuple[int, str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Theme collection loop with next-day pause on API limit")
-    parser.add_argument("--themes", type=str, default=",".join(DEFAULT_THEMES), help="Comma-separated theme keys")
+    parser.add_argument("--themes", type=str, default="",
+                        help="Comma-separated theme names (default: every saved raw/theme_targets/<key>.jsonl)")
     parser.add_argument("--interval-minutes", type=int, default=30, help="Normal loop interval")
     parser.add_argument("--resume-hour", type=int, default=0, help="Next-day resume hour (KST)")
     parser.add_argument("--resume-minute", type=int, default=5, help="Next-day resume minute (KST)")
@@ -80,8 +90,11 @@ def main() -> int:
     args = parser.parse_args()
 
     themes = [t.strip() for t in args.themes.split(",") if t.strip()]
+    saved = not themes
+    if saved:
+        themes = _saved_themes()
     if not themes:
-        print("No themes configured.")
+        print("No themes configured: pass --themes or save targets under raw/theme_targets/ first.")
         return 1
 
     print(
@@ -91,7 +104,7 @@ def main() -> int:
     while True:
         for theme in themes:
             print(f"\n[COLLECT] {theme} 시작")
-            code, output = _run_once(theme, args.enabled_sources)
+            code, output = _run_once(theme, args.enabled_sources, theme_key=theme if saved else "")
             if code == 0:
                 print(f"[COLLECT] {theme} 완료")
                 continue

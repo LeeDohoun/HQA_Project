@@ -153,3 +153,34 @@ def test_loop_detects_rate_limits_that_exhausted_every_retry(monkeypatch):
             call()
         assert "status=429" in str(error.value) and "fixture-key" not in str(error.value)
         assert loop._contains_rate_limit(f"[WARN][삼성전자] news collect failed: {error.value}") is True
+
+
+@pytest.fixture()
+def fresh_settings(request):
+    from src.config.settings import get_settings
+
+    get_settings.cache_clear()  # HQA_DATA_DIR is read once and cached
+    request.addfinalizer(get_settings.cache_clear)
+
+
+def test_loop_maintains_saved_theme_targets_by_default(monkeypatch, tmp_path, fresh_settings):
+    (tmp_path / "raw/theme_targets").mkdir(parents=True)
+    for key in ("2차전지", "반도체"):
+        (tmp_path / f"raw/theme_targets/{key}.jsonl").write_text('{"stock_code": "005930", "stock_name": "삼성전자"}\n',
+                                                                  encoding="utf-8")
+    monkeypatch.setenv("HQA_DATA_DIR", str(tmp_path))
+    run = Mock(return_value=SimpleNamespace(returncode=0, stdout="", stderr=""))
+    monkeypatch.setattr(loop.subprocess, "run", run)
+    monkeypatch.setattr(loop.time, "sleep", Mock(side_effect=KeyboardInterrupt))
+    monkeypatch.setattr(sys, "argv", ["loop"])
+    with pytest.raises(KeyboardInterrupt):
+        loop.main()
+    commands = [call.args[0] for call in run.call_args_list]
+    assert [command[command.index("--theme-key") + 1] for command in commands] == ["2차전지", "반도체"]
+
+
+def test_loop_refuses_to_start_without_themes(monkeypatch, tmp_path, capsys, fresh_settings):
+    monkeypatch.setenv("HQA_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(sys, "argv", ["loop"])
+    assert loop.main() == 1
+    assert "No themes configured" in capsys.readouterr().out
