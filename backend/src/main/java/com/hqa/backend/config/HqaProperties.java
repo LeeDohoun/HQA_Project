@@ -82,7 +82,9 @@ public class HqaProperties {
     }
 
     public void setInternalToken(String internalToken) {
-        this.internalToken = internalToken;
+        // The Python services strip the token they send; a trailing space or CR in an env file
+        // must not leave the backend comparing (and forwarding) a different string.
+        this.internalToken = internalToken == null ? "" : internalToken.strip();
     }
 
     public String getKisAppKey() {

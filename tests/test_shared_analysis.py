@@ -1223,3 +1223,17 @@ def test_a_set_aside_plan_names_the_fields_it_broke():
     decision = AccountDecision.model_validate({"plans": [buy_plan(), hold], "reasoning": "r"})
     assert [plan.stock_code for plan in decision.plans] == ["000001"]
     assert decision.invalid_plans[0]["reason"] == "plan contract: entry_price: Input should be greater than 0"
+
+
+def test_internal_auth_ignores_surrounding_whitespace_in_the_configured_token(monkeypatch):
+    """Clients strip the token they send; the server must compare the same stripped value."""
+    from fastapi.testclient import TestClient
+    import ai_server.app as module
+
+    monkeypatch.setenv("HQA_INTERNAL_TOKEN", " test-runtime-token\r\n")
+    monkeypatch.setattr(module, "_submit_runtime_task", lambda operation, fn: {"task_id": "id", "operation": operation})
+    client = TestClient(module.app)
+    assert client.post("/internal/runtime/analysis-cycle", headers={"X-HQA-Internal-Token": "test-runtime-token"}).status_code == 202
+    assert client.post("/internal/runtime/analysis-cycle", headers={"X-HQA-Internal-Token": "test-runtime-tokenX"}).status_code == 403
+    monkeypatch.setenv("HQA_INTERNAL_TOKEN", " \r\n")
+    assert client.post("/internal/runtime/analysis-cycle", headers={"X-HQA-Internal-Token": ""}).status_code == 503

@@ -55,12 +55,14 @@ _runtime_tasks: OrderedDict[str, Dict[str, Any]] = OrderedDict()
 
 
 def _require_internal_runtime_token(x_hqa_internal_token: Optional[str] = Header(default=None)) -> None:
-    expected = os.getenv("HQA_INTERNAL_TOKEN")
+    # Every client strips the token it sends; a trailing space or CR in an env file must not
+    # make the receiving side compare a different string.
+    expected = (os.getenv("HQA_INTERNAL_TOKEN") or "").strip()
     if not expected:
         raise HTTPException(status_code=503, detail="Internal runtime authentication is not configured")
     if x_hqa_internal_token is None:
         raise HTTPException(status_code=401, detail="Internal runtime token required")
-    if not secrets.compare_digest(x_hqa_internal_token, expected):
+    if not secrets.compare_digest(x_hqa_internal_token.strip().encode(), expected.encode()):
         raise HTTPException(status_code=403, detail="Invalid internal runtime token")
 
 
