@@ -211,7 +211,7 @@ class RemoteAnalysisClient:
     def __init__(self, base_url: Optional[str] = None, internal_token: Optional[str] = None,
                  timeout: int = 10, completion_timeout: int = 900):
         url = base_url or os.getenv("AI_SERVER_URL")
-        token = internal_token if internal_token is not None else os.getenv("HQA_INTERNAL_TOKEN")
+        token = (internal_token if internal_token is not None else os.getenv("HQA_INTERNAL_TOKEN") or "").strip()
         if not url or not token:
             raise ValueError("AI_SERVER_URL and HQA_INTERNAL_TOKEN are required for remote analysis")
         self.base_url = url.rstrip("/")

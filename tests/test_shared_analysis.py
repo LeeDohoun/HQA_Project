@@ -1094,3 +1094,35 @@ def test_the_decision_schema_shown_to_the_model_is_unchanged_by_setting_plans_as
     from src.runner.analysis_contracts import AccountDecision
 
     assert set(AccountDecision.model_json_schema()["properties"]) == {"plans", "reasoning"}
+
+
+def test_an_overlapping_cycle_request_is_coalesced_not_run_twice():
+    """A cycle can outlast its 15-minute slot (the remote client stops waiting after 900 s and
+    the next slot asks again); the AI server's single scheduler must not start a second one."""
+    import ai_server.app as server
+
+    started, release = threading.Event(), threading.Event()
+
+    class Backend:
+        def fetch_targets(self):
+            return [{"userId": "a"}]
+
+    class SlowEngine:
+        runs = 0
+
+        def run_cycle(self, targets):
+            SlowEngine.runs += 1
+            started.set()
+            release.wait(5)
+            return {"accounts": {"a": {"status": "completed", "plans": []}}}
+
+    scheduler = AnalysisScheduler(backend_client=Backend(), analysis_service=SlowEngine(),
+                                  submitter=lambda **kwargs: {"submitted": 0, "failed": 0})
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        first = pool.submit(scheduler.run_once)
+        assert started.wait(5)
+        assert scheduler.run_once() == {"status": "coalesced", "reason": "analysis_cycle_already_running"}
+        release.set()
+        assert first.result(5)["processed"] == 1
+    assert SlowEngine.runs == 1
+    assert server._analysis_scheduler.cache_info().maxsize == 1   # one scheduler, so one lock, per server
