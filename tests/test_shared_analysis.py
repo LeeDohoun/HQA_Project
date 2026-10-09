@@ -909,6 +909,9 @@ def test_runtime_service_builds_without_backend_configuration(monkeypatch, tmp_p
 
     for name in ("BACKEND_INTERNAL_BASE_URL", "BACKEND_BASE_URL"):
         monkeypatch.delenv(name, raising=False)
+    # Building the default (OpenAI) role models needs a key, not a network; the test is about
+    # backend configuration, so it must not depend on the developer's shell.
+    monkeypatch.setenv("OPENAI_API_KEY", "offline-test-key")
     shared_analysis._cached_runtime_analysis_service.cache_clear()
     engine = shared_analysis.get_runtime_analysis_service(data_dir=str(tmp_path))
     with pytest.raises(ValueError, match="BACKEND_INTERNAL_BASE_URL is required"):
