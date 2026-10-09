@@ -19,7 +19,7 @@
 | `HQA_LLM_RPM` / `HQA_LLM_TPM` | AI 서버 | OpenAI 프로젝트의 실제 한도로 설정. 기본 120 RPM·200,000 TPM은 보수적이라, 사이클마다 전문가 입력이 최대 약 80만 토큰이면 첫 사이클이 몇 분 늦어짐(공식 Build 등급 기본 5,000 RPM·2,000,000 TPM) |
 | `HQA_INTERNAL_TOKEN` | AI 서버, 백엔드, 모니터, 스케줄러 | 세 곳 모두 같은 값, 앞뒤 공백 없이 |
 | `HQA_KIS_ENC_KEY` | 백엔드 | KIS 자격증명 암호화 키. 바꾸면 저장된 계좌 지문을 다시 검토해야 함 |
-| 사용자별 KIS 모의투자 앱키·시크릿·계좌 | 백엔드 자격증명 등록 | 사용자 하나에 계좌 하나, 앱키 공유 금지. AI 서버는 증권사 자격증명을 받지 않음 |
+| 사용자별 KIS 모의투자 앱키·시크릿·계좌 | 백엔드 자격증명 등록 | 사용자 하나에 계좌 하나, 앱키 공유 금지. AI 서버는 증권사 자격증명을 받지 않음(Compose는 AI 쪽 컨테이너에서 KIS 키와 `HQA_KIS_ENC_KEY`를 빈 값으로 덮어씀) |
 | `DART_API_KEY` | 수집 | OpenDART 키 |
 | `KRX_OPEN_API_KEY` | 수집 | 일별 시세와 지수(시장 맥락) 서비스 승인 |
 | `BACKEND_INTERNAL_BASE_URL` | AI 서버, 모니터, 운영 도구 | 보통 `http://localhost:8000`(Compose에서는 `http://backend:8000`) |
