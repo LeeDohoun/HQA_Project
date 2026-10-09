@@ -184,3 +184,48 @@ def test_loop_refuses_to_start_without_themes(monkeypatch, tmp_path, capsys, fre
     monkeypatch.setattr(sys, "argv", ["loop"])
     assert loop.main() == 1
     assert "No themes configured" in capsys.readouterr().out
+
+
+def test_loop_refreshes_market_indices_once_a_day_after_0800(monkeypatch, tmp_path, fresh_settings):
+    from datetime import datetime as real_datetime
+
+    (tmp_path / "raw/theme_targets").mkdir(parents=True)
+    (tmp_path / "raw/theme_targets/2차전지.jsonl").write_text('{"stock_code": "006400", "stock_name": "삼성SDI"}\n',
+                                                            encoding="utf-8")
+    monkeypatch.setenv("HQA_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("KRX_OPEN_API_KEY", "fixture-key")
+    clock = iter([real_datetime(2026, 10, 12, 7, 30, tzinfo=loop.KST), real_datetime(2026, 10, 12, 8, 5, tzinfo=loop.KST),
+                  real_datetime(2026, 10, 12, 8, 35, tzinfo=loop.KST)])
+
+    class Clock(real_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return next(clock)
+
+    monkeypatch.setattr(loop, "datetime", Clock)
+    run = Mock(return_value=SimpleNamespace(returncode=0, stdout='{"saved_records": 2}', stderr=""))
+    monkeypatch.setattr(loop.subprocess, "run", run)
+    sleeps = iter([None, None, KeyboardInterrupt()])
+
+    def sleep(_):
+        value = next(sleeps)
+        if value is not None:
+            raise value
+
+    monkeypatch.setattr(loop.time, "sleep", sleep)
+    monkeypatch.setattr(sys, "argv", ["loop", "--market-context"])
+    with pytest.raises(KeyboardInterrupt):
+        loop.main()
+    modules = [call.args[0][2] for call in run.call_args_list]
+    assert modules.count("scripts.data.market_context") == 1  # skipped at 07:30, run at 08:05, not again at 08:35
+    market = next(call.args[0] for call in run.call_args_list if call.args[0][2] == "scripts.data.market_context")
+    assert market[market.index("--to-date") + 1] == "20261011" and market[market.index("--from-date") + 1] == "20261001"
+
+
+def test_loop_market_context_needs_a_krx_key(monkeypatch, tmp_path, fresh_settings, capsys):
+    monkeypatch.setenv("HQA_DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("KRX_OPEN_API_KEY", raising=False)
+    monkeypatch.delenv("KRX_API_KEY", raising=False)
+    monkeypatch.setattr(sys, "argv", ["loop", "--market-context"])
+    assert loop.main() == 1
+    assert "requires KRX_OPEN_API_KEY" in capsys.readouterr().out

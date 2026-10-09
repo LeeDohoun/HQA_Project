@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 import sys
@@ -74,6 +75,20 @@ def _run_once(theme: str, enabled_sources: str, theme_key: str = "") -> tuple[in
     return proc.returncode, output
 
 
+MARKET_CONTEXT_LOOKBACK_DAYS = 10
+
+
+def _run_market_context(today) -> tuple[int, str]:
+    """Collect KOSPI/KOSDAQ indices through yesterday. Stored observations are
+    deduplicated, so re-reading a short window repairs gaps without duplicating."""
+    to_date = today - timedelta(days=1)
+    from_date = to_date - timedelta(days=MARKET_CONTEXT_LOOKBACK_DAYS)
+    cmd = [sys.executable, "-m", "scripts.data.market_context",
+           "--from-date", from_date.strftime("%Y%m%d"), "--to-date", to_date.strftime("%Y%m%d")]
+    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT)
+    return proc.returncode, f"{proc.stdout}\n{proc.stderr}".strip()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Theme collection loop with next-day pause on API limit")
     parser.add_argument("--themes", type=str, default="",
@@ -87,7 +102,12 @@ def main() -> int:
         default="news,dart,financials,chart",
         help="Sources passed to scripts.data.collect. chart=KRX OHLCV, financials=DART statements.",
     )
+    parser.add_argument("--market-context", action="store_true",
+                        help="Also refresh KOSPI/KOSDAQ indices once per KST day after 08:00 (needs KRX_OPEN_API_KEY)")
     args = parser.parse_args()
+    if args.market_context and not (os.getenv("KRX_OPEN_API_KEY") or os.getenv("KRX_API_KEY") or "").strip():
+        print("--market-context requires KRX_OPEN_API_KEY (or KRX_API_KEY) with the index service approval.")
+        return 1
 
     themes = [t.strip() for t in args.themes.split(",") if t.strip()]
     saved = not themes
@@ -101,7 +121,19 @@ def main() -> int:
         f"📡 수집 루프 시작: themes={themes}, interval={args.interval_minutes}분, "
         f"enabled_sources={args.enabled_sources}"
     )
+    market_context_day = None
     while True:
+        now = datetime.now(KST)
+        if args.market_context and market_context_day != now.date() and now.hour >= 8:
+            code, output = _run_market_context(now.date())
+            if code == 0:
+                market_context_day = now.date()
+                print(f"[MARKET] 지수 갱신 완료: {output.splitlines()[-1] if output else ''}")
+            else:
+                print(f"[MARKET] 지수 갱신 실패(code={code}); 다음 주기에 다시 시도")
+                tail = "\n".join(output.splitlines()[-5:])
+                if tail:
+                    print(tail)
         for theme in themes:
             print(f"\n[COLLECT] {theme} 시작")
             code, output = _run_once(theme, args.enabled_sources, theme_key=theme if saved else "")
