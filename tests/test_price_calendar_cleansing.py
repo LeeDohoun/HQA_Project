@@ -208,3 +208,19 @@ def test_every_special_session_notice_records_its_open_and_close():
         opens, closes = datetime.fromisoformat(notice["open"]), datetime.fromisoformat(notice["close"])
         assert opens.date().isoformat() == closes.date().isoformat() == day and opens < closes
         assert daily_session_open(day) == opens and daily_session_close(day) == closes
+
+
+def test_backend_default_closed_dates_match_this_calendar_through_its_review_horizon():
+    import re
+    from pathlib import Path
+
+    from src.runner.trading_calendar import is_trading_day
+
+    config = (Path(__file__).resolve().parents[1] / "backend/src/main/resources/application.yml").read_text(encoding="utf-8")
+    backend = re.search(r"krx-closed-dates: \$\{HQA_KRX_CLOSED_DATES:([^}]*)\}", config).group(1).split(",")
+    day, end, closed = date(2026, 10, 1), date.fromisoformat(CALENDAR_REVIEWED_THROUGH), []
+    while day <= end:
+        if day.weekday() < 5 and not is_trading_day(day.isoformat()):
+            closed.append(day.isoformat())
+        day += timedelta(days=1)
+    assert backend == closed
