@@ -229,3 +229,35 @@ def test_loop_market_context_needs_a_krx_key(monkeypatch, tmp_path, fresh_settin
     monkeypatch.setattr(sys, "argv", ["loop", "--market-context"])
     assert loop.main() == 1
     assert "requires KRX_OPEN_API_KEY" in capsys.readouterr().out
+
+
+def test_loop_progress_reaches_a_redirected_log_while_it_runs(tmp_path):
+    """Run the real loop with stdout sent to a file, as on a host, and read the log mid-run."""
+    import os
+    import subprocess
+    import time
+
+    (tmp_path / "raw/theme_targets").mkdir(parents=True)
+    (tmp_path / "raw/theme_targets/fixture.jsonl").write_text('{"stock_code": "005930", "stock_name": "삼성전자"}\n',
+                                                            encoding="utf-8")
+    log = tmp_path / "loop.log"
+    env = {**os.environ, "HQA_DATA_DIR": str(tmp_path)}
+    env.pop("PYTHONUNBUFFERED", None)
+    with log.open("w") as handle:
+        # _run_once is replaced so no collector or provider runs.
+        process = subprocess.Popen([sys.executable, "-c",
+                                    "import sys\n"
+                                    "import scripts.data.loop as loop\n"
+                                    "loop._run_once = lambda *a, **k: (0, '')\n"
+                                    "sys.argv = ['loop', '--interval-minutes', '1']\n"
+                                    "loop.main()\n"],
+                                   cwd=Path(__file__).resolve().parents[1], env=env, stdout=handle, stderr=subprocess.STDOUT)
+        try:
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline and "루프 대기" not in log.read_text(encoding="utf-8"):
+                time.sleep(0.2)
+            text = log.read_text(encoding="utf-8")
+        finally:
+            process.kill()
+            process.wait()
+    assert "[COLLECT] fixture 완료" in text and "루프 대기" in text

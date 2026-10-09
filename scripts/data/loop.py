@@ -105,6 +105,9 @@ def main() -> int:
     parser.add_argument("--market-context", action="store_true",
                         help="Also refresh KOSPI/KOSDAQ indices once per KST day after 08:00 (needs KRX_OPEN_API_KEY)")
     args = parser.parse_args()
+    # The loop runs for days, usually with stdout sent to a file; without line buffering
+    # its progress stays in the buffer for hours (one line per theme every 30 minutes).
+    sys.stdout.reconfigure(line_buffering=True)
     if args.market_context and not (os.getenv("KRX_OPEN_API_KEY") or os.getenv("KRX_API_KEY") or "").strip():
         print("--market-context requires KRX_OPEN_API_KEY (or KRX_API_KEY) with the index service approval.")
         return 1
