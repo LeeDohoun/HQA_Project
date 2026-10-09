@@ -17,13 +17,14 @@ import logging
 import os
 import sys
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import requests  # noqa: E402
 
+import src.runner.trade_signal_submitter as submitter  # noqa: E402
 from src.runner.signal_monitor import BackendSignalClient, SignalMonitor  # noqa: E402
 
 BASE = os.environ.get("HQA_SIM_BASE_URL", "").rstrip("/")
@@ -54,6 +55,10 @@ class Run:
 
     def snapshot(self, signal):
         state = self.state
+        other = next((o for o in state["extra"] if o["stockCode"] == signal.get("stockCode")), None)
+        if other is not None:
+            return {"current_price": float(other["price"]), "holding_quantity": other["quantity"],
+                    "pnl_rate": (other["price"] / other["avgPrice"] - 1) * 100, "snapshot_at": state["now"]}
         snap = {"current_price": float(state["price"]), "holding_quantity": state["held"],
                 "snapshot_at": state["now"]}
         if state["held"]:
@@ -62,6 +67,19 @@ class Run:
 
     def plan(self, **body):
         return call("/sim/plan", body)
+
+    def publish(self, plans, analysis_id):
+        """Publish an analysis result through the real submitter, on the simulated clock."""
+        now = datetime.fromisoformat(call("/sim/state")["now"])
+        result = {"schema_version": 2, "status": "completed", "analysis_id": analysis_id, "user_id": "u1",
+                  "as_of": now.isoformat(), "strategy_profile": "short", "plans": [plan(now) for plan in plans]}
+        SimClock.current = now
+        real, submitter.datetime = submitter.datetime, SimClock
+        try:
+            return submitter.submit_trade_signals(user_id="u1", result=result, internal_token="sim",
+                                                  backend_signal_url=BASE + "/api/v1/internal/trading/signals")
+        finally:
+            submitter.datetime = real
 
     def run(self, path, until, actions=None):
         actions = dict(actions or {})
@@ -102,6 +120,49 @@ class Run:
         return min(((datetime.fromisoformat(o["submittedAt"]) - self.start).total_seconds() for o in orders), default=None)
 
 
+class SimClock(datetime):
+    """datetime whose now() is the simulation's, for the submitter's freshness checks."""
+    current = None
+
+    @classmethod
+    def now(cls, tz=None):
+        return cls.current.astimezone(tz) if tz else cls.current
+
+
+def buy_plan(code, price, stop, target, band=0.01, invalidation=None, confidence=70):
+    def build(now):
+        conditions = {"schema_version": 2,
+                      "entry_conditions": [{"id": "entry-band", "all": [
+                          {"field": "current_price", "operator": ">=", "value": float(round(price * (1 - band)))},
+                          {"field": "current_price", "operator": "<=", "value": float(round(price * (1 + band)))}]}],
+                      "exit_conditions": [{"id": "stop", "all": [{"field": "current_price", "operator": "<=", "value": float(stop)}]},
+                                          {"id": "take-profit", "all": [{"field": "current_price", "operator": ">=", "value": float(target)}]}],
+                      "reduce_conditions": [],
+                      "invalidation_conditions": [] if invalidation is None else [{"id": "thesis-failed", "all": [
+                          {"field": "current_price", "operator": "<", "value": float(invalidation)}]}]}
+        return {"stock_code": code, "stock_name": code, "action": "BUY", "holding_quantity": 0, "confidence": confidence,
+                "risk_level": "MEDIUM", "position_size_pct": 10.0, "entry_price": float(price),
+                "stop_loss_price": float(stop), "take_profit_price": float(target),
+                "entry_valid_until": (now + timedelta(minutes=10)).isoformat(),
+                "planned_exit_at": (now + timedelta(days=3)).isoformat(), "condition_payload": conditions,
+                "citations": [{"source_id": "sim-quote", "claim": "simulated quote"}], "reasoning": "simulated plan"}
+    return build
+
+
+def hold_plan(code, quantity, stop, take_profit=None):
+    def build(now):
+        conditions = {"schema_version": 2, "entry_conditions": [], "invalidation_conditions": [],
+                      "exit_conditions": [{"id": "stop", "all": [{"field": "current_price", "operator": "<=", "value": float(stop)}]}],
+                      "reduce_conditions": [] if take_profit is None else [{"id": "take-profit-1", "reduce_fraction": 0.5, "all": [
+                          {"field": "current_price", "operator": ">=", "value": float(take_profit)}]}]}
+        return {"stock_code": code, "stock_name": code, "action": "HOLD", "holding_quantity": quantity, "confidence": 60,
+                "risk_level": "MEDIUM", "position_size_pct": 0.0, "entry_price": None, "stop_loss_price": float(stop),
+                "take_profit_price": None, "entry_valid_until": (now + timedelta(minutes=10)).isoformat(),
+                "planned_exit_at": (now + timedelta(days=3)).isoformat(), "condition_payload": conditions,
+                "citations": [{"source_id": "sim-quote", "claim": "simulated quote"}], "reasoning": "simulated plan"}
+    return build
+
+
 RESULTS = []
 
 
@@ -120,7 +181,7 @@ def timeline(run):
     lines = []
     for e in run.final["events"]:
         if e["kind"] in {"order", "fill", "cancel", "trigger", "plan", "broker_refused", "cancel_refused", "server_error",
-                         "rate_limited"}:
+                         "rate_limited", "publish", "publish_refused"}:
             extra = {k: v for k, v in e.items() if k not in {"t", "kind"} and v is not None}
             lines.append(f"  t={e['t']:>4} {e['kind']:<14} {json.dumps(extra, ensure_ascii=False)}")
     return "\n".join(lines)
@@ -304,11 +365,72 @@ def working_entry_cancelled_at_expiry():
     return run
 
 
+OTHER = {"stockCode": "006400", "quantity": 10, "avgPrice": 520000, "price": 567000}
+
+
+def published_plans_trade_end_to_end():
+    run = Run("published_plans_trade_end_to_end", price=102, held=0, cash=1_000_000, extra=[OTHER])
+    published = run.publish([buy_plan("005930", 100, stop=95, target=110, invalidation=96),
+                             hold_plan("006400", 10, stop=527000, take_profit=612000)], "cycle-1")
+    check(run, "both plans published", published.get("submitted") == 2 and not published.get("failed"), published)
+    run.run(lambda t: 102 if t < 40 else 100 if t < 120 else 94, until=220)
+    common(run, 0)
+    by_code = {s["stockCode"]: s for s in run.final["signals"]}
+    check(run, "the held stock is protected and untouched",
+          by_code.get("006400", {}).get("status") == "OPEN" and by_code["006400"]["managed"] == 10, by_code.get("006400"))
+    buys, stops = run.orders_for(":ENTRY:entry-band:"), run.orders_for(":EXIT:stop:")
+    check(run, "entry bought inside the band, then the stop sold it",
+          len(buys) == 1 and buys[0]["limit"] == 100 and sum(o["filled"] for o in stops) == run.bought() > 0
+          and run.final["held"] == 0, (buys, stops))
+    return run
+
+
+def republished_cycles_replace_plans_in_place():
+    run = Run("republished_cycles_replace_plans_in_place", price=106, held=0, cash=1_000_000, extra=[OTHER])
+    first = run.publish([buy_plan("005930", 102, stop=97, target=112, invalidation=99), hold_plan("006400", 10, stop=527000)], "cycle-1")
+    run.run(lambda t: 106, until=60)        # above the entry band: no entry
+    second = run.publish([buy_plan("005930", 102, stop=97, target=112, invalidation=99), hold_plan("006400", 10, stop=540000)], "cycle-2")
+    run.run(lambda t: 106, until=120)
+    third = run.publish([buy_plan("005930", 102, stop=97, target=112, invalidation=99), hold_plan("006400", 10, stop=500000)], "cycle-3")
+    again = run.publish([buy_plan("005930", 102, stop=97, target=112, invalidation=99), hold_plan("006400", 10, stop=500000)], "cycle-3")
+    run.run(lambda t: 106, until=140)
+    common(run, 0)
+    check(run, "every cycle published both plans",
+          [r.get("submitted") for r in (first, second, third, again)] == [2, 2, 2, 2]
+          and not any(r.get("failed") for r in (first, second, third, again)), (first, second, third, again))
+    by_code = {s["stockCode"]: s for s in run.final["signals"]}
+    check(run, "one plan per stock, replaced in place up to version 3",
+          len(run.final["signals"]) == 2 and by_code["006400"]["version"] == 3 and by_code["005930"]["version"] == 3,
+          run.final["signals"])
+    stop_values = [atom["value"] for group in json.loads(by_code["006400"]["conditions"])["exit_conditions"]
+                   for atom in group["all"] if atom["field"] == "current_price" and atom["operator"] == "<="]
+    check(run, "the held stop was raised and never lowered", max(stop_values) == 540000, stop_values)
+    check(run, "the repeated cycle-3 request was deduplicated",
+          [e["deduplicated"] for e in run.events("publish")][-2:] == [True, True], run.events("publish")[-2:])
+    return run
+
+
+def publishing_while_an_order_works_keeps_the_plan():
+    run = Run("publishing_while_an_order_works_keeps_the_plan", price=106, held=10, avg=100)
+    run.publish([hold_plan("005930", 10, stop=90, take_profit=106)], "cycle-1")
+    run.run(lambda t: 106 if t == 0 else 104, until=20)        # the take-profit order is left working at 106
+    second = run.publish([hold_plan("005930", 10, stop=95, take_profit=106)], "cycle-2")
+    run.run(lambda t: 104, until=60)
+    common(run, 10)
+    check(run, "the update is refused while the order works, with the reason",
+          second.get("failed") == 1 and "ORDER_RECONCILIATION_REQUIRED_BEFORE_PLAN_UPDATE" in " ".join(second.get("failures", [])),
+          second)
+    check(run, "the first plan keeps protecting", [(s["version"], s["status"]) for s in run.final["signals"]] == [(1, "OPEN")],
+          run.final["signals"])
+    return run
+
+
 SCENARIOS = [stop_behind_working_reduction, planned_exit_during_working_reduction, take_profit_tiers,
              entry_then_stop, unfilled_reduction_retries, reissued_version_does_not_repeat_reduction,
              stop_flicker_with_planned_exit_due, entry_partial_fill_then_stop, rate_limited_stop,
              entry_fill_recorded_after_the_stop_crossed, entry_invalidated_before_it_triggers,
-             entry_expires_untriggered, working_entry_cancelled_at_expiry]
+             entry_expires_untriggered, working_entry_cancelled_at_expiry, published_plans_trade_end_to_end,
+             republished_cycles_replace_plans_in_place, publishing_while_an_order_works_keeps_the_plan]
 
 
 def main():

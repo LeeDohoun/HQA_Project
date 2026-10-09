@@ -5,15 +5,23 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import com.hqa.backend.dto.ErrorCode;
+import com.hqa.backend.dto.ErrorResponse;
 import com.hqa.backend.dto.InternalTradeSignalRequest;
+import com.hqa.backend.dto.InternalTradeSignalResponse;
+import com.hqa.backend.entity.TradePlanReceipt;
 import com.hqa.backend.entity.TradeSignal;
 import com.hqa.backend.entity.TradeSignalExecution;
 import com.hqa.backend.entity.User;
 import com.hqa.backend.repository.*;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import jakarta.validation.Validation;
+import jakarta.validation.Validator;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
@@ -62,7 +70,15 @@ class PaperLifecycleSimulationTest {
     }
 
     final MutableClock clock = new MutableClock();
-    final ObjectMapper json = new ObjectMapper().findAndRegisterModules().disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+    /** Configured like the backend's Spring mapper (application.yml), which the services also receive. */
+    final ObjectMapper json = new ObjectMapper().findAndRegisterModules()
+            .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
+            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+    final Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
+    final Map<String, TradePlanReceipt> receiptRows = new LinkedHashMap<>();
+    /** Other holdings in the account: listed in snapshots and quoted, never traded. */
+    final List<Map<String, Object>> extra = new ArrayList<>();
     final Map<String, TradeSignal> signalRows = new LinkedHashMap<>();
     final Map<String, TradeSignalExecution> executionRows = new LinkedHashMap<>();
     final List<Order> orders = new ArrayList<>();
@@ -113,23 +129,39 @@ class PaperLifecycleSimulationTest {
         account.put("dailyPnlPct", 0.0);
         account.put("entryEligible", true);
         account.put("capturedAt", now().toString());
-        account.put("holdings", held == 0 ? List.of() : List.of(Map.of("stockCode", "005930", "quantity", held,
-                "sellableQuantity", sellable(), "avgPrice", avg, "currentPrice", price, "evalAmount", held * price,
-                "pnlRate", (price / avg - 1) * 100)));
+        List<Map<String, Object>> holdings = new ArrayList<>();
+        if (held > 0) {
+            holdings.add(Map.of("stockCode", "005930", "quantity", held, "sellableQuantity", sellable(), "avgPrice", avg,
+                    "currentPrice", price, "evalAmount", held * price, "pnlRate", (price / avg - 1) * 100));
+        }
+        for (Map<String, Object> other : extra) {
+            int quantity = ((Number) other.get("quantity")).intValue();
+            double average = ((Number) other.get("avgPrice")).doubleValue();
+            long quote = ((Number) other.get("price")).longValue();
+            holdings.add(Map.of("stockCode", other.get("stockCode"), "quantity", quantity, "sellableQuantity", quantity,
+                    "avgPrice", average, "currentPrice", quote, "evalAmount", quantity * quote, "pnlRate", (quote / average - 1) * 100));
+        }
+        account.put("holdings", holdings);
+        account.put("equity", cash + held * price + extra.stream()
+                .mapToLong(o -> ((Number) o.get("quantity")).longValue() * ((Number) o.get("price")).longValue()).sum());
         return account;
     }
 
     void wire() {
-        store = new PaperTradeStore(signals, executions, guard, new ObjectMapper(), receipts, 1, 0.5);
-        lifecycle = new PaperTradeLifecycle(signals, executions, accounts, store, kis, new ObjectMapper(), clock);
+        store = new PaperTradeStore(signals, executions, guard, json, receipts, 1, 0.5);
+        lifecycle = new PaperTradeLifecycle(signals, executions, accounts, store, kis, json, clock);
         when(guard.lock("u1")).thenReturn(user);
         when(guard.binding(any())).thenReturn("binding");
         when(accounts.paperUser("u1")).thenReturn(user);
         when(accounts.binding(any())).thenReturn("binding");
         when(accounts.snapshot("u1")).thenAnswer(inv -> snapshot());
-        when(receipts.existsById(anyString())).thenReturn(false);
-        when(receipts.findById(anyString())).thenReturn(Optional.empty());
-        when(receipts.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(receipts.existsById(anyString())).thenAnswer(inv -> receiptRows.containsKey((String) inv.getArgument(0)));
+        when(receipts.findById(anyString())).thenAnswer(inv -> Optional.ofNullable(receiptRows.get((String) inv.getArgument(0))));
+        when(receipts.saveAndFlush(any())).thenAnswer(inv -> {
+            TradePlanReceipt receipt = inv.getArgument(0);
+            receiptRows.put((String) ReflectionTestUtils.getField(receipt, "id"), receipt);
+            return receipt;
+        });
 
         org.mockito.stubbing.Answer<TradeSignal> saveSignal = inv -> {
             TradeSignal signal = inv.getArgument(0);
@@ -171,13 +203,17 @@ class PaperLifecycleSimulationTest {
                 .mapToLong(e -> e.getReservedCash() == null ? 0 : e.getReservedCash()).sum());
 
         when(kis.fetchAccessToken(anyString(), any())).thenReturn("token");
-        when(kis.inquireCurrentPrice(anyString(), any(), anyString(), anyString())).thenAnswer(inv -> price);
+        when(kis.inquireCurrentPrice(anyString(), any(), anyString(), anyString())).thenAnswer(inv -> quote(inv.getArgument(3)));
         when(kis.paperPurchasingPower(anyString(), any(), anyString(), anyString(), anyLong())).thenAnswer(inv ->
                 Map.of("cash", cash, "quantity", cash / (long) inv.getArgument(4)));
         when(kis.paperOrder(anyString(), any(), anyString(), anyString(), anyInt(), anyLong(), anyString())).thenAnswer(inv -> {
             int quantity = inv.getArgument(4);
             long limit = inv.getArgument(5);
             String side = inv.getArgument(6);
+            if (!"005930".equals(inv.getArgument(3))) {
+                event("broker_refused", "side", side, "qty", quantity, "stockCode", inv.getArgument(3));
+                return Map.of("success", false, "response", Map.of("rt_cd", "1", "msg_cd", "SIM_UNTRADED", "msg1", "not simulated"));
+            }
             if (rateLimited > 0) {
                 rateLimited--;
                 event("rate_limited", "side", side, "qty", quantity);
@@ -228,10 +264,20 @@ class PaperLifecycleSimulationTest {
         });
     }
 
+    long quote(String stockCode) {
+        if ("005930".equals(stockCode)) return price;
+        return extra.stream().filter(o -> stockCode.equals(o.get("stockCode")))
+                .map(o -> ((Number) o.get("price")).longValue()).findFirst().orElseThrow();
+    }
+
     void reset(Map<String, Object> body) {
         clock.now = START.toInstant();
         signalRows.clear();
         executionRows.clear();
+        receiptRows.clear();
+        extra.clear();
+        @SuppressWarnings("unchecked") List<Map<String, Object>> others = (List<Map<String, Object>>) body.getOrDefault("extra", List.of());
+        extra.addAll(others);
         orders.clear();
         events.clear();
         orderSeq = signalSeq = executionSeq = 0;
@@ -322,6 +368,7 @@ class PaperLifecycleSimulationTest {
         result.put("sellable", sellable());
         result.put("avg", avg);
         result.put("cash", cash);
+        result.put("extra", extra);
         result.put("orders", orders.stream().map(o -> Map.of("odno", o.odno, "side", o.side, "qty", o.qty, "limit", o.limit,
                 "filled", o.filled, "cancelled", o.cancelled, "submittedAt", o.submittedAt)).toList());
         result.put("executions", executionRows.values().stream().map(e -> {
@@ -343,6 +390,8 @@ class PaperLifecycleSimulationTest {
             row.put("version", s.getPlanVersion());
             row.put("managed", s.getManagedQuantity());
             row.put("reject", s.getRejectReason());
+            row.put("stockCode", s.getStockCode());
+            row.put("conditions", s.getConditionPayload());
             return row;
         }).toList());
         result.put("events", events);
@@ -361,7 +410,27 @@ class PaperLifecycleSimulationTest {
         String raw = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
         Map<String, Object> body = raw.isBlank() ? Map.of() : json.readValue(raw, new TypeReference<>() { });
         try {
-            if (path.equals("/api/v1/internal/trading/signals/active")) {
+            if (path.equals("/api/v1/internal/trading/signals")) {
+                // As InternalTradeSignalController.save: bean validation, then the store's own rules.
+                InternalTradeSignalRequest request = json.readValue(raw, InternalTradeSignalRequest.class);
+                var violations = validator.validate(request);
+                if (!violations.isEmpty()) {
+                    respond(exchange, 400, ErrorResponse.of(ErrorCode.INVALID_REQUEST, violations.toString(), null));
+                    return;
+                }
+                boolean deduplicated = lifecycle.hasReceipt(request.idempotencyKey());
+                try {
+                    TradeSignal saved = lifecycle.save(request);
+                    event("publish", "stockCode", request.stockCode(), "action", request.action(), "version", request.planVersion(),
+                            "signalId", saved.getId(), "status", saved.getStatus(), "deduplicated", deduplicated);
+                    respond(exchange, 200, new InternalTradeSignalResponse(saved.getId(), saved.getStatus(), deduplicated));
+                } catch (IllegalArgumentException | IllegalStateException ex) {
+                    int status = ex instanceof IllegalStateException ? 409 : 400;
+                    event("publish_refused", "stockCode", request.stockCode(), "action", request.action(), "status", status,
+                            "reason", ex.getMessage());
+                    respond(exchange, status, ErrorResponse.of(ErrorCode.INVALID_REQUEST, ex.getMessage(), null));
+                }
+            } else if (path.equals("/api/v1/internal/trading/signals/active")) {
                 respond(exchange, 200, lifecycle.active(0, 200));
             } else if (path.startsWith("/api/v1/internal/trading/signals/") && path.endsWith("/trigger")) {
                 String id = path.substring("/api/v1/internal/trading/signals/".length(), path.length() - "/trigger".length());
