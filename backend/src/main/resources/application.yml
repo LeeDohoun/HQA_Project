@@ -72,7 +72,7 @@ hqa:
   historical-data-dir: ${HQA_HISTORICAL_DATA_DIR:}
   # KRX weekday closures and official special sessions for PAPER order gating; keep in step
   # with src/runner/trading_calendar.py, e.g. HQA_KRX_SPECIAL_SESSIONS=2026-11-19@10:00-16:30
-  # The default lists that calendar's weekday closures from 2026-10 through its review
-  # horizon (CALENDAR_REVIEWED_THROUGH = 2027-09-30); setting the variable replaces it.
-  krx-closed-dates: ${HQA_KRX_CLOSED_DATES:2026-10-05,2026-10-09,2026-12-25,2026-12-31,2027-01-01,2027-02-08,2027-02-09,2027-03-01,2027-05-05,2027-05-13,2027-08-16,2027-09-14,2027-09-15,2027-09-16}
+  # Unset or blank uses KrxSessionCalendar.DEFAULT_CLOSED_DATES (that calendar's weekday
+  # closures from 2026-10 through its review horizon); a nonblank value replaces it.
+  krx-closed-dates: ${HQA_KRX_CLOSED_DATES:}
   krx-special-sessions: ${HQA_KRX_SPECIAL_SESSIONS:}

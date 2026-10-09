@@ -30,6 +30,18 @@ class KrxSessionCalendarTest {
     }
 
     @Test
+    void aBlankClosedDatesSettingKeepsTheBuiltInClosures() {
+        for (String blank : new String[] {"", " ", null}) {
+            KrxSessionCalendar calendar = new KrxSessionCalendar(blank, "");
+            assertThat(calendar.isOpen(kst("2026-10-09T10:00:00"))).isFalse();   // Hangul Day
+            assertThat(calendar.isOpen(kst("2026-12-31T10:00:00"))).isFalse();   // year-end closing
+            assertThat(calendar.isOpen(kst("2026-10-12T10:00:00"))).isTrue();
+        }
+        // A nonblank setting replaces the built-in list.
+        assertThat(new KrxSessionCalendar("2026-12-25", "").isOpen(kst("2026-10-09T10:00:00"))).isTrue();
+    }
+
+    @Test
     void malformedConfigurationFailsAtStartup() {
         assertThatThrownBy(() -> new KrxSessionCalendar("", "2026-11-19 10:00-16:30")).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new KrxSessionCalendar("", "2026-11-19@16:30-10:00")).isInstanceOf(IllegalArgumentException.class);

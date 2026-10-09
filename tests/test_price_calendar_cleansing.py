@@ -216,8 +216,10 @@ def test_backend_default_closed_dates_match_this_calendar_through_its_review_hor
 
     from src.runner.trading_calendar import is_trading_day
 
-    config = (Path(__file__).resolve().parents[1] / "backend/src/main/resources/application.yml").read_text(encoding="utf-8")
-    backend = re.search(r"krx-closed-dates: \$\{HQA_KRX_CLOSED_DATES:([^}]*)\}", config).group(1).split(",")
+    source = (Path(__file__).resolve().parents[1]
+              / "backend/src/main/java/com/hqa/backend/service/KrxSessionCalendar.java").read_text(encoding="utf-8")
+    declared = re.search(r"DEFAULT_CLOSED_DATES = ((?:\s*\+?\s*\"[^\"]*\")+);", source).group(1)
+    backend = "".join(re.findall(r"\"([^\"]*)\"", declared)).split(",")
     day, end, closed = date(2026, 10, 1), date.fromisoformat(CALENDAR_REVIEWED_THROUGH), []
     while day <= end:
         if day.weekday() < 5 and not is_trading_day(day.isoformat()):

@@ -23,6 +23,13 @@ public class KrxSessionCalendar {
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
     private static final LocalTime OPEN = LocalTime.of(9, 0);
     private static final LocalTime CLOSE = LocalTime.of(15, 30);
+    /**
+     * Weekday closures of src/runner/trading_calendar.py from 2026-10 through its review horizon
+     * (CALENDAR_REVIEWED_THROUGH = 2027-09-30); a Python test keeps the two lists equal. Used when
+     * HQA_KRX_CLOSED_DATES is unset or blank (Spring passes a defined-but-empty value, not its default).
+     */
+    public static final String DEFAULT_CLOSED_DATES = "2026-10-05,2026-10-09,2026-12-25,2026-12-31,2027-01-01,"
+            + "2027-02-08,2027-02-09,2027-03-01,2027-05-05,2027-05-13,2027-08-16,2027-09-14,2027-09-15,2027-09-16";
     private final Set<LocalDate> closed = new HashSet<>();
     private final Map<LocalDate, LocalTime[]> special = new HashMap<>();
 
@@ -32,7 +39,9 @@ public class KrxSessionCalendar {
      */
     public KrxSessionCalendar(@Value("${hqa.krx-closed-dates:}") String closedDates,
                               @Value("${hqa.krx-special-sessions:}") String specialSessions) {
-        for (String raw : split(closedDates)) closed.add(LocalDate.parse(raw));
+        for (String raw : split(closedDates == null || closedDates.isBlank() ? DEFAULT_CLOSED_DATES : closedDates)) {
+            closed.add(LocalDate.parse(raw));
+        }
         for (String raw : split(specialSessions)) {
             String[] dayAndHours = raw.split("@");
             String[] hours = dayAndHours.length == 2 ? dayAndHours[1].split("-") : new String[0];
