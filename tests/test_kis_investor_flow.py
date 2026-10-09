@@ -351,8 +351,7 @@ def test_revisions_skip_identical_content_and_preserve_a_b_a_history(tmp_path):
 
 @pytest.mark.parametrize("bad", [
     row(stck_bsop_date="20260230"), row(stck_bsop_date="20260909"), row(stck_bsop_date="2026-09-07"),
-    row(stck_clpr="0"), row(prsn_ntby_qty="1.5"), row(prsn_ntby_qty=True),
-    row(frgn_ntby_tr_pbmn="NaN"), row(orgn_ntby_tr_pbmn="Infinity"), row(stck_clpr="1,23"),
+    row(stck_clpr="0"), row(prsn_ntby_qty="1.5"),
     {"stck_bsop_date": "20260907"}, None,
 ])
 def test_invalid_stock_rows_fail_clearly_without_partial_save(tmp_path, bad):
@@ -364,11 +363,84 @@ def test_invalid_stock_rows_fail_clearly_without_partial_save(tmp_path, bad):
     assert report["rows_saved"] == 1 and not (tmp_path / "market/investor_flow/2026/20260904.jsonl").exists()
 
 
-def test_duplicate_dates_are_rejected_in_one_stock_response(tmp_path):
+@pytest.mark.parametrize("source", flow.FLOW_FIELDS.values())
+@pytest.mark.parametrize("value", ["", "  ", "-", "not-a-number", "NaN", "Infinity", "1,23", None, True])
+def test_invalid_numeric_rows_are_skipped_without_discarding_valid_days(tmp_path, source, value):
     clock = Clock()
-    session = Session(clock, stocks={"005930": [Response(output(row(), row()))]})
+    session = Session(clock, stocks={"005930": [Response(output(
+        row("20260904"), row(**{source: value}), row("20260908")))]})
     instance, _, _ = collector(tmp_path, clock=clock, session=session)
-    assert instance.collect_day(["005930"], execute=True)["failures"][0]["reason"] == "invalid_row"
+    report = instance.collect_day(["005930"], execute=True)
+    assert (report["stocks_ok"], report["stocks_failed"], report["rows_saved"]) == (1, 0, 2)
+    assert report["rows_skipped_invalid"] == 1
+    assert report["stocks_no_valid_rows"] == 0 and report["no_valid_rows"] == report["failures"] == []
+    assert len(session.gets) == 1
+    directory = tmp_path / "market/investor_flow/2026"
+    assert not (directory / "20260907.jsonl").exists()
+    assert read_rows(directory / "20260904.jsonl")[0]["individual_net_quantity"] == "-7"
+    assert read_rows(directory / "20260908.jsonl")[0]["close"] == "70000"
+
+
+def test_all_blank_stock_is_no_valid_rows_without_retries(tmp_path):
+    clock = Clock()
+    blank = {source: "" for source in flow.FLOW_FIELDS.values()}
+    session = Session(clock, stocks={"000300": [Response(output(row(**blank), row("20260904", **blank)))]})
+    instance, _, _ = collector(tmp_path, clock=clock, session=session)
+    report = instance.collect_day(["000300"], execute=True)
+    assert (report["stocks_attempted"], report["stocks_ok"], report["stocks_failed"], report["rows_saved"]) == (1, 0, 0, 0)
+    assert report["rows_skipped_invalid"] == 2 and report["stocks_no_valid_rows"] == 1
+    assert report["no_valid_rows"] == [{"stock_code": "000300", "attempts": 1, "reason": "no_valid_rows"}]
+    assert report["failures"] == [] and len(session.gets) == 1
+    assert 1 not in clock.delays and 2 not in clock.delays
+    assert not list((tmp_path / "market/investor_flow").glob("*/*.jsonl"))
+    assert json.loads((tmp_path / "market/investor_flow/_last_run.json").read_text()) == report
+
+
+def test_invalid_numeric_fields_do_not_hide_malformed_date(tmp_path):
+    clock = Clock()
+    session = Session(clock, stocks={"005930": [Response(output(row(), row("20260230", stck_clpr="")))]})
+    instance, _, _ = collector(tmp_path, clock=clock, session=session)
+    report = instance.collect_day(["005930"], execute=True)
+    assert report["failures"] == [{"stock_code": "005930", "attempts": 1, "reason": "invalid_row"}]
+    assert report["rows_saved"] == 0 and report["stocks_no_valid_rows"] == 0
+    assert len(session.gets) == 1
+
+
+@pytest.mark.parametrize("second", [row(frgn_ntby_qty="6"), row(stck_clpr="")])
+def test_conflicting_duplicate_dates_fail_without_partial_save(tmp_path, second):
+    clock = Clock()
+    session = Session(clock, stocks={"005930": [Response(output(row("20260904"), row(), second))]})
+    instance, _, _ = collector(tmp_path, clock=clock, session=session)
+    report = instance.collect_day(["005930"], execute=True)
+    assert report["failures"] == [{"stock_code": "005930", "attempts": 1, "reason": "invalid_row"}]
+    assert report["rows_saved"] == 0 and len(session.gets) == 1
+
+
+def test_identical_duplicate_dates_are_stored_once(tmp_path):
+    clock = Clock()
+    session = Session(clock, stocks={"005930": [Response(output(row(), row(stck_clpr="70000.00")))]})
+    instance, _, _ = collector(tmp_path, clock=clock, session=session)
+    report = instance.collect_day(["005930"], execute=True)
+    assert report["stocks_ok"] == report["rows_saved"] == 1
+    assert report["rows_skipped_invalid"] == 0 and report["failures"] == []
+
+
+def test_summary_counts_valid_skipped_empty_and_failed_stocks(tmp_path):
+    clock = Clock()
+    session = Session(clock, stocks={
+        "005930": [Response(output(row(), row("20260904", stck_clpr="")))],
+        "000300": [Response(output(row(stck_clpr=""), row("20260904", prsn_ntby_qty="-")))],
+        "001470": [Response(output(row(stck_clpr="not-a-number")))],
+        "001570": [Response(output(row("20260230")))],
+    })
+    instance, _, _ = collector(tmp_path, clock=clock, session=session)
+    report = instance.collect_day(["005930", "000300", "001470", "001570", "000660"], execute=True)
+    assert (report["stocks_planned"], report["stocks_attempted"], report["stocks_ok"], report["stocks_failed"],
+            report["stocks_no_valid_rows"], report["rows_saved"], report["rows_skipped_invalid"]) == (5, 5, 2, 1, 2, 2, 4)
+    assert [item["stock_code"] for item in report["no_valid_rows"]] == ["000300", "001470"]
+    assert report["failures"] == [{"stock_code": "001570", "attempts": 1, "reason": "invalid_row"}]
+    assert len(session.gets) == 5
+    assert json.loads((tmp_path / "market/investor_flow/_last_run.json").read_text()) == report
 
 
 def test_dry_run_needs_no_credentials_session_or_cache(tmp_path):
@@ -376,6 +448,8 @@ def test_dry_run_needs_no_credentials_session_or_cache(tmp_path):
     report = instance.collect_day(["005930"])
     assert report["dry_run"] and report["stocks_planned"] == 1
     assert report["stocks_attempted"] == report["rows_saved"] == 0
+    assert report["rows_skipped_invalid"] == report["stocks_no_valid_rows"] == 0
+    assert report["no_valid_rows"] == []
     assert list(tmp_path.iterdir()) == []
 
 

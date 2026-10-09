@@ -276,29 +276,45 @@ class KisInvestorFlowCollector:
             raise KisFlowError("empty_output")
         return rows
 
-    def _rows(self, code: str, raw_rows: list[dict], now: datetime) -> tuple[list[dict], int]:
-        rows, dates, provisional = [], set(), 0
+    def _rows(self, code: str, raw_rows: list[dict], now: datetime) -> tuple[list[dict], int, int]:
+        rows, dates, provisional, skipped_invalid = [], {}, 0, 0
         for raw in raw_rows:
             try:
                 day_text = raw["stck_bsop_date"]
                 if not isinstance(day_text, str) or not re.fullmatch(r"[0-9]{8}", day_text):
                     raise ValueError
                 day = datetime.strptime(day_text, "%Y%m%d").date()
-                if day > now.date() or day in dates:
+                if day > now.date():
                     raise ValueError
-                dates.add(day)
+                values, invalid = {}, False
+                for field, source in FLOW_FIELDS.items():
+                    value = raw[source]
+                    try:
+                        values[field] = _number(value)
+                    except KisFlowError:
+                        values[field] = value
+                        invalid = True
+                if day in dates and dates[day] != values:
+                    raise ValueError
+                duplicate = day in dates
+                dates[day] = values
+                if invalid:
+                    skipped_invalid += 1
+                    continue
+                if duplicate:
+                    continue
                 if day == now.date() and now.time() < datetime_time(18, 30):
                     provisional += 1
                     continue
                 row = {"stock_code": code, "trade_date": day.isoformat(),
-                       **{field: _number(raw[source], integer=field.endswith("quantity"), positive=field == "close")
-                          for field, source in FLOW_FIELDS.items()},
+                       **{field: _number(value, integer=field.endswith("quantity"), positive=field == "close")
+                          for field, value in values.items()},
                        "source": "KIS_FHKST01010900", "net_value_unit": "provider_reported_unverified"}
             except (ValueError, TypeError, KeyError):
                 raise KisFlowError("invalid_row", retryable=False) from None
             version = hashlib.sha256(json.dumps(row, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
             rows.append({**row, "collected_at": now.isoformat(), "available_at": now.isoformat(), "version": version})
-        return rows, provisional
+        return rows, provisional, skipped_invalid
 
     def collect_day(self, stock_codes, *, execute: bool = False) -> dict:
         """Append validated per-stock/date revisions; dry runs read neither keys nor caches."""
@@ -306,7 +322,8 @@ class KisInvestorFlowCollector:
         started = _kst(self.clock())
         summary = {"dry_run": not execute, "started_at": started.isoformat(), "stocks_planned": len(codes),
                    "stocks_attempted": 0, "stocks_ok": 0, "stocks_failed": 0,
-                   "rows_saved": 0, "provisional_rows_skipped": 0, "failures": []}
+                   "rows_saved": 0, "provisional_rows_skipped": 0, "failures": [],
+                   "rows_skipped_invalid": 0, "stocks_no_valid_rows": 0, "no_valid_rows": []}
         if not execute:
             return summary
         if not all(isinstance(value, str) and value.strip() for value in (self.app_key, self.app_secret)):
@@ -323,7 +340,7 @@ class KisInvestorFlowCollector:
                 for attempt in range(MAX_ATTEMPTS):
                     try:
                         raw_rows = self._fetch_stock(code)
-                        rows, provisional = self._rows(code, raw_rows, _kst(self.clock()))
+                        rows, provisional, skipped_invalid = self._rows(code, raw_rows, _kst(self.clock()))
                     except KisFlowError as exc:
                         if exc.retryable and attempt + 1 < MAX_ATTEMPTS:
                             self.sleeper(2 ** attempt)
@@ -334,8 +351,14 @@ class KisInvestorFlowCollector:
                         for row in rows:
                             day = row["trade_date"].replace("-", "")
                             pending.setdefault(day, []).append(row)
-                        summary["stocks_ok"] += 1
+                        if not rows and skipped_invalid and not provisional:
+                            summary["stocks_no_valid_rows"] += 1
+                            summary["no_valid_rows"].append({"stock_code": code, "attempts": attempt + 1,
+                                                             "reason": "no_valid_rows"})
+                        else:
+                            summary["stocks_ok"] += 1
                         summary["provisional_rows_skipped"] += provisional
+                        summary["rows_skipped_invalid"] += skipped_invalid
                     break
             for day, rows in sorted(pending.items()):
                 path = self.data_dir / "market" / "investor_flow" / day[:4] / f"{day}.jsonl"
