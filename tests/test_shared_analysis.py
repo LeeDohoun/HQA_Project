@@ -7,6 +7,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
@@ -596,7 +597,7 @@ def buy_plan():
                 "entry_conditions": [{"id": "entry", "all": [{"field": "current_price", "operator": "<=", "value": 100.0}]}],
                 "exit_conditions": [{"id": "stop", "all": [{"field": "current_price", "operator": "<=", "value": 90.0}]}],
                 "reduce_conditions": [],
-                "invalidation_conditions": [{"id": "invalid", "all": [{"field": "current_price", "operator": ">", "value": 120.0}]}]},
+                "invalidation_conditions": [{"id": "invalid", "all": [{"field": "current_price", "operator": "<", "value": 95.0}]}]},
             "citations": [{"source_id": "source", "claim": "Observed source"}], "reasoning": "Explicit numerical plan"}
 
 
@@ -624,7 +625,7 @@ def test_buy_stop_in_invalidation_is_valid_but_reduction_is_not_full_protection(
     conditions["exit_conditions"], conditions["invalidation_conditions"] = conditions["invalidation_conditions"], conditions["exit_conditions"]
     assert TradingPlan.model_validate(plan).stop_loss_price == 90.0
     stop = conditions["invalidation_conditions"].pop()
-    conditions["invalidation_conditions"].append({"id": "other", "all": [{"field": "current_price", "operator": ">", "value": 130.0}]})
+    conditions["invalidation_conditions"].append({"id": "other", "all": [{"field": "current_price", "operator": "<", "value": 85.0}]})
     conditions["reduce_conditions"].append({**stop, "reduce_fraction": 0.5})
     with pytest.raises(ValidationError, match="unconditional"):
         TradingPlan.model_validate(plan)
@@ -928,3 +929,168 @@ def test_preview_failure_explains_why_the_price_history_is_unusable():
         engine.preview_stock("000007")
     with pytest.raises(ValueError, match="preview_price_history_unavailable:000008:not_in_theme_universe"):
         engine.preview_stock("000008")
+
+
+@pytest.mark.parametrize("group_id", ["손절", "stop loss", "tp1.5", "planned-exit", ""])
+def test_condition_group_ids_use_the_backend_alphabet(group_id):
+    plan = buy_plan()
+    plan["condition_payload"]["exit_conditions"][0]["id"] = group_id
+    with pytest.raises(ValidationError):
+        TradingPlan.model_validate(plan)
+
+
+@pytest.mark.parametrize("predicate", [
+    {"field": "current_price", "operator": ">", "value": 120.0},   # would sell a filled position at +20%
+    {"field": "current_price", "operator": ">=", "value": 110.0},
+    {"field": "current_price", "operator": "==", "value": 95.0},
+])
+def test_invalidation_must_describe_an_adverse_move(predicate):
+    plan = buy_plan()
+    plan["condition_payload"]["invalidation_conditions"] = [{"id": "invalid", "all": [predicate]}]
+    with pytest.raises(ValidationError, match="adverse"):
+        TradingPlan.model_validate(plan)
+
+
+def test_pnl_rate_needs_a_held_position():
+    plan = buy_plan()
+    plan["condition_payload"]["entry_conditions"][0]["all"].append({"field": "pnl_rate", "operator": "<=", "value": 0.0})
+    with pytest.raises(ValidationError, match="held position"):
+        TradingPlan.model_validate(plan)
+
+
+@pytest.mark.parametrize("threshold,valid", [(103.0, True), (97.0, True), (103.5, False), (96.0, False)])
+def test_entry_price_conditions_stay_inside_the_backend_drift_band(threshold, valid):
+    plan = buy_plan()
+    plan["condition_payload"]["entry_conditions"][0]["all"] = [{"field": "current_price", "operator": ">=", "value": threshold}]
+    if valid:
+        TradingPlan.model_validate(plan)
+    else:
+        with pytest.raises(ValidationError, match="3%"):
+            TradingPlan.model_validate(plan)
+
+
+def test_a_failed_quote_drops_only_that_candidate_and_holdings_fall_back_to_the_account_price():
+    class FlakyQuotes(Accounts):
+        def fetch_prices(self, user_id, codes):
+            quotes = super().fetch_prices(user_id, codes)
+            quotes["000001"] = {"error": "price_snapshot_failed:000001:CURRENT_PRICE_UNAVAILABLE"}  # the holding
+            first_new = next(code for code in codes if code != "000001")
+            quotes[first_new] = {"error": f"price_snapshot_failed:{first_new}:CURRENT_PRICE_UNAVAILABLE"}
+            self.dropped = first_new
+            return quotes
+
+    accounts = FlakyQuotes()
+    engine, calls = service(accounts=accounts)
+    account = engine.run_cycle([{"userId": "a"}])["accounts"]["a"]
+    assert account["status"] == "completed"
+    assert account["omitted_candidates"] == [{"stock_code": accounts.dropped,
+                                             "reason": f"price_snapshot_failed:{accounts.dropped}:CURRENT_PRICE_UNAVAILABLE"}]
+    risk = next(payload for role, payload in calls if role == "risk_manager")
+    held = next(row for row in risk["candidates"] if row["stock_code"] == "000001")
+    assert held["quote"]["source"] == "kis_account_snapshot" and held["quote"]["current_price"] == 110.0
+    assert accounts.dropped not in {row["stock_code"] for row in risk["candidates"]}
+    assert "000001" in {plan["stock_code"] for plan in account["plans"]}
+
+
+def test_one_unusable_plan_is_rejected_without_losing_the_accounts_other_plans():
+    class OneBadCitation(Model):
+        def invoke(self, messages):
+            result = super().invoke(messages)
+            if self.role == "risk_manager":
+                bad = next(plan for plan in result.plans if plan.holding_quantity == 0)
+                bad.citations[0].source_id = "invented"
+            return result
+
+    engine, calls = service()
+    engine.models["risk_manager"] = OneBadCitation("risk_manager", calls)
+    account = engine.run_cycle([{"userId": "a"}])["accounts"]["a"]
+    assert account["status"] == "completed"
+    assert [row["reason"] for row in account["rejected_plans"]] == ["plan stock/citation mismatch"]
+    assert "000001" in {plan["stock_code"] for plan in account["plans"]}  # the holding's protection still goes out
+
+
+def test_an_unsupported_holding_is_set_aside_instead_of_failing_the_account(monkeypatch):
+    from src.runner.analysis_data import BackendAccountClient
+
+    row = snapshot("a", [holding()]).model_dump(mode="json")
+    row["capturedAt"] = datetime.now(timezone.utc).isoformat()
+    row["holdings"].append({**row["holdings"][0], "stockCode": "0126Z0", "stockName": "신규상장"})
+    response = SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"snapshots": [row]})
+    monkeypatch.setattr("src.runner.analysis_data.requests.post", lambda *args, **kwargs: response)
+    account = BackendAccountClient(base_url="http://backend.invalid", internal_token="t").fetch_accounts(["a"])["a"]
+    assert [h.stockCode for h in account.holdings] == ["000001"]
+    assert account.unsupportedHoldings == [{"stockCode": "0126Z0", "reason": "unsupported_holding"}]
+
+
+@pytest.mark.parametrize("blocked", [{"entryEligible": False, "entryBlockReason": "DAILY_LOSS_LIMIT"},
+                                     {"monitorCapacityExceeded": True},
+                                     {"monitorSymbolCount": 10}])
+def test_an_account_that_cannot_enter_reviews_only_its_holdings(blocked):
+    class Blocked(Accounts):
+        def fetch_accounts(self, ids):
+            return {user: AccountSnapshot.model_validate({**snapshot(user, [holding()]).model_dump(mode="json"), **blocked})
+                    for user in ids}
+
+        def fetch_prices(self, user_id, codes):
+            self.quoted = codes
+            return super().fetch_prices(user_id, codes)
+
+    accounts = Blocked()
+    engine, calls = service(accounts=accounts)
+    account = engine.run_cycle([{"userId": "a"}])["accounts"]["a"]
+    assert account["status"] == "completed"
+    assert accounts.quoted == ["000001"]
+    risk = next(payload for role, payload in calls if role == "risk_manager")
+    assert [row["stock_code"] for row in risk["candidates"]] == ["000001"]
+
+
+def test_a_plan_that_breaks_the_plan_contract_is_set_aside_not_the_whole_decision():
+    class OneBrokenPlan(Model):
+        def invoke(self, messages):
+            if self.role != "risk_manager":
+                return super().invoke(messages)
+            decision = super().invoke(messages).model_dump(mode="json")
+            broken = next(plan for plan in decision["plans"] if plan["holding_quantity"] == 0)
+            broken["planned_exit_at"] = broken["entry_valid_until"]   # JSON-schema valid, contract invalid
+            self.broken = broken["stock_code"]
+            return self.schema.model_validate_json(json.dumps(decision))
+
+    engine, calls = service()
+    engine.models["risk_manager"] = model = OneBrokenPlan("risk_manager", calls)
+    account = engine.run_cycle([{"userId": "a"}])["accounts"]["a"]
+    assert account["status"] == "completed"
+    assert account["rejected_plans"] == [{"stock_code": model.broken, "action": "HOLD",
+                                          "reason": "plan contract: Value error, planned exit must follow entry expiry"}]
+    assert "000001" in {plan["stock_code"] for plan in account["plans"]}
+    assert model.broken not in {plan["stock_code"] for plan in account["plans"]}
+
+
+def test_duplicate_plans_for_one_stock_still_void_the_decision():
+    from src.runner.analysis_contracts import AccountDecision
+
+    plan = buy_plan()
+    with pytest.raises(ValidationError, match="one plan per stock"):
+        AccountDecision.model_validate({"plans": [plan, dict(plan, planned_exit_at=plan["entry_valid_until"])],
+                                        "reasoning": "r"})
+
+
+def test_an_unmatchable_broken_plan_fails_the_account_instead_of_dropping_a_stock():
+    class UnreadableCode(Model):
+        def invoke(self, messages):
+            if self.role != "risk_manager":
+                return super().invoke(messages)
+            decision = super().invoke(messages).model_dump(mode="json")
+            broken = next(plan for plan in decision["plans"] if plan["holding_quantity"] == 0)
+            broken["stock_code"] = "12345"
+            return self.schema.model_validate(decision)
+
+    engine, calls = service()
+    engine.models["risk_manager"] = UnreadableCode("risk_manager", calls)
+    account = engine.run_cycle([{"userId": "a"}])["accounts"]["a"]
+    assert account["status"] == "failed" and "exactly all requested" in account["error"]
+
+
+def test_the_decision_schema_shown_to_the_model_is_unchanged_by_setting_plans_aside():
+    from src.runner.analysis_contracts import AccountDecision
+
+    assert set(AccountDecision.model_json_schema()["properties"]) == {"plans", "reasoning"}

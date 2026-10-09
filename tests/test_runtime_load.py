@@ -155,7 +155,7 @@ class FakeLuna:
                             "entry_conditions": [group("entry", ">=", 110.0)] if buy else [],
                             "exit_conditions": [group("stop", "<=", 95.0)] if buy or quantity else [],
                             "reduce_conditions": [],
-                            "invalidation_conditions": [group("invalid", ">", 120.0)] if buy else []},
+                            "invalidation_conditions": [group("invalid", "<", 100.0)] if buy else []},
                         "citations": [{"source_id": row["quote"]["source_id"], "claim": "Account-specific quote"}],
                         "reasoning": "Explicit account-specific decision"})
                 result = {"plans": plans, "reasoning": "Account-specific risk review"}

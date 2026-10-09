@@ -177,10 +177,12 @@ def test_unverified_mechanical_action_blocks_model_buy_even_outside_event_packet
     assert cycle["errors"] == []
     assert cycle["completed_stock_count"] == 1
     account = cycle["accounts"]["account-a"]
-    assert account["status"] == "failed" and account["plans"] == []
-    assert "unverified_corporate_action_price_basis" in account["error"]
-    analyst = next(payload for role, payload in calls if role == "analyst")
     risk = next(payload for role, payload in calls if role == "risk_manager")["candidates"][0]
+    # The blocked BUY is rejected on its own and reported; it no longer fails the account.
+    assert account["status"] == "completed" and account["plans"] == []
+    assert account["rejected_plans"] == [{"stock_code": risk["stock_code"], "action": "BUY",
+                                          "reason": "BUY blocked: unverified_corporate_action_price_basis"}]
+    analyst = next(payload for role, payload in calls if role == "analyst")
     assert "corporate:outside-event-packet" not in analyst["source_ids"]
     assert risk["price_safety"]["entry_block_reasons"] == ["unverified_corporate_action_price_basis"]
     assert "corporate:outside-event-packet" in risk["source_ids"]

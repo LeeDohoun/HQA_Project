@@ -15,7 +15,7 @@ import requests
 import yaml
 
 from src.config.settings import get_data_dir
-from src.runner.analysis_contracts import AccountSnapshot
+from src.runner.analysis_contracts import AccountSnapshot, Holding
 from src.runner.theme_universe_loader import ThemeUniverseLoader
 from src.runner.trading_calendar import CALENDAR_VERSION, completed_daily_sessions, daily_session_close
 
@@ -468,7 +468,7 @@ class BackendAccountClient:
         if not url:
             raise ValueError("BACKEND_INTERNAL_BASE_URL is required for account snapshots")
         self.base_url = url.rstrip("/")
-        self.token = internal_token if internal_token is not None else os.getenv("HQA_INTERNAL_TOKEN", "")
+        self.token = (internal_token if internal_token is not None else os.getenv("HQA_INTERNAL_TOKEN", "")).strip()
         if not self.token:
             raise ValueError("HQA_INTERNAL_TOKEN is required for account snapshots")
         self.timeout = timeout
@@ -482,7 +482,18 @@ class BackendAccountClient:
         for row in rows:
             if row.get("success") is not True:
                 raise ValueError(f"account_snapshot_failed:{row.get('userId')}:{row.get('error')}")
-            snapshot = AccountSnapshot.model_validate(row)
+            # A holding the pipeline cannot analyse (e.g. an alphanumeric KRX code) must not
+            # block the account's other plans; it is kept aside and reported, and the
+            # monitor still flags it as uncovered.
+            supported, unsupported = [], []
+            for holding in row.get("holdings") or []:
+                try:
+                    Holding.model_validate(holding)
+                    supported.append(holding)
+                except (ValueError, TypeError):
+                    unsupported.append({"stockCode": str(holding.get("stockCode")) if isinstance(holding, dict) else None,
+                                        "reason": "unsupported_holding"})
+            snapshot = AccountSnapshot.model_validate({**row, "holdings": supported, "unsupportedHoldings": unsupported})
             age = datetime.now(UTC) - snapshot.capturedAt
             if age.total_seconds() < -5 or age > timedelta(seconds=60):
                 raise ValueError(f"stale_account_snapshot:{snapshot.userId}")
@@ -494,25 +505,36 @@ class BackendAccountClient:
         return result
 
     def fetch_prices(self, user_id: str, stock_codes: list[str]) -> dict[str, dict]:
+        """Quotes by code; a code whose quote failed maps to {"error": reason} so one bad
+        quote does not fail the whole account review."""
+        # The backend fetches each uncached quote one KIS call per second.
+        timeout = max(self.timeout, 10 + 1.5 * len(stock_codes))
         response = requests.post(f"{self.base_url}/api/v1/internal/market/price-snapshots",
                                  json={"userId": user_id, "stockCodes": stock_codes},
-                                 headers={"X-HQA-Internal-Token": self.token}, timeout=self.timeout)
+                                 headers={"X-HQA-Internal-Token": self.token}, timeout=timeout)
         response.raise_for_status()
         result = {}
         for row in response.json()["snapshots"]:
+            code = row.get("stockCode")
+            if code in result:
+                raise ValueError("duplicate KIS quote in price snapshot response")
             value = row.get("currentPrice")
             if (row.get("success") is not True or isinstance(value, bool)
                     or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0):
-                raise ValueError(f"price_snapshot_failed:{row.get('stockCode')}:{row.get('failureReason')}")
-            if row.get("source") != "kis" or row["stockCode"] in result:
-                raise ValueError("invalid or duplicate KIS quote source")
+                result[code] = {"error": f"price_snapshot_failed:{code}:{row.get('failureReason')}"}
+                continue
+            if row.get("source") != "kis":
+                result[code] = {"error": f"unverified_quote_source:{code}"}
+                continue
             at = source_time(row["snapshotAt"])
             age = (datetime.now(UTC) - at).total_seconds()
             if not -5 <= age <= 60:
-                raise ValueError(f"stale_price_snapshot:{row['stockCode']}")
-            result[row["stockCode"]] = {"source_id": f"quote:{row['stockCode']}:{at.isoformat()}",
-                                        "current_price": row["currentPrice"], "available_at": at.isoformat(),
-                                        "source": row["source"]}
-        if set(result) != set(stock_codes):
-            raise ValueError("price snapshot response does not match requested stocks")
+                result[code] = {"error": f"stale_price_snapshot:{code}"}
+                continue
+            result[code] = {"source_id": f"quote:{code}:{at.isoformat()}", "current_price": row["currentPrice"],
+                            "available_at": at.isoformat(), "source": row["source"]}
+        if set(result) - set(stock_codes):
+            raise ValueError("price snapshot response contains unrequested stocks")
+        for code in stock_codes:
+            result.setdefault(code, {"error": f"price_snapshot_missing:{code}"})
         return result
