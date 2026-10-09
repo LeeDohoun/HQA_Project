@@ -359,3 +359,45 @@ def test_submit_reports_backend_reasons_and_retries_a_timeout_once(monkeypatch):
     monkeypatch.setattr("urllib.request.urlopen", refused)
     report = submit_trade_signals(user_id="user-1", result=result, backend_signal_url=url, internal_token="t")
     assert report["failures"] == ['005930:HTTP_400:{"error":"OPEN_PLAN_HARD_STOP_CANNOT_BE_WEAKENED"}']
+
+
+def test_v2_signal_url_with_a_trailing_slash_still_reaches_the_backend(monkeypatch):
+    seen = []
+
+    class Client:
+        def __init__(self, base_url, internal_token):
+            seen.append(base_url)
+
+        def fetch_active_signals(self):
+            return []
+
+    monkeypatch.setattr("src.runner.signal_monitor.BackendSignalClient", Client)
+    monkeypatch.setenv("BACKEND_SIGNAL_URL", "http://backend.invalid/api/v1/internal/trading/signals/ ")
+    monkeypatch.setenv("HQA_INTERNAL_TOKEN", "t")
+    posted = []
+
+    class Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b'{"signalId": "s1"}'
+
+    monkeypatch.setattr("src.runner.trade_signal_submitter.urllib.request.urlopen",
+                        lambda request, timeout: posted.append(request.full_url) or Response())
+    result = _v2_result()
+    now = datetime.now(KST)
+    shift = now - datetime.fromisoformat(result["as_of"])
+    result["as_of"] = now.isoformat()
+    for plan in result["plans"]:
+        for key in ("entry_valid_until", "planned_exit_at"):
+            plan[key] = (datetime.fromisoformat(plan[key]) + shift).isoformat()
+    result = submit_trade_signals(user_id="user-1", result=result)
+    assert seen == ["http://backend.invalid"]
+    assert posted and all(url == "http://backend.invalid/api/v1/internal/trading/signals" for url in posted)
+    assert result["submitted"] == len(posted)

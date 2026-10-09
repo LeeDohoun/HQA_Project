@@ -215,7 +215,7 @@ def submit_trade_signals(
     internal_token: Optional[str] = None,
     ttl_minutes: int = 15,
 ) -> Dict[str, Any]:
-    url = backend_signal_url or os.getenv("BACKEND_SIGNAL_URL", "").strip()
+    url = (backend_signal_url or os.getenv("BACKEND_SIGNAL_URL", "")).strip().rstrip("/")
     token = internal_token if internal_token is not None else os.getenv("HQA_INTERNAL_TOKEN", "").strip()
     if result.get("schema_version") == 2 and not url:
         raise ValueError("BACKEND_SIGNAL_URL is required to publish v2 trading plans")
