@@ -12,6 +12,7 @@ import com.hqa.backend.repository.TradeSignalExecutionRepository;
 import com.hqa.backend.repository.TradeSignalRepository;
 import java.time.OffsetDateTime;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -421,6 +422,56 @@ public class PaperTradeStore {
         signal.setStatus("EXPIRED");
         signal.setRejectReason("ENTRY_EXPIRED_OR_INVALIDATED");
         signals.save(signal);
+    }
+
+    /** Adopts the broker order an operator found for an UNKNOWN submission; reconciliation then resumes. */
+    @Transactional
+    public TradeSignalExecution adoptBrokerOrder(String executionId, String orderId, String organization,
+            String note, OffsetDateTime now) {
+        lock(executions.ownerOf(executionId).orElseThrow());
+        TradeSignalExecution execution = executions.findById(executionId).orElseThrow();
+        requireAwaitingOperator(execution);
+        execution.setOrderId(orderId);
+        if (organization != null && !organization.isBlank()) execution.setOrderOrganization(organization);
+        execution.setStatus("ORDER_SUBMITTED");
+        execution.setRejectReason(null);
+        execution.setKisResponse(operatorRecord(execution, "ADOPTED_BROKER_ORDER", note, now));
+        return releaseFromOperator(execution);
+    }
+
+    /** Records an operator's finding that the broker never received an UNKNOWN submission. */
+    @Transactional
+    public TradeSignalExecution confirmNotSubmitted(String executionId, String note, OffsetDateTime now) {
+        lock(executions.ownerOf(executionId).orElseThrow());
+        TradeSignalExecution execution = executions.findById(executionId).orElseThrow();
+        requireAwaitingOperator(execution);
+        execution.setStatus("REJECTED");
+        execution.setReservedCash(0L);
+        execution.setRejectReason("OPERATOR_CONFIRMED_NOT_SUBMITTED");
+        execution.setKisResponse(operatorRecord(execution, "CONFIRMED_NOT_SUBMITTED", note, now));
+        return releaseFromOperator(execution);
+    }
+
+    /** Only an UNKNOWN order without a broker ID waits for an operator; nothing else may be changed this way. */
+    public static void requireAwaitingOperator(TradeSignalExecution execution) {
+        if (!"UNKNOWN".equals(execution.getStatus()) || (execution.getOrderId() != null && !execution.getOrderId().isBlank())) {
+            throw new IllegalStateException("EXECUTION_NOT_AWAITING_OPERATOR");
+        }
+    }
+
+    private TradeSignalExecution releaseFromOperator(TradeSignalExecution execution) {
+        TradeSignalExecution saved = executions.saveAndFlush(execution);
+        TradeSignal signal = signals.findById(execution.getSignalId()).orElseThrow();
+        signal.setRejectReason(null);
+        signals.save(signal);
+        return saved;
+    }
+
+    private String operatorRecord(TradeSignalExecution execution, String action, String note, OffsetDateTime now) {
+        Map<String, Object> record = new LinkedHashMap<>();
+        record.put("operatorResolution", Map.of("action", action, "note", note, "at", now.toString()));
+        record.put("previousResponse", execution.getKisResponse());
+        return json(record);
     }
 
     private User lock(String userId) {

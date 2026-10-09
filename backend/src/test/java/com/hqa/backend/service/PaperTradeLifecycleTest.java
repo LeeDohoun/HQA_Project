@@ -235,6 +235,75 @@ class PaperTradeLifecycleTest {
                 .containsEntry("brokerOrderKnown", false);
     }
 
+    private TradeSignalExecution unknownSell() {
+        TradeSignalExecution unknown = execution();
+        unknown.setStatus("UNKNOWN");
+        unknown.setOrderId(null);
+        unknown.setRejectReason("ORDER_ACCEPTANCE_UNKNOWN");
+        when(executions.findById("e1")).thenReturn(Optional.of(unknown));
+        return unknown;
+    }
+
+    private static Map<String, Object> brokerOrder(String odno, String stock, String time) {
+        return Map.of("odno", odno, "ord_dt", "20260904", "pdno", stock, "sll_buy_dvsn_cd", "01", "ord_qty", "10",
+                "ord_tmd", time, "ord_gno_brno", "06010");
+    }
+
+    @Test
+    void operatorAdoptsOnlyABrokerOrderThatMatchesTheUnknownSubmission() {
+        unknownSell();
+        when(kis.paperOrders(eq("u1"), any(), eq("token"), any(), any())).thenReturn(List.of(
+                brokerOrder("0000117057", "005930", "100001"), brokerOrder("0000117058", "000660", "100002")));
+        assertThatThrownBy(() -> lifecycle.resolveUnknownOrder("e1", "117058", false, "KIS 앱 주문내역 확인"))
+                .hasMessage("BROKER_ORDER_NOT_FOUND_FOR_THIS_SUBMISSION");     // another stock's order
+        TradeSignalExecution other = execution();
+        ReflectionTestUtils.setField(other, "id", "e9");
+        when(executions.findByUserIdAndOrderId("u1", "0000117057")).thenReturn(List.of(other));
+        assertThatThrownBy(() -> lifecycle.resolveUnknownOrder("e1", "117057", false, "KIS 앱 주문내역 확인"))
+                .hasMessage("BROKER_ORDER_ALREADY_ASSOCIATED");
+        verify(store, never()).adoptBrokerOrder(anyString(), anyString(), any(), anyString(), any());
+        when(executions.findByUserIdAndOrderId("u1", "0000117057")).thenReturn(List.of());
+        lifecycle.resolveUnknownOrder("e1", "117057", false, " KIS 앱 주문내역 확인 ");
+        verify(store).adoptBrokerOrder("e1", "0000117057", "06010", "KIS 앱 주문내역 확인", now);
+    }
+
+    @Test
+    void notSubmittedIsRefusedWhileTheBrokerListsAPossibleOrder() {
+        unknownSell();
+        when(kis.paperOrders(eq("u1"), any(), eq("token"), any(), any())).thenReturn(List.of(
+                brokerOrder("0000117001", "005930", "093000"), brokerOrder("0000117057", "005930", "100001")));
+        assertThatThrownBy(() -> lifecycle.resolveUnknownOrder("e1", null, true, "주문내역에 없음"))
+                .hasMessage("BROKER_LISTS_POSSIBLE_ORDER:0000117057");
+        verify(store, never()).confirmNotSubmitted(anyString(), anyString(), any());
+        when(kis.paperOrders(eq("u1"), any(), eq("token"), any(), any())).thenReturn(List.of(
+                brokerOrder("0000117001", "005930", "093000")));            // earlier than the submission
+        lifecycle.resolveUnknownOrder("e1", null, true, "주문내역에 없음");
+        verify(store).confirmNotSubmitted("e1", "주문내역에 없음", now);
+    }
+
+    @Test
+    void onlyAnUnknownOrderWithoutBrokerIdCanBeResolvedAndANoteIsRequired() {
+        TradeSignalExecution unknown = unknownSell();
+        assertThatThrownBy(() -> lifecycle.resolveUnknownOrder("e1", "1", false, " ")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> lifecycle.resolveUnknownOrder("e1", "1", true, "n")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> lifecycle.resolveUnknownOrder("e1", null, false, "n")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> lifecycle.resolveUnknownOrder("e1", "12a", false, "n")).isInstanceOf(IllegalArgumentException.class);
+        unknown.setStatus("ORDER_SUBMITTED");
+        assertThatThrownBy(() -> lifecycle.resolveUnknownOrder("e1", "1", false, "n")).hasMessage("EXECUTION_NOT_AWAITING_OPERATOR");
+        verify(kis, never()).paperOrders(anyString(), any(), anyString(), any(), any());
+    }
+
+    @Test
+    void operatorListShowsOnlyUnknownOrdersWithoutBrokerId() {
+        TradeSignalExecution unknown = unknownSell();
+        TradeSignalExecution known = execution();
+        known.setStatus("UNKNOWN");
+        when(executions.findByStatusInOrderBySubmittedAtAsc(List.of("UNKNOWN"))).thenReturn(List.of(unknown, known));
+        assertThat(lifecycle.ordersAwaitingOperator()).singleElement().satisfies(row -> assertThat(row)
+                .containsEntry("executionId", "e1").containsEntry("stockCode", "005930").containsEntry("orderSide", "SELL")
+                .containsEntry("quantity", 10).containsEntry("rejectReason", "ORDER_ACCEPTANCE_UNKNOWN"));
+    }
+
     private TradeSignalExecution execution() {
         TradeSignalExecution intent = new TradeSignalExecution();
         ReflectionTestUtils.setField(intent, "id", "e1");

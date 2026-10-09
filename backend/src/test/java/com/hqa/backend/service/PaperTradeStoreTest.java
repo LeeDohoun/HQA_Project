@@ -48,6 +48,43 @@ class PaperTradeStoreTest {
                 .filter(e -> ((List<?>) inv.getArgument(1)).contains(e.getStatus())).toList());
     }
 
+    private TradeSignalExecution unknownOrder(TradeSignal signal) {
+        TradeSignalExecution execution = new TradeSignalExecution();
+        execution.setSignalId(signal.getId());
+        execution.setUserId("u1");
+        execution.setStatus("UNKNOWN");
+        execution.setReservedCash(50_000L);
+        execution.setRejectReason("ORDER_ACCEPTANCE_UNKNOWN");
+        execution.setKisResponse("{\"success\":false,\"unknown\":true}");
+        return executions.saveAndFlush(execution);
+    }
+
+    @Test
+    void operatorResolutionReleasesOnlyAnUnknownOrderAndKeepsTheRecord() throws Exception {
+        TradeSignal signal = store.save(request("HOLD", 10, 1, "a", now), account(12), now);
+        signal.setRejectReason("ORDER_RECONCILIATION_REQUIRED");
+        TradeSignalExecution adopted = unknownOrder(signal);
+        store.adoptBrokerOrder(adopted.getId(), "0000117057", "06010", "KIS 앱 주문내역 확인", now);
+        assertThat(adopted.getStatus()).isEqualTo("ORDER_SUBMITTED");
+        assertThat(adopted.getOrderId()).isEqualTo("0000117057");
+        assertThat(adopted.getReservedCash()).isEqualTo(50_000L);      // reconciliation settles it from the fills
+        assertThat(signal.getRejectReason()).isNull();
+        Map<String, Object> record = new ObjectMapper().readValue(adopted.getKisResponse(),
+                new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() { });
+        @SuppressWarnings("unchecked")
+        Map<String, Object> resolution = (Map<String, Object>) record.get("operatorResolution");
+        assertThat(resolution).containsEntry("action", "ADOPTED_BROKER_ORDER").containsEntry("note", "KIS 앱 주문내역 확인");
+        assertThat(record.get("previousResponse")).isEqualTo("{\"success\":false,\"unknown\":true}");
+        assertThatThrownBy(() -> store.confirmNotSubmitted(adopted.getId(), "again", now))
+                .hasMessage("EXECUTION_NOT_AWAITING_OPERATOR");
+
+        TradeSignalExecution unsent = unknownOrder(signal);
+        store.confirmNotSubmitted(unsent.getId(), "주문내역에 없음", now);
+        assertThat(unsent.getStatus()).isEqualTo("REJECTED");
+        assertThat(unsent.getRejectReason()).isEqualTo("OPERATOR_CONFIRMED_NOT_SUBMITTED");
+        assertThat(unsent.getReservedCash()).isZero();
+    }
+
     @Test
     void backendCapAndMonitorCapacityRejectNewEntryBeforeMutation() {
         assertThatThrownBy(() -> store.save(request("BUY", 25, 1, "a", now), account(0), now))

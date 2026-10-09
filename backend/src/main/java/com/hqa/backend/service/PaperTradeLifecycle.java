@@ -11,6 +11,7 @@ import com.hqa.backend.repository.TradeSignalRepository;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -30,6 +31,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class PaperTradeLifecycle {
     private static final Logger log = LoggerFactory.getLogger(PaperTradeLifecycle.class);
+    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
     private final TradeSignalRepository signals;
     private final TradeSignalExecutionRepository executions;
     private final PaperAccountSnapshotService accounts;
@@ -229,6 +231,95 @@ public class PaperTradeLifecycle {
             if ("WAITING_ENTRY".equals(signal.getStatus()) && signal.getEntryValidUntil() != null
                     && !signal.getEntryValidUntil().isAfter(now())) store.expireEntry(signal.getId(), signal.getPlanVersion(), false, now());
         }
+    }
+
+    /** UNKNOWN orders (no broker ID) with what an operator needs to find them in the broker's order history. */
+    public List<Map<String, Object>> ordersAwaitingOperator() {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (TradeSignalExecution execution : executions.findByStatusInOrderBySubmittedAtAsc(List.of("UNKNOWN"))) {
+            if (execution.getOrderId() != null && !execution.getOrderId().isBlank()) continue;
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("executionId", execution.getId());
+            row.put("signalId", execution.getSignalId());
+            row.put("userId", execution.getUserId());
+            row.put("stockCode", execution.getStockCode());
+            row.put("triggerType", execution.getTriggerType());
+            row.put("orderSide", execution.getOrderSide());
+            row.put("quantity", execution.getSubmittedQuantity());
+            row.put("orderPrice", execution.getOrderPrice());
+            row.put("submittedAt", execution.getSubmittedAt());
+            row.put("rejectReason", execution.getRejectReason());
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    /**
+     * Records an operator's finding for an UNKNOWN order, checked against the broker's own order
+     * history for the submission date. brokerOrderId adopts that order if it has the same stock,
+     * side and quantity, and reconciliation then resumes. notSubmitted is refused while the broker
+     * lists an order from that time on that could be this submission and is tied to no other one,
+     * so a real order is never treated as unsent (and later sent again).
+     */
+    public Map<String, Object> resolveUnknownOrder(String executionId, String brokerOrderId, boolean notSubmitted, String note) {
+        if (note == null || note.isBlank() || note.length() > 500) {
+            throw new IllegalArgumentException("A note of at most 500 characters is required");
+        }
+        boolean adopt = brokerOrderId != null && !brokerOrderId.isBlank();
+        if (adopt == notSubmitted) throw new IllegalArgumentException("Give either brokerOrderId or notSubmitted");
+        if (adopt && !brokerOrderId.matches("[0-9]{1,20}")) throw new IllegalArgumentException("Invalid broker order ID");
+        TradeSignalExecution execution = executions.findById(executionId)
+                .orElseThrow(() -> new IllegalArgumentException("EXECUTION_NOT_FOUND"));
+        PaperTradeStore.requireAwaitingOperator(execution);
+        User user = accounts.paperUser(execution.getUserId());
+        if (!accounts.binding(user).equals(execution.getAccountBinding())) throw new IllegalStateException("ACCOUNT_BINDING_CHANGED");
+        var submitted = execution.getSubmittedAt().atZoneSameInstant(KST);
+        LocalDate day = submitted.toLocalDate();
+        String side = "BUY".equals(execution.getOrderSide()) ? "02" : "01";
+        List<Map<String, Object>> sameOrder = kis.paperOrders(user.getUserId(), user.getSecret(), token(user), day, day).stream()
+                .filter(row -> day.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE).equals(String.valueOf(row.get("ord_dt")))
+                        && execution.getStockCode().equals(String.valueOf(row.get("pdno")))
+                        && side.equals(String.valueOf(row.get("sll_buy_dvsn_cd")))
+                        && integer(row.get("ord_qty")) == execution.getSubmittedQuantity())
+                .toList();
+        if (adopt) {
+            List<Map<String, Object>> match = sameOrder.stream().filter(row -> sameOrderNumber(brokerOrderId, row.get("odno"))).toList();
+            if (match.size() != 1) throw new IllegalStateException("BROKER_ORDER_NOT_FOUND_FOR_THIS_SUBMISSION");
+            String orderId = String.valueOf(match.get(0).get("odno"));
+            if (associated(execution, orderId, day)) throw new IllegalStateException("BROKER_ORDER_ALREADY_ASSOCIATED");
+            store.adoptBrokerOrder(executionId, orderId, String.valueOf(match.get(0).get("ord_gno_brno")), note.trim(), now());
+        } else {
+            LocalTime from = submitted.toLocalTime().minusMinutes(1);
+            List<String> possible = sameOrder.stream()
+                    .filter(row -> { LocalTime at = orderTime(row.get("ord_tmd")); return at == null || !at.isBefore(from); })
+                    .map(row -> String.valueOf(row.get("odno")))
+                    .filter(orderId -> !associated(execution, orderId, day)).toList();
+            if (!possible.isEmpty()) throw new IllegalStateException("BROKER_LISTS_POSSIBLE_ORDER:" + String.join(",", possible));
+            store.confirmNotSubmitted(executionId, note.trim(), now());
+        }
+        TradeSignalExecution updated = executions.findById(executionId).orElseThrow();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("executionId", executionId);
+        result.put("signalId", updated.getSignalId());
+        result.put("status", updated.getStatus());
+        result.put("orderId", updated.getOrderId());
+        return result;
+    }
+
+    private boolean associated(TradeSignalExecution execution, String orderId, LocalDate day) {
+        return executions.findByUserIdAndOrderId(execution.getUserId(), orderId).stream()
+                .anyMatch(other -> !other.getId().equals(execution.getId())
+                        && other.getSubmittedAt().atZoneSameInstant(KST).toLocalDate().equals(day));
+    }
+
+    private static boolean sameOrderNumber(String typed, Object listed) {
+        try { return new java.math.BigInteger(typed).equals(new java.math.BigInteger(String.valueOf(listed).trim())); }
+        catch (NumberFormatException ex) { return false; }
+    }
+
+    private static LocalTime orderTime(Object raw) {
+        try { return LocalTime.parse(String.valueOf(raw), java.time.format.DateTimeFormatter.ofPattern("HHmmss")); }
+        catch (java.time.format.DateTimeParseException ex) { return null; }
     }
 
     public void reconcilePendingOrders() {
