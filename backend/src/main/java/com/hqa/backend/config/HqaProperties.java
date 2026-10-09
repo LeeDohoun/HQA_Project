@@ -66,7 +66,11 @@ public class HqaProperties {
     }
 
     public void setAiServerUrl(String aiServerUrl) {
-        this.aiServerUrl = aiServerUrl;
+        // Paths are appended as "/runtime/..."; a trailing slash here made "//runtime/...",
+        // which the AI server answers with 404 (the Python clients strip it the same way).
+        String value = aiServerUrl == null ? "" : aiServerUrl.strip();
+        while (value.endsWith("/")) value = value.substring(0, value.length() - 1);
+        this.aiServerUrl = value;
     }
 
     public String getRedisUrl() {

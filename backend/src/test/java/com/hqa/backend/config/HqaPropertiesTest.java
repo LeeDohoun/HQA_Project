@@ -14,4 +14,11 @@ class HqaPropertiesTest {
         properties.setInternalToken(null);
         assertThat(properties.getInternalToken()).isEmpty();
     }
+
+    @Test
+    void aiServerUrlDropsTrailingSlashesSoPathsDoNotDoubleThem() {
+        HqaProperties properties = new HqaProperties();
+        properties.setAiServerUrl(" http://ai:8001// ");
+        assertThat(properties.getAiServerUrl() + "/runtime/stock-preview").isEqualTo("http://ai:8001/runtime/stock-preview");
+    }
 }
