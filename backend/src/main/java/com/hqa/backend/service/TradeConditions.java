@@ -107,6 +107,24 @@ public final class TradeConditions {
         return true;
     }
 
+    /** Content identity of a group (predicates and reduce fraction), independent of the plan version. */
+    public static String fingerprint(Group group) {
+        StringBuilder text = new StringBuilder();
+        for (Predicate p : group.all()) {
+            Object value = "market_time".equals(p.field()) ? LocalTime.parse(String.valueOf(p.value())).toString()
+                    : Double.toString(number(p.value()));
+            text.append(p.field()).append('|').append(p.operator()).append('|').append(value).append(';');
+        }
+        text.append(group.reduceFraction() == null ? "" : Double.toString(group.reduceFraction()));
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(text.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest, 0, 8);
+        } catch (java.security.NoSuchAlgorithmException ex) {
+            throw new IllegalStateException(ex);
+        }
+    }
+
     public static Double hardStop(Map<String, Object> payload) {
         return java.util.stream.Stream.concat(groups(payload, TriggerType.EXIT).stream(), groups(payload, TriggerType.INVALIDATION).stream())
                 .filter(group -> group.all().size() == 1)

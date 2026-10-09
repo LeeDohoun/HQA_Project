@@ -27,6 +27,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 @Component
 public class KisClient {
@@ -129,7 +130,7 @@ public class KisClient {
                     .header("tr_id", balanceTr)
                     .retrieve()
                     .bodyToMono(String.class)
-                    .block();
+                    .block(KIS_CALL_TIMEOUT);
             Map<String, Object> body = objectMapper.readValue(response, new TypeReference<>() {});
             String rtCd = String.valueOf(body.getOrDefault("rt_cd", ""));
             if (!"0".equals(rtCd)) {
@@ -297,6 +298,23 @@ public class KisClient {
         catch (ArithmeticException | NumberFormatException ex) { throw new IllegalStateException("KIS_NUMBER_INVALID", ex); }
     }
 
+    /** The pacing filter waits up to 20 s before sending; the timeout covers that wait and the call. */
+    static final Duration ORDER_TIMEOUT = Duration.ofSeconds(40);
+    /** No KIS call may block a request thread (or the token lock) indefinitely. */
+    static final Duration KIS_CALL_TIMEOUT = Duration.ofSeconds(25);
+    private final ConcurrentHashMap<String, Object> tokenLocks = new ConcurrentHashMap<>();
+    public static final String PAPER_RATE_QUEUE_FULL = "PAPER_RATE_QUEUE_CAPACITY_EXCEEDED";
+
+    private Map<String, Object> rejectionBody(String raw) {
+        try {
+            Map<String, Object> body = objectMapper.readValue(raw, new TypeReference<>() {});
+            Object rtCd = body.get("rt_cd");
+            return rtCd != null && !"0".equals(String.valueOf(rtCd)) ? body : null;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
     private Map<String, Object> order(String userId, UserSecret secret, String token,
                                       String stockCode, int quantity, long limitPrice, boolean isBuy) {
         try {
@@ -324,7 +342,7 @@ public class KisClient {
                     ))
                     .retrieve()
                     .bodyToMono(String.class)
-                    .block(Duration.ofSeconds(20));
+                    .block(ORDER_TIMEOUT);
             Map<String, Object> body = objectMapper.readValue(response, new TypeReference<>() {});
             String rtCd = String.valueOf(body.getOrDefault("rt_cd", ""));
             boolean success = "0".equals(rtCd);
@@ -334,9 +352,22 @@ public class KisClient {
                         response);
             }
             return Map.of("success", success, "response", body);
+        } catch (WebClientResponseException e) {
+            // KIS answers some rejections (e.g. EGW00201, too many requests) with an HTTP error
+            // status and an rt_cd body. Keep that body so the order is recorded as rejected,
+            // not as an order of unknown acceptance that blocks the plan.
+            Map<String, Object> body = rejectionBody(e.getResponseBodyAsString());
+            errorLogger.log("KisClient", userId, stockCode,
+                    "Direct " + (isBuy ? "buy" : "sell") + " HTTP " + e.getStatusCode().value(), e.getResponseBodyAsString());
+            return body == null ? Map.of("success", false, "error", "HTTP " + e.getStatusCode().value())
+                    : Map.of("success", false, "response", body);
         } catch (Exception e) {
             errorLogger.log("KisClient", userId, stockCode,
                     "Direct " + (isBuy ? "buy" : "sell") + " failed", e.getMessage());
+            if (e instanceof IllegalStateException && PAPER_RATE_QUEUE_FULL.equals(e.getMessage())) {
+                // The pacing filter refused the request before it was sent.
+                return Map.of("success", false, "notSent", true, "error", PAPER_RATE_QUEUE_FULL);
+            }
             return Map.of("success", false, "error", String.valueOf(e.getMessage()));
         }
     }
@@ -367,7 +398,7 @@ public class KisClient {
                     .header("custtype", "P")
                     .retrieve()
                     .bodyToMono(String.class)
-                    .block();
+                    .block(KIS_CALL_TIMEOUT);
             Map<String, Object> body = objectMapper.readValue(response, new TypeReference<>() {});
             if (!"0".equals(String.valueOf(body.getOrDefault("rt_cd", "")))) {
                 errorLogger.log("KisClient", userId, indexCode,
@@ -412,7 +443,7 @@ public class KisClient {
                     .header("custtype", "P")
                     .retrieve()
                     .bodyToMono(String.class)
-                    .block();
+                    .block(KIS_CALL_TIMEOUT);
             Map<String, Object> body = objectMapper.readValue(response, new TypeReference<>() {});
             if (!"0".equals(String.valueOf(body.getOrDefault("rt_cd", "")))) {
                 errorLogger.log("KisClient", userId, stockCode,
@@ -516,7 +547,7 @@ public class KisClient {
                     .header("custtype", "P")
                     .retrieve()
                     .bodyToMono(String.class)
-                    .block();
+                    .block(KIS_CALL_TIMEOUT);
             Map<String, Object> body = objectMapper.readValue(response, new TypeReference<>() {});
             if (!"0".equals(String.valueOf(body.getOrDefault("rt_cd", "")))) {
                 errorLogger.log("KisClient", userId, stockCode,
@@ -580,7 +611,7 @@ public class KisClient {
                     .header("custtype", "P")
                     .retrieve()
                     .bodyToMono(String.class)
-                    .block();
+                    .block(KIS_CALL_TIMEOUT);
             return parseMinuteOutput2(userId, stockCode, response, "today minute chart");
         } catch (Exception e) {
             errorLogger.log("KisClient", userId, stockCode, "today minute chart failed", e.getMessage());
@@ -617,7 +648,7 @@ public class KisClient {
                     .header("custtype", "P")
                     .retrieve()
                     .bodyToMono(String.class)
-                    .block();
+                    .block(KIS_CALL_TIMEOUT);
             return parseMinuteOutput2(userId, stockCode, response, "daily minute chart");
         } catch (Exception e) {
             errorLogger.log("KisClient", userId, stockCode, "daily minute chart failed", e.getMessage());
@@ -707,9 +738,18 @@ public class KisClient {
         }
     }
 
-    private synchronized String fetchTokenForCredentials(String userId, String appKey, String appSecret, boolean isReal)
+    private String fetchTokenForCredentials(String userId, String appKey, String appSecret, boolean isReal)
             throws Exception {
         String cacheKey = tokenCacheKey(appKey, appSecret, isReal);
+        // KIS limits token issuance per app key, so issuance is serialized per credential only:
+        // one slow token call must not stall every other account's quotes and orders.
+        synchronized (tokenLocks.computeIfAbsent(cacheKey, ignored -> new Object())) {
+            return fetchTokenLocked(userId, appKey, appSecret, isReal, cacheKey);
+        }
+    }
+
+    private String fetchTokenLocked(String userId, String appKey, String appSecret, boolean isReal, String cacheKey)
+            throws Exception {
         long now = java.time.Instant.now().getEpochSecond();
 
         CachedToken cached = tokenCache.get(cacheKey);
@@ -731,7 +771,7 @@ public class KisClient {
                         .defaultIfEmpty("")
                         .map(b -> new IllegalStateException("KIS token HTTP " + r.statusCode().value() + ": " + b)))
                 .bodyToMono(String.class)
-                .block();
+                .block(KIS_CALL_TIMEOUT);
         Map<String, Object> body = objectMapper.readValue(response, new TypeReference<>() {});
         String token = (String) body.get("access_token");
         if (token == null || token.isBlank()) {

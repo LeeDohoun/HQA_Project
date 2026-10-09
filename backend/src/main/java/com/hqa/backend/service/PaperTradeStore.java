@@ -24,6 +24,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class PaperTradeStore {
     public static final List<String> ACTIVE = List.of("WAITING_ENTRY", "WAITING_EXIT", "OPEN", "ORDER_SUBMITTED", "PARTIALLY_FILLED");
     public static final List<String> UNRESOLVED = List.of("INTENT", "UNKNOWN", "ORDER_SUBMITTED", "PARTIALLY_FILLED", "CANCEL_REQUESTED");
+    /** Rejections that say nothing about the trade itself; the same trigger may be tried again. */
+    public static final Set<String> TRANSIENT_REJECTIONS = Set.of("KIS_RATE_LIMITED", "ORDER_NOT_SENT_RATE_QUEUE_FULL");
     private final TradeSignalRepository signals;
     private final TradeSignalExecutionRepository executions;
     private final PaperAccountGuard accountGuard;
@@ -166,7 +168,14 @@ public class PaperTradeStore {
         signal.setPlanVersion(version);
         signal.setEntryValidUntil(expiry);
         signal.setExpiresAt(expiry);
-        signal.setPlannedExitAt(request.plannedExitAt());
+        OffsetDateTime plannedExit = request.plannedExitAt();
+        if ("OPEN".equals(signal.getStatus()) && signal.getPlannedExitAt() != null
+                && (plannedExit == null || plannedExit.isAfter(signal.getPlannedExitAt()))) {
+            // A held position's time exit never moves later; re-issued plans would otherwise roll it
+            // forward every analysis cycle. Conditions can still exit earlier.
+            plannedExit = signal.getPlannedExitAt();
+        }
+        signal.setPlannedExitAt(plannedExit);
         signal.setManagedQuantity(held);
         signal.setAccountBinding(accountGuard.binding(user));
         signal.setAnalysisAsOf(request.analysisAsOf());
@@ -182,7 +191,9 @@ public class PaperTradeStore {
             String groupId, Map<String, Object> account, long price, long powerCash, long powerQuantity,
             Double fraction, OffsetDateTime now) {
         User user = lock(signals.ownerOf(signalId).orElseThrow());
-        requireEnabledPaper(user);
+        boolean buy = type == TradeConditions.TriggerType.ENTRY;
+        if (buy) requireEnabledPaper(user);
+        else requireProtectablePaper(user);
         TradeSignal signal = signals.findById(signalId).orElseThrow();
         if (signal.getPlanVersion() != version || !"PAPER".equals(signal.getAccountMode())) {
             throw new IllegalStateException("STALE_PLAN_VERSION");
@@ -194,15 +205,32 @@ public class PaperTradeStore {
         if (capturedAt.isAfter(now.plusSeconds(5)) || capturedAt.isBefore(now.minusSeconds(20))) {
             throw new IllegalStateException("ACCOUNT_SNAPSHOT_STALE");
         }
-        boolean buy = type == TradeConditions.TriggerType.ENTRY;
         if (buy && !"WAITING_ENTRY".equals(signal.getStatus())) throw new IllegalStateException("ENTRY_STATE_INVALID");
         if (!buy && !"OPEN".equals(signal.getStatus())) throw new IllegalStateException("EXIT_STATE_INVALID");
         if (executions.findByUserIdAndStatusIn(signal.getUserId(), UNRESOLVED).stream()
                 .anyMatch(item -> signalId.equals(item.getSignalId()))) throw new IllegalStateException("ORDER_RECONCILIATION_REQUIRED");
         String base = signalId + ":" + version + ":" + type.name() + ":" + groupId;
-        List<TradeSignalExecution> previous = executions.findBySignalId(signalId).stream()
+        List<TradeSignalExecution> history = executions.findBySignalId(signalId);
+        List<TradeSignalExecution> previous = history.stream()
                 .filter(item -> item.getTriggerKey() != null && item.getTriggerKey().startsWith(base + ":")).toList();
-        if (!previous.isEmpty() && (buy || type == TradeConditions.TriggerType.REDUCE)) {
+        String fingerprint = "";
+        if (type == TradeConditions.TriggerType.REDUCE) {
+            // Every analysis cycle re-issues the plan with a new version; a reduction that already
+            // ran must not run again just because the same group arrived in a newer version.
+            TradeConditions.Group group = TradeConditions.groups(conditions(signal), type).stream()
+                    .filter(item -> item.id().equals(groupId)).findFirst().orElse(null);
+            if (group != null) {
+                fingerprint = TradeConditions.fingerprint(group);
+                String marker = ":REDUCE:" + groupId + ":" + fingerprint + ":";
+                if (history.stream().anyMatch(item -> item.getTriggerKey() != null && item.getTriggerKey().contains(marker)
+                        && !("REJECTED".equals(item.getStatus()) && TRANSIENT_REJECTIONS.contains(item.getRejectReason())))) {
+                    throw new IllegalStateException("TRIGGER_ALREADY_CONSUMED");
+                }
+            }
+        }
+        boolean consumed = previous.stream().anyMatch(item -> !("REJECTED".equals(item.getStatus())
+                && TRANSIENT_REJECTIONS.contains(item.getRejectReason())));
+        if (consumed && (buy || type == TradeConditions.TriggerType.REDUCE)) {
             throw new IllegalStateException("TRIGGER_ALREADY_CONSUMED");
         }
         if (previous.stream().anyMatch(item -> !Set.of("CANCELLED", "REJECTED", "FILLED").contains(item.getStatus()))) {
@@ -241,7 +269,7 @@ public class PaperTradeStore {
         execution.setUserId(signal.getUserId());
         execution.setStockCode(signal.getStockCode());
         execution.setAccountBinding(signal.getAccountBinding());
-        execution.setTriggerKey(base + ":" + previous.size());
+        execution.setTriggerKey(base + ":" + (fingerprint.isEmpty() ? "" : fingerprint + ":") + previous.size());
         execution.setTriggerType(type.name());
         execution.setOrderSide(buy ? "BUY" : "SELL");
         execution.setOrderType("LIMIT");
@@ -273,11 +301,16 @@ public class PaperTradeStore {
             execution.setOrderId(orderId);
             execution.setOrderOrganization(text(output.get("KRX_FWDG_ORD_ORGNO")));
             execution.setStatus("ORDER_SUBMITTED");
+        } else if (Boolean.TRUE.equals(response.get("notSent"))) {
+            execution.setStatus("REJECTED");
+            execution.setReservedCash(0L);
+            execution.setRejectReason("ORDER_NOT_SENT_RATE_QUEUE_FULL");
         } else if (raw instanceof Map<?, ?> map && map.get("rt_cd") != null
                 && !"0".equals(String.valueOf(map.get("rt_cd")))) {
             execution.setStatus("REJECTED");
             execution.setReservedCash(0L);
-            execution.setRejectReason("KIS_ORDER_REJECTED");
+            // EGW00201: KIS per-second request limit; the order itself was not judged.
+            execution.setRejectReason("EGW00201".equals(String.valueOf(map.get("msg_cd"))) ? "KIS_RATE_LIMITED" : "KIS_ORDER_REJECTED");
         } else {
             execution.setStatus("UNKNOWN");
             execution.setRejectReason("ORDER_ACCEPTANCE_UNKNOWN");
@@ -395,6 +428,11 @@ public class PaperTradeStore {
     }
     private static void requireEnabledPaper(User user) {
         if (!user.isActive() || !user.isAutoTradeEnabled()) throw new IllegalStateException("AUTO_TRADE_DISABLED");
+        if (user.getSecret() == null || user.getSecret().isKisIsReal()) throw new IllegalStateException("PAPER_ACCOUNT_REQUIRED");
+    }
+    /** Protective sells need an active PAPER user; the auto-trade switch only gates new entries. */
+    private static void requireProtectablePaper(User user) {
+        if (!user.isActive()) throw new IllegalStateException("USER_INACTIVE");
         if (user.getSecret() == null || user.getSecret().isKisIsReal()) throw new IllegalStateException("PAPER_ACCOUNT_REQUIRED");
     }
     @Transactional(readOnly = true)

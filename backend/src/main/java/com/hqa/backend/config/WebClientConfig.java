@@ -31,7 +31,7 @@ public class WebClientConfig {
                 long previous = slot.get();
                 wait = Math.max(0, previous - now);
                 if (wait > Duration.ofSeconds(20).toNanos()) {
-                    return Mono.error(new IllegalStateException("PAPER_RATE_QUEUE_CAPACITY_EXCEEDED"));
+                    return Mono.error(new IllegalStateException(com.hqa.backend.service.KisClient.PAPER_RATE_QUEUE_FULL));
                 }
                 if (slot.compareAndSet(previous, Math.max(previous, now) + spacing)) break;
             }

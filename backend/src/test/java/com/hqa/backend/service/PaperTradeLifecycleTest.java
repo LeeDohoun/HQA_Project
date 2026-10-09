@@ -137,6 +137,83 @@ class PaperTradeLifecycleTest {
         verify(store, times(2)).observeFill("e1", 2, 100, 8, false, "org", now);
     }
 
+    @Test
+    void resentProtectiveTriggerKeepsTheWorkingSellOrder() {
+        TradeSignalExecution working = execution();
+        working.setStatus("ORDER_SUBMITTED");
+        working.setOrderExpiresAt(now.plusMinutes(2));
+        when(executions.findByUserIdAndStatusIn("u1", PaperTradeStore.UNRESOLVED)).thenReturn(List.of(working));
+        when(executions.findBySignalId("s1")).thenReturn(List.of(working));
+        when(kis.paperOrders(anyString(), any(), anyString(), any(), any())).thenReturn(List.of(Map.ofEntries(
+                Map.entry("odno", "order1"), Map.entry("ord_dt", "20260904"), Map.entry("pdno", "005930"),
+                Map.entry("sll_buy_dvsn_cd", "01"), Map.entry("ord_qty", "10"), Map.entry("tot_ccld_qty", "0"),
+                Map.entry("rmn_qty", "10"), Map.entry("cnc_cfrm_qty", "0"), Map.entry("rjct_qty", "0"),
+                Map.entry("cncl_yn", "N"), Map.entry("avg_prvs", "0"), Map.entry("ord_gno_brno", "org"))));
+        Map<String, Object> response = lifecycle.triggerResponse("s1", request("EXIT", 1, "stop"));
+        assertThat(response).containsEntry("accepted", true).containsEntry("deduplicated", true)
+                .containsEntry("executionStatus", "ORDER_SUBMITTED");
+        verify(store, never()).markCancelRequested(anyString());
+        verify(kis, never()).cancelPaperOrder(anyString(), any(), anyString(), anyString(), anyString(), anyInt());
+        verify(kis, never()).paperOrder(anyString(), any(), anyString(), anyString(), anyInt(), anyLong(), anyString());
+    }
+
+    @Test
+    void protectiveTriggerStillCancelsAWorkingEntryBuy() {
+        TradeSignalExecution entry = execution();
+        entry.setOrderSide("BUY");
+        entry.setTriggerKey("s1:1:ENTRY:breakout:0");
+        entry.setStatus("PARTIALLY_FILLED");
+        entry.setOrderExpiresAt(now.plusMinutes(3));
+        when(executions.findByUserIdAndStatusIn("u1", PaperTradeStore.UNRESOLVED)).thenReturn(List.of(entry));
+        when(kis.paperOrders(anyString(), any(), anyString(), any(), any())).thenReturn(List.of(Map.ofEntries(
+                Map.entry("odno", "order1"), Map.entry("ord_dt", "20260904"), Map.entry("pdno", "005930"),
+                Map.entry("sll_buy_dvsn_cd", "02"), Map.entry("ord_qty", "10"), Map.entry("tot_ccld_qty", "4"),
+                Map.entry("rmn_qty", "6"), Map.entry("cnc_cfrm_qty", "0"), Map.entry("rjct_qty", "0"),
+                Map.entry("cncl_yn", "N"), Map.entry("avg_prvs", "100"), Map.entry("ord_gno_brno", "org"))));
+        when(store.markCancelRequested("e1")).thenReturn(true);
+        when(kis.cancelPaperOrder(anyString(), any(), anyString(), anyString(), anyString(), anyInt()))
+                .thenReturn(Map.of("success", true));
+        lifecycle.trigger("s1", request("EXIT", 1, "stop"));
+        verify(kis).cancelPaperOrder("u1", user.getSecret(), "token", "order1", "org", 6);
+    }
+
+    @Test
+    void autoTradeOffRefusesEntriesButStillSendsProtectiveExits() {
+        user.setAutoTradeEnabled(false);
+        TradeSignalExecution intent = execution();
+        when(store.claim(eq("s1"), eq(1), eq(TradeConditions.TriggerType.EXIT), eq("stop"), anyMap(), eq(90L),
+                eq(0L), eq(0L), isNull(), eq(now))).thenReturn(intent);
+        when(kis.paperOrder(anyString(), any(), anyString(), anyString(), anyInt(), anyLong(), anyString()))
+                .thenReturn(Map.of("success", true));
+        Map<String, Object> snapshot = PaperTradeStoreTest.account(10);
+        snapshot.put("holdings", List.of(Map.of("stockCode", "005930", "quantity", 10, "avgPrice", 100.0,
+                "pnlRate", -10.0, "sellableQuantity", 10)));
+        when(accounts.snapshot("u1")).thenReturn(snapshot);
+        lifecycle.trigger("s1", request("EXIT", 1, "stop"));
+        verify(kis).paperOrder(anyString(), any(), anyString(), anyString(), anyInt(), anyLong(), eq("SELL"));
+        signal.setStatus("WAITING_ENTRY");
+        assertThat(lifecycle.triggerResponse("s1", request("ENTRY", 1, "entry")))
+                .containsEntry("accepted", false).containsEntry("rejectReason", "AUTO_TRADE_DISABLED");
+        user.setAutoTradeEnabled(true);
+    }
+
+    @Test
+    void oneUnreadableStoredPlanDoesNotFailTheActivePage() {
+        TradeSignal legacy = new TradeSignal();
+        ReflectionTestUtils.setField(legacy, "id", "legacy");
+        legacy.setUserId("u1");
+        legacy.setStockCode("000660");
+        legacy.setStatus("OPEN");
+        legacy.setConditionPayload(null);
+        when(signals.findByStatusIn(eq(PaperTradeStore.ACTIVE), any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(signal, legacy)));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) lifecycle.active(0, 200).get("signals");
+        assertThat(rows).hasSize(2);
+        assertThat(rows.get(0).get("conditionPayload")).isNotNull();
+        assertThat(rows.get(1)).containsEntry("conditionPayload", null).containsEntry("rejectReason", "INVALID_STORED_CONDITIONS");
+    }
+
     private TradeSignalExecution execution() {
         TradeSignalExecution intent = new TradeSignalExecution();
         ReflectionTestUtils.setField(intent, "id", "e1");

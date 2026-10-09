@@ -31,8 +31,24 @@ public class HttpsEnforcementFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        // Skip in local/dev so http://localhost still works.
-        return "local".equalsIgnoreCase(properties.getEnv());
+        // Skip in local/dev so http://localhost still works (as the API-key and rate-limit
+        // interceptors do), and for service-to-service internal calls that arrive from a
+        // loopback or private address (AI server, scheduler, monitor on the container network).
+        if ("local".equalsIgnoreCase(properties.getEnv()) || "dev".equalsIgnoreCase(properties.getEnv())) return true;
+        return request.getRequestURI().startsWith("/api/v1/internal/") && privateAddress(request.getRemoteAddr());
+    }
+
+    static boolean privateAddress(String address) {
+        // getRemoteAddr() is an IP literal; anything else is refused so no host name is ever resolved.
+        boolean ipv4 = address != null && address.matches("[0-9]{1,3}(\\.[0-9]{1,3}){3}");
+        boolean ipv6 = address != null && address.contains(":") && address.matches("[0-9A-Fa-f:.]+(%[A-Za-z0-9]+)?");
+        if (!ipv4 && !ipv6) return false;
+        try {
+            java.net.InetAddress parsed = java.net.InetAddress.getByName(address);
+            return parsed.isLoopbackAddress() || parsed.isSiteLocalAddress() || parsed.isLinkLocalAddress();
+        } catch (java.net.UnknownHostException ex) {
+            return false;
+        }
     }
 
     @Override

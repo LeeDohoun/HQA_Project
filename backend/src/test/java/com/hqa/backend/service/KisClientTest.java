@@ -76,6 +76,22 @@ class KisClientTest {
         assertThat(transactionIds).hasSize(3);
     }
 
+    @Test
+    void httpErrorRejectionKeepsTheBrokerBodyAndUnsentOrdersAreMarked() {
+        UserSecret secret = PaperTradeStoreTest.user().getSecret();
+        KisClient limited = paperClient(request -> Mono.just(json(HttpStatus.INTERNAL_SERVER_ERROR,
+                "{\"rt_cd\":\"1\",\"msg_cd\":\"EGW00201\",\"msg1\":\"초당 거래건수를 초과하였습니다.\"}")));
+        var rejected = limited.paperOrder("u1", secret, "token", "005930", 1, 100, "SELL");
+        assertThat(rejected).containsEntry("success", false);
+        assertThat(((java.util.Map<?, ?>) rejected.get("response")).get("msg_cd")).isEqualTo("EGW00201");
+        KisClient gateway = paperClient(request -> Mono.just(json(HttpStatus.BAD_GATEWAY, "<html>bad gateway</html>")));
+        assertThat(gateway.paperOrder("u1", secret, "token", "005930", 1, 100, "SELL"))
+                .containsEntry("success", false).doesNotContainKey("response");  // acceptance genuinely unknown
+        KisClient queueFull = paperClient(request -> Mono.error(new IllegalStateException(KisClient.PAPER_RATE_QUEUE_FULL)));
+        assertThat(queueFull.paperOrder("u1", secret, "token", "005930", 1, 100, "SELL"))
+                .containsEntry("success", false).containsEntry("notSent", true);
+    }
+
     private KisClient paperClient(ExchangeFunction exchange) {
         SecretCipher cipher = mock(SecretCipher.class);
         when(cipher.decrypt(anyString())).thenAnswer(inv -> inv.getArgument(0));

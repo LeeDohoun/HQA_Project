@@ -17,6 +17,6 @@ public interface UserRepository extends JpaRepository<User, String> {
     @Query("SELECT u FROM User u WHERE u.userId = :userId")
     Optional<User> lockByUserId(String userId);
 
-    @Query("SELECT u FROM User u JOIN FETCH u.secret JOIN FETCH u.preference WHERE u.active = true")
+    @Query("SELECT u FROM User u JOIN FETCH u.secret LEFT JOIN FETCH u.preference WHERE u.active = true")
     List<User> findAllActiveWithSecretAndPreference();
 }

@@ -9,10 +9,8 @@ import com.hqa.backend.entity.User;
 import com.hqa.backend.repository.TradeSignalExecutionRepository;
 import com.hqa.backend.repository.TradeSignalRepository;
 import java.time.Clock;
-import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.LocalDate;
-import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -38,15 +36,24 @@ public class PaperTradeLifecycle {
     private final KisClient kis;
     private final ObjectMapper mapper;
     private final Clock clock;
+    private final KrxSessionCalendar sessions;
 
     @Autowired
     public PaperTradeLifecycle(TradeSignalRepository signals, TradeSignalExecutionRepository executions,
-            PaperAccountSnapshotService accounts, PaperTradeStore store, KisClient kis, ObjectMapper mapper) {
-        this(signals, executions, accounts, store, kis, mapper, Clock.system(ZoneId.of("Asia/Seoul")));
+            PaperAccountSnapshotService accounts, PaperTradeStore store, KisClient kis, ObjectMapper mapper,
+            KrxSessionCalendar sessions) {
+        this(signals, executions, accounts, store, kis, mapper, Clock.system(ZoneId.of("Asia/Seoul")), sessions);
     }
 
     public PaperTradeLifecycle(TradeSignalRepository signals, TradeSignalExecutionRepository executions,
             PaperAccountSnapshotService accounts, PaperTradeStore store, KisClient kis, ObjectMapper mapper, Clock clock) {
+        this(signals, executions, accounts, store, kis, mapper, clock, KrxSessionCalendar.regular());
+    }
+
+    public PaperTradeLifecycle(TradeSignalRepository signals, TradeSignalExecutionRepository executions,
+            PaperAccountSnapshotService accounts, PaperTradeStore store, KisClient kis, ObjectMapper mapper, Clock clock,
+            KrxSessionCalendar sessions) {
+        this.sessions = sessions;
         this.signals = signals;
         this.executions = executions;
         this.accounts = accounts;
@@ -76,8 +83,12 @@ public class PaperTradeLifecycle {
             User user = accounts.paperUser(signal.getUserId());
             if (!"PAPER".equals(signal.getAccountMode())) throw new IllegalStateException("PAPER_ACCOUNT_REQUIRED");
             if (!accounts.binding(user).equals(signal.getAccountBinding())) throw new IllegalStateException("ACCOUNT_BINDING_CHANGED");
-            if (!user.isAutoTradeEnabled()) throw new IllegalStateException("AUTO_TRADE_DISABLED");
             TradeConditions.TriggerType type = TradeConditions.TriggerType.valueOf(String.valueOf(request.get("triggerType")));
+            // Auto-trade is the entry switch (as in the account snapshot's entryEligible); turning it
+            // off must not leave open positions without their stops and exits.
+            if (type == TradeConditions.TriggerType.ENTRY && !user.isAutoTradeEnabled()) {
+                throw new IllegalStateException("AUTO_TRADE_DISABLED");
+            }
             Map<String, Object> payload = payload(signal);
             int version = request.get("planVersion") instanceof Number n ? integer(n) : -1;
             if (!TradeConditions.isV2(payload) && version < 0) version = signal.getPlanVersion();
@@ -100,7 +111,8 @@ public class PaperTradeLifecycle {
             snapshot.put("holding_quantity", holding == null ? 0L : holding.get("quantity"));
             double averagePrice = holding == null ? 0 : TradeConditions.number(holding.get("avgPrice"));
             snapshot.put("pnl_rate", averagePrice > 0 ? (price / averagePrice - 1) * 100 : null);
-            snapshot.put("market_time", now().toLocalTime().toString());
+            // Whole seconds, like the monitor's snapshot, so "==" and "<=" boundaries agree.
+            snapshot.put("market_time", now().toLocalTime().truncatedTo(java.time.temporal.ChronoUnit.SECONDS).toString());
             if (!scheduledExit && !TradeConditions.matches(group, snapshot)) throw new IllegalStateException("CONDITION_NO_LONGER_MATCHES");
             if (type == TradeConditions.TriggerType.ENTRY && TradeConditions.groups(payload, TradeConditions.TriggerType.INVALIDATION)
                     .stream().anyMatch(invalidation -> TradeConditions.matches(invalidation, snapshot))) {
@@ -114,7 +126,11 @@ public class PaperTradeLifecycle {
                 return signals.findById(signalId);
             }
             if (!pending.isEmpty()) {
-                if (type != TradeConditions.TriggerType.ENTRY) reconcileAccount(user.getUserId(), signalId);
+                // A protective trigger may cancel a still-working entry BUY, but a working SELL is the
+                // protection already in flight: the monitor re-sends a condition that stays true every
+                // poll, and cancelling it would leave the position unprotected between polls.
+                boolean workingSell = pending.stream().anyMatch(item -> "SELL".equals(item.getOrderSide()));
+                if (type != TradeConditions.TriggerType.ENTRY) reconcileAccount(user.getUserId(), workingSell ? null : signalId);
                 throw new IllegalStateException("ORDER_RECONCILIATION_REQUIRED");
             }
             long powerCash = 0;
@@ -282,8 +298,18 @@ public class PaperTradeLifecycle {
         row.put("entryValidUntil", signal.getEntryValidUntil());
         row.put("plannedExitAt", signal.getPlannedExitAt());
         row.put("managedQuantity", signal.getManagedQuantity());
-        row.put("conditionPayload", payload(signal));
-        row.put("rejectReason", signal.getRejectReason());
+        // One unreadable stored plan (legacy NULL or malformed conditions) must not fail the page
+        // for every account; it is listed without conditions so the monitor reports it uncovered.
+        Map<String, Object> conditions;
+        String reason = signal.getRejectReason();
+        try {
+            conditions = payload(signal);
+        } catch (IllegalArgumentException ex) {
+            conditions = null;
+            reason = "INVALID_STORED_CONDITIONS";
+        }
+        row.put("conditionPayload", conditions);
+        row.put("rejectReason", reason);
         return row;
     }
     private Map<String, Object> account(String userId) {
@@ -305,9 +331,7 @@ public class PaperTradeLifecycle {
     }
     private OffsetDateTime now() { return OffsetDateTime.now(clock); }
     private boolean marketOpen() {
-        var now = now();
-        return now.getDayOfWeek() != DayOfWeek.SATURDAY && now.getDayOfWeek() != DayOfWeek.SUNDAY
-                && !now.toLocalTime().isBefore(LocalTime.of(9, 0)) && now.toLocalTime().isBefore(LocalTime.of(15, 30));
+        return sessions.isOpen(now());
     }
     private static double decimal(Object raw) {
         if (raw == null) throw new IllegalStateException("BROKER_NUMBER_MISSING");
