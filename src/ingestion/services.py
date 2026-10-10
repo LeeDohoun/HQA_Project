@@ -16,6 +16,7 @@ from .dart import DartDisclosureCollector
 from .dart_financials import DartFinancialStatementCollector
 from .krx_chart import KrxChartCollector
 from .naver_forum import NaverStockForumCollector
+from .toss_community import TossCommunityCollector
 from .naver_news import NaverNewsCollector
 from .types import CollectRequest, DocumentRecord, FinancialSnapshot, MarketRecord
 from .storage import read_rows, save_episodes, write_rows, file_lock
@@ -330,23 +331,49 @@ class IngestionService:
             print(f"[WARN][{request.target.stock_name}] financials collect failed: {e}")
 
     def _safe_collect_forum(self, request: CollectRequest, docs: List[DocumentRecord], report: IngestionRunReport) -> None:
-        try:
-            rows = NaverStockForumCollector().collect(
+        # Naver and Toss are two providers of one `forum` source: one failing
+        # platform must not discard the other's posts.
+        rows: List[DocumentRecord] = []
+        failures: Dict[str, str] = {}
+        for platform, collect in (
+            ("naver", lambda: NaverStockForumCollector().collect(
                 stock_code=request.target.stock_code,
                 pages=request.forum_pages,
                 from_date=request.from_date,
                 to_date=request.to_date,
-            )
-            rows = self._attach_stock_info(rows, request.target.stock_name, request.target.stock_code, request.theme_key)
-            docs.extend(rows)
-            report.source_success["forum"] = True
-            report.source_counts["forum"] = len(rows)
-            report.raw_saved_counts["forum"] = self._save_raw_documents(rows, request.raw_output_dir, "forum", request.theme_key)
-            report.skipped_counts["forum"] = len(rows) - report.raw_saved_counts["forum"]
-        except Exception as e:
+            )),
+            ("toss", lambda: TossCommunityCollector().collect(
+                stock_code=request.target.stock_code,
+                stock_name=request.target.stock_name,
+                pages=request.forum_pages,
+                from_date=request.from_date,
+                to_date=request.to_date,
+            )),
+        ):
+            try:
+                collected = collect()
+                for row in collected:
+                    row.metadata = row.metadata or {}
+                    row.metadata.setdefault("platform", f"{platform}_forum")
+                rows.extend(collected)
+                report.source_counts[f"forum_{platform}"] = len(collected)
+            except Exception as e:
+                failures[platform] = f"{type(e).__name__}: {e}"
+                report.source_counts[f"forum_{platform}"] = 0
+                print(f"[WARN][{request.target.stock_name}] {platform} forum collect failed: {e}")
+
+        if len(failures) == 2:
             report.source_success["forum"] = False
-            report.failures["forum"] = str(e)
-            print(f"[WARN][{request.target.stock_name}] forum collect failed: {e}")
+            report.failures["forum"] = "; ".join(f"{k}={v}" for k, v in failures.items())
+            return
+        rows = self._attach_stock_info(rows, request.target.stock_name, request.target.stock_code, request.theme_key)
+        docs.extend(rows)
+        report.source_success["forum"] = True
+        report.source_counts["forum"] = len(rows)
+        report.raw_saved_counts["forum"] = self._save_raw_documents(rows, request.raw_output_dir, "forum", request.theme_key)
+        report.skipped_counts["forum"] = len(rows) - report.raw_saved_counts["forum"]
+        if failures:
+            report.failures["forum_partial"] = "; ".join(f"{k}={v}" for k, v in failures.items())
 
     def _safe_collect_chart(
         self,

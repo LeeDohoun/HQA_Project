@@ -8,7 +8,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from scripts.data import batch, collect, loop
+from scripts.data import batch
+from scripts.data import common as collection_common, collect, loop
 
 
 @pytest.mark.parametrize("name", ["collect", "build", "batch", "loop", "discover", "corp_codes", "market_context"])
@@ -32,7 +33,7 @@ def test_batch_uses_single_collector_and_rolling_source_defaults(monkeypatch, tm
     assert error.value.code == 0
     command = run.call_args.args[0]
     assert command[:3] == [sys.executable, "-m", "scripts.data.collect"]
-    assert command[command.index("--enabled-sources") + 1] == "news,dart,financials,chart"
+    assert command[command.index("--enabled-sources") + 1] == collection_common.DEFAULT_SOURCES
     assert command[command.index("--data-dir") + 1] == str(tmp_path)
     assert command[command.index("--theme-key") + 1] == "fixture"
     assert "--from-date" not in command and "--to-date" not in command

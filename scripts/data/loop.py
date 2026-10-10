@@ -70,8 +70,8 @@ def main() -> int:
     parser.add_argument(
         "--enabled-sources",
         type=str,
-        default="news,dart,financials,chart",
-        help="Sources passed to scripts.data.collect. chart=KRX OHLCV, financials=DART statements.",
+        default="news,dart,financials,chart,forum",
+        help="Sources passed to scripts.data.collect. chart=KRX OHLCV, financials=DART statements, forum=Naver+Toss community.",
     )
     args = parser.parse_args()
 

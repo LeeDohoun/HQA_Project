@@ -77,6 +77,58 @@ from today's unversioned universe or prices. Historical evaluation requires arch
 point-in-time inputs injected into the same analysis service. Model pretraining
 memory remains a separate limitation even with correctly filtered data.
 
+## Fear/Greed Index
+
+Each analyzed stock carries a deterministic fear/greed index computed in
+`src/runner/fear_greed.py`. No LLM call is added: every component is a percentile
+of that stock's own trailing 252 sessions, so a level is read against its own
+history rather than an absolute threshold. 0 is extreme fear, 100 extreme greed.
+
+Components and their weights when all inputs are present: trend 0.30 (60-day
+momentum, 20-day disparity, 14-day price strength averaged together, because the
+three measure one thing), volatility 0.20 (inverted: high realized volatility is
+fear), activity 0.20 (20-day volume ratio and OBV slope), social 0.15 (Naver and
+Toss mention counts over a 3-day window against a 30-day baseline) and short
+interest 0.15 (inverted percentile of the KRX short ratio). A missing component's
+weight is redistributed across the rest; it is never scored as zero or neutral 50.
+Fewer than 252 sessions, fewer than 20 forum posts or fewer than 60 short-sale
+observations each report an explicit unavailable status.
+
+`HQA_FEAR_GREED_SENSITIVITY` (0-1, default 0) scales BUY position sizes:
+`multiplier = 1 + (50 - score)/50 * sensitivity`. At 0.3 extreme fear sizes up to
+1.3x and extreme greed down to 0.7x. The tilt runs only after every existing
+safety gate has passed, so it can resize a permitted entry but can never create
+one, and `maxPositionPct` still caps the result. At 0 the index is computed,
+prompted and audited while leaving orders unchanged; raise it only after
+prospective observation. `FEAR_GREED_VERSION` participates in the specialist
+cache key, so changing the formula re-analyzes rather than serving stale scores.
+
+## Market Regime
+
+`src/runner/market_regime.py` turns the daily VKOSPI (KOSPI200 option-implied
+volatility) into a market-wide coefficient. Korea lists individual-stock options on
+roughly thirty names, almost none of which trade, so a per-stock put/call ratio is
+unavailable for this universe; VKOSPI carries the same option-implied fear signal
+at the index level. Because it is identical for every stock, it is applied as a
+separate multiplicative coefficient and is never averaged into a stock's own-history
+percentile, which would add a component with no cross-sectional variation.
+
+`HQA_MARKET_REGIME_SENSITIVITY` (0-1, default 0) scales it:
+`coefficient = 1 + (50 - vkospi_percentile)/50 * sensitivity`. A calm market sizes
+entries up, a panicked one down. The final size is
+`model_pct * stock_multiplier * market_coefficient`, capped by `maxPositionPct`.
+
+The feature is removable by construction, so a backtest can isolate its effect:
+`HQA_MARKET_REGIME=off` short-circuits before any file read, and a sensitivity of
+0, a missing `volatility_index.jsonl`, a disabled switch or any failure all return
+a coefficient of exactly 1.0, leaving every other number unchanged. Deleting the
+module affects only its own import site, which already degrades to neutral.
+
+Forum text is counted, never quoted: retail posts carry no source_id, are absent
+from every specialist prompt, and cannot be cited in a plan. The index reaches
+the Chartist and the RiskManager as context, and each applied tilt is written to
+the audit ledger as a `fear_greed_tilt` record.
+
 ## Execution and Recovery
 
 Apply the backend's V9 migration before publishing v2 plans. It extends existing
@@ -159,6 +211,16 @@ including separate BUY, REDUCE and EXIT orders, with requested and filled quanti
 
 ```bash
 venv/bin/python -m uvicorn ai_server.app:app --host 127.0.0.1 --port 8001 --workers 1
+```
+
+Collect community and short-sale inputs before relying on the index. `forum` is
+now a default source and fans out to Naver and Toss; one platform failing is
+recorded in `forum_partial` and does not discard the other's posts. Short-sale
+balances need `KRX_API_KEY` and are market-wide, so they have their own command:
+
+```bash
+venv/bin/python -m scripts.data.short_sale --from-date 20260101 --to-date 20260919
+venv/bin/python -m scripts.data.volatility_index --from-date 20260101 --to-date 20260919
 ```
 
 Run the independent monitor only after PAPER account and order integration checks:

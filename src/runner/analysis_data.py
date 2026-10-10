@@ -287,6 +287,53 @@ class LocalAnalysisData:
         from src.runner.market_context_data import load_benchmark_context
         return load_benchmark_context(self.data_dir, candidate, as_of)
 
+    def load_sentiment_inputs(self, candidate: dict, as_of: datetime) -> dict:
+        """Forum mention timestamps and short-sale history for the fear/greed index.
+
+        Forum posts are counted, never quoted: they are unverified retail text and
+        carry no source_id into any prompt. Only observations available at as_of count.
+        """
+        from src.ingestion.krx_short_sale import load_short_sale
+        posts, errors = [], []
+        for theme in candidate["theme_keys"]:
+            captured = (candidate.get("theme_generations") or {}).get(theme) if candidate.get("theme_generations") else None
+            generation = captured if candidate.get("theme_generations") else self._current_generation(theme)
+            index_dir = (self._generation_dir(theme, generation) if generation is not None
+                         else self.data_dir / "canonical_index" / theme)
+            path = index_dir / "documents.jsonl"
+            if not path.exists():
+                path = index_dir / "corpus.jsonl"
+            if not path.exists():
+                continue
+            seen = set()
+            for row in read_jsonl(path):
+                outer = row.get("metadata") or {}
+                meta = {**(outer.get("metadata") or {}), **outer}
+                if (row.get("source_type") or meta.get("source_type")) != "forum":
+                    continue
+                if ThemeUniverseLoader._stock_code(row) != candidate["stock_code"]:
+                    continue
+                identity = meta.get("doc_id") or meta.get("url")
+                if not identity or identity in seen:
+                    continue
+                try:
+                    published = source_time(row.get("published_at") or meta.get("published_at"))
+                    observed = source_time(meta.get("collected_at") or row.get("collected_at"), naive_zone=UTC)
+                except (ValueError, TypeError) as exc:
+                    errors.append(f"invalid_forum_post:{identity}:{exc}")
+                    continue
+                if max(published, observed) > as_of:
+                    continue
+                seen.add(identity)
+                posts.append({"published_at": published.isoformat(),
+                              "platform": meta.get("platform") or meta.get("source") or "unknown"})
+        try:
+            short_sale = load_short_sale(self.data_dir / "market_context" / "short_sale.jsonl",
+                                         candidate["stock_code"], as_of)
+        except (ValueError, OSError) as exc:
+            short_sale, errors = [], errors + [f"short_sale_unavailable:{exc}"]
+        return {"forum_posts": posts, "short_sale": short_sale, "data_gaps": errors}
+
     def load_evidence(self, candidate: dict, as_of: datetime) -> dict:
         from src.runner.corporate_actions import build_corporate_action_context, corporate_action_type
         from src.runner.event_evidence import build_event_evidence, select_event_evidence

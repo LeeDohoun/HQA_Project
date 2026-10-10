@@ -118,6 +118,10 @@ def run_leader_backtest(
     task_id: str = "",
     submit_url: str = "",
     llm_scorer: Any | None = None,
+    fear_greed_sensitivity: float = 0.0,
+    market_regime_sensitivity: float = 0.0,
+    fear_greed_social: bool = True,
+    fear_greed_short_interest: bool = True,
 ) -> Dict[str, Any]:
     data_root = Path(data_dir) if data_dir else get_data_dir()
     from_ymd = _require_ymd(from_date, "from_date")
@@ -143,6 +147,12 @@ def run_leader_backtest(
         min_trend_150d=min_trend_150d,
         min_market_breadth_pct=min_market_breadth_pct,
     )
+    from backtesting.fear_greed_sizing import BacktestFearGreed
+    sizer = BacktestFearGreed(data_root, fg_sensitivity=fear_greed_sensitivity,
+                              regime_sensitivity=market_regime_sensitivity,
+                              use_social=fear_greed_social,
+                              use_short_interest=fear_greed_short_interest,
+                              use_market_regime=True)
     exit_config = ExitConfig(
         stop_loss_pct=stop_loss_pct,
         take_profit_pct=take_profit_pct,
@@ -279,8 +289,14 @@ def run_leader_backtest(
                 warnings=warnings,
             )
         selected = ranked[:top_n]
-        selected_return = float(np.mean([row["realized_return"] for row in selected]))
-        selected_net_return = selected_return - round_trip_cost
+        sizing = sizer.weights(selected, theme_key=theme_key, prices=prices, as_of_ymd=as_of_ymd)
+        period_weights = sizing["weights"]
+        # Weights sum to the invested fraction; the cash remainder earns nothing,
+        # so a dot product (not a normalized average) gives the portfolio return.
+        # With both sensitivities at 0 every weight is 1/n and this equals the mean.
+        selected_return = float(sum(weight * row["realized_return"]
+                                    for weight, row in zip(period_weights, selected)))
+        selected_net_return = selected_return - round_trip_cost * sizing["invested_fraction"]
         portfolio_exit_date = _latest_exit_date(selected)
 
         equity *= 1.0 + selected_net_return
@@ -308,6 +324,11 @@ def run_leader_backtest(
                     _top_symbol_payload(row)
                     for row in selected
                 ],
+                "fear_greed": {"market_regime": sizing["regime"],
+                               "market_coefficient": sizing["market_coefficient"],
+                               "invested_fraction": sizing["invested_fraction"],
+                               "cash_fraction": sizing["cash_fraction"],
+                               "positions": sizing["details"]},
             }
         )
         equity_curve.append(
@@ -323,7 +344,7 @@ def run_leader_backtest(
         for rank, row in enumerate(selected, start=1):
             position = dict(row)
             position["rank"] = rank
-            position["weight"] = round(1.0 / top_n, 6)
+            position["weight"] = round(period_weights[rank - 1], 6)
             position["realized_return_pct"] = _pct(position.pop("realized_return"))
             position["predicted_return_pct"] = _pct(position.pop("predicted_return"))
             position["target_price"] = round(position["target_price"], 2)
@@ -399,6 +420,7 @@ def run_leader_backtest(
             ),
             "risk_filters": risk_config.to_dict(),
             "exit_rules": exit_config.to_dict(),
+            "fear_greed_sizing": sizer.metadata(),
             "llm_rerank": {
                 "enabled": llm_enabled,
                 "top_k": _llm_strategy_top_k(
@@ -1561,6 +1583,14 @@ def main(argv: list[str] | None = None) -> int:
             "universe, or the first --llm-rerank-top-k names if that value is >0."
         ),
     )
+    parser.add_argument("--fear-greed-sensitivity", type=float, default=0.0,
+                        help="Per-stock fear/greed position tilt, 0-1. 0 reproduces equal weighting.")
+    parser.add_argument("--market-regime-sensitivity", type=float, default=0.0,
+                        help="VKOSPI market coefficient, 0-1. 0 removes the market regime entirely.")
+    parser.add_argument("--no-fear-greed-social", action="store_true",
+                        help="Exclude forum mention counts from the index.")
+    parser.add_argument("--no-fear-greed-short-interest", action="store_true",
+                        help="Exclude the KRX short ratio from the index.")
     parser.add_argument("--llm-cache-path", default="")
     parser.add_argument("--output-dir", default="")
     parser.add_argument("--task-id", default="")
@@ -1602,6 +1632,10 @@ def main(argv: list[str] | None = None) -> int:
         output_dir=args.output_dir or None,
         task_id=args.task_id,
         submit_url=args.submit_url,
+        fear_greed_sensitivity=args.fear_greed_sensitivity,
+        market_regime_sensitivity=args.market_regime_sensitivity,
+        fear_greed_social=not args.no_fear_greed_social,
+        fear_greed_short_interest=not args.no_fear_greed_short_interest,
     )
     _print_summary(result)
     return 0

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-DEFAULT_SOURCES = "news,dart,financials,chart"
+DEFAULT_SOURCES = "news,dart,financials,chart,forum"
 SUPPORTED_SOURCES = ("news", "dart", "financials", "forum", "chart")
 KST = timezone(timedelta(hours=9))
 

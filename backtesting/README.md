@@ -15,6 +15,7 @@ venv/bin/python -m backtesting run --help
 | --- | --- | --- |
 | `run` | 과거 테마 주도주 전략 1회 평가 | 기본 없음. LLM 옵션 사용 시 가능 |
 | `sweep` | 수치 전략 파라미터 조합 비교 | 없음 |
+| `run --fear-greed-sensitivity` | 공포/탐욕 지수 비중 조정 효과 측정 | 없음 |
 | `validate` | 고정 실험군의 baseline/hybrid/LLM 비교 | 기본 가능. `--mock-llm`은 테스트용 |
 | `build-evidence` | 기간별 근거 스냅샷 생성 | 생성형 LLM 없음 |
 | `clean-evidence` | 원본을 보존한 별도 정제 스냅샷 생성 | 없음 |
@@ -61,6 +62,51 @@ venv/bin/python -m backtesting sweep \
   --rebalances W --top-ns 3,5,7 --hold-days 3,5,7 \
   --output-dir data/backtest_results/validation/risk_sweep
 ```
+
+## 공포/탐욕 지수 백테스트
+
+`--fear-greed-sensitivity`(종목별 틸트)와 `--market-regime-sensitivity`(VKOSPI 시장
+계수)로 지수의 효과를 측정합니다. 두 값이 모두 0이면 기존 동일 비중과 **수치적으로
+동일한** 결과가 나오므로, 같은 명령에서 baseline을 그대로 재현할 수 있습니다.
+
+```bash
+# 1) baseline — 동일 비중 (두 계수 모두 0)
+venv/bin/python -m backtesting run --theme AI --theme-key ai \
+  --from-date 20250101 --to-date 20251231 --rebalance M --top-n 3 --hold-days 20 \
+  --task-id bt-baseline
+
+# 2) 종목 공탐지수만
+venv/bin/python -m backtesting run ... --fear-greed-sensitivity 0.3 --task-id bt-fg
+
+# 3) 종목 + 시장 레짐
+venv/bin/python -m backtesting run ... --fear-greed-sensitivity 0.3 \
+  --market-regime-sensitivity 0.2 --task-id bt-fg-vk
+
+# 4) 구성요소 제거 비교
+venv/bin/python -m backtesting run ... --fear-greed-sensitivity 0.3 \
+  --no-fear-greed-social --no-fear-greed-short-interest --task-id bt-fg-price-only
+```
+
+두 계수는 역할이 다릅니다. 종목 틸트는 **상대 비중**을 바꾸고, 시장 계수는 모든 종목에
+공통이므로 상대 비중이 아니라 **총 투자 비중**을 조절합니다(나머지는 현금, 수익률 0).
+정규화는 공통 계수를 상쇄하므로 시장 계수를 비중에 곱하면 아무 효과가 없습니다.
+
+VKOSPI는 세 가지 방법으로 제거하며, 모두 계수가 정확히 `1.0`이 되어 없는 빌드와 같은
+결과를 냅니다: `--market-regime-sensitivity 0`, 환경변수 `HQA_MARKET_REGIME=off`,
+또는 `data/market_context/volatility_index.jsonl` 부재.
+
+필요한 입력과 없을 때의 동작:
+
+| 구성요소 | 입력 | 없을 때 |
+| --- | --- | --- |
+| 추세·변동성·거래 | 일봉 252세션 이상 | `insufficient_history`로 지수 자체가 unavailable |
+| 소셜 | `canonical_index/<theme>/documents.jsonl`의 forum 20건 이상 | 가중치 재분배 |
+| 공매도 | `market_context/short_sale.jsonl` 60관측 이상 | 가중치 재분배 |
+| 시장 레짐 | `market_context/volatility_index.jsonl` 120세션 이상 | 계수 1.0 |
+
+누락된 구성요소는 0이나 중립 50으로 채우지 않고 가중치를 나머지에 재분배합니다.
+결과 JSON의 `strategy.fear_greed_sizing`에 버전·설정·경고가, `periods[].fear_greed`에
+기간별 점수·구성요소·배수·비중과 시장 레짐이 기록됩니다.
 
 ## 근거 준비
 
