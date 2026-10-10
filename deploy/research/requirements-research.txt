@@ -1,0 +1,5 @@
+# All collector dependencies also cover the local backtesting data loaders.
+-r ../collector/requirements-collector.txt
+
+# backtesting.experiments.lh001.runner validates frozen prompts and model output.
+jsonschema>=4.18.0
