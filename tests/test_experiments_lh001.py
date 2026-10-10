@@ -1020,3 +1020,14 @@ def test_stock_table_daily_turnover_separate_from_cap_and_cost_adv(synthetic):
     assert stock["trading_value_percentile"] == 100
     rendered, _ = inputs.render(bundle, anonymised=True)
     assert "100000000000" not in rendered and "adv_20" not in rendered
+
+
+def test_leak_checker_ignores_short_names_inside_ids_and_industry_labels(synthetic):
+    bundle = bundle_for(synthetic)
+    bundle = {**bundle, "stocks": [{**bundle["stocks"][0], "name": "KT"}, {**bundle["stocks"][1], "name": "레이"}]
+              + bundle["stocks"][2:]}
+    inputs.leak_check("SAKT|디스플레이·전자부품|0.1", bundle)
+    with pytest.raises(AssertionError, match="stock name leak"):
+        inputs.leak_check("SAKT|KT|0.1", bundle)
+    with pytest.raises(AssertionError, match="stock name leak"):
+        inputs.leak_check("x 레이 y", bundle)

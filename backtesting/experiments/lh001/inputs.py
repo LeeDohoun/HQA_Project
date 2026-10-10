@@ -340,9 +340,19 @@ def id_map(bundle, anonymised):
 
 def leak_check(text, bundle):
     assert not re.search(r"\d{4}-\d{2}-\d{2}|(?<!\d)(?:19|20)\d{6}(?!\d)", text), "absolute date leak"
+    # Names are compared with whole table cells/tokens: short names such as "KT"
+    # or "레이" otherwise match inside random IDs ("SAKT") or industry labels
+    # ("디스플레이") without any identity reaching the model.
+    tokens = set(re.split(r"[|\s,;:=/()\[\]{}<>\"']+", text))
+    # Generated identifiers (industry IDs, "S"+3-letter stock IDs) may coincide with
+    # a short company name such as "GV"; they carry no identity and are skipped.
+    generated = {str(row.get("id")) for row in bundle.get("industries", [])}
+    tokens = {token for token in tokens if token not in generated and not re.fullmatch(r"S[A-Z]{3}", token)}
+    names = {stock["name"].strip() for stock in bundle["stocks"]}
     for stock in bundle["stocks"]:
         assert stock["stock_code"] not in text, "stock code leak"
-        assert stock["name"] not in text, "stock name leak"
+    leaked = sorted(name for name in names if name and name in tokens)
+    assert not leaked, "stock name leak: " + ", ".join(leaked[:5])
 
 
 def _cell(value):
