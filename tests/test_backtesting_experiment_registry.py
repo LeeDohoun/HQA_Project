@@ -263,3 +263,47 @@ def test_rename_within_own_directory_is_still_followed(repo):
     _git(root, "commit", "-qm", "rename back")
     with pytest.raises(ValueError, match="new experiment_id"):
         verify_preregistration("D001", root)
+
+
+def _rewrite_registration_commit(root, path):
+    """Simulate a history rewrite: same preregistration bytes, new commit id."""
+    old = _git(root, "rev-parse", "HEAD")
+    _git(root, "checkout", "-q", "--orphan", "rewritten")
+    _git(root, "commit", "-qm", "Rewritten registration")
+    return old, _git(root, "rev-parse", "HEAD")
+
+
+def _write_map(root, rows):
+    path = root / "research/experiments/commit_map.csv"
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(("experiment_id", "old_commit", "new_commit", "prereg_blob", "reason", "recorded_at"))
+        writer.writerows(rows)
+
+
+def test_commit_map_carries_an_unchanged_plan_across_a_history_rewrite(repo):
+    root, path, fields = repo
+    _commit(root, path)
+    record_trial("D001", "v1", {}, "fail", repo_root=root)
+    old, new = _rewrite_registration_commit(root, path)
+    with pytest.raises(ValueError, match="prereg_commit differs"):
+        record_trial("D001", "v2", {}, "fail", repo_root=root)
+    blob = _git(root, "rev-parse", f"{new}:research/experiments/D001/preregistration.md")
+    _write_map(root, [("D001", old, new, blob, "history rewrite", "2026-10-10")])
+    record_trial("D001", "v2", {}, "fail", repo_root=root)
+    assert trial_count("D001", repo_root=root) == 2
+
+
+def test_commit_map_never_admits_a_different_plan_or_other_commit(repo):
+    root, path, fields = repo
+    _commit(root, path)
+    record_trial("D001", "v1", {}, "fail", repo_root=root)
+    old, new = _rewrite_registration_commit(root, path)
+    _write_map(root, [("D001", old, new, "0" * 40, "wrong blob", "2026-10-10"),
+                      ("D001", old, "1" * 40, _git(root, "rev-parse", f"{new}:research/experiments/D001/preregistration.md"),
+                       "wrong target", "2026-10-10")])
+    with pytest.raises(ValueError, match="prereg_commit differs"):
+        record_trial("D001", "v2", {}, "fail", repo_root=root)
+    _write_map(root, [("D001", "abc", new, "0" * 40, "short id", "2026-10-10")])
+    with pytest.raises(ValueError, match="full lowercase"):
+        record_trial("D001", "v2", {}, "fail", repo_root=root)

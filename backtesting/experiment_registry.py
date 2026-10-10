@@ -17,6 +17,8 @@ import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = Path("research/experiments/registry.csv")
+COMMIT_MAP_PATH = Path("research/experiments/commit_map.csv")
+COMMIT_MAP_COLUMNS = ("experiment_id", "old_commit", "new_commit", "prereg_blob", "reason", "recorded_at")
 REQUIRED_FIELDS = ("experiment_id", "sleeve", "hypothesis", "counterparty", "data_periods",
                    "metrics", "pass_criteria", "variants_planned", "uses_llm", "uses_holdout")
 REGISTRY_COLUMNS = ("recorded_at", "experiment_id", "prereg_commit", "variant", "verdict", "metrics_json", "note")
@@ -134,6 +136,39 @@ def _registry_rows(handle: TextIO) -> list[dict[str, str]]:
     return rows
 
 
+def _is_sha(value: str) -> bool:
+    return len(value) == 40 and all(c in "0123456789abcdef" for c in value)
+
+
+def _commit_aliases(root: Path, experiment_id: str, current: str) -> set[str]:
+    """Earlier commit ids that a documented history rewrite mapped onto ``current``.
+
+    A row is honoured only when its new commit is the preregistration's current
+    commit and its blob id equals the committed preregistration's content, so the
+    map can carry an unchanged plan across rewritten hashes but never admits an
+    edited plan.
+    """
+    path = root / COMMIT_MAP_PATH
+    if not path.is_file():
+        return set()
+    with path.open(encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        if reader.fieldnames != list(COMMIT_MAP_COLUMNS):
+            raise ValueError("commit_map.csv has an invalid header")
+        rows = [row for row in reader if row["experiment_id"] == experiment_id]
+    if not rows:
+        return set()
+    relative = f"research/experiments/{experiment_id}/preregistration.md"
+    blob = _git(root, "rev-parse", f"{current}:{relative}")
+    aliases = set()
+    for row in rows:
+        if not (_is_sha(row["old_commit"]) and _is_sha(row["new_commit"]) and _is_sha(row["prereg_blob"])):
+            raise ValueError("commit_map.csv rows require full lowercase commit and blob ids")
+        if row["new_commit"] == current and row["prereg_blob"] == blob:
+            aliases.add(row["old_commit"])
+    return aliases
+
+
 def record_trial(
     experiment_id: str,
     variant: str,
@@ -158,8 +193,10 @@ def record_trial(
         empty = path.stat().st_size == 0
         if not empty:
             rows = _registry_rows(handle)
+            accepted = {preregistration.commit_hash} | _commit_aliases(
+                Path(repo_root).resolve(), experiment_id, preregistration.commit_hash)
             if any(row["experiment_id"] == experiment_id
-                   and row["prereg_commit"] != preregistration.commit_hash for row in rows):
+                   and row["prereg_commit"] not in accepted for row in rows):
                 raise ValueError("registry prereg_commit differs for this experiment_id; a changed plan requires a new experiment_id")
         writer = csv.writer(handle)
         if empty:
