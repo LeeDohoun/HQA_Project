@@ -437,7 +437,7 @@ venv/bin/python scripts/research/build_agent_architecture_validation.py --source
 
 **Compose 비밀값 차단 (`5f1ccb0`):** `ai`, `analysis-scheduler`, `signal-monitor`는 `.env` 전체를 받으므로, 그 안의 KIS 키(모의·실전 이름 모두)가 LLM으로 외부 글을 읽는 컨테이너에 들어갔습니다. 운영 설정에 따라서는 DB에 저장된 모든 사용자의 증권 자격증명을 푸는 `HQA_KIS_ENC_KEY`까지 들어갈 수 있었습니다. 이제 이 세 서비스는 Python 코드가 읽는 KIS 이름 11개와 `HQA_KIS_ENC_KEY`를 빈 값으로 덮어씁니다. 가짜 `.env`로 해석된 Compose 설정을 전후 비교해, 이 12개 변수만, 이 세 서비스에서만 바뀐 것을 확인했습니다. 백엔드는 그대로 모든 값을 받습니다. 대가로 Compose 안의 `/chat`은 실시간 시세 질문에 '설정되지 않음'으로 답합니다. Compose 밖에서 직접 실행하는 Python KIS 도구는 계속 `.env`를 씁니다. 코드가 읽는 KIS 이름을 자동으로 모아 확인하는 회귀 테스트도 추가했습니다(이전 파일에서는 실패).
 
-### 7.11 Claude API 연결 (2026-10-10)
+### 7.11 Claude API 연결 (`39d00d5`, 2026-10-10)
 
 OpenAI 키가 없고, 10월 7일부터 Claude Max·Team 요금제에 매달 API 크레딧(Max 5x 100달러, Max 20x 200달러)이 포함되어 분석 LLM으로 Claude를 고를 수 있게 했습니다. `LLM_PROVIDER=anthropic`(별칭 `claude`)과 `ANTHROPIC_API_KEY`로 켭니다. 기본값은 계속 `openai`입니다.
 
@@ -535,3 +535,4 @@ OpenAI 키가 없고, 10월 7일부터 Claude Max·Team 요금제에 매달 API 
 | `25a7692` | 2026-10-09 | PostgreSQL | docs: record the PostgreSQL checks, the lock test and the backend boot |
 | `4f5da49` | 2026-10-09 | KIS·Compose | test(kis): make the live paper checks fail when KIS refuses, and send the backend's requests |
 | `5f1ccb0` | 2026-10-09 | KIS·Compose | fix(compose): keep broker credentials and the credential key out of the AI containers |
+| `39d00d5` | 2026-10-10 | Claude | feat(llm): run the analysis on Claude with the same token, budget and refusal checks as Luna |
