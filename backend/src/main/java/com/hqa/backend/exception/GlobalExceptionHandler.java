@@ -9,6 +9,8 @@ import org.springframework.http.HttpStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.bind.ServletRequestBindingException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -45,6 +47,14 @@ public class GlobalExceptionHandler {
         ));
     }
 
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleUnsupportedMethod(HttpRequestMethodNotSupportedException exception) {
+        String[] methods = exception.getSupportedMethods();
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
+                .header("Allow", String.join(", ", methods == null ? new String[0] : methods))
+                .body(ErrorResponse.of(ErrorCode.INVALID_REQUEST, "Method not allowed", null));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGeneric(Exception exception) {
         log.error("Unhandled API error", exception);
@@ -53,7 +63,7 @@ public class GlobalExceptionHandler {
         ));
     }
 
-    @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class})
+    @ExceptionHandler({ServletRequestBindingException.class, HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class})
     public ResponseEntity<ErrorResponse> handleMalformedRequest(Exception exception) {
         return ResponseEntity.badRequest().body(ErrorResponse.of(ErrorCode.INVALID_REQUEST,
                 "입력 형식이 올바르지 않습니다. 요청 내용을 확인해 주세요", null));

@@ -4,8 +4,11 @@
    대시보드 — 워치리스트 / AI 분석 / 거래 내역 / 내 자산 4탭
    ============================================================ */
 
-import { useRouter } from "next/navigation";
-import { Dispatch, FormEvent, SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useWorkspace } from "@/components/common/workspace-frame";
+import { readWorkspaceTab, workspaceTabUrl } from "@/lib/workspace-navigation";
+import type { WorkspaceTab } from "@/lib/workspace-navigation";
+import { redirect, useRouter, useSearchParams } from "next/navigation";
+import { Dispatch, FormEvent, SetStateAction, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentDetailSections, AnalysisSummaryCard } from "@/components/common/analysis-report";
 import { analysisApi, authApi, stockApi, tradingApi, watchlistApi } from "@/lib/api";
 import type {
@@ -29,18 +32,8 @@ import type {
 /* ============================================================
    타입 · 상수 · 포맷 헬퍼 (기존 로직 그대로)
    ============================================================ */
-type WorkspaceTab = "home" | "watchlist" | "analysis" | "history" | "assets";
-
 const RECENT_STORAGE_KEY = "hqa.dashboard.recent";
 const RECENT_LIMIT = 8;
-
-const NAV_TABS: { id: WorkspaceTab; label: string }[] = [
-  { id: "home", label: "홈" },
-  { id: "watchlist", label: "워치리스트" },
-  { id: "analysis", label: "AI 분석" },
-  { id: "history", label: "거래 내역" },
-  { id: "assets", label: "내 자산" }
-];
 
 function formatNumber(value: number | null | undefined) {
   if (value == null) return "-";
@@ -125,8 +118,21 @@ function saveRecent(items: StockSearchResult[]) {
    대시보드
    ============================================================ */
 export default function DashboardPage() {
+  return <Suspense fallback={<p style={{ padding: "2rem", color: "var(--ink-3)" }}>불러오는 중...</p>}><DashboardRoute /></Suspense>;
+}
+
+function DashboardRoute() {
+  const params = useSearchParams();
+  if (params.get("tab") === "assets") redirect("/mypage");
+  return <DashboardPageContent />;
+}
+
+function DashboardPageContent() {
   const router = useRouter();
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const searchParams = useSearchParams();
+  const { user, loadingUser, balance, balanceLoading, balanceError, loadBalance, autoTradeEnabled } = useWorkspace();
+  const tab = readWorkspaceTab(searchParams.get("tab"));
+  const setTab = useCallback((next: WorkspaceTab) => router.push(workspaceTabUrl(next), { scroll: false }), [router]);
   const [preference, setPreference] = useState<UserPreference | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<StockSearchResult[]>([]);
@@ -135,10 +141,6 @@ export default function DashboardPage() {
   const [watchlistLoading, setWatchlistLoading] = useState(false);
   const [selectedAnalysisCodes, setSelectedAnalysisCodes] = useState<string[]>([]);
   const [selected, setSelected] = useState<StockSearchResult | null>(null);
-  const [tab, setTab] = useState<WorkspaceTab>("home");
-  const [balance, setBalance] = useState<Balance | null>(null);
-  const [balanceLoading, setBalanceLoading] = useState(false);
-  const [balanceError, setBalanceError] = useState("");
   const [recentAnalyses, setRecentAnalyses] = useState<AnalysisHistoryItem[]>([]);
   const [recentAnalysesLoading, setRecentAnalysesLoading] = useState(false);
   const [aiActivity, setAiActivity] = useState<AiActivityResponse | null>(null);
@@ -150,7 +152,6 @@ export default function DashboardPage() {
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState("");
   const [message, setMessage] = useState("");
-  const [loadingUser, setLoadingUser] = useState(true);
   const [searching, setSearching] = useState(false);
   const [task, setTask] = useState<AnalysisTaskResponse | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
@@ -159,28 +160,11 @@ export default function DashboardPage() {
   const [bulkTasks, setBulkTasks] = useState<AnalysisTaskResponse[]>([]);
   const analysisProgressPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activeAnalysisTaskRef = useRef<{ taskId: string } | null>(null);
-  const [autoTradeEnabled, setAutoTradeEnabled] = useState(false);
-  const [autoTradeConfirmOpen, setAutoTradeConfirmOpen] = useState(false);
-  const [autoTradeSaving, setAutoTradeSaving] = useState(false);
   const [bulkAnalyzing, setBulkAnalyzing] = useState(false);
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
 
   useEffect(() => {
     setRecent(loadRecent());
-  }, []);
-
-  const loadBalance = useCallback(async () => {
-    setBalanceLoading(true);
-    setBalanceError("");
-    try {
-      const data = await tradingApi.balance();
-      setBalance(data);
-    } catch (e) {
-      setBalance(null);
-      setBalanceError(e instanceof Error ? e.message : "잔고를 불러오지 못했습니다.");
-    } finally {
-      setBalanceLoading(false);
-    }
   }, []);
 
   const loadWatchlist = useCallback(async () => {
@@ -204,46 +188,14 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    if (loadingUser || !user || !user.surveyCompleted) return;
     let active = true;
-
-    authApi
-      .me()
-      .then(async (responseUser) => {
-        if (!active) return;
-        setUser(responseUser);
-        void loadWatchlist();
-
-        if (!responseUser.surveyCompleted) {
-          router.replace("/onboarding/preference");
-          return;
-        }
-
-        // KIS 계좌가 연결된 사용자는 로그인 직후 곧바로 모의계좌 잔고를 불러와
-        // 앱 전역(상단 네비)에 계정 전체 잔고로 표시한다.
-        if (responseUser.kisConfigured) {
-          void loadBalance();
-        }
-
-        try {
-          const responsePreference = await authApi.getPreference();
-          if (active) setPreference(responsePreference);
-        } catch {
-          if (active) setPreference(null);
-        }
-      })
-      .catch(() => router.replace("/login"))
-      .finally(() => {
-        if (active) setLoadingUser(false);
-      });
-
-    tradingApi.status()
-      .then((status) => {
-        if (active) setAutoTradeEnabled(status.enabled);
-      })
-      .catch(() => { /* 무시: 자동매매 상태는 fail-safe로 OFF 유지 */ });
-
+    void loadWatchlist();
+    authApi.getPreference()
+      .then(preference => { if (active) setPreference(preference); })
+      .catch(() => { if (active) setPreference(null); });
     return () => { active = false; };
-  }, [router, loadBalance, loadWatchlist]);
+  }, [user, loadingUser, router, loadWatchlist]);
 
   // 종목 클릭 → 상세 페이지로 이동.
   function pickStock(stock: StockSearchResult) {
@@ -408,6 +360,7 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    if (loadingUser || !user || !user.surveyCompleted) return;
     if (tab === "history") {
       void loadOrders();
       void loadAutoTradeExplanations();
@@ -420,7 +373,7 @@ export default function DashboardPage() {
       void loadAutoTradeExplanations();
       void loadIndices();
     }
-  }, [tab, loadOrders, loadBalance, loadRecentAnalyses, loadAiActivity, loadAutoTradeExplanations, loadIndices]);
+  }, [tab, user, loadingUser, loadOrders, loadBalance, loadRecentAnalyses, loadAiActivity, loadAutoTradeExplanations, loadIndices]);
 
   function requestBulkAnalyze() {
     if (bulkAnalyzing) return;
@@ -481,30 +434,6 @@ export default function DashboardPage() {
     startAnalysisPolling(nextTask.taskId);
   }
 
-  async function handleAutoTrade() {
-    setAutoTradeConfirmOpen(true);
-  }
-
-  async function confirmAutoTradeToggle() {
-    const next = !autoTradeEnabled;
-    setAutoTradeSaving(true);
-    try {
-      const status = await tradingApi.setAuto(next);
-      setAutoTradeEnabled(status.enabled);
-      setAutoTradeConfirmOpen(false);
-      setMessage(status.enabled ? "자동매매를 켰습니다." : "자동매매를 껐습니다.");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "자동매매 토글에 실패했습니다.");
-    } finally {
-      setAutoTradeSaving(false);
-    }
-  }
-
-  async function logout() {
-    await authApi.logout();
-    router.push("/login");
-  }
-
   const totalAssetsText = useMemo(() => {
     if (!preference?.totalAssets) return "-";
     return `${formatNumber(preference.totalAssets)}원`;
@@ -515,7 +444,10 @@ export default function DashboardPage() {
     return `${formatNumber(preference.monthlyInvestment)}원`;
   }, [preference?.monthlyInvestment]);
 
-  if (loadingUser) {
+  if (!loadingUser && !user) redirect("/login");
+  if (!loadingUser && user && !user.surveyCompleted) redirect("/onboarding/preference");
+
+  if (loadingUser || !user || !user.surveyCompleted) {
     return (
       <div className="workspace">
         <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -527,107 +459,6 @@ export default function DashboardPage() {
 
   return (
     <div className="workspace">
-
-      {/* ── 네비 ── */}
-      <nav className="ed-nav" aria-label="워크스페이스 메뉴">
-        <div className="ed-nav-in">
-          <span className="ed-mark" aria-label="HQA">
-            <b>HQA</b>
-            <i />
-          </span>
-          <div className="ed-nav-links">
-            {NAV_TABS.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                className={`ed-nav-link${tab === t.id ? " ed-nav-link--on" : ""}`}
-                aria-current={tab === t.id ? "page" : undefined}
-                onClick={() => setTab(t.id)}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-          <div className="ed-nav-right">
-            {user?.kisConfigured ? (
-              <button
-                type="button"
-                className={`ed-navbal${balanceLoading ? " ed-navbal--loading" : ""}`}
-                onClick={() => setTab("home")}
-                title="KIS 계좌 전체 잔고"
-              >
-                <small>계정 전체 잔고</small>
-                <b>
-                  {balanceLoading
-                    ? "불러오는 중..."
-                    : balance?.summary?.totalEvalAmount != null
-                      ? formatPrice(balance.summary.totalEvalAmount)
-                      : "-"}
-                </b>
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className={`ed-statuschip${autoTradeEnabled ? " ed-statuschip--on" : ""}`}
-              onClick={handleAutoTrade}
-              disabled={autoTradeSaving}
-            >
-              <span className={`ed-dot${autoTradeEnabled ? " ed-dot--live" : ""}`} />
-              {autoTradeSaving ? "변경 중..." : `모의 자동매매 ${autoTradeEnabled ? "ON" : "OFF"}`}
-            </button>
-            <button type="button" className="ed-tlink" style={{ fontSize: ".84rem" }} onClick={logout}>
-              로그아웃
-            </button>
-          </div>
-        </div>
-      </nav>
-
-      {autoTradeConfirmOpen ? (
-        <div className="ed-modal-backdrop" role="presentation" onMouseDown={() => !autoTradeSaving && setAutoTradeConfirmOpen(false)}>
-          <section
-            className="ed-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="auto-trade-confirm-title"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <div className="ed-modal-kicker">
-              <span className={`ed-dot${autoTradeEnabled ? " ed-dot--live" : ""}`} />
-              AUTO TRADING
-            </div>
-            <h2 id="auto-trade-confirm-title" className="ed-modal-title">
-              자동매매를 {autoTradeEnabled ? "중지할까요?" : "시작할까요?"}
-            </h2>
-            <p className="ed-modal-copy">
-              {autoTradeEnabled
-                ? "OFF로 전환하면 AI 자동매매 루프를 중지하고, 이후 대기 신호도 집행하지 않습니다."
-                : "ON으로 전환하면 모의투자 자동매매 루프가 시작되고, 백엔드 스케줄러도 이 계정을 자동매매 대상으로 처리합니다."}
-            </p>
-            <ul className="ed-modal-list">
-              <li>모의투자 KIS 계정 기준으로 주문 흐름을 실행합니다.</li>
-              <li>생성된 매매 판단과 거절 사유는 거래 내역의 AI 매매근거에서 확인할 수 있습니다.</li>
-            </ul>
-            <div className="ed-modal-actions">
-              <button
-                type="button"
-                className="ed-btn ed-btn--line"
-                onClick={() => setAutoTradeConfirmOpen(false)}
-                disabled={autoTradeSaving}
-              >
-                취소
-              </button>
-              <button
-                type="button"
-                className={autoTradeEnabled ? "ed-btn ed-btn--ink" : "ed-btn ed-btn--moss"}
-                onClick={confirmAutoTradeToggle}
-                disabled={autoTradeSaving}
-              >
-                {autoTradeSaving ? "처리 중..." : autoTradeEnabled ? "자동매매 끄기" : "자동매매 켜기"}
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
 
       <main className="ed-app">
        <div className="ed-wrap ed-fade" key={tab}>

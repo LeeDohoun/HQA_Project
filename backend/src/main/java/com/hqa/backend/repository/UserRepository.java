@@ -11,6 +11,8 @@ import jakarta.persistence.LockModeType;
 public interface UserRepository extends JpaRepository<User, String> {
     boolean existsByUserId(String userId);
 
+    boolean existsByNickname(String nickname);
+
     Optional<User> findByUserId(String userId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

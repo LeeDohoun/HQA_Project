@@ -3,6 +3,7 @@
 | 문서 | 읽는 시점 |
 | --- | --- |
 | [저장소 구조](repository-layout.md) | 코드·데이터 위치와 이전 명령을 확인할 때 |
+| [게시판 운영과 검증](community-board.md) | 게시판 권한·댓글 커서·CSRF·무결성 검사와 의존성 상태를 확인할 때 |
 | [데이터 정제](data-cleansing.md) | 수집 환경, 관측 시점, 중복 제거, 실패 처리를 확인할 때 |
 | [이벤트 파이프라인](event-data-pipeline.md) | 공시·뉴스 이벤트와 관측된 주가 반응을 해석할 때 |
 | [시장·업종 비교](market-context-data.md) | KRX 지수 승인·수집·매핑을 설정할 때 |

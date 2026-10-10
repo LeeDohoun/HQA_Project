@@ -1,5 +1,6 @@
 "use client";
 
+import { BoardMenu } from "@/components/common/board-menu";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { authApi } from "@/lib/api";
@@ -195,6 +196,7 @@ function PreferencePageContent() {
           <div className="wiz-progress-fill" style={{ width: `${progress}%` }} />
         </div>
         <span className="wiz-step-count">{stepIdx + 1} / {totalSteps}</span>
+        <BoardMenu />
       </div>
 
       {/* re-key on step so the card replays its entrance animation */}

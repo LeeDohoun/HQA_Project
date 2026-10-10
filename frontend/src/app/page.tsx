@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BoardMenu } from "@/components/common/board-menu";
 
 const experts = [
   { no: "01", name: "Analyst", title: "숫자 너머의 맥락까지.", text: "공시와 뉴스를 읽고, 기업을 움직이는 변화와 투자 근거를 살펴봐요.", mark: "✳", color: "lilac" },
@@ -12,7 +13,7 @@ export default function HomePage() {
       <a className="skip-link" href="#main">본문으로 이동</a>
       <header className="landing-nav">
         <Link href="/" className="luna-wordmark" aria-label="HQA 홈"><span className="luna-symbol" aria-hidden="true" />HQA<span className="wordmark-dot">.</span></Link>
-        <nav aria-label="주요 메뉴"><a href="#how-it-works">HQA의 방식</a><Link href="/backtesting/ai">백테스트</Link><Link href="/faq">궁금한 점</Link></nav>
+        <nav aria-label="주요 메뉴"><a href="#how-it-works">HQA의 방식</a><Link href="/backtesting/ai">백테스트</Link><Link href="/faq">궁금한 점</Link><BoardMenu /></nav>
         <Link href="/login" className="landing-login">로그인 <span aria-hidden="true">↗</span></Link>
       </header>
       <main id="main">

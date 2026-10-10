@@ -27,6 +27,9 @@ public class User {
     @Column(nullable = false, unique = true)
     private String userId;
 
+    @Column(nullable = false, unique = true)
+    private String nickname;
+
     @Column(nullable = false)
     private String firstName;
 
@@ -63,6 +66,7 @@ public class User {
         if (id == null) {
             id = UUID.randomUUID().toString();
         }
+        if (nickname == null) nickname = userId;
         OffsetDateTime now = OffsetDateTime.now();
         createdAt = now;
         updatedAt = now;
@@ -80,6 +84,9 @@ public class User {
     public String getUserId() {
         return userId;
     }
+
+    public String getNickname() { return nickname == null ? userId : nickname; }
+    public void setNickname(String nickname) { this.nickname = nickname; }
 
     public void setUserId(String userId) {
         this.userId = userId;

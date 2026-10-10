@@ -1,4 +1,5 @@
 import type {
+  MyProfile, BoardType, InquiryStatus, PostAuthor, PostComment, CommentPage, PostDetail, PostListResult, PostSummary,
   AnalysisHistoryItem,
   AnalysisHistoryResponse,
   AnalysisProgressPollResponse,
@@ -64,7 +65,7 @@ function extractErrorMessage(body: unknown): string {
 
 async function parseResponse<T>(response: Response): Promise<T> {
   const contentType = response.headers.get("content-type") ?? "";
-  if (response.status === 204) return undefined as T;
+  if (response.status === 204 || response.status === 205) return undefined as T;
   const raw = await response.text();
   let body: unknown = raw;
   if (contentType.includes("json") && raw) {
@@ -94,6 +95,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
 type AuthUserWire = {
   id: string;
   user_id: string;
+  nickname: string;
   first_name: string;
   last_name: string;
   role: "user" | "admin";
@@ -254,6 +256,7 @@ function mapAuthUser(user: AuthUserWire): AuthUser {
   return {
     id: user.id,
     userId: user.user_id,
+    nickname: user.nickname ?? user.user_id,
     firstName: user.first_name,
     lastName: user.last_name,
     role: user.role,
@@ -414,6 +417,15 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   else init?.signal?.addEventListener("abort", abort, { once: true });
   const timeout = setTimeout(() => controller.abort(new DOMException("Request timed out", "TimeoutError")), 45_000);
   try {
+    const method = (init?.method ?? "GET").toUpperCase();
+    if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
+      const csrfResponse = await fetch(`${API_BASE}/api/v1/auth/csrf`, {
+        credentials: "include", cache: "no-store", signal: controller.signal
+      });
+      const csrf = await parseResponse<{ token: string }>(csrfResponse);
+      if (!csrf?.token) throw new Error("Could not verify your session. Please retry.");
+      headers.set("X-CSRF-Token", csrf.token);
+    }
     const response = await fetch(`${API_BASE}${path}`, {
       ...init,
       signal: controller.signal,
@@ -714,3 +726,288 @@ export const chatApi = {
 export function eventStreamUrl(path: string) {
   return `${API_BASE}${path}`;
 }
+
+type PostAuthorWire = {
+  id: string;
+  user_id: string;
+  first_name: string;
+  last_name: string;
+  nickname: string;
+  level: number;
+  title: string | null;
+};
+
+type PostSummaryWire = {
+  id: string;
+  board_type: BoardType;
+  title: string;
+  stock_code: string | null;
+  comment_count: number;
+  recommendation_count: number;
+  author_nickname: string;
+  author_level: number;
+  author_title: string | null;
+  inquiry_status: InquiryStatus | null;
+  author_id: string;
+  author_user_id: string;
+  author_first_name: string;
+  author_last_name: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type PostCommentWire = {
+  id: string;
+  content: string;
+  author: PostAuthorWire;
+  mine: boolean;
+  deletable: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+type CommentPageWire = {
+  items: PostCommentWire[];
+  next_cursor: string | null;
+  has_more: boolean;
+  total_items: number;
+};
+
+type PostDetailWire = {
+  id: string;
+  board_type: BoardType;
+  title: string;
+  content: string;
+  stock_code: string | null;
+  comment_count: number;
+  recommendation_count: number;
+  recommended: boolean;
+  recommendable: boolean;
+  author: PostAuthorWire;
+  deletable: boolean;
+  editable: boolean;
+  delete_requestable: boolean;
+  inquiry_resolvable: boolean;
+  target_post_deletable: boolean;
+  delete_blocked_reason: string | null;
+  inquiry_status: InquiryStatus | null;
+  admin_reply: string | null;
+  target_post_id: string | null;
+  comments: PostCommentWire[];
+  next_comment_cursor: string | null;
+  has_more_comments: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+type PostListWire = {
+  items: PostSummaryWire[];
+  page: number;
+  size: number;
+  total_items: number;
+  total_pages: number;
+};
+
+function mapAuthor(wire: PostAuthorWire): PostAuthor {
+  return {
+    id: wire.id,
+    userId: wire.user_id,
+    firstName: wire.first_name,
+    lastName: wire.last_name,
+    nickname: wire.nickname ?? wire.user_id,
+    level: wire.level ?? 0,
+    title: wire.title ?? null
+  };
+}
+
+function mapPostSummary(wire: PostSummaryWire): PostSummary {
+  return {
+    id: wire.id,
+    boardType: wire.board_type,
+    title: wire.title,
+    stockCode: wire.stock_code,
+    commentCount: wire.comment_count,
+    recommendationCount: wire.recommendation_count ?? 0,
+    inquiryStatus: wire.inquiry_status,
+    author: {
+      id: wire.author_id,
+      userId: wire.author_user_id,
+      firstName: wire.author_first_name,
+      lastName: wire.author_last_name,
+      nickname: wire.author_nickname ?? wire.author_user_id,
+      level: wire.author_level ?? 0,
+      title: wire.author_title ?? null
+    },
+    createdAt: wire.created_at,
+    updatedAt: wire.updated_at
+  };
+}
+
+function mapComment(wire: PostCommentWire): PostComment {
+  return {
+    id: wire.id,
+    content: wire.content,
+    author: mapAuthor(wire.author),
+    mine: wire.mine,
+    deletable: wire.deletable,
+    createdAt: wire.created_at,
+    updatedAt: wire.updated_at
+  };
+}
+
+function mapPostDetail(wire: PostDetailWire): PostDetail {
+  return {
+    id: wire.id,
+    boardType: wire.board_type,
+    title: wire.title,
+    content: wire.content,
+    stockCode: wire.stock_code,
+    commentCount: wire.comment_count,
+    recommendationCount: wire.recommendation_count ?? 0,
+    recommended: wire.recommended ?? false,
+    recommendable: wire.recommendable ?? false,
+    author: mapAuthor(wire.author),
+    deletable: wire.deletable,
+    editable: wire.editable,
+    deleteRequestable: wire.delete_requestable,
+    inquiryResolvable: wire.inquiry_resolvable,
+    targetPostDeletable: wire.target_post_deletable,
+    deleteBlockedReason: wire.delete_blocked_reason,
+    inquiryStatus: wire.inquiry_status,
+    adminReply: wire.admin_reply,
+    targetPostId: wire.target_post_id,
+    comments: (wire.comments ?? []).map(mapComment),
+    nextCommentCursor: wire.next_comment_cursor,
+    hasMoreComments: wire.has_more_comments,
+    createdAt: wire.created_at,
+    updatedAt: wire.updated_at
+  };
+}
+
+function mapPostList(wire: PostListWire): PostListResult {
+  return {
+    items: (wire.items ?? []).map(mapPostSummary),
+    page: wire.page,
+    size: wire.size,
+    totalItems: wire.total_items,
+    totalPages: wire.total_pages
+  };
+}
+
+function pageQuery(page: number, size: number, extra?: Record<string, string>) {
+  const params = new URLSearchParams({ page: String(page), size: String(size), ...(extra ?? {}) });
+  return params.toString();
+}
+
+export const communityApi = {
+  recommend: async (postId: string) =>
+    mapPostDetail(await api<PostDetailWire>(`/api/v1/community/posts/${encodeURIComponent(postId)}/recommendations`, { method: "POST" })),
+  listFree: async (page = 0, size = 20, signal?: AbortSignal) =>
+    mapPostList(await api<PostListWire>(`/api/v1/community/free?${pageQuery(page, size)}`, { signal })),
+
+  listStock: async (stockCode?: string, page = 0, size = 20, signal?: AbortSignal) =>
+    mapPostList(await api<PostListWire>(
+      `/api/v1/community/stock?${pageQuery(page, size, stockCode ? { stockCode } : undefined)}`,
+      { signal }
+    )),
+
+  listInquiries: async (page = 0, size = 20, signal?: AbortSignal) =>
+    mapPostList(await api<PostListWire>(`/api/v1/community/inquiries?${pageQuery(page, size)}`, { signal })),
+
+  get: async (postId: string, signal?: AbortSignal) =>
+    mapPostDetail(await api<PostDetailWire>(`/api/v1/community/posts/${encodeURIComponent(postId)}`, { signal })),
+
+  listComments: async (postId: string, after?: string | null, size = 20, signal?: AbortSignal): Promise<CommentPage> => {
+    const params = new URLSearchParams({ size: String(size) });
+    if (after) params.set("after", after);
+    const wire = await api<CommentPageWire>(`/api/v1/community/posts/${encodeURIComponent(postId)}/comments?${params}`, { signal });
+    return { items: wire.items.map(mapComment), nextCursor: wire.next_cursor, hasMore: wire.has_more, totalItems: wire.total_items };
+  },
+
+  visibleComments: async (postId: string, ids: string[], signal?: AbortSignal): Promise<CommentPage> => {
+    const params = new URLSearchParams();
+    for (const id of ids) params.append("ids", id);
+    const wire = await api<CommentPageWire>(`/api/v1/community/posts/${encodeURIComponent(postId)}/comments/visible?${params}`, { signal });
+    return { items: wire.items.map(mapComment), nextCursor: wire.next_cursor, hasMore: wire.has_more, totalItems: wire.total_items };
+  },
+
+  createFree: async (payload: { title: string; content: string }) =>
+    mapPostDetail(await api<PostDetailWire>("/api/v1/community/free", {
+      method: "POST",
+      body: JSON.stringify({ title: payload.title, content: payload.content })
+    })),
+
+  createStock: async (payload: { title: string; content: string; stockCode: string }) =>
+    mapPostDetail(await api<PostDetailWire>("/api/v1/community/stock", {
+      method: "POST",
+      body: JSON.stringify({ title: payload.title, content: payload.content, stock_code: payload.stockCode })
+    })),
+
+  createInquiry: async (payload: { title: string; content: string; targetPostId?: string }) =>
+    mapPostDetail(await api<PostDetailWire>("/api/v1/community/inquiries", {
+      method: "POST",
+      body: JSON.stringify({
+        title: payload.title,
+        content: payload.content,
+        target_post_id: payload.targetPostId ?? null
+      })
+    })),
+
+  update: async (postId: string, payload: { title: string; content: string }) =>
+    mapPostDetail(await api<PostDetailWire>(`/api/v1/community/posts/${encodeURIComponent(postId)}`, {
+      method: "PUT",
+      body: JSON.stringify({ title: payload.title, content: payload.content })
+    })),
+
+  remove: (postId: string) =>
+    api<void>(`/api/v1/community/posts/${encodeURIComponent(postId)}`, { method: "DELETE" }),
+
+  addComment: async (postId: string, content: string) =>
+    mapComment(await api<PostCommentWire>(`/api/v1/community/posts/${encodeURIComponent(postId)}/comments`, {
+      method: "POST",
+      body: JSON.stringify({ content })
+    })),
+
+  removeComment: (commentId: string) =>
+    api<void>(`/api/v1/community/comments/${encodeURIComponent(commentId)}`, { method: "DELETE" }),
+
+  /** 관리자 전용. 삭제 요청이면 deleteTargetPost로 대상 글을 함께 지운다. */
+  resolveInquiry: async (
+    inquiryId: string,
+    payload: { status: Exclude<InquiryStatus, "OPEN">; adminReply?: string; deleteTargetPost?: boolean }
+  ) =>
+    mapPostDetail(await api<PostDetailWire>(`/api/v1/community/inquiries/${encodeURIComponent(inquiryId)}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        status: payload.status,
+        admin_reply: payload.adminReply ?? null,
+        delete_target_post: payload.deleteTargetPost ?? false
+      })
+    }))
+};
+
+type MyProfileWire = {
+  id: string; user_id: string; nickname: string; total_points: number; created_at: string;
+  boards: { board_type: "FREE" | "STOCK"; points: number; level: number; title: string;
+    current_level_points: number; next_level_points: number | null; points_to_next_level: number;
+    post_count: number; comment_count: number; recommendations_received: number }[];
+  recent_events: { id: string; board_type: "FREE" | "STOCK"; reason: "POST_CREATED" | "COMMENT_CREATED" | "RECOMMEND_RECEIVED";
+    points: number; post_id: string; created_at: string; reversed_at: string | null }[];
+};
+
+function mapProfile(wire: MyProfileWire): MyProfile {
+  return { id: wire.id, userId: wire.user_id, nickname: wire.nickname, totalPoints: wire.total_points, createdAt: wire.created_at,
+    boards: wire.boards.map(board => ({ boardType: board.board_type, points: board.points, level: board.level,
+      title: board.title, currentLevelPoints: board.current_level_points, nextLevelPoints: board.next_level_points,
+      pointsToNextLevel: board.points_to_next_level, postCount: board.post_count, commentCount: board.comment_count,
+      recommendationsReceived: board.recommendations_received })),
+    recentEvents: wire.recent_events.map(event => ({ id: event.id, boardType: event.board_type, reason: event.reason,
+      points: event.points, postId: event.post_id, createdAt: event.created_at, reversedAt: event.reversed_at })) };
+}
+
+export const profileApi = {
+  me: async (signal?: AbortSignal) => mapProfile(await api<MyProfileWire>("/api/v1/profile", { signal })),
+  updateNickname: async (nickname: string) => mapProfile(await api<MyProfileWire>("/api/v1/profile/nickname", {
+    method: "PUT", body: JSON.stringify({ nickname })
+  }))
+};
