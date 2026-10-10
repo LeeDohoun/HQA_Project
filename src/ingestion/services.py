@@ -8,17 +8,28 @@ import inspect
 import hashlib
 import json
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List
 
 from .dart import DartDisclosureCollector
 from .dart_financials import DartFinancialStatementCollector
+from .kis_chart import KisChartCollector
 from .krx_chart import KrxChartCollector
 from .naver_forum import NaverStockForumCollector
 from .naver_news import NaverNewsCollector
 from .types import CollectRequest, DocumentRecord, FinancialSnapshot, MarketRecord
 from .storage import read_rows, save_episodes, write_rows, file_lock
+
+
+# Sources whose rows live in another source's raw folder: KIS daily bars are chart rows.
+RAW_SOURCE_DIRS = {"kis_chart": "chart"}
+# chart (KRX) and kis_chart (KIS) write the same raw chart files; a run uses one of them.
+ALTERNATIVE_PRICE_SOURCES = {"chart", "kis_chart"}
+# A kis_chart window longer than this is a backfill. It is widened to KIS_BACKFILL_DAYS so the
+# analysis window (the latest 300 sessions) is observed by one source on one price basis.
+KIS_INCREMENTAL_MAX_DAYS = 31
+KIS_BACKFILL_DAYS = 550
 
 
 @dataclass
@@ -50,9 +61,12 @@ class IngestionService:
         self,
         krx_chart_collector: KrxChartCollector | None = None,
         financial_collector: DartFinancialStatementCollector | None = None,
+        kis_chart_collector: KisChartCollector | None = None,
     ):
         self.krx_chart_collector = krx_chart_collector or KrxChartCollector()
         self.financial_collector = financial_collector
+        # Created on first use, so runs without kis_chart never read broker credentials.
+        self.kis_chart_collector = kis_chart_collector
 
     # Public entry used by the CLI when collecting one stock target.
     def collect_target_documents(self, request: CollectRequest) -> CollectResult:
@@ -61,6 +75,8 @@ class IngestionService:
     # Source collectors are isolated so one failure does not stop the others.
     def collect(self, request: CollectRequest) -> CollectResult:
         self._validate_request_dates(request)
+        if ALTERNATIVE_PRICE_SOURCES <= set(request.enabled_sources):
+            raise ValueError("chart (KRX) and kis_chart (KIS) are alternative price sources; enable one")
         if request.incremental:
             return self._collect_shared(request)
         report = IngestionRunReport(
@@ -83,6 +99,8 @@ class IngestionService:
             self._safe_collect_forum(request, docs, report)
         if "chart" in request.enabled_sources:
             self._safe_collect_chart(request, docs, market_records, report)
+        if "kis_chart" in request.enabled_sources:
+            self._safe_collect_kis_chart(request, market_records, report)
 
         for source in request.enabled_sources:
             report.source_status[source] = (
@@ -128,8 +146,9 @@ class IngestionService:
         return result
 
     def _project_shared_archive(self, request: CollectRequest, source: str, *, require_records: bool = False) -> int:
-        archive = Path(request.raw_output_dir) / source / f"_shared_{request.target.stock_code}.jsonl"
-        destination = Path(request.raw_output_dir) / source / f"{request.theme_key}.jsonl"
+        folder = RAW_SOURCE_DIRS.get(source, source)
+        archive = Path(request.raw_output_dir) / folder / f"_shared_{request.target.stock_code}.jsonl"
+        destination = Path(request.raw_output_dir) / folder / f"{request.theme_key}.jsonl"
         with file_lock(archive.with_suffix(".jsonl.lock")):
             shared = read_rows(archive)
             if require_records and not shared:
@@ -386,6 +405,42 @@ class IngestionService:
             report.source_success["chart"] = False
             report.failures["chart"] = str(e)
             print(f"[WARN][{request.target.stock_name}] chart collect failed: {e}")
+
+    def _safe_collect_kis_chart(
+        self,
+        request: CollectRequest,
+        market_records: List[MarketRecord],
+        report: IngestionRunReport,
+    ) -> None:
+        try:
+            if self.kis_chart_collector is None:
+                self.kis_chart_collector = KisChartCollector()
+            from_date = request.from_date
+            start = datetime.strptime(request.from_date, "%Y%m%d")
+            end = datetime.strptime(request.to_date, "%Y%m%d")
+            if end - start > timedelta(days=KIS_INCREMENTAL_MAX_DAYS):
+                from_date = min(start, end - timedelta(days=KIS_BACKFILL_DAYS)).strftime("%Y%m%d")
+            rows = self.kis_chart_collector.collect_daily(
+                stock_name=request.target.stock_name,
+                stock_code=request.target.stock_code,
+                from_date=from_date,
+                to_date=request.to_date,
+            )
+            for row in rows:
+                row.metadata["theme_key"] = request.theme_key
+            market_records.extend(rows)
+            report.source_success["kis_chart"] = True
+            report.source_counts["kis_chart"] = len(rows)
+            report.raw_saved_counts["kis_chart"] = self._save_raw_market_records(
+                rows,
+                request.raw_output_dir,
+                request.theme_key,
+            )
+            report.skipped_counts["kis_chart"] = len(rows) - report.raw_saved_counts["kis_chart"]
+        except Exception as e:
+            report.source_success["kis_chart"] = False
+            report.failures["kis_chart"] = str(e)
+            print(f"[WARN][{request.target.stock_name}] kis_chart collect failed: {e}")
 
     @staticmethod
     def _attach_stock_info(

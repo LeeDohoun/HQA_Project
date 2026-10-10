@@ -174,7 +174,8 @@ def main() -> int:
     parser.add_argument(
         "--enabled-sources",
         default=DEFAULT_SOURCES,
-        help="수집 소스 목록(쉼표 구분): news,dart,financials,forum,chart. chart는 KRX OHLCV를 수집합니다.",
+        help=("수집 소스 목록(쉼표 구분): news,dart,financials,forum,chart,kis_chart. chart는 KRX OHLCV를, "
+              "kis_chart는 KRX 키 승인 전 대체용 KIS 일봉(원주가, KIS_PAPER_APP_KEY 필요)을 수집합니다. 둘 중 하나만."),
     )
     parser.add_argument("--general-news-keywords", default="")
     parser.add_argument(
