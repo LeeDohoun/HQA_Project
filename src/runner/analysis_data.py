@@ -106,6 +106,12 @@ def price_features(rows: list[dict], as_of: datetime) -> tuple[dict, list[dict]]
                     or meta.get("source_url") != endpoint or meta.get("price_basis") != "unadjusted"):
                 raise ValueError("unverified KRX price market/basis provenance")
             normalized.update(market=meta["market"], price_basis="unadjusted", source="krx", source_url=endpoint)
+        elif meta.get("source") == "kis":
+            # KIS daily bars (kis_chart) stand in for KRX: only the exact original-price endpoint.
+            from src.ingestion.kis_chart import KisChartCollector
+            if meta.get("source_url") != KisChartCollector.DAILY_URL or meta.get("price_basis") != "unadjusted":
+                raise ValueError("unverified KIS price endpoint/basis provenance")
+            normalized.update(price_basis="unadjusted", source="kis", source_url=KisChartCollector.DAILY_URL)
         for field in ("version", "source_id"):
             if field in meta:
                 if not isinstance(meta[field], str) or not meta[field].strip():
@@ -149,6 +155,10 @@ def price_features(rows: list[dict], as_of: datetime) -> tuple[dict, list[dict]]
             if latest is None or content != {key: value for key, value in latest.items() if key != "observed_at"}:
                 latest = row
         known.append(latest)
+    if (any(row.get("source") == "kis" for row in known)
+            and any(row.get("price_basis") != "unadjusted" for row in known)):
+        # Unlabeled bars (e.g. adjusted local test prices) would splice two bases into one chart.
+        raise ValueError("mixed_price_basis:kis_unadjusted_with_unverified_bars")
     if known and sessions:
         if known[-1]["trade_date"] != sessions[-1][0]:
             raise ValueError(f"stale_daily_prices:latest={known[-1]['trade_date']}:expected={sessions[-1][0]}")
