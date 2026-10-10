@@ -453,7 +453,7 @@ OpenAI 키가 없고, 10월 7일부터 Claude Max·Team 요금제에 매달 API 
 
 **아직 확인하지 못한 것:** 실제 Claude 키로 돌려 보지 못했습니다. 특히 차트 전문가 입력은 줄이는 단계 없이 크기가 고정된 설계라, 설계상 최대 입력이 o200k 기준 12,000 미만이라는 테스트만 있습니다. 지금 데이터 3종목의 차트 입력은 오프라인 추정으로 약 15,300토큰(이 추정은 숫자를 넉넉하게 셉니다)이고, Claude 토큰으로는 아직 세어 보지 않았습니다. 키를 넣으면 `scripts.claude_check`로 먼저 확인합니다.
 
-### 7.12 Claude 구독 한도로 분석 (2026-10-10)
+### 7.12 Claude 구독 한도로 분석 (`186638c`, 2026-10-10)
 
 Claude Pro 요금제에는 월 API 크레딧이 없어서(Max·Team 전용), API 키 방식으로는 크레딧을 따로 사야 합니다. 대신 Anthropic은 Agent SDK와 `claude -p`를 구독 한도로 쓰는 것을 구독자 본인 사용에 한해 허용합니다. 그래서 `LLM_PROVIDER=claude_plan`(별칭 `claude-plan`, `claude_subscription`)을 추가했습니다. 같은 역할·모델·생각 깊이·한도를 쓰되, 이 PC에 로그인된 Claude Code CLI를 부릅니다(`src/utils/claude_plan_chat.py`).
 
@@ -547,3 +547,4 @@ Claude Pro 요금제에는 월 API 크레딧이 없어서(Max·Team 전용), API
 | `4f5da49` | 2026-10-09 | KIS·Compose | test(kis): make the live paper checks fail when KIS refuses, and send the backend's requests |
 | `5f1ccb0` | 2026-10-09 | KIS·Compose | fix(compose): keep broker credentials and the credential key out of the AI containers |
 | `39d00d5` | 2026-10-10 | Claude | feat(llm): run the analysis on Claude with the same token, budget and refusal checks as Luna |
+| `186638c` | 2026-10-10 | Claude | feat(llm): run the analysis on the user's Claude subscription through the Claude CLI |
