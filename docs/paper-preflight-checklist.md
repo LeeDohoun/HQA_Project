@@ -14,9 +14,12 @@
 
 | 항목 | 쓰는 곳 | 확인할 것 |
 |---|---|---|
-| `OPENAI_API_KEY` | AI 서버 | `gpt-5.6-luna` 사용 가능. 비용 집계를 위해 전용 프로젝트 권장 |
-| `HQA_LLM_MONTHLY_BUDGET_USD` / `HQA_LLM_OPERATING_TARGET_USD` | AI 서버 | 기본 100 / 90달러. 일반 분석은 90에서 멈추고 보유 종목 보호는 100까지 |
-| `HQA_LLM_RPM` / `HQA_LLM_TPM` | AI 서버 | OpenAI 프로젝트의 실제 한도로 설정. 기본 120 RPM·200,000 TPM은 보수적이라, 사이클마다 전문가 입력이 최대 약 80만 토큰이면 첫 사이클이 몇 분 늦어짐(공식 Build 등급 기본 5,000 RPM·2,000,000 TPM) |
+| `LLM_PROVIDER` | AI 서버 | `openai`(gpt-5.6-luna) 또는 `anthropic`(Claude). 관찰 기간 중에는 바꾸지 않음 |
+| `OPENAI_API_KEY` | AI 서버 | `LLM_PROVIDER=openai`일 때. `gpt-5.6-luna` 사용 가능. 비용 집계를 위해 전용 프로젝트 권장 |
+| `ANTHROPIC_API_KEY` | AI 서버 | `LLM_PROVIDER=anthropic`일 때. Claude Max·Team 요금제의 월 API 크레딧을 쓰려면 claude.ai 설정 > 결제 > API 크레딧에서 연결한 Console 조직에서 키를 만듦. `scripts.claude_check`로 확인 |
+| `HQA_CLAUDE_MODEL`, `HQA_CLAUDE_<역할>_MODEL` | AI 서버 | Claude 모델(기본 `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`). 관찰 기간 시작 전에 확정 |
+| `HQA_LLM_MONTHLY_BUDGET_USD` / `HQA_LLM_OPERATING_TARGET_USD` | AI 서버 | 기본 100 / 90달러. 일반 분석은 90에서 멈추고 보유 종목 보호는 100까지. Claude 크레딧은 요금제 결제 주기마다 충전·만료되고 원장은 달력 월 기준이므로, 운영 목표를 결제 주기 한 번의 크레딧 안으로 둠 |
+| `HQA_LLM_RPM` / `HQA_LLM_TPM` | AI 서버 | OpenAI 프로젝트 또는 Claude 조직의 실제 한도로 설정. 기본 120 RPM·200,000 TPM은 보수적이라, 사이클마다 전문가 입력이 최대 약 80만 토큰이면 첫 사이클이 몇 분 늦어짐(OpenAI 공식 Build 등급 기본 5,000 RPM·2,000,000 TPM). Claude 한도는 `scripts.claude_check --send`가 응답 헤더에서 보여 줌 |
 | `HQA_INTERNAL_TOKEN` | AI 서버, 백엔드, 모니터, 스케줄러 | 세 곳 모두 같은 값, 앞뒤 공백 없이 |
 | `HQA_KIS_ENC_KEY` | 백엔드 | KIS 자격증명 암호화 키. 바꾸면 저장된 계좌 지문을 다시 검토해야 함 |
 | 사용자별 KIS 모의투자 앱키·시크릿·계좌 | 백엔드 자격증명 등록 | 사용자 하나에 계좌 하나, 앱키 공유 금지. AI 서버는 증권사 자격증명을 받지 않음(Compose는 AI 쪽 컨테이너에서 KIS 키와 `HQA_KIS_ENC_KEY`를 빈 값으로 덮어씀) |
@@ -98,7 +101,14 @@ venv/bin/python -m scripts.data.build --theme-key 2차전지 --stats
    venv/bin/python -m uvicorn ai_server.app:app --host 127.0.0.1 --port 8001 --workers 1
    ```
 
-4. **OpenAI 호출:** 대시보드나 `POST /runtime/stock-preview`로 종목 하나를 미리보기 합니다. 계좌·주문 없이 세 전문가가 모두 결과를 내야 합니다.
+4. **LLM 호출:** Claude를 쓰면 먼저 키와 입력 크기를 확인합니다. 기본 실행은 생성하지 않아 비용이 들지 않습니다. 역할별 모델이 쓸 수 있는 상태인지, 지금 데이터로 만들어지는 전문가 요청이 Claude 토큰 기준으로 역할 입력 한도(12,000) 안에 드는지 봅니다. `--send`는 실제 quant 요청 한 번(Opus 5.5에서 몇 센트)을 보내 사용량, 비용, 지연 시간, 조직의 호출 한도를 보여 줍니다. 키는 출력하지 않습니다.
+
+   ```bash
+   venv/bin/python -m scripts.claude_check --data-dir <수집 데이터 경로>
+   venv/bin/python -m scripts.claude_check --data-dir <수집 데이터 경로> --send
+   ```
+
+   그다음 대시보드나 `POST /runtime/stock-preview`로 종목 하나를 미리보기 합니다. 계좌·주문 없이 세 전문가가 모두 결과를 내야 합니다.
 5. **모니터 1회:** 장중에 실행해 `session`이 `open`이고 `errors`가 비었는지 봅니다. 장 밖에서는 평가만 하고 아무것도 보내지 않습니다(`session: closed`).
 
    ```bash

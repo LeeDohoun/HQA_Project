@@ -437,6 +437,22 @@ venv/bin/python scripts/research/build_agent_architecture_validation.py --source
 
 **Compose 비밀값 차단 (`5f1ccb0`):** `ai`, `analysis-scheduler`, `signal-monitor`는 `.env` 전체를 받으므로, 그 안의 KIS 키(모의·실전 이름 모두)가 LLM으로 외부 글을 읽는 컨테이너에 들어갔습니다. 운영 설정에 따라서는 DB에 저장된 모든 사용자의 증권 자격증명을 푸는 `HQA_KIS_ENC_KEY`까지 들어갈 수 있었습니다. 이제 이 세 서비스는 Python 코드가 읽는 KIS 이름 11개와 `HQA_KIS_ENC_KEY`를 빈 값으로 덮어씁니다. 가짜 `.env`로 해석된 Compose 설정을 전후 비교해, 이 12개 변수만, 이 세 서비스에서만 바뀐 것을 확인했습니다. 백엔드는 그대로 모든 값을 받습니다. 대가로 Compose 안의 `/chat`은 실시간 시세 질문에 '설정되지 않음'으로 답합니다. Compose 밖에서 직접 실행하는 Python KIS 도구는 계속 `.env`를 씁니다. 코드가 읽는 KIS 이름을 자동으로 모아 확인하는 회귀 테스트도 추가했습니다(이전 파일에서는 실패).
 
+### 7.11 Claude API 연결 (2026-10-10)
+
+OpenAI 키가 없고, 10월 7일부터 Claude Max·Team 요금제에 매달 API 크레딧(Max 5x 100달러, Max 20x 200달러)이 포함되어 분석 LLM으로 Claude를 고를 수 있게 했습니다. `LLM_PROVIDER=anthropic`(별칭 `claude`)과 `ANTHROPIC_API_KEY`로 켭니다. 기본값은 계속 `openai`입니다.
+
+- **연결 방식:** 공식 `anthropic` SDK(1.13)를 LangChain 모델로 감싼 `src/utils/claude_chat.py`를 추가했습니다. Luna와 같은 순서를 따릅니다. 입력 토큰을 Claude 토큰 계산 엔드포인트로 세서(구조화 출력 스키마 포함) 역할 한도를 넘으면 보내지 않고, 최악의 비용을 원장에 예약하고, SDK 재시도 없이 한 번 보내고, 응답의 사용량으로 정산한 뒤에야 답을 씁니다. 기존 호출 코드(`with_structured_output(...).invoke(...)`)는 바꾸지 않았습니다.
+- **모델과 생각 깊이:** 모든 역할의 기본은 `claude-opus-5-5`이고, `HQA_CLAUDE_MODEL` 또는 `HQA_CLAUDE_<역할>_MODEL`로 Sonnet 5.5·Haiku 5.5를 고를 수 있습니다. Opus 5.5는 생각을 끌 수 없어서 `effort`로 깊이를 정합니다(전문가·요약 low, RiskManager medium). 생각이 출력 한도에 포함되고 답이 한국어라 출력 한도를 늘렸고(전문가 4,000, 요약 2,000, RiskManager 16,000), 제한 시간도 늘렸습니다(120초, RiskManager 300초).
+- **구조화 출력:** Claude가 직접 지키지 않는 스키마 제약(길이, 범위, 패턴)은 SDK가 필드 설명으로 옮기고, 정산 뒤 원래 스키마 전체로 검증합니다. 실제 `AccountDecision`과 `SpecialistResult` 스키마로 왕복을 확인했습니다.
+- **거절과 대체 모델:** 안전 분류기가 거절하면 비용은 정산하고 답은 버립니다(거절 분류를 오류에 남김). Opus 5.5·Sonnet 5.5에서는 같은 호출 안에서 Claude Opus 5 또는 Opus 4.8이 다시 받는 서버 측 대체를 기본으로 켰습니다(`HQA_CLAUDE_FALLBACKS=off`로 끔). 예약에 Opus 5 한 번 몫을 더하고, 정산은 시도마다 그 모델의 가격으로 합니다. 대신 답한 모델은 경고 로그에 남습니다.
+- **예산 원장:** 모델별 가격표를 넣었습니다(`src/utils/llm_budget.py`). 예약 행에 실제 모델을 기록하고, 정산은 그 모델의 가격을 씁니다. 가격표에 없는 모델은 보내기 전에 거부하고, 응답이 가격표에 없는 대체 모델을 가리키면 `unknown`으로 남겨 운영자가 확인합니다. 생성 전에 거부된 요청(400·401·403·404·413·422·429·529)은 0으로 정산하고, 시간 초과·연결 끊김·기타 서버 오류는 `unknown`으로 남습니다. 크레딧이 떨어지면 `LLMBudgetExceeded`로 보고합니다. 기존 Luna 원장과 운영 도구는 그대로 동작합니다.
+- **안전:** 키와 `https://api.anthropic.com`을 명시해서 넘기므로, 환경의 `ANTHROPIC_BASE_URL`·`ANTHROPIC_AUTH_TOKEN`·`ant` 로그인 프로필이 끼어들지 않습니다(Claude Code가 띄운 셸에서 실행해도 같음). Claude Code가 쓰는 `ANTHROPIC_MODEL`은 읽지 않습니다. 테스트는 실제 SDK에 가짜 네트워크를 붙여 돌고, 외부로 나가지 않습니다.
+- **기록:** 감사 기록의 `llm_request.model`과 사이클 `manifest`가 고정 문자열 대신 역할마다 실제로 부른 모델을 적습니다(`manifest.role_models`).
+- **점검 도구:** `scripts.claude_check`가 키와 역할별 모델(수명 주기, 대체 대상의 가격 등록 여부)을 확인하고, 지금 데이터로 만들어지는 전문가 요청을 Claude 토큰으로 세어 역할 한도와 비교합니다. 기본 실행은 비용이 없고, `--send`가 실제 요청 한 번으로 사용량·비용·지연 시간·호출 한도를 보여 줍니다.
+- **설정 파일:** `requirements.txt`에 `anthropic>=1.13.0,<2.0.0`, `.env.example`에 Claude 설정을 넣었습니다. Compose의 `ai` 서비스는 `LLM_PROVIDER`를 `.env` 값으로 받습니다(없으면 `openai`).
+
+**아직 확인하지 못한 것:** 실제 Claude 키로 돌려 보지 못했습니다. 특히 차트 전문가 입력은 줄이는 단계 없이 크기가 고정된 설계라, 설계상 최대 입력이 o200k 기준 12,000 미만이라는 테스트만 있습니다. 지금 데이터 3종목의 차트 입력은 오프라인 추정으로 약 15,300토큰(이 추정은 숫자를 넉넉하게 셉니다)이고, Claude 토큰으로는 아직 세어 보지 않았습니다. 키를 넣으면 `scripts.claude_check`로 먼저 확인합니다.
+
 ## 부록: 커밋 목록
 
 | 커밋 | 날짜 | 구분 | 제목 |

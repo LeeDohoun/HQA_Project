@@ -20,10 +20,11 @@ logger = logging.getLogger(__name__)
 # ==========================================
 
 DEFAULT_PROVIDER = "openai"
-SUPPORTED_PROVIDERS = {"openai", "ollama", "mock"}
+SUPPORTED_PROVIDERS = {"openai", "anthropic", "ollama", "mock"}
 PROVIDER_ALIASES = {
     "test": "mock",
     "fake": "mock",
+    "claude": "anthropic",
 }
 
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11435"
@@ -33,6 +34,11 @@ DEFAULT_OLLAMA_QUANT_MODEL = "gemma4:12b"
 DEFAULT_OLLAMA_CHARTIST_MODEL = "qwen3.5:9b"
 DEFAULT_OLLAMA_RISK_MANAGER_MODEL = "gemma4:12b"
 DEFAULT_OPENAI_MODEL = "gpt-5.6-luna"
+DEFAULT_CLAUDE_MODEL = "claude-opus-5-5"
+# Claude models a role may use; each one is priced in the budget ledger.
+CLAUDE_MODELS = ("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5")
+CLAUDE_EFFORTS = ("low", "medium", "high", "xhigh", "max")
+CLAUDE_BASE_URL = "https://api.anthropic.com"
 
 
 @dataclass(frozen=True)
@@ -56,29 +62,46 @@ _ROLE_LIMITS = {
 }
 
 
+# Claude thinks on every call (Opus 5.5 cannot turn thinking off), the thinking counts toward
+# max_tokens, and the answers are Korean; these output defaults leave room for both. The input
+# limits stay Luna's because they bound how much evidence a role reads.
+_CLAUDE_OUTPUT_TOKENS = {
+    "analyst": 4_000, "quant": 4_000, "chartist": 4_000, "risk_manager": 16_000,
+    "summary": 2_000, "instruct": 4_000, "thinking": 16_000,
+}
+
+
 # A non-streaming medium-reasoning RiskManager call with up to 12k output tokens can
 # outlast the 45 s default; a timed-out call is still billed and stays an "unknown"
 # budget reservation, so the long-output roles get their own default.
 _LONG_OUTPUT_ROLE_TIMEOUT_SECONDS = 180.0
+# Claude writes the larger outputs above, thinking included.
+_CLAUDE_TIMEOUT_SECONDS = 120.0
+_CLAUDE_LONG_OUTPUT_TIMEOUT_SECONDS = 300.0
 
 
-def _role_timeout(role: str) -> float:
+def _role_timeout(role: str, provider: str = "openai") -> float:
     names = [f"HQA_LLM_{role.upper()}_TIMEOUT_SECONDS"]
-    default = _LONG_OUTPUT_ROLE_TIMEOUT_SECONDS if role in {"risk_manager", "thinking"} else None
-    if default is None:
+    long_output = role in {"risk_manager", "thinking"}
+    if provider == "anthropic":
+        default = _CLAUDE_LONG_OUTPUT_TIMEOUT_SECONDS if long_output else _CLAUDE_TIMEOUT_SECONDS
+    else:
+        default = _LONG_OUTPUT_ROLE_TIMEOUT_SECONDS if long_output else 45.0
+    if not long_output:
         names.append("HQA_LLM_TIMEOUT_SECONDS")
     raw = next((os.getenv(name) for name in names if os.getenv(name)), None)
-    timeout = float(raw) if raw is not None else (default or 45.0)
+    timeout = float(raw) if raw is not None else default
     if not math.isfinite(timeout) or timeout <= 0:
         raise ValueError(f"{names[0]} must be positive and finite")
     return timeout
 
 
-def get_role_limits(role: str) -> RoleLimits:
+def get_role_limits(role: str, provider: str = "openai") -> RoleLimits:
     defaults = _ROLE_LIMITS[role]
     prefix = f"HQA_LLM_{role.upper()}"
+    default_output = _CLAUDE_OUTPUT_TOKENS[role] if provider == "anthropic" else defaults.output_tokens
     inputs = int(os.getenv(f"{prefix}_MAX_INPUT_TOKENS", str(defaults.input_tokens)))
-    outputs = int(os.getenv(f"{prefix}_MAX_OUTPUT_TOKENS", str(defaults.output_tokens)))
+    outputs = int(os.getenv(f"{prefix}_MAX_OUTPUT_TOKENS", str(default_output)))
     if not 0 < inputs <= 1_000_000 or not 0 < outputs <= 128_000:
         raise ValueError(f"Invalid {role} token limits")
     return RoleLimits(defaults.reasoning_effort, inputs, outputs)
@@ -93,6 +116,38 @@ def _env(name: str, default: str = "", *, allow_blank: bool = False) -> str:
     if not value and not allow_blank:
         return default
     return value
+
+
+def _claude_model(role: str) -> str:
+    """HQA_CLAUDE_<ROLE>_MODEL, then HQA_CLAUDE_MODEL, then Claude Opus 5.5. (ANTHROPIC_MODEL is
+    left alone: Claude Code reads it.)"""
+    model = _env(f"HQA_CLAUDE_{role.upper()}_MODEL") or _env("HQA_CLAUDE_MODEL", DEFAULT_CLAUDE_MODEL)
+    if model not in CLAUDE_MODELS:
+        raise ValueError(f"Claude model {model!r} for {role} is not supported; choose one of {', '.join(CLAUDE_MODELS)}")
+    return model
+
+
+def _claude_effort(role: str) -> str:
+    """HQA_CLAUDE_<ROLE>_EFFORT, else the role's reasoning effort ("none" becomes "low": Claude
+    always thinks, and low is the shortest)."""
+    effort = _env(f"HQA_CLAUDE_{role.upper()}_EFFORT").lower()
+    if not effort:
+        effort = _ROLE_LIMITS[role].reasoning_effort
+        effort = "low" if effort == "none" else effort
+    if effort not in CLAUDE_EFFORTS:
+        raise ValueError(f"HQA_CLAUDE_{role.upper()}_EFFORT must be one of {', '.join(CLAUDE_EFFORTS)}")
+    return effort
+
+
+def _claude_fallbacks(model: str) -> bool:
+    """Server-side fallback for a request a safety classifier declines: on by default where the
+    model offers it; HQA_CLAUDE_FALLBACKS=off turns it off."""
+    setting = _env("HQA_CLAUDE_FALLBACKS", "default").lower()
+    if setting not in ("default", "off"):
+        raise ValueError("HQA_CLAUDE_FALLBACKS must be 'default' or 'off'")
+    from src.utils.claude_chat import FALLBACK_MODELS
+
+    return setting == "default" and model in FALLBACK_MODELS
 
 
 LLM_PROVIDER = _env("LLM_PROVIDER", DEFAULT_PROVIDER).lower().strip()
@@ -120,7 +175,11 @@ class LLMConfig:
 
     @property
     def api_key_set(self) -> bool:
-        return bool(_env("OPENAI_API_KEY")) if self.provider == "openai" else False
+        if self.provider == "openai":
+            return bool(_env("OPENAI_API_KEY"))
+        if self.provider == "anthropic":
+            return bool(_env("ANTHROPIC_API_KEY"))
+        return False
 
 
 def get_llm_config() -> LLMConfig:
@@ -131,9 +190,13 @@ def get_llm_config() -> LLMConfig:
     fallback_reason = ""
 
     if requested_provider not in SUPPORTED_PROVIDERS:
-        raise ValueError(f"Unsupported LLM_PROVIDER={raw_provider}; select openai, ollama, or mock explicitly")
+        raise ValueError(f"Unsupported LLM_PROVIDER={raw_provider}; select openai, anthropic, ollama, or mock explicitly")
     if provider == "openai" and _env("OPENAI_MODEL", DEFAULT_OPENAI_MODEL) != DEFAULT_OPENAI_MODEL:
         raise ValueError(f"All active HQA roles require OPENAI_MODEL={DEFAULT_OPENAI_MODEL}")
+    if provider == "anthropic":
+        for role in _ROLE_LIMITS:
+            _claude_model(role)
+            _claude_effort(role)
 
     return LLMConfig(
         raw_provider=raw_provider,
@@ -275,6 +338,19 @@ def _create_role_llm(role: str, model: str, temperature: float) -> Any:
             streaming=False, disable_streaming=True, cache=False,
             hqa_role=role, hqa_input_limit=limits.input_tokens, hqa_output_limit=limits.output_tokens,
         )
+    if config.provider == "anthropic":
+        key = _env("ANTHROPIC_API_KEY")
+        if not key:
+            raise ValueError("ANTHROPIC_API_KEY is required to construct an HQA Claude agent")
+        from src.utils.claude_chat import ClaudeChat
+
+        limits = get_role_limits(role, "anthropic")
+        claude_model = _claude_model(role)
+        return ClaudeChat(
+            model=claude_model, effort=_claude_effort(role), api_key=key,
+            request_timeout=_role_timeout(role, "anthropic"), fallbacks=_claude_fallbacks(claude_model),
+            hqa_role=role, hqa_input_limit=limits.input_tokens, hqa_output_limit=limits.output_tokens,
+        )
     llm = _create_ollama_llm(
         model,
         temperature=temperature,
@@ -358,6 +434,19 @@ def get_llm_info() -> Dict[str, Any]:
             "reasoning_efforts": {role: get_role_limits(role).reasoning_effort for role in roles},
             "role_token_limits": {role: {"input": get_role_limits(role).input_tokens,
                                          "output_including_reasoning": get_role_limits(role).output_tokens} for role in roles},
+        })
+        return info
+    if provider == "anthropic":
+        roles = ("analyst", "summary", "quant", "chartist", "risk_manager")
+        models = {role: _claude_model(role) for role in roles}
+        info.update({
+            "base_url": CLAUDE_BASE_URL, "api_key_set": config.api_key_set,
+            "agent_models": models,
+            "efforts": {role: _claude_effort(role) for role in roles},
+            "server_side_fallback": {role: _claude_fallbacks(models[role]) for role in roles},
+            "role_token_limits": {role: {"input": get_role_limits(role, provider).input_tokens,
+                                         "output_including_thinking": get_role_limits(role, provider).output_tokens}
+                                  for role in roles},
         })
         return info
     if config.requested_provider != provider:

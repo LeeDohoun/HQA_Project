@@ -7,9 +7,11 @@ one account-specific RiskManager call. It screens up to 100 price-ranked candida
 analyzes the top 20 plus every holding, and reviews at most five new candidates per
 account. Entry sizing and order safety remain deterministic backend operations.
 
-All production roles use `gpt-5.6-luna`. There is no automatic provider switch,
-LLM retry, debate loop, fine-tuning or REAL order path. Explicit `ollama` and `mock`
-settings remain development options; mock outputs are not PAPER acceptance data.
+Production roles use one paid provider, chosen with `LLM_PROVIDER`: OpenAI
+`gpt-5.6-luna` (`openai`, the default) or Claude (`anthropic`, see [Claude](#claude)).
+There is no automatic provider switch, LLM retry, debate loop, fine-tuning or REAL
+order path. Explicit `ollama` and `mock` settings remain development options; mock
+outputs are not PAPER acceptance data.
 
 The 120-second analysis and 30-second monitoring p95 values are acceptance targets,
 not measured API guarantees. The 30-second target covers quote acquisition,
@@ -24,7 +26,8 @@ incident handling are in the [PAPER pre-flight checklist](paper-preflight-checkl
 Use `.env.example` as the configuration reference. Supply credentials through the
 local environment, never through source files, prompts or audit records:
 
-- `OPENAI_API_KEY`: required by the OpenAI model factory.
+- `OPENAI_API_KEY`: required by the OpenAI model factory (`LLM_PROVIDER=openai`).
+- `ANTHROPIC_API_KEY`: required by the Claude model factory (`LLM_PROVIDER=anthropic`).
 - `HQA_INTERNAL_TOKEN`: identical nonblank secret in AI, backend and monitor.
 - `BACKEND_INTERNAL_BASE_URL`: backend origin, normally `http://localhost:8000`.
 - `AI_SERVER_URL`: AI origin, normally `http://localhost:8001`.
@@ -40,8 +43,9 @@ defaults to 120 RPM and 200,000 TPM. Each generation also makes a token-count re
 to reserve the full JSON-schema input cost. Configure limits from the actual OpenAI
 project quota; conservative defaults can reject or delay a full cold-start burst.
 
-Experts use low reasoning, summary uses none, and RiskManager uses medium. Output
-ceilings include reasoning: experts 1,200, summary 800, RiskManager 12,000 tokens.
+On Luna, experts use low reasoning, summary uses none, and RiskManager uses medium. Output
+ceilings include reasoning: experts 1,200, summary 800, RiskManager 12,000 tokens
+(Claude's are in [Claude](#claude)).
 Truncated structured output fails validation; holdings are never silently omitted.
 Input limits are 12,000 tokens for experts and 128,000 for the RiskManager
 (`HQA_LLM_<ROLE>_MAX_INPUT_TOKENS`); spend follows the counted input, not the limit.
@@ -74,12 +78,58 @@ reservation and sending); `release` frees it once it is older than `--min-age-se
 including holding protection, until `acknowledge-overrun` records the review (for example a
 corrected price table). `GET /internal/status` (internal token) shows the budget snapshot,
 unresolved requests, unreviewed overruns, pending calendar reviews, runtime task states and the
-published generation per theme. The RiskManager has its own 180 s timeout
-(`HQA_LLM_RISK_MANAGER_TIMEOUT_SECONDS`) because a timed-out call is still billed.
+published generation per theme. The RiskManager has its own 180 s timeout, 300 s on Claude
+(`HQA_LLM_RISK_MANAGER_TIMEOUT_SECONDS`), because a timed-out call is still billed.
 
 Persist `HQA_LLM_BUDGET_PATH` and `HQA_PAPER_AUDIT_PATH`. Audit records contain private
 account context and exact supplied evidence, so keep the data volume access-limited.
 Redis eviction cannot reset the budget or erase the prospective audit ledger.
+
+### Claude
+
+`LLM_PROVIDER=anthropic` (alias `claude`) runs every role on the Claude Messages API through
+the official `anthropic` SDK (`src/utils/claude_chat.py`), with the same admission queue,
+input limits and budget ledger as Luna:
+
+- **Models:** `HQA_CLAUDE_MODEL` for all roles, `HQA_CLAUDE_<ROLE>_MODEL` per role; one of
+  `claude-opus-5-5` (default), `claude-sonnet-5-5`, `claude-haiku-5-5`. `ANTHROPIC_MODEL` is
+  not read because Claude Code uses it. Audit records and cycle manifests name the model each
+  role called (`manifest.role_models`).
+- **Thinking and effort:** thinking is adaptive and always on (Claude Opus 5.5 cannot turn it
+  off); `effort` sets its depth: experts and summary `low`, RiskManager `medium`
+  (`HQA_CLAUDE_<ROLE>_EFFORT`). Thinking counts toward the output ceiling, and the answers are
+  Korean, so the ceilings are larger: experts 4,000, summary 2,000, RiskManager 16,000 tokens.
+  Timeouts are 120 s, RiskManager 300 s. A response that stops at the ceiling is billed and
+  rejected.
+- **Requests:** each call counts its input with the token-counting endpoint, including the
+  structured-output schema, before reserving budget. The SDK moves schema constraints Claude
+  does not enforce (lengths, ranges, patterns) into field descriptions, and the full schema is
+  validated after settlement. No SDK retries. The key and `https://api.anthropic.com` are
+  passed explicitly, so `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` and `ant` login profiles
+  in the environment are ignored.
+- **Refusals:** a safety-classifier decline is billed and rejected
+  (`stop_reason: refusal`, with its category). On Opus 5.5 and Sonnet 5.5 the server-side
+  fallback (`fallbacks: "default"`) first re-runs a declined request on Claude Opus 5 or Opus 4.8
+  inside the same call; the reservation adds one attempt at Opus 5 rates, settlement prices
+  every attempt at its own model's rates, and the answering model is logged.
+  `HQA_CLAUDE_FALLBACKS=off` turns it off. Haiku 5.5 has no server-side fallback.
+- **Ledger:** prices per model are in `src/utils/llm_budget.py`. Rejections before generation
+  (400, 401, 403, 404, 413, 422, 429, 529) settle at zero; timeouts, dropped connections and
+  other server errors stay `unknown` until reconciled. When the organization's credit balance
+  runs out the API refuses calls ("credit balance is too low"); HQA reports that as
+  `LLMBudgetExceeded`, counted in `budget_rejections` of the PAPER report.
+- **Max and Team plan credits:** Claude Max 5x ($100), Max 20x ($200) and Team plans include
+  monthly API credits. Link a Console organization on claude.ai (Settings > Billing > API
+  credits) and create the key in that organization; no payment method is needed. Credits
+  refresh and expire on the plan's billing cycle, while this ledger uses calendar months, so
+  keep `HQA_LLM_OPERATING_TARGET_USD` within what one billing cycle provides. Without purchased
+  credits, calls stop when the credits run out; nothing is charged to the plan. A linked
+  organization is at least on the Start usage tier: set `HQA_LLM_RPM` and `HQA_LLM_TPM` from its
+  limits (`scripts.claude_check --send` prints them).
+
+`venv/bin/python -m scripts.claude_check` confirms the key and the role models, and counts every
+specialist request the local data would produce against its role limit without generating
+anything. `--send` adds one billed quant request and reports its usage, cost and latency.
 
 ## Data Requirements
 
