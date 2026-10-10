@@ -116,7 +116,12 @@ def rights_events(listings, sessions):
     if not frame.rcept_no.str.fullmatch(r"[0-9]{14}").all():
         raise ValueError("listing receipt number must contain 14 digits")
     receipts = pd.to_datetime(frame.rcept_dt, format="%Y%m%d", errors="raise")
-    if not frame.rcept_dt.eq(frame.rcept_no.str[:8]).all():
+    # The receipt number starts with the submission date; filings submitted late in
+    # the evening carry the next day's official rcept_dt (about 0.7% of rows). The
+    # official rcept_dt is the later, public date and is what this runner uses.
+    submitted = pd.to_datetime(frame.rcept_no.str[:8], format="%Y%m%d", errors="raise")
+    lag = (receipts - submitted).dt.days
+    if not lag.between(0, 7).all():
         raise ValueError("listing receipt number/date mismatch")
     for _, group in frame.groupby("rcept_no"):
         if len(group.drop_duplicates()) != 1:

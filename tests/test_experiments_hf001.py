@@ -747,3 +747,20 @@ def test_execute_cli_dispatches_only_explicit_execute(monkeypatch, capsys):
     assert hf001.main(["--execute", "--data-dir", "/tmp/hf001-local"]) == 0
     assert calls == [{"data_dir": Path("/tmp/hf001-local")}]
     assert "insufficient" in capsys.readouterr().out
+
+
+def test_late_evening_receipts_use_the_official_receipt_date():
+    """A filing submitted on the evening of D-1 carries rcept_dt D; it is known from D's next session."""
+    days = pd.DatetimeIndex(pd.bdate_range("2024-05-27", "2024-06-07"))
+    late = {**listing_row("2024-05-31"), "rcept_no": "20240530000999"}
+    events, _ = hf001.rights_events(pd.DataFrame([late]), days)
+    known = pd.Timestamp(events.iloc[0]["known_date"])
+    assert known == pd.Timestamp("2024-06-03")
+
+
+@pytest.mark.parametrize("prefix", ["20240601", "20240520"])
+def test_receipt_number_dates_after_or_far_before_receipt_are_rejected(prefix):
+    days = pd.DatetimeIndex(pd.bdate_range("2024-05-01", "2024-06-07"))
+    row = {**listing_row("2024-05-31"), "rcept_no": prefix + "000001"}
+    with pytest.raises(ValueError, match="mismatch"):
+        hf001.rights_events(pd.DataFrame([row]), days)
