@@ -15,7 +15,7 @@ export function AppShell({ title, subtitle, actions, wide = false, children }: A
       <header className="topbar">
         <div className="topbar-left">
           <Link className="brand-chip" href="/dashboard">
-            <span aria-hidden style={{ fontSize: "0.95rem" }}>H</span>
+            <span aria-hidden style={{ fontSize: "0.95rem" }}>◒</span>
             HQA
           </Link>
           <span style={{ color: "var(--line-2)", fontSize: "0.9rem" }}>/</span>

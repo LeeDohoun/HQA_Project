@@ -39,7 +39,13 @@ public class AnalysisService {
         }
         AnalysisRecord record = new AnalysisRecord();
         Map<String, Object> task = ai.submitStockPreview(code);
-        String taskId = UUID.fromString(String.valueOf(task.get("task_id"))).toString();
+        String taskId;
+        try {
+            taskId = UUID.fromString(String.valueOf(task.get("task_id"))).toString();
+        } catch (IllegalArgumentException exception) {
+            throw new ApiException(ErrorCode.ANALYSIS_FAILED, 502,
+                    "AI 서버가 유효한 분석 작업 ID를 반환하지 않았습니다", null);
+        }
         record.setUser(user);
         record.setTaskId(taskId);
         record.setStockCode(code);
