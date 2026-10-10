@@ -610,7 +610,24 @@ def run_experiment(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT, pr
     for group in ("krx_daily", "quarterly_archives", "company_profiles", "dart_listing_files"):
         if _hash_files([Path(path) for path in sources[group]]) != sources[group]:
             raise ValueError(f"R001 source files changed during evaluation: {group}")
-    # Serialize before recording to reject any nonfinite report values.
+    # Judgement inputs must be finite; other non-finite report values (for example a
+    # statistic over an empty stratum) are stored as null and listed, never dropped.
+    for variant in VARIANTS:
+        json.dumps(variants[variant]["judgement_inputs"], allow_nan=False)
+    nonfinite = []
+
+    def _finite(value, path):
+        if isinstance(value, dict):
+            return {key: _finite(item, f"{path}.{key}") for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [_finite(item, f"{path}[{index}]") for index, item in enumerate(value)]
+        if isinstance(value, float) and not math.isfinite(value):
+            nonfinite.append(path)
+            return None
+        return value
+
+    payload = _finite(payload, "$")
+    payload["nonfinite_report_fields"] = nonfinite
     json.dumps(payload, allow_nan=False)
     for variant in VARIANTS:
         result = variants[variant]

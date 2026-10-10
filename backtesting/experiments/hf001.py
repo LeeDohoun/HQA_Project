@@ -611,6 +611,25 @@ def run_experiment(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT, pr
                             "calendar_version": f"exchange-calendars:{hc001.calendars.__version__}:XKRX"},
                "performance": {"runtime_seconds": time.perf_counter() - started,
                                "peak_memory_mib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024}}
+    # Judgement inputs must be finite; other non-finite report values are stored as
+    # null and listed. Validate the whole payload BEFORE any registry row is written.
+    for name in VARIANTS:
+        json.dumps(variants[name]["judgement_inputs"], allow_nan=False)
+    nonfinite = []
+
+    def _finite(value, path):
+        if isinstance(value, dict):
+            return {key: _finite(item, f"{path}.{key}") for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [_finite(item, f"{path}[{index}]") for index, item in enumerate(value)]
+        if isinstance(value, float) and not math.isfinite(value):
+            nonfinite.append(path)
+            return None
+        return value
+
+    payload = _finite(payload, "$")
+    payload["nonfinite_report_fields"] = nonfinite
+    json.dumps(payload, ensure_ascii=False, allow_nan=False)
     for name in VARIANTS:
         result = variants[name]
         experiment_registry.record_trial(EXPERIMENT_ID, name, {
