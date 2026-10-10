@@ -7,8 +7,9 @@ one account-specific RiskManager call. It screens up to 100 price-ranked candida
 analyzes the top 20 plus every holding, and reviews at most five new candidates per
 account. Entry sizing and order safety remain deterministic backend operations.
 
-Production roles use one paid provider, chosen with `LLM_PROVIDER`: OpenAI
-`gpt-5.6-luna` (`openai`, the default) or Claude (`anthropic`, see [Claude](#claude)).
+Production roles use one provider, chosen with `LLM_PROVIDER`: OpenAI `gpt-5.6-luna`
+(`openai`, the default), Claude on API credits (`anthropic`, see [Claude](#claude)) or Claude on
+the user's subscription (`claude_plan`, see [Claude subscription](#claude-subscription-claude_plan)).
 There is no automatic provider switch, LLM retry, debate loop, fine-tuning or REAL
 order path. Explicit `ollama` and `mock` settings remain development options; mock
 outputs are not PAPER acceptance data.
@@ -28,6 +29,8 @@ local environment, never through source files, prompts or audit records:
 
 - `OPENAI_API_KEY`: required by the OpenAI model factory (`LLM_PROVIDER=openai`).
 - `ANTHROPIC_API_KEY`: required by the Claude model factory (`LLM_PROVIDER=anthropic`).
+- `CLAUDE_CODE_OAUTH_TOKEN`: the long-lived subscription token from `claude setup-token`
+  (`LLM_PROVIDER=claude_plan`).
 - `HQA_INTERNAL_TOKEN`: identical nonblank secret in AI, backend and monitor.
 - `BACKEND_INTERNAL_BASE_URL`: backend origin, normally `http://localhost:8000`.
 - `AI_SERVER_URL`: AI origin, normally `http://localhost:8001`.
@@ -130,6 +133,40 @@ input limits and budget ledger as Luna:
 `venv/bin/python -m scripts.claude_check` confirms the key and the role models, and counts every
 specialist request the local data would produce against its role limit without generating
 anything. `--send` adds one billed quant request and reports its usage, cost and latency.
+
+### Claude subscription (`claude_plan`)
+
+`LLM_PROVIDER=claude_plan` runs the same roles, models, efforts and limits on the user's Claude
+subscription (Pro or Max) instead of API credits, through the logged-in Claude Code CLI
+(`src/utils/claude_plan_chat.py`, `claude -p --output-format json`). Anthropic allows the Agent SDK
+and `claude -p` on a subscription for the subscriber's own use; offering claude.ai login or
+subscription limits to other people in a product needs Anthropic's approval, so this mode is for
+the subscriber's own PAPER account on their own machine.
+
+- **Login:** the CLI must be 2.1.205 or later (older ones silently drop a schema that uses
+  `format`, such as the RiskManager's date-time fields) and logged in. For unattended runs, put the
+  long-lived token from `claude setup-token` in `CLAUDE_CODE_OAUTH_TOKEN`; otherwise the CLI's own
+  keychain login is used, which can expire. `HQA_CLAUDE_CLI` names another CLI path.
+- **Isolation:** each call runs with `--safe-mode` (no CLAUDE.md, skills, plugins, hooks or MCP
+  servers), `--tools ""`, `--setting-sources ""`, `--strict-mcp-config`, `--no-session-persistence`
+  and the role's system prompt in place of Claude Code's, in an empty temporary directory. The
+  child environment carries only basic variables and the token: no `ANTHROPIC_API_KEY` (which would
+  bill API credits), `ANTHROPIC_BASE_URL`, HQA or broker secrets. Auto-update is off.
+- **Answers:** `--json-schema` makes the CLI check the answer against the schema and ask again on
+  a mismatch; the full pydantic schema is validated again afterwards. `CLAUDE_CODE_MAX_OUTPUT_TOKENS`
+  carries the role's output ceiling. Errors, refusals, a stop at the ceiling, or a missing
+  structured output reject the answer. A response from a model other than the requested one is
+  logged (`served_models`).
+- **Limits and accounting:** there is no token pre-count and no dollar ledger entry; the payloads
+  are still fitted to the role input limits by the offline estimate. Calls go through the same
+  admission queue, and the trace records their tokens and the CLI's API-equivalent cost. The
+  subscription's 5-hour and weekly limits are shared with the user's claude.ai and Claude Code use;
+  reaching them raises `LLMBudgetExceeded` (counted in `budget_rejections`) until they reset, and
+  nothing is charged unless extra usage is turned on in claude.ai.
+- **Where it runs:** on the host only; the Compose AI image has no Claude CLI.
+
+`venv/bin/python -m scripts.claude_check --plan` shows the CLI version and its login as HQA starts
+it; `--send` adds one real quant request on the subscription.
 
 ## Data Requirements
 

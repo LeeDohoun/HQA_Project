@@ -62,3 +62,33 @@ def test_check_needs_a_key(capsys, monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "openai")
     assert claude_check.main([]) == 1
     assert "ANTHROPIC_API_KEY is not set" in capsys.readouterr().out
+
+
+def test_plan_check_reports_the_cli_and_its_login_without_the_token(capsys, monkeypatch, tmp_path):
+    import stat
+    import sys
+
+    from src.utils.claude_plan_chat import cli_version
+
+    script = tmp_path / "claude"
+    script.write_text(f"""#!{sys.executable}
+import json, os, sys
+if "--version" in sys.argv:
+    print("2.1.296 (Claude Code)")
+elif sys.argv[1:3] == ["auth", "status"]:
+    print(json.dumps({{"loggedIn": os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") == "offline-plan-token",
+                      "authMethod": "oauth_token", "subscriptionType": "pro"}}))
+""", encoding="utf-8")
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    cli_version.cache_clear()
+    monkeypatch.setattr(claude_check, "load_project_env", lambda: None)
+    monkeypatch.setenv("LLM_PROVIDER", "openai")  # restored after the test; main() switches it
+    monkeypatch.setenv("HQA_CLAUDE_CLI", str(script))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "offline-plan-token")
+    assert claude_check.main(["--plan"]) == 0
+    output = capsys.readouterr().out
+    assert "OK   Claude CLI 2.1.296" in output and "loggedIn=True" in output and "subscription=pro" in output
+    assert "offline-plan-token" not in output
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN")
+    assert claude_check.main(["--plan"]) == 1
+    cli_version.cache_clear()

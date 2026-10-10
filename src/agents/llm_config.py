@@ -20,11 +20,13 @@ logger = logging.getLogger(__name__)
 # ==========================================
 
 DEFAULT_PROVIDER = "openai"
-SUPPORTED_PROVIDERS = {"openai", "anthropic", "ollama", "mock"}
+SUPPORTED_PROVIDERS = {"openai", "anthropic", "claude_plan", "ollama", "mock"}
 PROVIDER_ALIASES = {
     "test": "mock",
     "fake": "mock",
     "claude": "anthropic",
+    "claude-plan": "claude_plan",
+    "claude_subscription": "claude_plan",
 }
 
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11435"
@@ -39,6 +41,9 @@ DEFAULT_CLAUDE_MODEL = "claude-opus-5-5"
 CLAUDE_MODELS = ("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5")
 CLAUDE_EFFORTS = ("low", "medium", "high", "xhigh", "max")
 CLAUDE_BASE_URL = "https://api.anthropic.com"
+# anthropic pays from API credits with an API key; claude_plan runs the logged-in Claude CLI on the
+# user's Claude subscription. Both use the same models, efforts and role limits.
+CLAUDE_PROVIDERS = frozenset({"anthropic", "claude_plan"})
 
 
 @dataclass(frozen=True)
@@ -83,7 +88,7 @@ _CLAUDE_LONG_OUTPUT_TIMEOUT_SECONDS = 300.0
 def _role_timeout(role: str, provider: str = "openai") -> float:
     names = [f"HQA_LLM_{role.upper()}_TIMEOUT_SECONDS"]
     long_output = role in {"risk_manager", "thinking"}
-    if provider == "anthropic":
+    if provider in CLAUDE_PROVIDERS:
         default = _CLAUDE_LONG_OUTPUT_TIMEOUT_SECONDS if long_output else _CLAUDE_TIMEOUT_SECONDS
     else:
         default = _LONG_OUTPUT_ROLE_TIMEOUT_SECONDS if long_output else 45.0
@@ -99,7 +104,7 @@ def _role_timeout(role: str, provider: str = "openai") -> float:
 def get_role_limits(role: str, provider: str = "openai") -> RoleLimits:
     defaults = _ROLE_LIMITS[role]
     prefix = f"HQA_LLM_{role.upper()}"
-    default_output = _CLAUDE_OUTPUT_TOKENS[role] if provider == "anthropic" else defaults.output_tokens
+    default_output = _CLAUDE_OUTPUT_TOKENS[role] if provider in CLAUDE_PROVIDERS else defaults.output_tokens
     inputs = int(os.getenv(f"{prefix}_MAX_INPUT_TOKENS", str(defaults.input_tokens)))
     outputs = int(os.getenv(f"{prefix}_MAX_OUTPUT_TOKENS", str(default_output)))
     if not 0 < inputs <= 1_000_000 or not 0 < outputs <= 128_000:
@@ -179,6 +184,8 @@ class LLMConfig:
             return bool(_env("OPENAI_API_KEY"))
         if self.provider == "anthropic":
             return bool(_env("ANTHROPIC_API_KEY"))
+        if self.provider == "claude_plan":
+            return bool(_env("CLAUDE_CODE_OAUTH_TOKEN"))
         return False
 
 
@@ -190,10 +197,10 @@ def get_llm_config() -> LLMConfig:
     fallback_reason = ""
 
     if requested_provider not in SUPPORTED_PROVIDERS:
-        raise ValueError(f"Unsupported LLM_PROVIDER={raw_provider}; select openai, anthropic, ollama, or mock explicitly")
+        raise ValueError(f"Unsupported LLM_PROVIDER={raw_provider}; select openai, anthropic, claude_plan, ollama, or mock explicitly")
     if provider == "openai" and _env("OPENAI_MODEL", DEFAULT_OPENAI_MODEL) != DEFAULT_OPENAI_MODEL:
         raise ValueError(f"All active HQA roles require OPENAI_MODEL={DEFAULT_OPENAI_MODEL}")
-    if provider == "anthropic":
+    if provider in CLAUDE_PROVIDERS:
         for role in _ROLE_LIMITS:
             _claude_model(role)
             _claude_effort(role)
@@ -351,6 +358,15 @@ def _create_role_llm(role: str, model: str, temperature: float) -> Any:
             request_timeout=_role_timeout(role, "anthropic"), fallbacks=_claude_fallbacks(claude_model),
             hqa_role=role, hqa_input_limit=limits.input_tokens, hqa_output_limit=limits.output_tokens,
         )
+    if config.provider == "claude_plan":
+        from src.utils.claude_plan_chat import ClaudePlanChat
+
+        limits = get_role_limits(role, "claude_plan")
+        return ClaudePlanChat(
+            model=_claude_model(role), effort=_claude_effort(role), cli_path=_env("HQA_CLAUDE_CLI", "claude"),
+            oauth_token=_env("CLAUDE_CODE_OAUTH_TOKEN") or None, request_timeout=_role_timeout(role, "claude_plan"),
+            hqa_role=role, hqa_input_limit=limits.input_tokens, hqa_output_limit=limits.output_tokens,
+        )
     llm = _create_ollama_llm(
         model,
         temperature=temperature,
@@ -444,6 +460,18 @@ def get_llm_info() -> Dict[str, Any]:
             "agent_models": models,
             "efforts": {role: _claude_effort(role) for role in roles},
             "server_side_fallback": {role: _claude_fallbacks(models[role]) for role in roles},
+            "role_token_limits": {role: {"input": get_role_limits(role, provider).input_tokens,
+                                         "output_including_thinking": get_role_limits(role, provider).output_tokens}
+                                  for role in roles},
+        })
+        return info
+    if provider == "claude_plan":
+        roles = ("analyst", "summary", "quant", "chartist", "risk_manager")
+        info.update({
+            "billing": "claude_subscription", "cli": _env("HQA_CLAUDE_CLI", "claude"),
+            "oauth_token_set": config.api_key_set,
+            "agent_models": {role: _claude_model(role) for role in roles},
+            "efforts": {role: _claude_effort(role) for role in roles},
             "role_token_limits": {role: {"input": get_role_limits(role, provider).input_tokens,
                                          "output_including_thinking": get_role_limits(role, provider).output_tokens}
                                   for role in roles},

@@ -8,6 +8,19 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def fresh_llm_admission_window(monkeypatch):
+    """Each test starts with an empty LLM admission window; otherwise the tokens earlier tests'
+    model calls admitted make later tests wait for the 60-second window to roll over."""
+    from src.utils import llm_queue
+
+    queue = llm_queue._GLOBAL_QUEUE
+    monkeypatch.setattr(llm_queue, "_GLOBAL_QUEUE", llm_queue.LLMInvocationQueue(
+        queue.max_concurrency, requests_per_minute=queue.requests_per_minute,
+        tokens_per_minute=queue.tokens_per_minute, max_wait_seconds=queue.max_wait_seconds,
+        window_seconds=queue.window_seconds))
+
+
+@pytest.fixture(autouse=True)
 def block_outbound_network(monkeypatch, request):
     live_kis_module = Path(__file__).with_name("test_kis_paper_trading.py").resolve()
     if request.node.path.resolve() == live_kis_module and os.getenv("RUN_KIS_LIVE_TESTS") == "1":

@@ -453,6 +453,17 @@ OpenAI 키가 없고, 10월 7일부터 Claude Max·Team 요금제에 매달 API 
 
 **아직 확인하지 못한 것:** 실제 Claude 키로 돌려 보지 못했습니다. 특히 차트 전문가 입력은 줄이는 단계 없이 크기가 고정된 설계라, 설계상 최대 입력이 o200k 기준 12,000 미만이라는 테스트만 있습니다. 지금 데이터 3종목의 차트 입력은 오프라인 추정으로 약 15,300토큰(이 추정은 숫자를 넉넉하게 셉니다)이고, Claude 토큰으로는 아직 세어 보지 않았습니다. 키를 넣으면 `scripts.claude_check`로 먼저 확인합니다.
 
+### 7.12 Claude 구독 한도로 분석 (2026-10-10)
+
+Claude Pro 요금제에는 월 API 크레딧이 없어서(Max·Team 전용), API 키 방식으로는 크레딧을 따로 사야 합니다. 대신 Anthropic은 Agent SDK와 `claude -p`를 구독 한도로 쓰는 것을 구독자 본인 사용에 한해 허용합니다. 그래서 `LLM_PROVIDER=claude_plan`(별칭 `claude-plan`, `claude_subscription`)을 추가했습니다. 같은 역할·모델·생각 깊이·한도를 쓰되, 이 PC에 로그인된 Claude Code CLI를 부릅니다(`src/utils/claude_plan_chat.py`).
+
+- **격리:** 호출마다 `--safe-mode`(CLAUDE.md, 스킬, 플러그인, 훅, MCP 서버를 모두 끔), `--tools ""`, `--setting-sources ""`, `--strict-mcp-config`, `--no-session-persistence`로 실행하고, Claude Code의 기본 시스템 프롬프트 대신 역할 지시문을 넣습니다. 빈 임시 폴더에서 실행하고, 기본 변수와 토큰만 넘깁니다. `ANTHROPIC_API_KEY`(API 크레딧으로 청구됨), `ANTHROPIC_BASE_URL`, HQA·증권사 비밀값은 넘기지 않습니다. 자동 업데이트도 끕니다.
+- **답 검증:** `--json-schema`로 CLI가 스키마를 확인하고 어긋나면 다시 묻게 하고, 받은 뒤에 pydantic 스키마 전체로 한 번 더 확인합니다. 오류, 거절, 출력 한도 도달, 구조화 출력 없음은 모두 답을 버립니다. 요청한 모델이 아닌 모델이 답하면 경고를 남깁니다.
+- **한도:** 토큰을 미리 세지 못하고 달러 원장에도 적지 않습니다. 대신 입력은 지금처럼 오프라인 추정으로 역할 한도에 맞춰 줄이고, 호출은 같은 대기열을 거치며, 추적 기록에 토큰 수와 API 환산 비용을 남깁니다. 구독 한도에 걸리면 `LLMBudgetExceeded`(예산 거부로 집계)로 멈춥니다.
+- **CLI 버전:** 2.1.205 미만 CLI는 `format`이 들어간 스키마(RiskManager의 날짜 필드)를 조용히 버리고 일반 텍스트로 답합니다. 그래서 그보다 낮은 버전은 시작 때 거부합니다. 이 Mac의 npm CLI를 2.1.147에서 2.1.296으로 올렸습니다(사용자 승인).
+- **점검:** `scripts.claude_check --plan`이 CLI 버전과 HQA가 띄울 때의 로그인 상태를 보여 주고, `--send`로 실제 요청 한 번을 보냅니다.
+- **실제 상태:** 이 Mac의 CLI는 Pro 계정으로 로그인되어 있지만, 저장된 로그인이 만료되어 갱신되지 않습니다("OAuth session expired and could not be refreshed"). `claude setup-token`으로 장기 토큰을 만들어 `CLAUDE_CODE_OAUTH_TOKEN`에 넣어야 실제 호출이 됩니다.
+
 ## 부록: 커밋 목록
 
 | 커밋 | 날짜 | 구분 | 제목 |

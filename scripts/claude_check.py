@@ -8,13 +8,19 @@ endpoint, next to the role's input limit and the offline estimate the payload fi
 --send also makes one real quant request through the production model wrapper (budget ledger
 included) and reports its usage, cost, latency, stop reason and the organization's rate limits.
 
+--plan checks the subscription path (LLM_PROVIDER=claude_plan) instead: the Claude CLI version and
+its login as HQA starts it, then with --send one real quant request on the subscription.
+
     venv/bin/python -m scripts.claude_check [--data-dir DIR] [--config config/watchlist.yaml] [--send]
+    venv/bin/python -m scripts.claude_check --plan [--data-dir DIR] [--send]
 """
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import shutil
+import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -130,11 +136,17 @@ def send_one(captured: list) -> bool:
     elapsed = time.monotonic() - started
     raw, meta = result["raw"], result["raw"].response_metadata
     usage = raw.usage_metadata
+    served = meta.get("served_model") or meta.get("served_models")
     print(f"sent {code} quant on {model.model_name} (effort {model.reasoning_effort}): {elapsed:.1f}s, "
-          f"stop={meta['stop_reason']}, served_by={meta['served_model']}, fallback={meta['fallback_served']}")
-    print(f"usage: input={usage['input_tokens']} output={usage['output_tokens']} "
-          f"(thinking {usage['output_token_details']['reasoning']}), cost=${budget.snapshot()['spent_usd'] - before:.5f}")
-    print("rate limits:", json.dumps(meta["rate_limits"], ensure_ascii=False))
+          f"stop={meta['stop_reason']}, served_by={served}, fallback={meta.get('fallback_served', '-')}")
+    thinking = (usage.get("output_token_details") or {}).get("reasoning", "-")
+    if meta.get("billing") == "claude_subscription":
+        cost = f"subscription (API-equivalent ${meta.get('api_equivalent_cost_usd') or 0:.5f})"
+    else:
+        cost = f"${budget.snapshot()['spent_usd'] - before:.5f}"
+    print(f"usage: input={usage['input_tokens']} output={usage['output_tokens']} (thinking {thinking}), cost={cost}")
+    if "rate_limits" in meta:
+        print("rate limits:", json.dumps(meta["rate_limits"], ensure_ascii=False))
     if result["parsing_error"] is not None:
         print(f"FAIL answer did not validate: {result['parsing_error']}")
         return False
@@ -143,13 +155,43 @@ def send_one(captured: list) -> bool:
     return True
 
 
+def check_plan(args) -> int:
+    from src.utils.claude_plan_chat import MIN_CLI_VERSION, _cli_env, cli_version
+
+    cli = shutil.which(os.getenv("HQA_CLAUDE_CLI") or "claude")
+    if cli is None:
+        print("FAIL Claude CLI not found; install Claude Code (npm install -g @anthropic-ai/claude-code)")
+        return 1
+    version = cli_version(cli)
+    print(f"{'OK  ' if version >= MIN_CLI_VERSION else 'FAIL'} Claude CLI {'.'.join(map(str, version))} at {cli}")
+    token = (os.getenv("CLAUDE_CODE_OAUTH_TOKEN") or "").strip()
+    print(f"long-lived token: {f'set ({len(token)} characters)' if token else 'not set, so the CLI keychain login is used'}")
+    status = subprocess.run([cli, "auth", "status"], capture_output=True, text=True, timeout=60, env=_cli_env(token or None))
+    try:
+        login = json.loads(status.stdout)
+    except json.JSONDecodeError:
+        login = {}
+    print(f"login as HQA starts the CLI: loggedIn={login.get('loggedIn')}, method={login.get('authMethod')}, "
+          f"subscription={login.get('subscriptionType')}")
+    print("role models:", json.dumps({role: llm_config._claude_model(role) for role in ROLES}))
+    ok = version >= MIN_CLI_VERSION and bool(login.get("loggedIn"))
+    if ok and args.send:
+        ok = send_one(capture_specialist_requests(args.data_dir, args.config))
+    print("RESULT", "OK" if ok else "FAIL")
+    return 0 if ok else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--data-dir", help="Collected data root (default: HQA_DATA_DIR)")
     parser.add_argument("--config", default="config/watchlist.yaml")
-    parser.add_argument("--send", action="store_true", help="Also make one real (billed) quant request")
+    parser.add_argument("--send", action="store_true", help="Also make one real quant request")
+    parser.add_argument("--plan", action="store_true", help="Check the Claude subscription path (claude_plan)")
     args = parser.parse_args(argv)
     load_project_env()
+    if args.plan:
+        os.environ["LLM_PROVIDER"] = "claude_plan"
+        return check_plan(args)
     os.environ["LLM_PROVIDER"] = "anthropic"
     key = (os.getenv("ANTHROPIC_API_KEY") or "").strip()
     if not key:

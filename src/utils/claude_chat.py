@@ -64,47 +64,32 @@ def _attempt(model: str, usage: Any) -> Attempt:
     return Attempt(model, usage.input_tokens + read + write, usage.output_tokens, read, write)
 
 
-class ClaudeChat(BaseChatModel):
-    """Claude Messages API model for one HQA role.
-
-    Each call counts its input with the token-counting endpoint and refuses input above the role
-    limit, reserves the worst-case spend in the shared ledger, sends one non-streaming request
-    without SDK retries, and settles the ledger from the reported usage before the answer is used.
-    Thinking is adaptive (Claude Opus 5.5 cannot turn it off), so `effort` is the depth control and
-    the output limit covers thinking plus the answer.
-    """
+class ClaudeRoleModel(BaseChatModel):
+    """What every HQA Claude role model shares: the model, effort and role limits, the request
+    checks, and JSON output validated against the full schema. Thinking is adaptive (Claude Opus
+    5.5 cannot turn it off), so `effort` is the depth control and the output limit covers thinking
+    plus the answer."""
 
     model: str
     effort: str
-    api_key: SecretStr = Field(exclude=True, repr=False)
     request_timeout: float = Field(gt=0)
-    fallbacks: bool = True
     hqa_role: str = Field(exclude=True)
     hqa_input_limit: int = Field(gt=0, exclude=True)
     hqa_output_limit: int = Field(gt=0, exclude=True)
-    # Every call must reach the ledger, so a LangChain cache may never answer one.
+    # Every call must be accounted for, so a LangChain cache may never answer one.
     cache: bool | None = Field(default=False, exclude=True)
 
-    _client: Any = PrivateAttr(default=None)
-    _client_lock: Any = PrivateAttr(default_factory=threading.Lock)
-
     @model_validator(mode="after")
-    def _check_configuration(self) -> "ClaudeChat":
+    def _check_role_model(self) -> "ClaudeRoleModel":
         if not self.model.startswith("claude-") or self.model not in PRICES:
-            raise ValueError(f"{self.model} is not a priced Claude model")
+            raise ValueError(f"{self.model} is not a supported Claude model")
         if self.effort not in EFFORTS:
             raise ValueError(f"Claude effort must be one of {', '.join(EFFORTS)}")
         if self.hqa_output_limit > MAX_OUTPUT_TOKENS:
             raise ValueError(f"Claude output is limited to {MAX_OUTPUT_TOKENS} tokens")
-        if self.fallbacks and self.model not in FALLBACK_MODELS:
-            raise ValueError(f"{self.model} has no server-side fallback")
         if self.cache is not False:
             raise ValueError("HQA Claude calls must bypass LangChain caches")
         return self
-
-    @property
-    def _llm_type(self) -> str:
-        return "hqa-claude"
 
     @property
     def _identifying_params(self) -> dict[str, Any]:
@@ -123,21 +108,10 @@ class ClaudeChat(BaseChatModel):
     def max_tokens(self) -> int:
         return self.hqa_output_limit
 
-    @property
-    def client(self) -> anthropic.Anthropic:
-        with self._client_lock:
-            if self._client is None:
-                # Explicit key and base URL: the SDK then ignores ANTHROPIC_AUTH_TOKEN, profiles and
-                # ANTHROPIC_BASE_URL from the environment, so nothing else can redirect or add credentials.
-                self._client = anthropic.Anthropic(api_key=self.api_key.get_secret_value(), base_url=API_BASE_URL,
-                                                   max_retries=0, timeout=self.request_timeout)
-            return self._client
-
     def with_structured_output(self, schema: dict | type, *, include_raw: bool = False, method: str = "json_schema",
                                strict: bool | None = None, **kwargs: Any) -> Runnable:
-        """JSON output constrained by Claude structured outputs. The SDK moves constraints the API
-        does not enforce (lengths, ranges, patterns) into field descriptions; the full schema is
-        validated here after the response is settled."""
+        """JSON output constrained to `schema`; the full schema, including what Claude does not
+        enforce itself (lengths, ranges, patterns, cross-field validators), is validated here."""
         if kwargs:
             raise ValueError(f"Unsupported structured-output options: {sorted(kwargs)}")
         if method not in ("json_schema", "json_mode", "function_calling"):
@@ -157,7 +131,8 @@ class ClaudeChat(BaseChatModel):
 
         return self.bind(hqa_output_schema=schema) | RunnableLambda(parse_with_raw if include_raw else parse)
 
-    def _request(self, messages: list[BaseMessage], stop: list[str] | None, kwargs: dict) -> dict:
+    def _conversation(self, messages: list[BaseMessage], kwargs: dict) -> tuple[int, str, list[dict], Any]:
+        """The output limit, system text, user/assistant turns and bound output schema of a call."""
         kwargs = {key: value for key, value in kwargs.items() if key != "ls_structured_output_format"}
         unknown = set(kwargs) - {"max_tokens", "hqa_output_schema"}
         if unknown:
@@ -181,14 +156,54 @@ class ClaudeChat(BaseChatModel):
         if not turns or turns[0]["role"] != "user" or turns[-1]["role"] != "user":
             # Claude Opus 5.5 rejects an assistant prefill; a request must start and end with the user.
             raise ValueError("Claude requests must start and end with a user message")
+        return max_tokens, "\n\n".join(system), turns, kwargs.get("hqa_output_schema")
+
+
+class ClaudeChat(ClaudeRoleModel):
+    """Claude Messages API model for one HQA role, paid from API credits.
+
+    Each call counts its input with the token-counting endpoint and refuses input above the role
+    limit, reserves the worst-case spend in the shared ledger, sends one non-streaming request
+    without SDK retries, and settles the ledger from the reported usage before the answer is used.
+    """
+
+    api_key: SecretStr = Field(exclude=True, repr=False)
+    fallbacks: bool = True
+
+    _client: Any = PrivateAttr(default=None)
+    _client_lock: Any = PrivateAttr(default_factory=threading.Lock)
+
+    @model_validator(mode="after")
+    def _check_fallbacks(self) -> "ClaudeChat":
+        if self.fallbacks and self.model not in FALLBACK_MODELS:
+            raise ValueError(f"{self.model} has no server-side fallback")
+        return self
+
+    @property
+    def _llm_type(self) -> str:
+        return "hqa-claude"
+
+    @property
+    def client(self) -> anthropic.Anthropic:
+        with self._client_lock:
+            if self._client is None:
+                # Explicit key and base URL: the SDK then ignores ANTHROPIC_AUTH_TOKEN, profiles and
+                # ANTHROPIC_BASE_URL from the environment, so nothing else can redirect or add credentials.
+                self._client = anthropic.Anthropic(api_key=self.api_key.get_secret_value(), base_url=API_BASE_URL,
+                                                   max_retries=0, timeout=self.request_timeout)
+            return self._client
+
+    def _request(self, messages: list[BaseMessage], stop: list[str] | None, kwargs: dict) -> dict:
+        max_tokens, system, turns, schema = self._conversation(messages, kwargs)
         request: dict[str, Any] = {"model": self.model, "max_tokens": max_tokens, "messages": turns,
                                    "output_config": {"effort": self.effort}}
         if system:
-            request["system"] = "\n\n".join(system)
+            request["system"] = system
         if stop:
             request["stop_sequences"] = list(stop)
-        schema = kwargs.get("hqa_output_schema")
         if schema is not None:
+            # The SDK moves constraints the API does not enforce (lengths, ranges, patterns) into
+            # field descriptions; the full schema is validated after the response is settled.
             request["output_config"]["format"] = {"type": "json_schema", "schema": anthropic.transform_schema(schema)}
         return request
 

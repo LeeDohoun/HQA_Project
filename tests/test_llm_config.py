@@ -8,6 +8,8 @@ LLM_ENV_NAMES = [
     "OPENAI_MODEL",
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
+    "CLAUDE_CODE_OAUTH_TOKEN",
+    "HQA_CLAUDE_CLI",
     "HQA_CLAUDE_MODEL",
     "HQA_CLAUDE_FALLBACKS",
     "HQA_CLAUDE_ANALYST_MODEL",
@@ -264,3 +266,18 @@ def test_claude_timeouts_follow_the_shared_overrides(monkeypatch):
     monkeypatch.setenv("HQA_LLM_RISK_MANAGER_TIMEOUT_SECONDS", "420")
     assert llm_config._role_timeout("analyst", "anthropic") == 90
     assert llm_config._role_timeout("risk_manager", "anthropic") == 420
+
+
+def test_claude_plan_provider_reports_the_subscription_settings(monkeypatch):
+    clear_llm_env(monkeypatch)
+    monkeypatch.setenv("LLM_PROVIDER", "claude-plan")
+
+    info = get_llm_info()
+
+    assert info["provider"] == "claude_plan" and info["billing"] == "claude_subscription"
+    assert info["cli"] == "claude" and info["oauth_token_set"] is False
+    assert set(info["agent_models"].values()) == {"claude-opus-5-5"}
+    assert info["efforts"]["risk_manager"] == "medium"
+    assert info["role_token_limits"]["risk_manager"] == {"input": 128_000, "output_including_thinking": 16_000}
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "offline-plan-token")
+    assert get_llm_info()["oauth_token_set"] is True

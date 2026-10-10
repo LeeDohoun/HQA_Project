@@ -14,7 +14,8 @@
 
 | 항목 | 쓰는 곳 | 확인할 것 |
 |---|---|---|
-| `LLM_PROVIDER` | AI 서버 | `openai`(gpt-5.6-luna) 또는 `anthropic`(Claude). 관찰 기간 중에는 바꾸지 않음 |
+| `LLM_PROVIDER` | AI 서버 | `openai`(gpt-5.6-luna), `anthropic`(Claude, API 크레딧) 또는 `claude_plan`(Claude, 구독 한도). 관찰 기간 중에는 바꾸지 않음 |
+| `CLAUDE_CODE_OAUTH_TOKEN` | AI 서버 | `LLM_PROVIDER=claude_plan`일 때. `claude setup-token`으로 만든 장기 토큰. Claude Code CLI 2.1.205 이상 필요. 구독 한도는 claude.ai·Claude Code와 같이 쓰므로 장중에 다른 Claude 작업을 많이 하면 분석이 멈출 수 있음. claude.ai에서 추가 사용량을 끄면 한도를 넘어도 청구되지 않음. `scripts.claude_check --plan`으로 확인 |
 | `OPENAI_API_KEY` | AI 서버 | `LLM_PROVIDER=openai`일 때. `gpt-5.6-luna` 사용 가능. 비용 집계를 위해 전용 프로젝트 권장 |
 | `ANTHROPIC_API_KEY` | AI 서버 | `LLM_PROVIDER=anthropic`일 때. Claude Max·Team 요금제의 월 API 크레딧을 쓰려면 claude.ai 설정 > 결제 > API 크레딧에서 연결한 Console 조직에서 키를 만듦. `scripts.claude_check`로 확인 |
 | `HQA_CLAUDE_MODEL`, `HQA_CLAUDE_<역할>_MODEL` | AI 서버 | Claude 모델(기본 `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`). 관찰 기간 시작 전에 확정 |
@@ -106,6 +107,12 @@ venv/bin/python -m scripts.data.build --theme-key 2차전지 --stats
    ```bash
    venv/bin/python -m scripts.claude_check --data-dir <수집 데이터 경로>
    venv/bin/python -m scripts.claude_check --data-dir <수집 데이터 경로> --send
+   ```
+
+   구독 한도로 쓰면(`claude_plan`) CLI 버전과, HQA가 띄울 때의 로그인 상태를 봅니다. `--send`는 실제 quant 요청 한 번을 구독 한도로 보냅니다.
+
+   ```bash
+   venv/bin/python -m scripts.claude_check --plan --data-dir <수집 데이터 경로> --send
    ```
 
    그다음 대시보드나 `POST /runtime/stock-preview`로 종목 하나를 미리보기 합니다. 계좌·주문 없이 세 전문가가 모두 결과를 내야 합니다.
