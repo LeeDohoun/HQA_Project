@@ -758,9 +758,17 @@ def test_late_evening_receipts_use_the_official_receipt_date():
     assert known == pd.Timestamp("2024-06-03")
 
 
-@pytest.mark.parametrize("prefix", ["20240601", "20240520"])
-def test_receipt_number_dates_after_or_far_before_receipt_are_rejected(prefix):
+def test_refiled_document_listed_under_an_earlier_date_is_known_from_its_receipt_number():
+    days = pd.DatetimeIndex(pd.bdate_range("2024-05-01", "2024-06-14"))
+    row = {**listing_row("2024-05-20"), "rcept_no": "20240607000001"}
+    events, counts = hf001.rights_events(pd.DataFrame([row]), days)
+    assert pd.Timestamp(events.iloc[0]["known_date"]) == pd.Timestamp("2024-06-10")
+    assert counts["receipt_number_after_rcept_dt"] == 1
+
+
+def test_receipt_numbers_far_before_rcept_dt_use_rcept_dt_and_are_counted():
     days = pd.DatetimeIndex(pd.bdate_range("2024-05-01", "2024-06-07"))
-    row = {**listing_row("2024-05-31"), "rcept_no": prefix + "000001"}
-    with pytest.raises(ValueError, match="mismatch"):
-        hf001.rights_events(pd.DataFrame([row]), days)
+    row = {**listing_row("2024-05-31"), "rcept_no": "20240515100001"}
+    events, counts = hf001.rights_events(pd.DataFrame([row]), days)
+    assert pd.Timestamp(events.iloc[0]["known_date"]) == pd.Timestamp("2024-06-03")
+    assert counts["receipt_number_over_7_days_before_rcept_dt"] == 1

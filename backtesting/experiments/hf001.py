@@ -115,18 +115,21 @@ def rights_events(listings, sessions):
             raise ValueError(f"listing {name} must be a string")
     if not frame.rcept_no.str.fullmatch(r"[0-9]{14}").all():
         raise ValueError("listing receipt number must contain 14 digits")
-    receipts = pd.to_datetime(frame.rcept_dt, format="%Y%m%d", errors="raise")
-    # The receipt number starts with the submission date; filings submitted late in
-    # the evening carry the next day's official rcept_dt (about 0.7% of rows). The
-    # official rcept_dt is the later, public date and is what this runner uses.
+    official = pd.to_datetime(frame.rcept_dt, format="%Y%m%d", errors="raise")
+    # The receipt number starts with the submission date. Late-evening filings
+    # carry the next day's rcept_dt (about 0.7% of rows), KRX notices use other
+    # numbering, and a few re-filed documents are listed under their original,
+    # earlier rcept_dt. Use the later of the two dates so a document is never
+    # treated as known before it existed, and count every disagreement.
     submitted = pd.to_datetime(frame.rcept_no.str[:8], format="%Y%m%d", errors="raise")
-    lag = (receipts - submitted).dt.days
-    if not lag.between(0, 7).all():
-        raise ValueError("listing receipt number/date mismatch")
+    receipts = official.where(official >= submitted, submitted)
+    lag = (official - submitted).dt.days
     for _, group in frame.groupby("rcept_no"):
         if len(group.drop_duplicates()) != 1:
             raise ValueError("conflicting duplicate listing receipt")
-    counts = {"raw_rows": len(frame), "duplicate_receipts": int(frame.rcept_no.duplicated().sum())}
+    counts = {"raw_rows": len(frame), "duplicate_receipts": int(frame.rcept_no.duplicated().sum()),
+              "receipt_number_after_rcept_dt": int((lag < 0).sum()),
+              "receipt_number_over_7_days_before_rcept_dt": int((lag > 7).sum())}
     frame = frame.drop_duplicates("rcept_no").copy()
     title = frame.report_nm
     withdrawal = title.str.contains("철회", regex=False)
