@@ -163,6 +163,7 @@ venv/bin/python -m backtesting paper-runtime --audit data/paper_audit.sqlite3 --
 | `partially_managed:<관리>/<보유>` | 계좌에서 누군가 직접 매매함 | 관찰 규칙 위반으로 기록. 다음 분석 사이클에서 관리 수량이 다시 맞춰짐 |
 | `monitor_capacity_exceeded:<n>/<한도>` | 보유+계획 종목이 계정당 한도(10) 초과 | 신규 진입이 막힘. 보유 종목은 계속 감시됨 |
 | `rejections`의 `PRICE_DRIFT_EXCEEDED`, `ENTRY_...` | 진입 거부(매매 판단) | 정상. 반복되면 계획의 진입 범위 확인 |
+| KIS 잔고·주문 조회 `OPSQ2000 INVALID_CHECK_ACNO` | 계좌번호 형식이 틀렸거나(앞 8자리+상품코드 2자리가 아님), 앱키가 다른 모의투자 계좌에 연결됨. 모의투자 앱키는 특정 모의투자 계좌에 묶여 발급됨 | 계좌번호 8자리 확인. 모의투자를 새로 신청했다면 그 계좌로 API 서비스를 다시 신청해 받은 앱키·시크릿 사용 |
 | 매도 거부 `KIS_RATE_LIMITED`, `ORDER_NOT_SENT_RATE_QUEUE_FULL` | KIS 초당 한도 | 다음 폴링에서 다시 보냄. 계속되면 보유 종목 수와 분석 사이클 시각 확인 |
 | 매도 거부 `ORDER_RECONCILIATION_REQUIRED`(1~2회) | 같은 계획의 다른 매도 주문(일부 매도, 다른 청산 그룹)이 아직 걸려 있어 백엔드가 취소하고, 취소가 확인되면 이 청산이 나감 | 정상. 2분 넘게 이어지면 계획의 `unresolvedOrders`를 보고 UNKNOWN이면 아래 결과 불명 주문 처리 |
 | 사이클 요약의 게시 실패 `HTTP_409 ... ORDER_RECONCILIATION_REQUIRED_BEFORE_PLAN_UPDATE` | 그 종목에 주문이 걸려 있는 동안에는 백엔드가 계획 교체를 받지 않음. 기존 계획이 계속 보호함 | 정상. 주문이 끝난 뒤 다음 사이클에서 갱신됨. 같은 종목에서 계속되면 `unresolvedOrders` 확인 |
