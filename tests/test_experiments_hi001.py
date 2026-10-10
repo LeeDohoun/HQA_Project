@@ -28,7 +28,7 @@ def prices(days=160, groups=5, members=12, start="2024-01-02"):
     index = pd.MultiIndex.from_product([dates, codes], names=["trade_date", "stock_code"])
     frame = pd.DataFrame({"stock_name": "보통주", "market": "KOSPI", "calendar_status": "verified",
                           "industry": np.tile(labels, days), "market_cap": np.tile(caps, days),
-                          "trading_value": 2e8, "ret_1d": np.tile(rates, days),
+                          "trading_value": 2e8, "volume": 100000, "ret_1d": np.tile(rates, days),
                           "close": closing.ravel(), "open": (closing / (1 + rates)).ravel()}, index=index)
     return frame, dates
 
@@ -43,12 +43,16 @@ def snapshots(count=4, industries=("A", "B", "C", "D", "E"), costs=0.006):
         table["rs_breadth_topcap"] = table.rs
         table["cap_gross"] = np.arange(len(table)) * 0.004 + 0.03 + number * 0.003
         table["equal_gross"] = table.cap_gross - 0.001
+        table["entry_excluded_members"] = 0
+        table["entry_cash_industry"] = False
         for weighting in ("cap", "equal"):
+            table[f"{weighting}_index_gap_sessions"] = 0
             for multiplier in hi001.MULTIPLIERS:
                 table[f"{weighting}_cost_{multiplier}"] = costs * multiplier
         rows.append({"trade_date": day, "entry_date": day + pd.Timedelta(days=1),
                      "exit_date": day + pd.Timedelta(days=28), "table": table,
-                     "benchmark": 0.01, "regime": ("above", "below", "above", "unmeasured")[number]})
+                     "benchmark": 0.01, "benchmark_entry_excluded_members": 0,
+                     "regime": ("above", "below", "above", "unmeasured")[number]})
     return rows
 
 
@@ -187,7 +191,7 @@ def test_first_day_uses_members_open_then_nineteen_prior_cap_index_returns():
         assert result.loc["A", f"equal_cost_{multiplier}"] == pytest.approx(equal_expected)
 
 
-def test_member_missing_on_first_day_contributes_zero_without_renormalizing():
+def test_member_missing_on_first_day_is_excluded_and_weights_renormalized():
     frame, dates = prices(days=165, groups=1)
     day, entry, exit_day, code = dates[130], dates[131], dates[150], "000120"
     _, members = hi001.features_at_close(frame, day)
@@ -196,21 +200,163 @@ def test_member_missing_on_first_day_contributes_zero_without_renormalizing():
     result, _ = hi001.holding_returns(frame, indices, members, day, exit_day)
     remaining = members.drop(code)
     entry_rows = frame.xs(entry, level="trade_date").reindex(remaining.index)
-    leg = float(((remaining.market_cap / members.market_cap.sum()) * (entry_rows.close / entry_rows.open - 1)).sum())
+    leg = float(((remaining.market_cap / remaining.market_cap.sum()) * (entry_rows.close / entry_rows.open - 1)).sum())
     chain = indices.xs("A", level="industry").cap_return.loc[dates[132]:exit_day]
     assert result.loc["A", "cap_gross"] == pytest.approx((1 + leg) * (1 + chain).prod() - 1)
+    assert result.loc["A", "entry_excluded_members"] == 1
     assert indices.attrs["members_dropped_no_row"] == 1
 
 
-def test_present_member_with_missing_open_cannot_be_replaced_by_close():
+def test_present_member_with_missing_open_is_excluded():
     frame, dates = prices(days=165)
     day = dates[130]
     _, members = hi001.features_at_close(frame, day)
     frame.loc[(dates[131], "000010"), "open"] = np.nan
     indices = industry_index.build_indices(frame, min_trading_value_20d=hi001.MIN_ADV)
     result, _ = hi001.holding_returns(frame, indices, members, day, dates[150])
-    assert np.isnan(result.loc["A", "cap_gross"])
-    assert np.isnan(result.loc[industry_index.ALL_MARKET, "cap_gross"])
+    assert np.isfinite(result.loc["A", "cap_gross"])
+    assert result.loc["A", "entry_excluded_members"] == 1
+    assert np.isfinite(result.loc[industry_index.ALL_MARKET, "cap_gross"])
+    assert result.loc[industry_index.ALL_MARKET, "entry_excluded_members"] == 1
+
+
+@pytest.mark.parametrize("reason", ["missing_row", "missing_open", "zero_open", "negative_open", "zero_volume", "limit_up"])
+def test_benchmark_excludes_nontradable_entry_members_and_renormalizes_decision_caps(reason):
+    frame, dates = prices(days=165)
+    day, entry, exit_day, code = dates[130], dates[131], dates[150], "000600"
+    _, members = hi001.features_at_close(frame, day)
+    if reason == "missing_row":
+        frame = frame.drop((entry, code))
+    elif reason == "zero_volume":
+        frame.loc[(entry, code), "volume"] = 0
+    elif reason == "limit_up":
+        frame.loc[(entry, code), "open"] = frame.loc[(day, code), "close"] * 1.30
+    else:
+        frame.loc[(entry, code), "open"] = {"missing_open": np.nan, "zero_open": 0, "negative_open": -1}[reason]
+    # Entry-day capitalisation must not replace the decision-time weights.
+    frame.loc[(entry, "000010"), "market_cap"] *= 100
+    indices = industry_index.build_indices(frame, min_trading_value_20d=hi001.MIN_ADV)
+    result, _ = hi001.holding_returns(frame, indices, members, day, exit_day)
+    remaining = members.drop(code)
+    quotes = frame.xs(entry, level="trade_date").reindex(remaining.index)
+    leg = np.average(quotes.close / quotes.open - 1, weights=remaining.market_cap)
+    chain = indices.xs(industry_index.ALL_MARKET, level="industry").cap_return.loc[dates[132]:exit_day]
+    assert result.loc[industry_index.ALL_MARKET, "cap_gross"] == pytest.approx((1 + leg) * (1 + chain).prod() - 1)
+    assert result.loc[industry_index.ALL_MARKET, "entry_excluded_members"] == 1
+
+
+@pytest.mark.parametrize("opening", [0.0, -1.0, np.nan])
+def test_invalid_entry_open_excludes_member_and_renormalizes_return_and_cost(opening):
+    frame, dates = prices(days=165)
+    day, entry, exit_day, code = dates[130], dates[131], dates[150], "000120"
+    _, members = hi001.features_at_close(frame, day)
+    frame.loc[(entry, code), "open"] = opening
+    # An unbought member's invalid close must not block the remaining basket.
+    frame.loc[(entry, code), "close"] = np.nan
+    indices = industry_index.build_indices(frame, min_trading_value_20d=hi001.MIN_ADV)
+    result, _ = hi001.holding_returns(frame, indices, members, day, exit_day)
+    remaining = members.loc[members.industry.eq("A")].drop(code)
+    quotes = frame.xs(entry, level="trade_date").reindex(remaining.index)
+    for weighting in ("cap", "equal"):
+        weights = remaining.market_cap / remaining.market_cap.sum() if weighting == "cap" else np.ones(len(remaining)) / len(remaining)
+        chain, _ = hi001.holding_chain(indices, "A", weighting, dates[132:151])
+        leg = np.dot(weights, quotes.close / quotes.open - 1)
+        assert result.loc["A", f"{weighting}_gross"] == pytest.approx((1 + leg) * (1 + chain).prod() - 1)
+        for multiplier in hi001.MULTIPLIERS:
+            costs = cost_model.round_trip_cost_vectorized(remaining.close.to_numpy(), remaining.market.to_numpy(),
+                entry.to_numpy(), remaining.avg_trading_value_20d.to_numpy(), multiplier=multiplier)
+            assert result.loc["A", f"{weighting}_cost_{multiplier}"] == pytest.approx(np.dot(weights, costs))
+    assert result.loc["A", "entry_excluded_members"] == 1
+    assert not result.loc["A", "entry_cash_industry"]
+
+
+def test_all_nontradable_industry_is_cash_without_holding_return_or_cost():
+    frame, dates = prices(days=165)
+    day, entry = dates[130], dates[131]
+    _, members = hi001.features_at_close(frame, day)
+    group = members.loc[members.industry.eq("A")]
+    frame.loc[(entry, group.index), "volume"] = 0
+    indices = industry_index.build_indices(frame, min_trading_value_20d=hi001.MIN_ADV)
+    # Cash never depends on subsequent index valuation.
+    indices.loc[(dates[132:151], "A"), ["cap_return", "equal_return"]] = np.nan
+    result, _ = hi001.holding_returns(frame, indices, members, day, dates[150])
+    assert result.loc["A", "entry_cash_industry"]
+    assert result.loc["A", "entry_excluded_members"] == len(group)
+    for weighting in ("cap", "equal"):
+        assert result.loc["A", f"{weighting}_gross"] == 0
+        assert result.loc["A", f"{weighting}_index_gap_sessions"] == 0
+        assert all(result.loc["A", f"{weighting}_cost_{multiplier}"] == 0 for multiplier in hi001.MULTIPLIERS)
+
+
+@pytest.mark.parametrize("volume", [0, -1, np.nan])
+def test_nonpositive_or_missing_entry_volume_excludes_member(volume):
+    frame, dates = prices(days=165)
+    day, entry = dates[130], dates[131]
+    _, members = hi001.features_at_close(frame, day)
+    frame.loc[(entry, "000010"), "volume"] = volume
+    tradable, _ = hi001.entry_tradability(frame, members, day, entry)
+    assert not tradable.loc["000010"]
+    assert tradable.drop("000010").all()
+
+
+@pytest.mark.parametrize("entry_day,limit", [("2015-06-12", 0.15), ("2015-06-15", 0.30)])
+@pytest.mark.parametrize("explicit_base", [False, True])
+def test_limit_up_entry_excluded_with_dated_limits_and_base_price_priority(entry_day, limit, explicit_base):
+    entry_day = pd.Timestamp(entry_day)
+    day = entry_day - pd.offsets.BDay()
+    index = pd.MultiIndex.from_product([[day, entry_day], ["000010", "000020"]], names=["trade_date", "stock_code"])
+    frame = pd.DataFrame({"open": 2000.0, "close": 2000.0, "volume": 100}, index=index)
+    members = frame.xs(day).copy()
+    base = 1000 if explicit_base else 2000
+    frame.loc[(entry_day, "000010"), "open"] = base * (1 + limit)
+    frame.loc[(entry_day, "000020"), "open"] = base * (1 + limit - 0.006)
+    if explicit_base:
+        frame["base_price"] = np.nan
+        frame.loc[(entry_day, slice(None)), "base_price"] = base
+    tradable, limit_up = hi001.entry_tradability(frame, members, day, entry_day)
+    assert tradable.to_dict() == {"000010": False, "000020": True}
+    assert limit_up.to_dict() == {"000010": True, "000020": False}
+    # Closing data cannot influence the entry decision or the base fallback.
+    frame.loc[(entry_day, slice(None)), "close"] = np.nan
+    pd.testing.assert_series_equal(hi001.entry_tradability(frame, members, day, entry_day)[0], tradable)
+
+
+def test_limit_up_open_excluded_from_return_and_cost_basket():
+    frame, dates = prices(days=165)
+    day, entry, code = dates[130], dates[131], "000120"
+    _, members = hi001.features_at_close(frame, day)
+    frame.loc[(entry, code), "open"] = frame.loc[(day, code), "close"] * 1.30
+    indices = industry_index.build_indices(frame, min_trading_value_20d=hi001.MIN_ADV)
+    limited, _ = hi001.holding_returns(frame, indices, members, day, dates[150])
+    frame.loc[(entry, code), "volume"] = 0
+    excluded, _ = hi001.holding_returns(frame, indices, members, day, dates[150])
+    pd.testing.assert_series_equal(limited.loc["A"], excluded.loc["A"])
+    assert limited.loc["A", "entry_excluded_members"] == 1
+
+
+def test_controls_use_identical_filtered_baskets_cash_and_turnover_costs():
+    frame, dates = prices(days=165, groups=3)
+    day, entry = dates[130], dates[131]
+    features, members = hi001.features_at_close(frame, day)
+    frame.loc[(entry, members.index[members.industry.eq("A")]), "volume"] = 0
+    frame.loc[(entry, "000130"), "volume"] = 0
+    indices = industry_index.build_indices(frame, min_trading_value_20d=hi001.MIN_ADV)
+    returns, _ = hi001.holding_returns(frame, indices, members, day, dates[150])
+    month = {"trade_date": day, "entry_date": entry, "exit_date": dates[150],
+             "table": features.join(returns), "benchmark": returns.loc[industry_index.ALL_MARKET, "cap_gross"],
+             "benchmark_entry_excluded_members": int(returns.loc[industry_index.ALL_MARKET, "entry_excluded_members"]), "regime": "above"}
+    result = hi001.evaluate_variant([month], "rs")
+    actual = result["monthly"][0]
+    assert actual["entry_cash_industries"] == ["A"]
+    assert actual["entry_excluded_members_by_industry"] == {"A": 12, "B": 1, "C": 0}
+    assert actual["gross"] == pytest.approx((returns.loc["B", "cap_gross"] + returns.loc["C", "cap_gross"]) / 3)
+    assert actual["cost_1.0"] == pytest.approx((returns.loc["B", "cap_cost_1.0"] + returns.loc["C", "cap_cost_1.0"]) / 3)
+    controls = result["random_control"]
+    assert controls["mean_net_excess_by_control"] == pytest.approx([actual["excess_1.0"]] * 200)
+    assert controls["entry_excluded_members_by_control"] == [13] * 200
+    assert controls["entry_cash_industry_months_by_control"] == [1] * 200
+    assert result["entry_industry_months"] == [{"trade_date": day.date().isoformat(),
+        "excluded_members_by_industry": {"A": 12, "B": 1, "C": 0}, "cash_industries": ["A"]}]
 
 
 def test_turnover_charges_entries_and_exits_and_nothing_for_unchanged_holdings():
@@ -267,14 +413,187 @@ def test_controls_pay_for_both_sides_of_a_complete_industry_change():
     assert result["random_control"]["mean_net_excess_by_control"] == pytest.approx([result["monthly_excess"]["mean"]] * 200)
 
 
-def test_future_missing_return_excludes_month_without_changing_candidate_pool():
+def test_unselected_future_missing_return_does_not_remove_month():
     months = snapshots(count=1)
     months[0]["table"].loc["E", "cap_gross"] = np.nan
+    rows, skipped = hi001._portfolio_series(months, "rs", 3, "cap")
+    assert len(rows) == 1 and skipped == []
+    assert rows[0]["industries"] == ["A", "B", "C"]
+
+
+def test_selected_or_control_drawn_invalid_return_fails_instead_of_ignoring_nan():
+    months = snapshots(count=1)
+    months[0]["table"].loc["A", "cap_gross"] = np.nan
+    with pytest.raises(ValueError, match="cannot value selected/drawn.*A"):
+        hi001._portfolio_series(months, "rs", 3, "cap")
+    months[0]["table"].loc["A", "cap_gross"] = 0.03
+    rows, _ = hi001._portfolio_series(months, "rs", 3, "cap")
+    months[0]["table"].loc["E", "cap_gross"] = np.nan
+    with pytest.raises(ValueError, match="cannot value selected/drawn.*E"):
+        hi001._controls(months, "rs", rows)
+
+
+def test_nonfinite_benchmark_fails_instead_of_discarding_month():
+    months = snapshots(count=1)
+    months[0]["benchmark"] = np.nan
+    with pytest.raises(ValueError, match="cannot value benchmark"):
+        hi001._portfolio_series(months, "rs", 3, "cap")
+
+
+@pytest.mark.parametrize("selected", [True, False])
+def test_whole_industry_holding_gap_is_valued_and_counted_without_removing_month(selected):
+    frame, dates = prices(days=165)
+    day, entry, exit_day = dates[130], dates[131], dates[150]
+    features, members = hi001.features_at_close(frame, day)
+    # Highest-strength E (selected) or lowest-strength A (unselected) vanishes
+    # after entry; its last observed price is retained, then members are dropped.
+    label = "E" if selected else "A"
+    group = members.loc[members.industry.eq(label)]
+    remove = frame.index.get_level_values("trade_date").isin(dates[135:]) & frame.index.get_level_values("stock_code").isin(group.index)
+    frame = frame.loc[~remove]
+    indices = industry_index.build_indices(frame, min_trading_value_20d=hi001.MIN_ADV)
+    assert indices.loc[(dates[136], label), "member_count"] == 0
+    assert np.isnan(indices.loc[(dates[136], label), "cap_return"])
+    returns, _ = hi001.holding_returns(frame, indices, members, day, exit_day)
+    entry_rows = frame.xs(entry, level="trade_date").reindex(group.index)
+    for weighting in ("cap", "equal"):
+        weights = group.market_cap / group.market_cap.sum() if weighting == "cap" else np.ones(len(group)) / len(group)
+        leg = np.dot(weights, entry_rows.close / entry_rows.open - 1)
+        observed = indices.xs(label, level="industry")[f"{weighting}_return"].loc[dates[132]:dates[135]]
+        assert returns.loc[label, f"{weighting}_gross"] == pytest.approx((1 + leg) * (1 + observed).prod() - 1)
+        assert returns.loc[label, f"{weighting}_index_gap_sessions"] == 15
+    month = {"trade_date": day, "entry_date": entry, "exit_date": exit_day,
+             "table": features.join(returns), "benchmark": returns.loc[industry_index.ALL_MARKET, "cap_gross"],
+             "benchmark_entry_excluded_members": int(returns.loc[industry_index.ALL_MARKET, "entry_excluded_members"]), "regime": "above"}
+    result = hi001.evaluate_variant([month], "rs")
+    assert result["monthly_excess"]["count"] == 1
+    assert result["random_control"]["monthly_observations"] == 1
+    assert result["monthly"][0]["holding_index_gap_sessions"] == (15 if selected else 0)
+    assert set(result["random_control"]["holding_index_gap_sessions_by_control"]) == {0, 15}
+
+
+def test_live_member_index_gap_is_not_replaced_with_zero():
+    frame, dates = prices(days=165)
+    _, members = hi001.features_at_close(frame, dates[130])
+    indices = industry_index.build_indices(frame, min_trading_value_20d=hi001.MIN_ADV)
+    indices.loc[(dates[140], "A"), ["cap_return", "equal_return"]] = np.nan
+    returns, _ = hi001.holding_returns(frame, indices, members, dates[130], dates[150])
+    assert np.isnan(returns.loc["A", "cap_gross"])
+    assert returns.loc["A", "cap_index_gap_sessions"] == 0
+
+
+def test_controls_and_selection_use_only_finite_decision_time_signals(monkeypatch):
+    months = snapshots(count=1)
+    months[0]["table"].loc["E", "rs"] = np.nan
+    months[0]["table"].loc["E", "cap_gross"] = np.nan
+    pools = []
+    original = hi001.sample_control_portfolios
+    def sample(industries, rng, **kwargs):
+        pools.append(tuple(industries))
+        return original(industries, rng, **kwargs)
+    monkeypatch.setattr(hi001, "sample_control_portfolios", sample)
     result = hi001.evaluate_variant(months, "rs")
-    assert result["monthly"] == []
-    assert result["monthly_excess"]["count"] == 0
-    assert result["random_control"]["count"] == 0
-    assert result["skipped_months"][0]["reason"] == "insufficient_features_or_index_horizon"
+    assert result["monthly_excess"]["count"] == 1
+    assert pools == [("A", "B", "C", "D")]
+    months[0]["table"].loc["D", "cap_gross"] = -0.9
+    assert hi001.evaluate_variant(months, "rs")["monthly"][0]["industries"] == ["A", "B", "C"]
+    assert pools[-1] == pools[0]
+
+
+def test_reused_indices_match_decision_features_and_ignore_future():
+    frame, dates = prices(days=165)
+    frame = frame.drop([(dates[42], "000010")])
+    indices, dropped = hi001.stream_indices(lambda: (frame.loc[[day]] for day in dates))
+    expected, members = hi001.features_at_close(frame, dates[130], dropped=dropped)
+    actual, reused_members = hi001.features_at_close(frame, dates[130], dropped=dropped, indices=indices)
+    pd.testing.assert_frame_equal(actual, expected)
+    pd.testing.assert_frame_equal(reused_members, members)
+    indices.loc[(dates[131:], slice(None)), "cap_return"] = 99
+    pd.testing.assert_frame_equal(actual, hi001.features_at_close(frame, dates[130], dropped=dropped, indices=indices)[0])
+
+
+def test_consolidated_loader_strings_preserve_index_values_and_member_policy(tmp_path):
+    frame, dates = prices(days=70, groups=2)
+    frame = frame.drop([(day, "000010") for day in dates[43:46]])
+    mapping = frame.xs(dates[0], level="trade_date").industry.to_dict()
+    loaded = []
+    for day in dates:
+        path = tmp_path / f"{day:%Y%m%d}.jsonl"
+        rows = [{**row.to_dict(), "stock_code": code, "trade_date": day.date().isoformat(),
+                 "change_rate_pct": row.ret_1d * 100} for code, row in frame.xs(day).iterrows()]
+        path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        loaded.append(hi001._load_day(day, path, mapping))
+    actual_prices = pd.concat(loaded)
+    assert actual_prices.industry.dtype == object
+    assert actual_prices.stock_name.dtype == object
+    expected = industry_index.build_indices(frame, min_trading_value_20d=hi001.MIN_ADV)
+    actual = industry_index.build_indices(actual_prices, min_trading_value_20d=hi001.MIN_ADV)
+    pd.testing.assert_frame_equal(actual, expected, check_dtype=False)
+    assert actual.attrs == expected.attrs
+
+
+def test_gap_report_is_read_only_and_reconstructs_the_legacy_exclusion(monkeypatch, tmp_path):
+    from scripts.research.hi001_gap_report import gap_report
+    frame, dates = prices(days=165)
+    vanished = frame.industry.eq("E") & (frame.index.get_level_values("trade_date") >= dates[135])
+    frame = frame.loc[~vanished]
+    def forbidden(*args, **kwargs):
+        pytest.fail("gap report must not execute, judge, or publish an experiment")
+    monkeypatch.setattr(hi001, "run_experiment", forbidden)
+    monkeypatch.setattr(hi001, "_write_results", forbidden)
+    monkeypatch.setattr(hi001.experiment_registry, "record_trial", forbidden)
+    monkeypatch.setattr(common, "judge", forbidden)
+    report = gap_report(prices=frame)
+    # Also exercise the strict JSON path used by the CLI.
+    json.dumps(report, allow_nan=False)
+    assert report["read_only"] is True
+    assert report["summary"]["rs"]["policy_computable_months"] > report["summary"]["rs"]["legacy_accepted_months"]
+    gaps = [row for row in report["industry_months"] if row["industry"] == "E" and row["policy_gap_sessions_counted"]]
+    assert gaps
+    assert any(row["policy_gross_finite"] and not row["legacy_gross_finite"] for row in gaps)
+    assert not list(tmp_path.iterdir())
+
+
+def test_gap_report_identifies_zero_entry_open_separately_from_missing_data():
+    from scripts.research.hi001_gap_report import gap_report
+    frame, _ = prices(days=165)
+    frame.loc[(pd.Timestamp("2024-07-01"), "000010"), "open"] = 0
+    report = gap_report(prices=frame)
+    row = next(row for row in report["industry_months"] if row["month"] == "2024-06" and row["industry"] == "A")
+    assert row["entry_date"] == "2024-07-01"
+    assert row["zero_entry_open_members"] == ["000010"]
+    assert row["nonfinite_entry_open_members"] == []
+    assert row["holding_index_gap_dates"] == []
+    assert row["policy_gross_finite"]
+    assert row["entry_excluded_member_count"] == 1
+
+
+@pytest.mark.parametrize("opening", [0, np.nan])
+def test_benchmark_entry_exclusions_keep_full_months_computable(opening):
+    from scripts.research.hi001_gap_report import gap_report
+    frame, dates = prices(days=190)
+    day, entry = pd.Timestamp("2024-06-28"), pd.Timestamp("2024-07-01")
+    frame.loc[(entry, "000010"), "open"] = opening
+    indices, dropped = hi001.stream_indices(lambda: (frame.loc[[date]] for date in dates))
+    months = hi001.monthly_observations(dates, lambda: (frame.loc[[date]] for date in dates),
+                                       indices, dropped, [day], hi001.PROJECT_ROOT)
+    assert len(months) == 1
+    assert months[0]["benchmark_entry_excluded_members"] == 1
+    for variant in hi001.VARIANTS:
+        result = hi001.evaluate_variant(months, variant)
+        assert result["monthly_excess"]["count"] == 1
+        assert result["skipped_months"] == []
+        assert result["monthly"][0]["benchmark_entry_excluded_members"] == 1
+    report = gap_report(prices=frame)
+    benchmark = next(row for row in report["industry_months"] if row["month"] == "2024-06" and row["industry"] == industry_index.ALL_MARKET)
+    assert benchmark["entry_excluded_member_count"] == 1
+    assert benchmark["policy_gross_finite"]
+    assert not benchmark["previous_policy_gross_finite"]
+    for variant in hi001.VARIANTS:
+        status = next(row for row in report["months"] if row["month"] == "2024-06")["variants"][variant]
+        assert status["policy_month_computable_including_controls"]
+        assert not status["before_benchmark_entry_rule_month_computable_including_controls"]
+        assert report["summary"][variant]["newly_computable_after_benchmark_entry_rule_months"] == 1
 
 
 def test_judgement_uses_monthly_net_not_ic_and_validation_net_sign(fields):

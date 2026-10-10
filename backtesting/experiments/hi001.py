@@ -9,6 +9,8 @@ with a decision-cap-weighted mean of members' close/open - 1.
 """
 from __future__ import annotations
 
+import math
+
 import argparse
 from collections import deque
 from itertools import groupby
@@ -23,7 +25,7 @@ import pandas as pd
 
 from backtesting import cost_model, experiment_registry, signal_eval
 from backtesting.experiment_registry import PROJECT_ROOT
-from backtesting.experiments import common, d001
+from backtesting.experiments import common, d001, hf001
 from src.research import industry_index, industry_map
 
 
@@ -78,13 +80,17 @@ ASSUMPTIONS = [
     "2016-01~2025-11 월말을 사용합니다. 2025-12와 불완전한 20세션 보유 구간은 제외하고 2026 가격을 읽지 않습니다.",
     "공통 보통주·시장·검증된 20세션 ADV 필터를 재사용합니다. D001 전용 종가 1,000원 하한은 HI001 사전등록에 없으므로 적용하지 않습니다. 영문 SPAC/기업 인수 목적 명칭도 업종 지수 정책대로 제외합니다.",
     "rs60은 업종 60세션 누적 수익률에서 시장 누적 수익률을 뺀 차이입니다. breadth는 수정 수익률을 연쇄한 가격의 MA20 위 비율, topcap은 결정일 시총 상위 5개 수정 R60 중앙값에서 시장 R60을 뺀 값입니다.",
-    "industry_features의 엄격한 전일 경계를 맞추기 위해 월말의 다음 달력 날짜를 넘기고 입력은 월말까지로 제한합니다. 현재 분류와 가격 파일의 최신 저장 개정치를 사용합니다.",
+    "특징 입력은 월말 장 마감까지로 제한합니다. 현재 분류와 가격 파일의 최신 저장 개정치를 사용합니다.",
     "진입일 close/open-1을 결정일 구성 종목·시총 비중으로 평균하고 이후 19세션의 전일 시총 가중 업종 수익률을 연쇄합니다. 시가~첫 종가 구간은 이 근사로 계산하며 기업행위의 장중 영향은 복원하지 않습니다.",
-    "상장폐지 관련 결측은 업종 지수 정책대로 마지막 관측 가격 이후 첫 결측 세션에 수익률 0, 다음 세션부터 영구 제외합니다. 당일 비중을 다시 정규화하지 않으며 손실을 만들어 넣지 않습니다. 관측 행의 시가가 없거나 유효하지 않으면 해당 월을 제외합니다.",
-    "원주가 대체는 업종 지수의 close/전일 close 정책뿐입니다. 누락 종목·수익률·특징을 가짜 값으로 채우지 않습니다. 지수 전체 구성원이 없어 생긴 수익률 공백은 연결하지 않습니다.",
+    "상장폐지 관련 결측은 업종 지수 정책대로 마지막 관측 가격 이후 첫 결측 세션에 수익률 0, 다음 세션부터 영구 제외합니다. 당일 비중을 다시 정규화하지 않으며 손실을 만들어 넣지 않습니다.",
+    "원주가 대체는 업종 지수의 close/전일 close 정책뿐입니다. 누락 종목·특징을 가짜 값으로 채우지 않습니다. 특징 계산의 지수 공백은 연결하지 않습니다.",
     "교체 비용은 신규 업종의 현재 결정일 바스켓과 이탈 업종의 직전 보유 결정일 바스켓 각각의 평균 왕복 비용에 포트폴리오 비중을 곱한 합입니다. 가격·ADV는 해당 결정일, 세율 날짜는 해당 바스켓의 진입일입니다. 유지 업종 비용과 업종 내부 비중 조정 비용은 0입니다.",
     "동일가중 보조 결과는 업종 내부 수익률과 구성 종목 비용을 동일가중합니다. 모든 결과의 벤치마크는 전체시장 시가총액가중이며 미분류·지주회사·소규모 업종도 포함합니다.",
-    "특징이 필요한 업종 중 미래 수익률이 하나라도 없으면 그 변형의 월 전체를 제외합니다. 미래 수익률로 업종 후보만 제거하지 않으며 실제와 200개 대조군은 같은 월·같은 후보군을 사용합니다. 제외 월에서는 이전 보유 상태를 유지합니다.",
+    "bug fix after the 2026-10-10 run; first run recorded as is: 실제 선택과 200개 대조군의 후보는 결정일 구성 종목 수와 유한한 특징만으로 정합니다. 미선택 업종의 미래 수익률 결측 때문에 월 전체를 제외하던 조건을 제거했습니다. 결정일 후보가 top 수보다 적은 월은 insufficient_decision_time_features로 기록하고 이전 보유 상태를 유지합니다.",
+    "bug fix after the 2026-10-10 run; first run recorded as is: 보유 중 구성원이 0이어서 생긴 지수 공백은 마지막 평가액을 유지(일 수익률 0)하고 업종별·선택 포트폴리오별·대조군별 세션 수를 기록합니다. 첫 결측 가격 유지 후 구성원을 제외하는 기존 정책의 전체 바스켓 소진 경우를 명시적으로 처리합니다. 유효 구성원이 있는 지수 결측은 대체하지 않습니다.",
+    "bug fix after the 2026-10-10 run; first run recorded as is: 선택·대조군 추출 업종 또는 벤치마크의 수익률을 계산할 수 없으면 명확히 실패합니다. 미래 결측을 월 제외나 pandas 평균의 NaN 무시로 숨기지 않습니다.",
+    "bug fix after the 2026-10-10 run; first run recorded as is: 사전등록이 매수 불가능 구성원 처리를 명시하지 않아 다른 실험의 진입 규칙을 적용합니다. 진입 시가 누락·0 이하, 거래량 누락·0 이하, 상한가 시가인 구성원은 진입 바스켓에서 제외하고 결정일 시총 비중을 재정규화합니다. 상한가는 base_price 우선, 없으면 직전 세션 원종가에 2015-06-15 전 15%, 이후 30%와 기존 0.5%p 호가 허용폭을 적용합니다. 진입 종가나 이후 가격은 매수 가능 판단에 사용하지 않습니다. 전원 제외 업종은 그달 수익률·비용 0인 현금으로 보유합니다. 실제 선택·무작위 대조군·교체 비용 바스켓에 동일하게 적용하고 업종-월별 제외 구성원과 현금 업종을 집계합니다. 이후 19세션 업종 지수 연쇄 규칙과 전체시장 벤치마크 진입 평가 규칙은 유지합니다.",
+    "bug fix after the 2026-10-10 run; first run recorded as is: 같은 사유(사전등록의 매수 불가능 구성원 처리 미명시)로 전체시장 시가총액가중 벤치마크에도 동일한 진입 가능 규칙을 적용합니다. 진입 시가 누락·0 이하, 거래량 누락·0 이하, 상한가 시가인 구성원을 제외하고 나머지 결정일 시총 비중을 재정규화하며 벤치마크 월별 제외 수를 집계합니다. 위 이전 수정에서 유지했던 벤치마크 진입 규칙만 변경하며 이후 19세션 시장 지수 연쇄 규칙은 유지합니다.",
     "순위 동률은 평균 순위, 포트폴리오 점수 동률은 업종명 오름차순, 시총 동률은 종목코드 오름차순, 설계 t 동률은 사전등록 변형 표 순서로 해소합니다. 선택에는 2016~2024 순초과수익 t만 사용합니다.",
     "시장 국면은 결정일 시장 지수가 120세션 MA보다 높으면 above, 낮으면 below, 같으면 equal입니다. equal과 MA 결측도 별도로 보고하며 필터로 사용하지 않습니다.",
 ]
@@ -96,7 +102,7 @@ def _period(fields):
 
 
 def _load_day(day, path, mapping):
-    """Bound parsing memory to one day and retain only five numeric columns."""
+    """Bound parsing memory to one day and retain only required columns."""
     latest = {}
     with path.open(encoding="utf-8") as handle:
         for number, line in enumerate(handle, 1):
@@ -109,7 +115,7 @@ def _load_day(day, path, mapping):
             if not isinstance(code, str) or not code:
                 raise ValueError(f"missing stock_code: {path.name}:{number}")
             values = {name: row.get(name) for name in
-                      ("open", "close", "market_cap", "trading_value", "stock_name", "market", "calendar_status")}
+                      ("open", "close", "volume", "base_price", "market_cap", "trading_value", "stock_name", "market", "calendar_status")}
             values["ret_1d"] = None if row.get("change_rate_pct") is None else float(row["change_rate_pct"]) / 100
             values["industry"] = mapping.get(code, industry_map.UNCLASSIFIED)
             for name in ("stock_name", "market", "calendar_status", "industry"):
@@ -117,7 +123,11 @@ def _load_day(day, path, mapping):
                     values[name] = sys.intern(values[name])
             latest[sys.intern(code)] = values
     frame = pd.DataFrame.from_dict(latest, orient="index").rename_axis("stock_code")
-    for name in ("open", "close", "market_cap", "trading_value", "ret_1d"):
+    # Keep wide membership/label matrices in consolidated NumPy blocks. Pandas
+    # string extension columns otherwise dispatch comparisons once per stock.
+    for name in ("stock_name", "market", "calendar_status", "industry"):
+        frame[name] = frame[name].astype(object)
+    for name in ("open", "close", "volume", "base_price", "market_cap", "trading_value", "ret_1d"):
         frame[name] = pd.to_numeric(frame[name], errors="raise").astype(float)
     frame["trade_date"] = day
     return frame.reset_index().set_index(["trade_date", "stock_code"]).sort_index()
@@ -264,20 +274,19 @@ def stream_indices(factory):
     return indices, dropped
 
 
-def features_at_close(history, day, *, dropped=None, repo_root=PROJECT_ROOT):
-    """Use only decision-close data; the feature API itself is strictly pre-date."""
+def features_at_close(history, day, *, dropped=None, repo_root=PROJECT_ROOT, indices=None):
+    """Use only decision-close data, optionally reusing the streamed cap returns."""
     common.guard_prices(history, repo_root=repo_root)
     history = history.loc[history.index.get_level_values("trade_date") <= day]
     work = _index_input(history, dropped or {})
     prepared, eligible = industry_index._prepare(work, industry_map.DEFAULT_COMPANIES_PATH, MIN_ADV)
     members = member_universe(work, day, repo_root=repo_root)
     members = members.loc[eligible.loc[day].reindex(members.index, fill_value=False)]
-    features = industry_index.industry_features(
-        work, (day + pd.Timedelta(days=1)).date().isoformat(),
-        min_trading_value_20d=MIN_ADV, relative_strength="difference")
-    index = industry_index.build_indices(work, min_trading_value_20d=MIN_ADV)
+    index = industry_index.build_indices(work, min_trading_value_20d=MIN_ADV) if indices is None else indices.loc[
+        indices.index.get_level_values("trade_date") <= day]
     market = index.xs(industry_index.ALL_MARKET, level="industry").cap_return.tail(60)
-    market_return = float((1 + market).prod() - 1) if len(market) == 60 and market.notna().all() else np.nan
+    market_growth = float((1 + market).prod()) if len(market) == 60 and market.notna().all() else np.nan
+    market_return = market_growth - 1
     levels = industry_index._stock_levels(prepared)
     moving_average = levels.rolling(20, min_periods=20).mean().iloc[-1]
     returns = prepared.ret_1d.unstack("stock_code")
@@ -292,13 +301,32 @@ def features_at_close(history, day, *, dropped=None, repo_root=PROJECT_ROOT):
         window = returns[top].tail(60)
         topcap = float(((1 + window).prod() - 1).median() - market_return) if (
             len(window) == 60 and window.notna().to_numpy().all()) else np.nan
-        rows.append({"industry": label, "rs60": features.loc[label, "rs_60"], "breadth": breadth,
+        industry_returns = index.xs(label, level="industry").cap_return.reindex(returns.index).tail(60) if (
+            label in index.index.get_level_values("industry")) else pd.Series(dtype=float)
+        strength = float((1 + industry_returns).prod() - market_growth) if (
+            len(industry_returns) == 60 and industry_returns.notna().all()) else np.nan
+        rows.append({"industry": label, "rs60": strength, "breadth": breadth,
                      "topcap": topcap, "member_count": len(group)})
     result = pd.DataFrame(rows, columns=["industry", "rs60", "breadth", "topcap", "member_count"]).set_index("industry").astype(float)
     for name, columns in FEATURES.items():
         complete = result[list(columns)].where(np.isfinite(result[list(columns)])).dropna()
         result[name] = complete.rank(method="average", pct=True).mean(axis=1)
     return result, members
+
+
+def holding_chain(indices, label, weighting, sessions):
+    """An exhausted index basket retains its last value; live-member gaps do not."""
+    if label in indices.index.get_level_values("industry"):
+        original = indices.xs(label, level="industry")
+        block = original.reindex(sessions)
+        chain = block[f"{weighting}_return"].copy()
+        # A missing industry row means the block contained no such industry.
+        counts = block.member_count.where(sessions.isin(original.index), 0)
+    else:
+        chain = pd.Series(np.nan, index=sessions, dtype=float)
+        counts = pd.Series(0, index=sessions)
+    gaps = chain.isna() & counts.eq(0)
+    return chain.mask(gaps, 0.0), int(gaps.sum())
 
 
 def market_regime(indices, day):
@@ -309,29 +337,49 @@ def market_regime(indices, day):
     return "above" if difference > 0 else "below" if difference < 0 else "equal"
 
 
+def entry_tradability(window, members, day, entry_day):
+    """Check entry quotes against the preceding session's raw close only."""
+    entry = window.xs(entry_day, level="trade_date").reindex(members.index)
+    previous = window.xs(day, level="trade_date").close.reindex(members.index)
+    base = entry.base_price.fillna(previous) if "base_price" in entry else previous
+    limit_up = np.isfinite(base) & base.gt(0) & entry.open.ge(base * (1 + hf001.price_limit(entry_day) - 0.005))
+    tradable = np.isfinite(entry.open) & entry.open.gt(0) & np.isfinite(entry.volume) & entry.volume.gt(0) & ~limit_up
+    return tradable, limit_up
+
+
 def holding_returns(window, indices, members, day, exit_day):
     """First-day intraday leg plus 19 adjusted index returns, including benchmark."""
     days = common._sessions(window)
     entry_day = days[days.get_loc(day) + 1]
+    holding_days = days[(days > entry_day) & (days <= exit_day)]
     entry = window.xs(entry_day, level="trade_date").reindex(members.index)
     present = members.index.isin(window.xs(entry_day, level="trade_date").index)
     usable = np.isfinite(entry.open) & entry.open.gt(0) & np.isfinite(entry.close) & entry.close.gt(0)
     legs = pd.Series(0.0, index=members.index)
     legs.loc[present] = entry.loc[present, "close"] / entry.loc[present, "open"] - 1
     invalid = pd.Series(present & ~usable.to_numpy(), index=members.index)
+    tradable, _ = entry_tradability(window, members, day, entry_day)
     groups = {label: group for label, group in members.groupby("industry")}
     groups[industry_index.ALL_MARKET] = members
     rows = {}
     for label, group in groups.items():
-        row = {}
+        basket_tradable = tradable.reindex(group.index)
+        row = {"entry_excluded_members": int((~basket_tradable).sum()),
+               "entry_cash_industry": bool(not basket_tradable.any())}
+        group = group.loc[basket_tradable]
         for weighting in ("cap", "equal"):
-            chain = indices.xs(label, level="industry")[f"{weighting}_return"] if (
-                label in indices.index.get_level_values("industry")) else pd.Series(dtype=float)
-            chain = chain.loc[(chain.index > entry_day) & (chain.index <= exit_day)]
+            if group.empty:
+                row[f"{weighting}_gross"] = 0.0
+                row[f"{weighting}_index_gap_sessions"] = 0
+                for multiplier in MULTIPLIERS:
+                    row[f"{weighting}_cost_{multiplier}"] = 0.0
+                continue
+            chain, gap_count = holding_chain(indices, label, weighting, holding_days)
             weights = group.market_cap / group.market_cap.sum() if weighting == "cap" else pd.Series(1 / len(group), index=group.index)
             value = float((1 + np.dot(weights, legs.reindex(group.index))) * (1 + chain).prod() - 1) if (
                 len(chain) == HORIZON - 1 and chain.notna().all() and not invalid.reindex(group.index).any()) else np.nan
             row[f"{weighting}_gross"] = value
+            row[f"{weighting}_index_gap_sessions"] = gap_count
             for multiplier in MULTIPLIERS:
                 costs = cost_model.round_trip_cost_vectorized(
                     group.close.to_numpy(), group.market.to_numpy(), entry_day.to_numpy(),
@@ -351,13 +399,15 @@ def monthly_observations(days, factory, indices, dropped, dates, repo_root):
             position += 1
         window = pd.concat(buffer)
         history = window.loc[window.index.get_level_values("trade_date") <= day]
-        features, members = features_at_close(history, day, dropped=dropped, repo_root=repo_root)
+        features, members = features_at_close(history, day, dropped=dropped, repo_root=repo_root, indices=indices)
         returns, entry_day = holding_returns(window, indices, members, day, days[target])
         table = features.join(returns)
         benchmark = returns.loc[industry_index.ALL_MARKET, "cap_gross"]
         rows.append({"trade_date": day, "entry_date": entry_day, "exit_date": days[target], "table": table,
                      "benchmark": benchmark, "regime": market_regime(indices, day),
-                     "coverage": _coverage(history, day, repo_root)})
+                     "benchmark_entry_excluded_members": int(returns.loc[industry_index.ALL_MARKET, "entry_excluded_members"]),
+                     "coverage": _coverage(history, day, repo_root),
+                     "holding_index_gap_sessions": returns.cap_index_gap_sessions.astype(int).to_dict()})
     return rows
 
 
@@ -379,14 +429,20 @@ def _portfolio_series(months, variant, top, weighting):
     previous, previous_costs, rows, skipped = (), {}, [], []
     for month in months:
         table = month["table"].loc[np.isfinite(month["table"][variant])]
-        if len(table) < top or not np.isfinite(month["benchmark"]) or not np.isfinite(table[f"{weighting}_gross"]).all():
-            skipped.append({"month": str(month["trade_date"].to_period("M")), "reason": "insufficient_features_or_index_horizon"})
+        if len(table) < top:
+            skipped.append({"month": str(month["trade_date"].to_period("M")), "reason": "insufficient_decision_time_features"})
             continue
         selected = tuple(table.sort_index().sort_values(variant, ascending=False, kind="stable").head(top).index)
-        gross = float(table.loc[list(selected), f"{weighting}_gross"].mean())
+        if not np.isfinite(month["benchmark"]):
+            raise ValueError(f"{month['trade_date'].date()}: cannot value benchmark")
+        gross = _selected_gross(table, selected, weighting, month["trade_date"])
         row = {"trade_date": month["trade_date"].date().isoformat(), "entry_date": month["entry_date"].date().isoformat(),
                "exit_date": month["exit_date"].date().isoformat(), "industries": list(selected),
-               "gross": gross, "benchmark": float(month["benchmark"]), "regime": month["regime"]}
+               "gross": gross, "benchmark": float(month["benchmark"]), "regime": month["regime"],
+               "benchmark_entry_excluded_members": month["benchmark_entry_excluded_members"],
+               "holding_index_gap_sessions": _selected_gaps(table, selected, weighting),
+               "entry_excluded_members_by_industry": table.loc[list(selected), "entry_excluded_members"].astype(int).to_dict(),
+               "entry_cash_industries": list(table.loc[list(selected)].index[table.loc[list(selected), "entry_cash_industry"].astype(bool)])}
         for multiplier in MULTIPLIERS:
             costs = table[f"{weighting}_cost_{multiplier}"].to_dict()
             cost = turnover_cost(selected, previous, costs, previous_costs.get(str(multiplier), {}))
@@ -397,6 +453,18 @@ def _portfolio_series(months, variant, top, weighting):
         previous = selected
         rows.append(row)
     return rows, skipped
+
+
+def _selected_gross(table, selected, weighting, day):
+    values = table.loc[list(selected), f"{weighting}_gross"]
+    if not np.isfinite(values).all():
+        labels = ", ".join(values.index[~np.isfinite(values)])
+        raise ValueError(f"{day.date()}: cannot value selected/drawn industries ({weighting}): {labels}")
+    return float(values.mean())
+
+
+def _selected_gaps(table, selected, weighting):
+    return int(table.loc[list(selected), f"{weighting}_index_gap_sessions"].sum())
 
 
 def _series(rows, column):
@@ -422,6 +490,8 @@ def _controls(months, variant, actual_rows):
     measured = {pd.Timestamp(row["trade_date"]) for row in actual_rows}
     previous = [()] * N_CONTROLS
     previous_costs, totals, count = [{} for _ in range(N_CONTROLS)], np.zeros(N_CONTROLS), 0
+    gaps = np.zeros(N_CONTROLS, dtype=int)
+    excluded, cash = np.zeros(N_CONTROLS, dtype=int), np.zeros(N_CONTROLS, dtype=int)
     rng = np.random.default_rng(0)
     for month in months:
         if month["trade_date"] not in measured:
@@ -431,13 +501,19 @@ def _controls(months, variant, actual_rows):
         portfolios = sample_control_portfolios(table.index, rng)
         for number, selected in enumerate(portfolios):
             cost = turnover_cost(selected, previous[number], costs, previous_costs[number])
-            totals[number] += table.loc[list(selected), "cap_gross"].mean() - cost - month["benchmark"]
+            totals[number] += _selected_gross(table, selected, "cap", month["trade_date"]) - cost - month["benchmark"]
+            gaps[number] += _selected_gaps(table, selected, "cap")
+            excluded[number] += int(table.loc[list(selected), "entry_excluded_members"].sum())
+            cash[number] += int(table.loc[list(selected), "entry_cash_industry"].sum())
             previous[number], previous_costs[number] = selected, costs
         count += 1
     means = totals / count if count else np.array([])
     actual = signal_eval._summary(_series(actual_rows, "excess_1.0"))["mean"]
     return {**signal_eval._control_summary(means, actual), "monthly_observations": count,
-            "mean_net_excess_by_control": means.tolist(), "seed": 0}
+            "mean_net_excess_by_control": means.tolist(), "seed": 0,
+            "holding_index_gap_sessions_by_control": gaps.tolist(),
+            "entry_excluded_members_by_control": excluded.tolist(),
+            "entry_cash_industry_months_by_control": cash.tolist()}
 
 
 def evaluate_variant(months, variant):
@@ -462,6 +538,10 @@ def evaluate_variant(months, variant):
     return {"monthly": rows, "monthly_excess": _statistics(rows, "excess_1.0"),
             "cost_sensitivity": sensitivity, "ic": {**_statistics(ic_rows, "ic"), "monthly": ic_rows},
             "random_control": _controls(months, variant, rows), "secondary": secondary,
+            "entry_industry_months": [{"trade_date": month["trade_date"].date().isoformat(),
+                                       "excluded_members_by_industry": month["table"].entry_excluded_members.astype(int).to_dict(),
+                                       "cash_industries": list(month["table"].index[month["table"].entry_cash_industry.astype(bool)])}
+                                      for month in months],
             "regime_split": {regime: _statistics([row for row in rows if row["regime"] == regime], "excess_1.0")
                              for regime in ("above", "below", "equal", "unmeasured")}, "skipped_months": skipped}
 
@@ -519,6 +599,7 @@ def run_experiment(*, data_dir=PROJECT_ROOT / "data/market/krx_daily",
     selected, design = select_variant({name: _series(rows, "excess_1.0") for name, rows in primary.items()}, fields)
     total_trials = experiment_registry.trial_count(EXPERIMENT_ID, repo_root=repo_root) + len(VARIANTS) + 1
     variants = {}
+    pending = []
     for name in VARIANTS:
         result = evaluate_variant(months, name)
         inputs = _judgement_inputs(result, design[name], fields, total_trials)
@@ -529,12 +610,12 @@ def run_experiment(*, data_dir=PROJECT_ROOT / "data/market/krx_daily",
                       skipped_month_count=len(result["skipped_months"]) + len(skipped),
                       unadjusted_fallback=indices.attrs["raw_fallback"], delisting_exclusions=indices.attrs["members_dropped_no_row"])
         variants[name] = result
-        experiment_registry.record_trial(EXPERIMENT_ID, name, inputs, verdict, repo_root=repo_root,
-                                         note="selected variant" if name == selected else "unselected diagnostic; design-only selection")
+        pending.append((name, inputs, verdict,
+                        "selected variant" if name == selected else "unselected diagnostic; design-only selection"))
     verdict, reasons = (variants[selected]["verdict"], variants[selected]["reasons"]) if selected else (
         "insufficient", ["no variant has a defined design-period monthly net excess t statistic"])
-    experiment_registry.record_trial(EXPERIMENT_ID, "final", {"selected_variant": selected,
-        **(variants[selected]["judgement_inputs"] if selected else {})}, verdict, repo_root=repo_root, note="HI001 final verdict")
+    pending.append(("final", {"selected_variant": selected, **(variants[selected]["judgement_inputs"] if selected else {})},
+                    verdict, "HI001 final verdict"))
     coverage = {str(month["trade_date"].to_period("M")): month["coverage"] for month in months}
     capital = sum(row["market_cap"] for row in coverage.values())
     unknown = sum(row["unmapped_market_cap"] for row in coverage.values())
@@ -543,9 +624,32 @@ def run_experiment(*, data_dir=PROJECT_ROOT / "data/market/krx_daily",
                "coverage": {"profiles_found": profiles, "sessions": len(days), "coverage_by_month": coverage,
                             "unmapped_cap_share": unknown / capital if capital else None,
                             "excluded_2026_count": sum(row["reason"] == "20_session_horizon_would_read_2026" for row in skipped)},
-               "counts": indices.attrs, "assumptions": ASSUMPTIONS,
+               "counts": {**indices.attrs, "holding_index_gap_sessions_by_month": {
+                   str(month["trade_date"].to_period("M")): month["holding_index_gap_sessions"] for month in months}},
+               "assumptions": ASSUMPTIONS,
                "performance": {"runtime_seconds": time.perf_counter() - started,
                                "peak_memory_mib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024}}
+    # Validate everything BEFORE any registry row is written: judgement inputs must be
+    # finite; other non-finite report values are stored as null and listed.
+    for _, inputs, _, _ in pending:
+        json.dumps(inputs, allow_nan=False)
+    nonfinite = []
+
+    def _finite(value, path):
+        if isinstance(value, dict):
+            return {key: _finite(item, f"{path}.{key}") for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [_finite(item, f"{path}[{index}]") for index, item in enumerate(value)]
+        if isinstance(value, float) and not math.isfinite(value):
+            nonfinite.append(path)
+            return None
+        return value
+
+    payload = _finite(payload, "$")
+    payload["nonfinite_report_fields"] = nonfinite
+    json.dumps(payload, ensure_ascii=False, allow_nan=False, default=str)
+    for name, inputs, verdict_row, note in pending:
+        experiment_registry.record_trial(EXPERIMENT_ID, name, inputs, verdict_row, repo_root=repo_root, note=note)
     _write_results(payload, repo_root)
     return payload
 
