@@ -80,7 +80,9 @@ async function parseResponse<T>(response: Response): Promise<T> {
     const message = typeof body === "object" && body !== null
       ? extractErrorMessage(body)
       : `요청을 처리하지 못했습니다 (${response.status}). 잠시 후 다시 시도해 주세요.`;
-    const error = new Error(message) as ApiError;
+    const error = new Error(message === "PAPER_ACCOUNT_REQUIRED"
+      ? "자동매매와 주문은 모의투자 계좌에서만 사용할 수 있어요."
+      : message) as ApiError;
     error.status = response.status;
     error.payload = body;
     throw error;

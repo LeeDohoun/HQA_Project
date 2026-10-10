@@ -32,7 +32,7 @@ export default function KisSettingsPage() {
         setForm((prev) => ({
           ...prev,
           kisAccountProductCode: current.kisAccountProductCode ?? prev.kisAccountProductCode,
-          kisIsReal: false
+          kisIsReal: current.kisIsReal
         }));
       })
       .catch((cause) => {
@@ -58,7 +58,7 @@ export default function KisSettingsPage() {
     setError("");
     setSavedMessage("");
     try {
-      const updated = await authApi.saveKis({ ...form, kisIsReal: false });
+      const updated = await authApi.saveKis(form);
       setStatus(updated);
       setForm((prev) => ({ ...prev, kisAppKey: "", kisAppSecret: "", kisAccountNo: "" }));
       setSavedMessage("저장되었어요.");
@@ -126,8 +126,31 @@ export default function KisSettingsPage() {
         <form onSubmit={submit}>
           <div className="field">
             <label>투자 환경</label>
-            <div className="paper-environment"><span className="paper-environment-dot" />모의투자 · PAPER</div>
-            <p className="field-hint">현재 HQA는 모의투자 전용입니다. 한국투자증권 모의투자용 키와 계좌를 연결해 주세요.</p>
+            <div className="env-toggle" role="tablist" aria-label="투자 환경">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={!form.kisIsReal}
+                className={`env-toggle-btn ${!form.kisIsReal ? "active sandbox" : ""}`}
+                onClick={() => setForm({ ...form, kisIsReal: false })}
+              >
+                모의투자
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={form.kisIsReal}
+                className={`env-toggle-btn ${form.kisIsReal ? "active real" : ""}`}
+                onClick={() => setForm({ ...form, kisIsReal: true })}
+              >
+                실전투자
+              </button>
+            </div>
+            <p className="field-hint">
+              {form.kisIsReal
+                ? "⚠️ 실계좌는 연결·잔고 조회만 지원해요. 자동매매와 주문은 모의투자 계좌에서만 동작해요."
+                : "안전한 모의투자로 먼저 테스트해볼 수 있어요."}
+            </p>
           </div>
 
           <div className="field">

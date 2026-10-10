@@ -1388,25 +1388,6 @@ button,a {
   overflow:hidden
 }
 
-.paper-environment {
-  display:flex;
-  align-items:center;
-  gap:10px;
-  padding:15px 18px;
-  border:1px solid #d5e0c6;
-  border-radius:12px;
-  background:#edf4e2;
-  color:#3a5634;
-  font-weight:650
-}
-
-.paper-environment-dot {
-  height:7px;
-  width:7px;
-  border-radius:50%;
-  background:#71964c
-}
-
 .wiz-emoji {
   font-size:28px
 }
