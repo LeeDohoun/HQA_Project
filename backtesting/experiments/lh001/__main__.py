@@ -16,7 +16,7 @@ from backtesting.experiments import common, hc001, hc002
 
 from . import FINAL_END, MODEL, VARIANTS, experiment_assumptions, workspace
 from . import arms, evaluate, inputs, probe, probe_v2
-from .config import EXPERIMENTS, LH001
+from .config import EXPERIMENTS, LH001, LH002
 from .runner import LlmRunner, StageStopped, check_committed, prompt_hashes, read_json, save_json
 
 
@@ -332,6 +332,20 @@ def _prepare_hc002(*, data_dir, repo_root, sessions, config=LH001):
             "passing_registry_row": passing, "exclusions": snapshot["exclusions"], "linked_session": config.experiment_id}
 
 
+def guard_hc003_ordering(*, repo_root=PROJECT_ROOT, config=LH001):
+    """LH002 must wait for a passing HC003's single holdout evaluation."""
+    if config != LH002:
+        return
+    from backtesting.experiments import hc003
+
+    rows = [row for row in hc003.registry_rows(repo_root) if row["experiment_id"] == hc003.EXPERIMENT_ID]
+    passed = any(row["variant"] in hc003.VARIANTS and row["verdict"] == "pass" for row in rows)
+    finished = any(row["variant"].startswith("holdout_")
+                   or row["verdict"] in ("holdout_contaminated", "holdout_aborted") for row in rows)
+    if passed and not finished:
+        raise ValueError("LH002 final must wait: HC003 design/validation passed and its holdout is unfinished")
+
+
 def execute_final(*, data_dir, repo_root=PROJECT_ROOT, limit_decisions=None, runner=None, sessions=None, text_loader=None, config=LH001):
     fields = _registration(repo_root, config)
     _check_runner(runner, config)
@@ -368,6 +382,7 @@ def execute_final(*, data_dir, repo_root=PROJECT_ROOT, limit_decisions=None, run
     snapshot_path = root / ("final_smoke_snapshot.json" if limit_decisions is not None else "final_snapshot.json")
     def prepare():
         # First protected source read occurs only after this durable single claim.
+        guard_hc003_ordering(repo_root=repo_root, config=config)
         with holdout.HoldoutSession(config.experiment_id, repo_root=repo_root):
             return {**_prepare_decisions(planned, data_dir=data_dir, repo_root=repo_root, sessions=sessions, with_text=True, text_loader=text_loader, config=config),
                     "hc002_holdout": _prepare_hc002(data_dir=data_dir, repo_root=repo_root, sessions=sessions, config=config)}

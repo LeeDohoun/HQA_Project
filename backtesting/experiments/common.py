@@ -2,14 +2,57 @@
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import numpy as np
 import pandas as pd
 
 from backtesting import cost_model, experiment_registry, holdout
 from backtesting.experiment_registry import PROJECT_ROOT, REGISTRY_PATH
+
+
+_READ_EXPERIMENT = ContextVar("experiment_price_reads", default=None)
+
+
+@contextmanager
+def guarded_reads(experiment_id):
+    """Forward a caller's ID through unchanged nested universe code paths."""
+    token = _READ_EXPERIMENT.set(experiment_id)
+    try:
+        yield
+    finally:
+        _READ_EXPERIMENT.reset(token)
+
+
+@contextmanager
+def quarterly_view(data_dir, through_date, *, experiment_id=None, repo_root=PROJECT_ROOT):
+    """Bound archive years before invoking an unchanged point-in-time loader.
+
+    Receipt filtering within each archive remains the quarterly loader's job.
+    Symlinks preserve the actual source bytes and never modify the data root.
+    """
+    through = pd.Timestamp(through_date)
+    holdout.guard_period(through.date(), through.date(),
+                         experiment_id=experiment_id if experiment_id is not None else _READ_EXPERIMENT.get(),
+                         repo_root=repo_root)
+    source = Path(data_dir).resolve()
+    directory = source / "fundamentals/dart_quarterly"
+    if not directory.is_dir():
+        raise ValueError(f"quarterly directory does not exist: {directory}")
+    with TemporaryDirectory(prefix="hc003-quarterly-view-") as temporary:
+        root = Path(temporary)
+        quarterly = root / "fundamentals/dart_quarterly"
+        quarterly.mkdir(parents=True)
+        for path in directory.glob("[0-9][0-9][0-9][0-9]_110*.jsonl"):
+            if int(path.stem[:4]) <= through.year:
+                (quarterly / path.name).symlink_to(path)
+        if (source / "reference").is_dir():
+            (root / "reference").symlink_to(source / "reference", target_is_directory=True)
+        yield root
 
 
 COST_MODEL_V2_INTERPRETATION = (
@@ -40,15 +83,16 @@ def load_preregistration(experiment_id, *, repo_root=PROJECT_ROOT) -> dict:
     return experiment_registry.verify_preregistration(experiment_id, repo_root).fields
 
 
-def guard_prices(prices, *, repo_root=PROJECT_ROOT) -> None:
+def guard_prices(prices, *, experiment_id=None, repo_root=PROJECT_ROOT) -> None:
     """Guard the entire supplied span, rather than just selected scoring dates.
 
-    These design/validation runners never claim a holdout evaluation, even if a
-    different registration happens to permit one.
+    Without an explicit ID or a guarded_reads scope, holdout remains forbidden.
     """
     if not prices.empty:
         days = prices.index.get_level_values("trade_date")
-        holdout.guard_period(days.min().date(), days.max().date(), repo_root=repo_root)
+        holdout.guard_period(days.min().date(), days.max().date(),
+                             experiment_id=experiment_id if experiment_id is not None else _READ_EXPERIMENT.get(),
+                             repo_root=repo_root)
 
 
 def _sessions(prices) -> pd.DatetimeIndex:
@@ -76,7 +120,7 @@ def next_session(prices, day):
     return days[position] if position < len(days) else None
 
 
-def universe_filter(prices, decision_date, *, repo_root=PROJECT_ROOT) -> pd.DataFrame:
+def universe_filter(prices, decision_date, *, experiment_id=None, repo_root=PROJECT_ROOT) -> pd.DataFrame:
     """D001/HC001/HI001 common shares with complete, verified 20-session ADV.
 
     The caller supplies a point-in-time view. This additionally discards dates
@@ -84,7 +128,7 @@ def universe_filter(prices, decision_date, *, repo_root=PROJECT_ROOT) -> pd.Data
     close*volume substitute for missing trading_value.
     """
     days = _sessions(prices)
-    guard_prices(prices, repo_root=repo_root)
+    guard_prices(prices, experiment_id=experiment_id, repo_root=repo_root)
     required = {"stock_name", "market", "close", "trading_value", "calendar_status"}
     if not required.issubset(prices.columns):
         raise ValueError(f"missing universe columns: {sorted(required - set(prices.columns))}")
