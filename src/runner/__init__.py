@@ -6,9 +6,7 @@
 TradeSignal 저장/조건 감시 파이프라인에 필요한 결과를 생성합니다.
 """
 
-from src.runner.analysis_scheduler import AnalysisScheduler, BackendAutoTradeTargetClient
-from src.runner.multi_theme_leader_trading_runner import MultiThemeLeaderTradingRunner
-from src.runner.theme_leader_trading_runner import ThemeLeaderTradingRunner
+from importlib import import_module
 
 __all__ = [
     "AnalysisScheduler",
@@ -16,3 +14,21 @@ __all__ = [
     "ThemeLeaderTradingRunner",
     "MultiThemeLeaderTradingRunner",
 ]
+
+# Exports load on first use so the signal monitor and scheduler processes do not
+# import the legacy agent/LLM/KIS stack just by importing a runner submodule.
+_EXPORTS = {
+    "AnalysisScheduler": "src.runner.analysis_scheduler",
+    "BackendAutoTradeTargetClient": "src.runner.analysis_scheduler",
+    "ThemeLeaderTradingRunner": "src.runner.theme_leader_trading_runner",
+    "MultiThemeLeaderTradingRunner": "src.runner.multi_theme_leader_trading_runner",
+}
+
+
+def __getattr__(name: str):
+    module = _EXPORTS.get(name)
+    if module is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(module), name)
+    globals()[name] = value
+    return value

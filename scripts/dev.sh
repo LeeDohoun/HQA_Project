@@ -60,7 +60,7 @@ export ENV="${ENV:-local}"
 if [[ "${NEXT_PUBLIC_API_BASE+x}" == "x" ]]; then
   FRONTEND_API_BASE="$NEXT_PUBLIC_API_BASE"
 else
-  FRONTEND_API_BASE="http://localhost:$BE_PORT"
+  FRONTEND_API_BASE=""
 fi
 export BACKEND_PROXY_TARGET="${BACKEND_PROXY_TARGET:-http://localhost:$BE_PORT}"
 

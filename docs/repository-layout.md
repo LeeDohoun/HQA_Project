@@ -29,13 +29,15 @@
 
 기존 `run_pipeline.py`의 `reports/<theme>_pipeline_report.json`은 더 이상 갱신하지 않습니다. 현재 수집 결과는 `reports/<theme>_ingestion_report.json`이며, 중첩된 `steps` 대신 최상위 `status`, `build_status`, `per_stock_reports`를 확인합니다. 이전 보고서를 읽던 외부 작업도 파일명과 구조를 함께 바꿔야 합니다. 기존 보고서 자체는 삭제하지 않았습니다.
 
-종목 목록은 기본 재사용하며 `--refresh-targets`로 다시 조회합니다. `--save-only`는 종목 목록만 저장하고 원문·가격 수집과 빌드는 생략합니다. `discover`는 전체 테마의 종목 목록을 수집하는 별도 명령입니다. 배치와 단일 수집은 동일한 기본 소스·증분 날짜 규칙을 사용합니다.
+종목 목록은 기본 재사용하며 `--refresh-targets`로 다시 조회합니다. `--save-only`는 종목 목록만 저장하고 원문·가격 수집과 빌드는 생략합니다. `discover`는 전체 테마의 종목 목록을 `data/theme_catalog/`에 수집하는 별도 명령이며 분석 대상(`raw/theme_targets`)은 바꾸지 않습니다. 분석 대상으로 저장하려면 `--as-targets`를 명시합니다. 배치와 단일 수집은 동일한 기본 소스·증분 날짜 규칙을 사용합니다.
 
 ## 평가 명령
 
 `backtesting/`의 기존 엔진 모듈 import는 유지합니다. 표준 실행 창구는 `python -m backtesting --help`입니다. `scripts/evaluate_paper_runtime.py`와 `scripts/evaluate_paper_performance.py`는 각각 `python -m backtesting paper-runtime`, `python -m backtesting paper-performance`로 이동했습니다.
 
 새 백테스트 출력과 재사용 LLM 캐시의 기본 위치는 `data/backtest_results/`입니다. 기존 실험 결과는 `research/backtesting/results/`에 보관되어 예전 작업 ID의 운영 결과 조회 경로와 구분됩니다. 이력 안의 원래 경로 문자열은 연구 기록이므로 바꾸지 않았습니다. 현재 Luna 분석 입력의 관측 시점 계약이 과거 엔진 전체에 적용되었다고 가정하면 안 됩니다.
+
+`scripts/research/`에는 2026년 5~6월 `ai-data-main`에서 수행한 에이전트 구성 실험의 재현·집계 스크립트가 있습니다. `backtesting/proof_validation.py`와 `backtesting/technical_baseline.py`를 반복 호출하는 연구용 도구이며 주문 코드를 호출하지 않습니다. `AGENT_SCORE_CACHE_ONLY=1`이 아니면 LLM 호출 비용이 발생합니다. 이전 위치 `scripts/run_agent_architecture_*.py`, `scripts/run_uncontaminated_4agent_backtests.py`, `scripts/supervise_uncontaminated_4agent_run.py`, `scripts/build_agent_architecture_validation.py`, `scripts/run_remaining_theme_backtests.py`, `scripts/audit_theme_data.py`, `scripts/build_combined_theme_universe.py`는 `scripts/research/` 아래 같은 이름으로 옮겼습니다. 이 실험의 원본 결과(`experiment_results/backtesting/agent_architecture_validation/`)는 크기 때문에 저장소에 넣지 않고 실험 컴퓨터에 보관합니다.
 
 ## 제거한 부분
 

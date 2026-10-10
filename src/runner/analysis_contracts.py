@@ -4,7 +4,12 @@ from __future__ import annotations
 from datetime import time
 from typing import Literal
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, model_validator
+from pydantic import (AwareDatetime, BaseModel, ConfigDict, Field, PrivateAttr, StrictBool, StrictFloat, StrictInt,
+                      ValidationError, model_validator)
+
+
+# The backend refuses an entry whose live price is more than 3% from the plan's entry price.
+ENTRY_DRIFT_LIMIT = 0.03
 
 
 class Contract(BaseModel):
@@ -17,7 +22,7 @@ class Citation(Contract):
 
 
 class SpecialistResult(Contract):
-    stock_code: str = Field(pattern=r"^\d{6}$")
+    stock_code: str = Field(pattern=r"^[0-9]{6}$")
     role: Literal["analyst", "quant", "chartist"]
     score: StrictFloat = Field(ge=0, le=100)
     confidence: StrictInt = Field(ge=0, le=100)
@@ -51,8 +56,16 @@ class Predicate(Contract):
 
 
 class ConditionGroup(Contract):
-    id: str = Field(min_length=1, max_length=80)
+    # The backend stores trigger keys from these IDs and accepts only [A-Za-z0-9_-];
+    # "planned-exit" is reserved for the monitor's time-based exit.
+    id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,80}$")
     all: list[Predicate] = Field(min_length=1, max_length=8)
+
+    @model_validator(mode="after")
+    def reserved_id(self):
+        if self.id == "planned-exit":
+            raise ValueError("condition id planned-exit is reserved")
+        return self
 
 
 class ReduceConditionGroup(ConditionGroup):
@@ -75,7 +88,7 @@ class ConditionPayload(Contract):
 
 
 class TradingPlan(Contract):
-    stock_code: str = Field(pattern=r"^\d{6}$")
+    stock_code: str = Field(pattern=r"^[0-9]{6}$")
     stock_name: str = Field(min_length=1)
     action: Literal["BUY", "SELL", "HOLD"]
     holding_quantity: StrictInt = Field(ge=0)
@@ -111,6 +124,21 @@ class TradingPlan(Contract):
                 raise ValueError("BUY requires an unconditional current_price <= stop_loss_price exit or invalidation group")
         if self.action == "SELL" and self.holding_quantity == 0:
             raise ValueError("SELL requires an existing holding")
+        payload = self.condition_payload
+        # The backend exits a held position when an invalidation group matches, so only
+        # adverse moves (price or pnl falling) may invalidate; "price ran away" is already
+        # refused at entry by the backend's 3% drift rule.
+        for group in payload.invalidation_conditions:
+            if any(p.field in {"current_price", "pnl_rate"} and p.operator not in {"<", "<="} for p in group.all):
+                raise ValueError("invalidation conditions must describe adverse moves (current_price/pnl_rate < or <=)")
+        if self.holding_quantity == 0 and any(p.field == "pnl_rate" for group in
+                                              payload.entry_conditions + payload.invalidation_conditions for p in group.all):
+            raise ValueError("pnl_rate needs a held position; entry and invalidation conditions use current_price")
+        if self.action == "BUY":
+            for group in payload.entry_conditions:
+                for p in group.all:
+                    if p.field == "current_price" and abs(p.value / self.entry_price - 1) > ENTRY_DRIFT_LIMIT + 1e-9:
+                        raise ValueError("entry price conditions must stay within 3% of entry_price (backend drift limit)")
         if self.holding_quantity and not (self.condition_payload.exit_conditions or self.condition_payload.reduce_conditions):
             raise ValueError("held positions require explicit protection conditions")
         return self
@@ -119,16 +147,43 @@ class TradingPlan(Contract):
 class AccountDecision(Contract):
     plans: list[TradingPlan]
     reasoning: str = Field(min_length=1, max_length=1600)
+    # A JSON schema cannot express the plan rules (stop < entry < target, adverse
+    # invalidation, ...), so a model can break them in one plan. That plan is set aside
+    # with its reason instead of voiding the account's other plans, above all its
+    # holdings' protection updates. The schema the model sees is unchanged.
+    _invalid_plans: list[dict] = PrivateAttr(default_factory=list)
 
-    @model_validator(mode="after")
-    def unique_stocks(self):
-        if len({p.stock_code for p in self.plans}) != len(self.plans):
+    @model_validator(mode="wrap")
+    @classmethod
+    def set_aside_invalid_plans(cls, data, handler):
+        if not isinstance(data, dict) or not isinstance(data.get("plans"), list):
+            return handler(data)
+        valid, invalid = [], []
+        for item in data["plans"]:
+            try:
+                valid.append(item if isinstance(item, TradingPlan) else TradingPlan.model_validate(item))
+            except ValidationError as exc:
+                code = item.get("stock_code") if isinstance(item, dict) else None
+                invalid.append({"stock_code": code if isinstance(code, str) else None,
+                                "action": item.get("action") if isinstance(item, dict) else None,
+                                "reason": "plan contract: " + "; ".join(
+                                    (".".join(map(str, error["loc"])) + ": " if error["loc"] else "") + error["msg"]
+                                    for error in exc.errors()[:3]),
+                                "plan": item})
+        codes = [plan.stock_code for plan in valid] + [plan["stock_code"] for plan in invalid]
+        if None in codes or len(set(codes)) != len(codes):
             raise ValueError("one plan per stock is required")
-        return self
+        decision = handler({**data, "plans": valid})
+        decision._invalid_plans = invalid
+        return decision
+
+    @property
+    def invalid_plans(self) -> list[dict]:
+        return self._invalid_plans
 
 
 class Holding(Contract):
-    stockCode: str = Field(pattern=r"^\d{6}$")
+    stockCode: str = Field(pattern=r"^[0-9]{6}$")
     stockName: str = Field(min_length=1)
     quantity: StrictInt = Field(ge=0)
     sellableQuantity: StrictInt = Field(ge=0)
@@ -158,6 +213,8 @@ class AccountSnapshot(Contract):
     monitorCapacity: StrictInt = Field(ge=0)
     monitorSymbolCount: StrictInt = Field(ge=0)
     monitorCapacityExceeded: StrictBool
+    # Set by the client, not the backend: holdings the pipeline cannot analyse.
+    unsupportedHoldings: list[dict] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_account(self):

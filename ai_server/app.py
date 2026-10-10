@@ -11,13 +11,16 @@ import asyncio
 import json
 import logging
 import os
+import re
 import secrets
 import sys
+import threading
 import uuid
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from contextvars import copy_context
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -26,7 +29,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 # 프로젝트 루트를 sys.path에 추가 (src/ 패키지 접근용)
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -52,12 +55,14 @@ _runtime_tasks: OrderedDict[str, Dict[str, Any]] = OrderedDict()
 
 
 def _require_internal_runtime_token(x_hqa_internal_token: Optional[str] = Header(default=None)) -> None:
-    expected = os.getenv("HQA_INTERNAL_TOKEN")
+    # Every client strips the token it sends; a trailing space or CR in an env file must not
+    # make the receiving side compare a different string.
+    expected = (os.getenv("HQA_INTERNAL_TOKEN") or "").strip()
     if not expected:
         raise HTTPException(status_code=503, detail="Internal runtime authentication is not configured")
     if x_hqa_internal_token is None:
         raise HTTPException(status_code=401, detail="Internal runtime token required")
-    if not secrets.compare_digest(x_hqa_internal_token, expected):
+    if not secrets.compare_digest(x_hqa_internal_token.strip().encode(), expected.encode()):
         raise HTTPException(status_code=403, detail="Invalid internal runtime token")
 
 
@@ -99,12 +104,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# No browser calls this server directly (the Spring backend proxies every request),
+# so cross-origin access is off unless explicitly configured.
+_cors_origins = [origin.strip() for origin in os.getenv("HQA_AI_CORS_ORIGINS", "").split(",") if origin.strip()]
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type", "X-HQA-Internal-Token"],
+    )
 
 
 @app.exception_handler(RequestValidationError)
@@ -118,7 +127,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         request.method,
         request.url.path,
         exc.errors(),
-        raw_body,
+        raw_body[:2000] + ("…(truncated)" if len(raw_body) > 2000 else ""),
     )
     return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
@@ -386,52 +395,82 @@ from src.config.settings import get_data_dir as _hqa_get_data_dir
 
 # jsonl 캐시: (source, file_path) → (mtime, list[record])
 # 디스크 I/O를 줄이고 핫 종목 조회를 빠르게 함. mtime 바뀌면 invalidate.
-_jsonl_cache: Dict[str, Any] = {}
+_FEED_FILE_CACHE_LIMIT = 256
+# path -> (mtime_ns, size, {stock_code: [compact display rows]}); bounded LRU
+_feed_index_cache: "OrderedDict[str, tuple[int, int, Dict[str, List[Dict[str, Any]]]]]" = OrderedDict()
+_feed_index_lock = threading.Lock()
+_FEED_META_FIELDS = ("stock_code", "stock_name", "summary", "press", "rcept_no", "report_nm", "flr_nm",
+                     "corp_name", "collected_at")
+# Feed and status reads are short file reads. They get their own threads because
+# runtime tasks hold default-executor threads for as long as their LLM calls take.
+_READ_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="hqa-read")
 
 
-def _load_jsonl(path: Path) -> List[Dict[str, Any]]:
+async def _run_read(fn, *args):
+    return await asyncio.get_running_loop().run_in_executor(_READ_EXECUTOR, fn, *args)
+
+
+def _require_stock_code(stock_code: str) -> None:
+    if not re.fullmatch(r"[0-9]{6}", stock_code or ""):
+        raise HTTPException(status_code=400, detail="stock_code must be six digits")
+
+
+def _compact_feed_row(record: Dict[str, Any]) -> Dict[str, Any]:
+    meta = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
+    return {"stock_code": record.get("stock_code") or meta.get("stock_code"),
+            "stock_name": record.get("stock_name"), "title": record.get("title"), "url": record.get("url"),
+            "published_at": record.get("published_at"),
+            "metadata": {key: meta[key] for key in _FEED_META_FIELDS if key in meta}}
+
+
+def _feed_index(path: Path) -> Dict[str, List[Dict[str, Any]]]:
+    """Per-file index of compact rows by stock code, rebuilt only when the file changes."""
     try:
-        mtime = path.stat().st_mtime
+        stat = path.stat()
     except OSError:
-        return []
-    cached = _jsonl_cache.get(str(path))
-    if cached and cached[0] == mtime:
-        return cached[1]
-    rows: List[Dict[str, Any]] = []
+        return {}
+    key = str(path)
+    with _feed_index_lock:
+        cached = _feed_index_cache.get(key)
+        if cached and cached[0] == stat.st_mtime_ns and cached[1] == stat.st_size:
+            _feed_index_cache.move_to_end(key)
+            return cached[2]
+    index: Dict[str, List[Dict[str, Any]]] = {}
     try:
-        with path.open("r", encoding="utf-8") as f:
-            for line in f:
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
                 line = line.strip()
                 if not line:
                     continue
                 try:
-                    rows.append(json.loads(line))
+                    record = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                if not isinstance(record, dict):
+                    continue
+                row = _compact_feed_row(record)
+                if row["stock_code"]:
+                    index.setdefault(str(row["stock_code"]), []).append(row)
     except OSError:
-        return []
-    _jsonl_cache[str(path)] = (mtime, rows)
-    return rows
+        return {}
+    with _feed_index_lock:
+        _feed_index_cache[key] = (stat.st_mtime_ns, stat.st_size, index)
+        _feed_index_cache.move_to_end(key)
+        while len(_feed_index_cache) > _FEED_FILE_CACHE_LIMIT:
+            _feed_index_cache.popitem(last=False)
+    return index
 
 
 def _collect_records_for_stock(source_dir: str, stock_code: str) -> List[Dict[str, Any]]:
-    """
-    data/raw/{source_dir}/*.jsonl 전부 스캔 → stock_code 일치 record만 모음.
-    파일은 테마별로 묶여있고 한 종목이 여러 테마에 속할 수 있어서 합집합 필요.
-    """
+    """Union of a stock's rows across theme files and its shared archive (compact fields only)."""
     base = _hqa_get_data_dir() / "raw" / source_dir
     if not base.exists():
         return []
     matched: List[Dict[str, Any]] = []
-    for jsonl_path in base.glob("*.jsonl"):
-        for record in _load_jsonl(jsonl_path):
-            # stock_code는 record 본체 또는 metadata에 들어있을 수 있음
-            code = record.get("stock_code")
-            if not code:
-                meta = record.get("metadata") or {}
-                code = meta.get("stock_code") if isinstance(meta, dict) else None
-            if code == stock_code:
-                matched.append(record)
+    for jsonl_path in sorted(base.glob("*.jsonl")):
+        if jsonl_path.name.startswith("_shared_") and jsonl_path.name != f"_shared_{stock_code}.jsonl":
+            continue
+        matched.extend(_feed_index(jsonl_path).get(stock_code, []))
     return matched
 
 
@@ -448,15 +487,16 @@ def _record_sort_key(record: Dict[str, Any]) -> str:
 
 @app.get("/stocks/{stock_code}/news")
 async def stock_news(stock_code: str, limit: int = Query(20, ge=1, le=100)):
+    _require_stock_code(stock_code)
     try:
-        records = _collect_records_for_stock("news", stock_code)
+        records = await _run_read(_collect_records_for_stock, "news", stock_code)
     except Exception as exc:
         logger.warning("stock_news failed for %s: %s", stock_code, exc)
         return {"items": [], "error": str(exc)}
     records.sort(key=_record_sort_key, reverse=True)
     items = []
     seen_urls = set()
-    for r in records[: limit * 2]:  # dedupe 후에도 limit 채우도록 여유
+    for r in records:  # theme files and the shared archive repeat rows; dedupe until limit
         url = r.get("url") or ""
         if url and url in seen_urls:
             continue
@@ -479,15 +519,16 @@ async def stock_news(stock_code: str, limit: int = Query(20, ge=1, le=100)):
 
 @app.get("/stocks/{stock_code}/disclosures")
 async def stock_disclosures(stock_code: str, limit: int = Query(20, ge=1, le=100)):
+    _require_stock_code(stock_code)
     try:
-        records = _collect_records_for_stock("dart", stock_code)
+        records = await _run_read(_collect_records_for_stock, "dart", stock_code)
     except Exception as exc:
         logger.warning("stock_disclosures failed for %s: %s", stock_code, exc)
         return {"items": [], "error": str(exc)}
     records.sort(key=_record_sort_key, reverse=True)
     items = []
     seen_keys = set()
-    for r in records[: limit * 2]:
+    for r in records:
         meta = r.get("metadata") if isinstance(r.get("metadata"), dict) else {}
         rcept = (meta or {}).get("rcept_no") or r.get("url") or ""
         if rcept and rcept in seen_keys:
@@ -508,6 +549,40 @@ async def stock_disclosures(stock_code: str, limit: int = Query(20, ge=1, le=100
     return {"items": items}
 
 
+@app.get("/internal/status", dependencies=[Depends(_require_internal_runtime_token)])
+async def internal_status():
+    """Operator view: budget, pending calendar reviews, runtime tasks and published data generations."""
+    return await _run_read(_internal_status)
+
+
+def _internal_status() -> Dict[str, Any]:
+    from collections import Counter
+
+    status: Dict[str, Any] = {"calendar_warnings": _calendar_warnings(),
+                              "runtime_tasks": dict(Counter(task.get("status") for task in list(_runtime_tasks.values())))}
+    budget_path = Path(os.getenv("HQA_LLM_BUDGET_PATH") or (_hqa_get_data_dir() / "llm_budget.sqlite3"))
+    if budget_path.exists():
+        try:
+            from src.utils.llm_budget import get_llm_budget
+            ledger = get_llm_budget()
+            status["llm_budget"] = {**ledger.snapshot(), "unresolved": len(ledger.unresolved()),
+                                    "unreviewed_overruns": len(ledger.overruns())}
+        except Exception as exc:
+            status["llm_budget"] = {"status": "error", "error_type": type(exc).__name__}
+    else:
+        status["llm_budget"] = {"status": "not_initialized"}
+    themes: Dict[str, Any] = {}
+    for pointer in sorted((_hqa_get_data_dir() / "canonical_index").glob("*/current.json")):
+        try:
+            manifest = json.loads(pointer.read_text(encoding="utf-8"))
+            themes[pointer.parent.name] = {"generation": manifest.get("generation"),
+                                           "published_at": manifest.get("published_at")}
+        except (OSError, ValueError):
+            themes[pointer.parent.name] = {"status": "unreadable_pointer"}
+    status["themes"] = themes
+    return status
+
+
 @app.get("/health")
 async def health():
     settings = get_settings()
@@ -521,7 +596,16 @@ async def health():
         "env_loaded": env_status.loaded,
         "env_file": str(env_status.path) if env_status.path else None,
         "env_message": env_status.message,
+        "calendar_warnings": _calendar_warnings(),
     }
+
+
+def _calendar_warnings() -> list[str]:
+    try:
+        from src.runner.trading_calendar import calendar_review_warnings
+        return calendar_review_warnings(datetime.now(timezone(timedelta(hours=9))).date())
+    except Exception as exc:  # health must answer even if the calendar dependency is broken
+        return [f"calendar_check_failed:{type(exc).__name__}"]
 
 
 @app.get("/trading/orders")
@@ -581,12 +665,49 @@ async def _get_stored_result(task_id: str):
     return result
 
 
-@app.post("/backtest/results", status_code=201)
-async def submit_backtest_result(request: BacktestResultRequest):
+_BACKTEST_TASK_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+
+
+def _max_backtest_result_bytes() -> int:
+    try:
+        value = int(os.getenv("HQA_MAX_BACKTEST_RESULT_BYTES", str(16 * 1024 * 1024)))
+    except ValueError:
+        value = 16 * 1024 * 1024
+    return max(1024, value)
+
+
+async def _read_limited_body(request: Request, limit: int) -> bytes:
+    declared = request.headers.get("content-length")
+    if declared is not None:
+        if not declared.isdigit():
+            raise HTTPException(status_code=400, detail="Invalid Content-Length")
+        if int(declared) > limit:
+            raise HTTPException(status_code=413, detail=f"Backtest result exceeds {limit} bytes")
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > limit:
+            raise HTTPException(status_code=413, detail=f"Backtest result exceeds {limit} bytes")
+    return bytes(body)
+
+
+def _valid_backtest_task_id(task_id: str) -> str:
+    task_id = task_id.strip()
+    if not _BACKTEST_TASK_ID.fullmatch(task_id):
+        raise HTTPException(status_code=400, detail="task_id must be 1-128 letters, digits, '.', '_', ':' or '-'")
+    return task_id
+
+
+@app.post("/backtest/results", status_code=201, dependencies=[Depends(_require_internal_runtime_token)])
+async def submit_backtest_result(http_request: Request):
     """Store a completed backtest result submitted by a runner or backend job."""
-    task_id = request.task_id.strip()
-    if not task_id:
-        raise HTTPException(status_code=400, detail="task_id는 비어 있을 수 없습니다.")
+    raw = await _read_limited_body(http_request, _max_backtest_result_bytes())
+    try:
+        request = BacktestResultRequest.model_validate_json(raw)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors(include_url=False, include_context=False,
+                                                                include_input=False)) from None
+    task_id = _valid_backtest_task_id(request.task_id)
 
     result = _normalize_backtest_result(request)
     _store_result(task_id, result)
@@ -599,10 +720,10 @@ async def submit_backtest_result(request: BacktestResultRequest):
     }
 
 
-@app.get("/backtest/results/{task_id}")
+@app.get("/backtest/results/{task_id}", dependencies=[Depends(_require_internal_runtime_token)])
 async def get_backtest_result(task_id: str):
     """Fetch a stored backtest result."""
-    return await _get_stored_result(task_id)
+    return await _get_stored_result(_valid_backtest_task_id(task_id))
 
 
 @app.post("/chat", dependencies=[Depends(_require_internal_runtime_token)])

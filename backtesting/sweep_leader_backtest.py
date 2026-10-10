@@ -7,7 +7,7 @@ import argparse
 import csv
 import json
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
@@ -18,7 +18,11 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import numpy as np
 
+from backtesting.metrics import SleevedEquity, sleeve_count
 from backtesting.leader_backtest import (
+    EXECUTION_MODEL_VERSION,
+    SAME_DAY_OHLC_POLICY,
+    _market_dates,
     ExitConfig,
     RiskConfig,
     StockTarget,
@@ -41,7 +45,7 @@ from backtesting.leader_backtest import (
     _positions_to_trades,
     _require_ymd,
     _score_universe,
-    _select_rebalance_dates,
+    _evaluable_rebalance_dates,
     _stock_names_from_prices,
     _write_result,
     load_document_signals,
@@ -217,7 +221,9 @@ def _run_loaded_backtest(
         membership_codes = {row.stock_code for row in memberships}
         target_by_code = {code: target for code, target in target_by_code.items() if code in membership_codes}
     common_calendar = _build_common_calendar(prices, from_ymd, to_ymd, hold_days)
-    rebalance_dates = _select_rebalance_dates(common_calendar, rebalance)
+    market_dates = _market_dates(prices)
+    ineligible_counts: Dict[str, int] = defaultdict(int)
+    rebalance_dates = _evaluable_rebalance_dates(prices, from_ymd, to_ymd, common_calendar, rebalance)
 
     positions: List[Dict[str, Any]] = []
     equity_curve: List[Dict[str, Any]] = []
@@ -226,9 +232,11 @@ def _run_loaded_backtest(
     risk_reject_counts: Dict[str, int] = defaultdict(int)
     equity = 1.0
     benchmark_equity = 1.0
+    strategy_sleeves = SleevedEquity(sleeve_count(rebalance, hold_days))
+    benchmark_sleeves = SleevedEquity(sleeve_count(rebalance, hold_days))
     transaction_cost = transaction_cost_bps / 10000.0
 
-    for as_of_ymd in rebalance_dates:
+    for rebalance_index, as_of_ymd in enumerate(rebalance_dates):
         active_targets = _active_target_by_code(target_by_code, memberships, as_of_ymd)
         if len(active_targets) < top_n:
             warnings.append(f"{as_of_ymd}: active theme universe {len(active_targets)} < top_n {top_n}")
@@ -241,7 +249,9 @@ def _run_loaded_backtest(
             hold_days=hold_days,
             min_history_days=min_history_days,
             exit_config=exit_config,
+            market_dates=market_dates,
         )
+        _add_counts(ineligible_counts, Counter(row["reason"] for row in scored if not row.get("eligible")))
         eligible = [row for row in scored if row.get("eligible")]
         if len(eligible) < top_n:
             warnings.append(f"{as_of_ymd}: eligible stocks {len(eligible)} < top_n {top_n}")
@@ -258,7 +268,7 @@ def _run_loaded_backtest(
 
         if risk_off_reason:
             warnings.append(f"{as_of_ymd}: {risk_off_reason}")
-            benchmark_equity *= 1.0 + benchmark_net_return
+            benchmark_equity = benchmark_sleeves.add(rebalance_index, benchmark_net_return)
             period_rows.append(
                 {
                     "as_of_date": _fmt_ymd(as_of_ymd),
@@ -294,8 +304,8 @@ def _run_loaded_backtest(
         selected_return = float(np.mean([row["realized_return"] for row in selected]))
         selected_net_return = selected_return - (transaction_cost * 2)
         portfolio_exit_date = _latest_exit_date(selected)
-        equity *= 1.0 + selected_net_return
-        benchmark_equity *= 1.0 + benchmark_net_return
+        equity = strategy_sleeves.add(rebalance_index, selected_net_return)
+        benchmark_equity = benchmark_sleeves.add(rebalance_index, benchmark_net_return)
 
         period_rows.append(
             {
@@ -364,6 +374,7 @@ def _run_loaded_backtest(
             "rebalance": rebalance,
             "rebalance_count": len(period_rows),
             "hold_days": hold_days,
+            "capital_sleeves": sleeve_count(rebalance, hold_days),
         },
         "strategy": {
             "name": "ai_theme_leader_momentum_v1",
@@ -405,7 +416,10 @@ def _run_loaded_backtest(
         "execution": {
             "exit_rules": exit_config.to_dict(),
             "exit_counts": _exit_counts(positions),
-            "same_day_ohlc_policy": "stop_or_trailing_stop_before_take_profit",
+            # Why stocks were excluded from the pool and benchmark (summed over rebalances).
+            "ineligible_counts": dict(sorted(ineligible_counts.items())),
+            "same_day_ohlc_policy": SAME_DAY_OHLC_POLICY,
+            "model_version": EXECUTION_MODEL_VERSION,
         },
         "artifacts": {},
         "warnings": warnings + _default_warnings(bool(memberships)),

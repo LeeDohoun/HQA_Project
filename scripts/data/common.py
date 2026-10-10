@@ -4,7 +4,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 DEFAULT_SOURCES = "news,dart,financials,chart"
-SUPPORTED_SOURCES = ("news", "dart", "financials", "forum", "chart")
+# chart is KRX Open API daily prices (primary). kis_chart is KIS daily prices on the same
+# unadjusted basis, opted into while the KRX key awaits approval; never both in one run.
+SUPPORTED_SOURCES = ("news", "dart", "financials", "forum", "chart", "kis_chart")
 KST = timezone(timedelta(hours=9))
 
 
@@ -12,6 +14,8 @@ def enabled_sources(raw: str) -> list[str]:
     values = list(dict.fromkeys(item.strip().lower() for item in raw.split(",") if item.strip()))
     if not values or any(value not in SUPPORTED_SOURCES for value in values):
         raise ValueError("unsupported or empty enabled sources")
+    if {"chart", "kis_chart"} <= set(values):
+        raise ValueError("chart (KRX) and kis_chart (KIS) are alternative price sources; enable one")
     return values
 
 

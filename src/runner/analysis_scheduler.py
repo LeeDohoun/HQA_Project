@@ -3,10 +3,11 @@ from __future__ import annotations
 import os
 import time
 import argparse
+import json
 import logging
 import threading
 import uuid
-from datetime import datetime, time as wall_time, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional
 
 import requests
@@ -23,7 +24,7 @@ class BackendAutoTradeTargetClient:
         if not resolved_url:
             raise ValueError("BACKEND_INTERNAL_BASE_URL is required")
         self.base_url = resolved_url.rstrip("/")
-        self.internal_token = internal_token if internal_token is not None else os.getenv("HQA_INTERNAL_TOKEN", "")
+        self.internal_token = (internal_token if internal_token is not None else os.getenv("HQA_INTERNAL_TOKEN", "")).strip()
         self.timeout = timeout
 
     def fetch_targets(self) -> List[Dict[str, Any]]:
@@ -92,6 +93,7 @@ class AnalysisScheduler:
             self._run_lock.release()
 
     def _run_once(self) -> Dict[str, Any]:
+        _log_calendar_warnings()
         targets = self.backend_client.fetch_targets()
         if not targets:
             return {"status": "skipped", "reason": "no_auto_trade_targets", "no_paid_work": True,
@@ -138,7 +140,14 @@ class AnalysisScheduler:
                     "selected": int(result.get("selected_count") or 0),
                     "submitted": int(submit_result.get("submitted") or 0),
                     "failed": int(submit_result.get("failed") or 0),
-                    "error": submit_result.get("error"),
+                    # The submitter reports per-plan reasons in failures/skipped_plans, not error.
+                    "error": submit_result.get("error") or ("; ".join(submit_result.get("failures") or [])[:1000] or None),
+                    "skipped_plans": list(submit_result.get("skipped_plans") or []),
+                    # Plans the account review refused and stocks it could not review (failed
+                    # quote, input budget), with reasons, so they show in the cycle log.
+                    "rejected_plans": [f"{row.get('stock_code')}:{row.get('reason')}" for row in result.get("rejected_plans") or []],
+                    "omitted_candidates": [f"{row.get('stock_code')}:{row.get('reason')}"
+                                           for row in result.get("omitted_candidates") or []],
                 }
             )
 
@@ -156,7 +165,25 @@ class AnalysisScheduler:
             time.sleep(delay)
             if self.market_hours_only and not within_analysis_session(datetime.now(timezone.utc)):
                 continue
-            self.run_once()
+            run_cycle_safely(self.run_once)
+
+
+def run_cycle_safely(run_once: Callable[[], Dict[str, Any]]) -> Dict[str, Any]:
+    """Run one scheduled cycle; a transient failure is reported and the next slot still runs."""
+    try:
+        return run_once()
+    except Exception as exc:
+        logger.error("analysis cycle failed: %s: %s", type(exc).__name__, str(exc)[:500])
+        return {"status": "failed", "error_type": type(exc).__name__, "error": str(exc)[:500]}
+
+
+def _log_calendar_warnings() -> None:
+    try:
+        from src.runner.trading_calendar import calendar_review_warnings
+        for warning in calendar_review_warnings(datetime.now(timezone(timedelta(hours=9))).date()):
+            logger.warning("analysis calendar: %s", warning)
+    except Exception:
+        logger.exception("analysis calendar warning check failed")
 
 
 def seconds_until_next_slot(timestamp: float, interval: int = 900) -> float:
@@ -165,11 +192,23 @@ def seconds_until_next_slot(timestamp: float, interval: int = 900) -> float:
 
 
 def within_analysis_session(at: datetime) -> bool:
-    """Weekday session gate only; the broker remains authoritative for holidays."""
+    """Inside the KRX regular session: 09:00-15:30 KST, or a notice's special hours such
+    as 10:00-16:30 on CSAT days. Exchange holidays spend no LLM budget."""
     if at.tzinfo is None:
         raise ValueError("schedule clock requires an aware timestamp")
     local = at.astimezone(timezone(timedelta(hours=9)))
-    return local.weekday() < 5 and wall_time(9) <= local.time() < wall_time(15, 30)
+    if local.weekday() >= 5:
+        return False
+    day = local.date().isoformat()
+    try:
+        from src.runner.trading_calendar import daily_session_close, daily_session_open, is_trading_day
+        return is_trading_day(day) and daily_session_open(day) <= at < daily_session_close(day)
+    except ValueError as exc:  # unverified special session or expired review: fail closed
+        logger.error("analysis session calendar check failed; skipping this slot: %s", exc)
+        return False
+    except Exception:
+        logger.exception("analysis session calendar check failed; skipping this slot")
+        return False
 
 
 class RemoteAnalysisClient:
@@ -177,7 +216,7 @@ class RemoteAnalysisClient:
     def __init__(self, base_url: Optional[str] = None, internal_token: Optional[str] = None,
                  timeout: int = 10, completion_timeout: int = 900):
         url = base_url or os.getenv("AI_SERVER_URL")
-        token = internal_token if internal_token is not None else os.getenv("HQA_INTERNAL_TOKEN")
+        token = (internal_token if internal_token is not None else os.getenv("HQA_INTERNAL_TOKEN") or "").strip()
         if not url or not token:
             raise ValueError("AI_SERVER_URL and HQA_INTERNAL_TOKEN are required for remote analysis")
         self.base_url = url.rstrip("/")
@@ -254,11 +293,12 @@ def main() -> None:
             schedule = yaml.safe_load(handle)["schedule"]
         if schedule.get("timezone", "Asia/Seoul") != "Asia/Seoul" or not schedule["enabled"]:
             raise ValueError("An enabled Asia/Seoul analysis schedule is required")
+        logging.basicConfig(level=logging.INFO)
         while True:
             time.sleep(seconds_until_next_slot(time.time()))
             if schedule["market_hours_only"] and not within_analysis_session(datetime.now(timezone.utc)):
                 continue
-            print(client.run_once())
+            print(json.dumps(run_cycle_safely(client.run_once), ensure_ascii=False, default=str), flush=True)
     print(client.run_once())
 
 

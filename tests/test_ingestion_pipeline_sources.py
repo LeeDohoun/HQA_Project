@@ -409,3 +409,28 @@ def test_collect_rejects_invalid_date_ranges(tmp_path, from_date, to_date):
 
     with pytest.raises(ValueError, match="YYYYMMDD|from_date"):
         IngestionService().collect(request)
+
+
+def test_financials_provider_no_data_is_no_data_not_a_failed_collection(tmp_path):
+    class NoAnnualReport:
+        def collect_annual_series(self, **_):
+            return []
+
+    result = IngestionService(financial_collector=NoAnnualReport()).collect(_request(tmp_path, ["financials"]))
+
+    assert result.report.source_success["financials"] is True
+    assert result.report.source_status["financials"] == "no_data"
+    assert result.report.failures == {}
+    assert result.report.notes["financials"] == "provider_no_annual_report"
+
+
+def test_financials_transport_errors_still_fail_collection(tmp_path):
+    class Broken:
+        def collect_annual_series(self, **_):
+            raise RuntimeError("DART financial transport failure")
+
+    result = IngestionService(financial_collector=Broken()).collect(_request(tmp_path, ["financials"]))
+
+    assert result.report.source_success["financials"] is False
+    assert result.report.source_status["financials"] == "error"
+    assert "transport failure" in result.report.failures["financials"]

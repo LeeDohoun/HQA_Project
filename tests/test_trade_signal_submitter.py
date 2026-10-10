@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -134,7 +135,7 @@ def test_submit_trade_signals_uses_hqa_internal_token_env(monkeypatch):
     )
 
     assert response["submitted"] == 1
-    assert captured == {"token": "shared-token", "timeout": 10}
+    assert captured == {"token": "shared-token", "timeout": 30}
 
 
 def test_build_trade_signal_payloads_includes_reduce_action_for_existing_positions():
@@ -184,7 +185,7 @@ def _v2_result():
                        "entry_conditions": [{"id": "entry", "all": [{"field": "current_price", "operator": "<=", "value": 100}]}],
                        "exit_conditions": [{"id": "stop", "all": [{"field": "current_price", "operator": "<=", "value": 90}]}],
                        "reduce_conditions": [],
-                       "invalidation_conditions": [{"id": "invalid", "all": [{"field": "current_price", "operator": ">", "value": 120}]}]},
+                       "invalidation_conditions": [{"id": "invalid", "all": [{"field": "current_price", "operator": "<", "value": 92}]}]},
                    "citations": [{"source_id": "dart-1", "claim": "Published operating results"}],
                    "reasoning": "A sourced plan"}],
     }
@@ -260,4 +261,143 @@ def test_v2_missing_signal_endpoint_fails_before_discarding_plans(monkeypatch):
 def test_legacy_missing_signal_endpoint_retains_explicit_disabled_result(monkeypatch):
     monkeypatch.delenv("BACKEND_SIGNAL_URL", raising=False)
     result = submit_trade_signals(user_id="user-1", result={"global_ranked_leaders": []})
-    assert result == {"submitted": 0, "skipped": 0, "enabled": False}
+    assert result == {"submitted": 0, "skipped": 0, "enabled": False, "skipped_plans": []}
+
+
+def _held_hold(result, stop):
+    held = dict(result["plans"][0], stock_code="000660", stock_name="Hynix", action="HOLD", holding_quantity=3,
+                entry_price=None, stop_loss_price=stop, take_profit_price=None, position_size_pct=0)
+    held["condition_payload"] = {"schema_version": 2, "entry_conditions": [], "reduce_conditions": [],
+                                 "invalidation_conditions": [],
+                                 "exit_conditions": [{"id": "stop", "all": [{"field": "current_price", "operator": "<=", "value": stop}]}]}
+    return held
+
+
+def test_v2_one_expired_entry_does_not_block_holding_protection():
+    result = _v2_result()
+    as_of = datetime.fromisoformat(result["as_of"])
+    result["plans"][0]["entry_valid_until"] = (as_of + timedelta(minutes=5)).isoformat()
+    result["plans"].append(_held_hold(result, 88))
+    skipped = []
+    payloads = build_trade_signal_payloads(user_id="user-1", result=result, now=as_of + timedelta(minutes=10), skipped=skipped)
+    assert [row["stockCode"] for row in payloads] == ["000660"]
+    assert skipped == ["005930:entry_plan_expired"]
+
+
+def test_v2_a_held_position_keeps_its_hard_stop_floor():
+    from src.runner.trade_signal_submitter import _hard_stop
+
+    result = _v2_result()
+    result["plans"] = [_held_hold(result, 88)]
+    active = [{"userId": "user-1", "stockCode": "000660", "planVersion": 3, "conditionPayload": {
+        "exit_conditions": [{"id": "stop", "all": [{"field": "current_price", "operator": "<=", "value": 90}]}]}}]
+    payload = build_trade_signal_payloads(user_id="user-1", result=result, now=datetime.fromisoformat(result["as_of"]),
+                                          active_plans=active)[0]
+    assert _hard_stop(payload["conditionPayload"]) == 90  # the backend refuses a lower stop for an open plan
+    assert {"id": "carried-stop", "all": [{"field": "current_price", "operator": "<=", "value": 90}]} in \
+        payload["conditionPayload"]["exit_conditions"]
+
+
+def test_v2_sell_exits_at_the_next_monitor_poll():
+    result = _v2_result()
+    result["plans"] = [dict(_held_hold(result, 88), action="SELL")]
+    payload = build_trade_signal_payloads(user_id="user-1", result=result, now=datetime.fromisoformat(result["as_of"]))[0]
+    assert {"id": "sell-now", "all": [{"field": "holding_quantity", "operator": ">", "value": 0.0}]} in \
+        payload["conditionPayload"]["exit_conditions"]
+
+
+def test_v2_prices_and_scores_are_sent_as_whole_numbers():
+    result = _v2_result()
+    plan = result["plans"][0]
+    plan["entry_price"] = 100.4
+    result["global_ranked_leaders"] = [{"stock_code": "005930", "leader_score": 72.333}]
+    payload = build_trade_signal_payloads(user_id="user-1", result=result, now=datetime.fromisoformat(result["as_of"]))[0]
+    assert payload["signalPrice"] == 100 and payload["leaderScore"] == 72
+    plan["stop_loss_price"] = 100.1  # below 100.4 but not below the whole-won price the backend compares
+    plan["condition_payload"]["exit_conditions"][0]["all"][0]["value"] = 100.1
+    skipped = []
+    assert build_trade_signal_payloads(user_id="user-1", result=result, now=datetime.fromisoformat(result["as_of"]),
+                                       skipped=skipped) == []
+    assert skipped == ["005930:stop_not_below_whole_won_entry"]
+
+
+def test_submit_reports_backend_reasons_and_retries_a_timeout_once(monkeypatch):
+    import io
+    import socket
+    import urllib.error
+
+    result = _v2_result()
+    result["as_of"] = datetime.now(KST).isoformat()
+    result["plans"][0]["entry_valid_until"] = (datetime.now(KST) + timedelta(minutes=10)).isoformat()
+    result["plans"][0]["planned_exit_at"] = (datetime.now(KST) + timedelta(days=3)).isoformat()
+    monkeypatch.setattr("src.runner.signal_monitor.BackendSignalClient.fetch_active_signals", lambda self: [])
+    outcomes = iter([socket.timeout("slow"), SimpleNamespace(status=201)])
+
+    class Response:
+        def __init__(self, status):
+            self.status = status
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    def urlopen(request, timeout):
+        outcome = next(outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return Response(outcome.status)
+
+    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    url = "http://backend.invalid/api/v1/internal/trading/signals"
+    assert submit_trade_signals(user_id="user-1", result=result, backend_signal_url=url, internal_token="t")["submitted"] == 1
+
+    def refused(request, timeout):
+        raise urllib.error.HTTPError(url, 400, "Bad Request", {}, io.BytesIO(b'{"error":"OPEN_PLAN_HARD_STOP_CANNOT_BE_WEAKENED"}'))
+
+    monkeypatch.setattr("urllib.request.urlopen", refused)
+    report = submit_trade_signals(user_id="user-1", result=result, backend_signal_url=url, internal_token="t")
+    assert report["failures"] == ['005930:HTTP_400:{"error":"OPEN_PLAN_HARD_STOP_CANNOT_BE_WEAKENED"}']
+
+
+def test_v2_signal_url_with_a_trailing_slash_still_reaches_the_backend(monkeypatch):
+    seen = []
+
+    class Client:
+        def __init__(self, base_url, internal_token):
+            seen.append(base_url)
+
+        def fetch_active_signals(self):
+            return []
+
+    monkeypatch.setattr("src.runner.signal_monitor.BackendSignalClient", Client)
+    monkeypatch.setenv("BACKEND_SIGNAL_URL", "http://backend.invalid/api/v1/internal/trading/signals/ ")
+    monkeypatch.setenv("HQA_INTERNAL_TOKEN", "t")
+    posted = []
+
+    class Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b'{"signalId": "s1"}'
+
+    monkeypatch.setattr("src.runner.trade_signal_submitter.urllib.request.urlopen",
+                        lambda request, timeout: posted.append(request.full_url) or Response())
+    result = _v2_result()
+    now = datetime.now(KST)
+    shift = now - datetime.fromisoformat(result["as_of"])
+    result["as_of"] = now.isoformat()
+    for plan in result["plans"]:
+        for key in ("entry_valid_until", "planned_exit_at"):
+            plan[key] = (datetime.fromisoformat(plan[key]) + shift).isoformat()
+    result = submit_trade_signals(user_id="user-1", result=result)
+    assert seen == ["http://backend.invalid"]
+    assert posted and all(url == "http://backend.invalid/api/v1/internal/trading/signals" for url in posted)
+    assert result["submitted"] == len(posted)

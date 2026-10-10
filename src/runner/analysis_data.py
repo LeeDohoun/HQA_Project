@@ -15,7 +15,7 @@ import requests
 import yaml
 
 from src.config.settings import get_data_dir
-from src.runner.analysis_contracts import AccountSnapshot
+from src.runner.analysis_contracts import AccountSnapshot, Holding
 from src.runner.theme_universe_loader import ThemeUniverseLoader
 from src.runner.trading_calendar import CALENDAR_VERSION, completed_daily_sessions, daily_session_close
 
@@ -106,6 +106,12 @@ def price_features(rows: list[dict], as_of: datetime) -> tuple[dict, list[dict]]
                     or meta.get("source_url") != endpoint or meta.get("price_basis") != "unadjusted"):
                 raise ValueError("unverified KRX price market/basis provenance")
             normalized.update(market=meta["market"], price_basis="unadjusted", source="krx", source_url=endpoint)
+        elif meta.get("source") == "kis":
+            # KIS daily bars (kis_chart) stand in for KRX: only the exact original-price endpoint.
+            from src.ingestion.kis_chart import KisChartCollector
+            if meta.get("source_url") != KisChartCollector.DAILY_URL or meta.get("price_basis") != "unadjusted":
+                raise ValueError("unverified KIS price endpoint/basis provenance")
+            normalized.update(price_basis="unadjusted", source="kis", source_url=KisChartCollector.DAILY_URL)
         for field in ("version", "source_id"):
             if field in meta:
                 if not isinstance(meta[field], str) or not meta[field].strip():
@@ -116,9 +122,16 @@ def price_features(rows: list[dict], as_of: datetime) -> tuple[dict, list[dict]]
             if value is None:
                 raise ValueError(f"missing OHLCV field: {field}")
             number = float(str(value).replace(",", ""))
-            if not math.isfinite(number) or number < 0 or (field != "volume" and number == 0):
+            if not math.isfinite(number) or number < 0 or (field == "close" and number == 0):
                 raise ValueError(f"invalid OHLCV field: {field}")
             normalized[field] = number
+        if normalized["volume"] == 0 and normalized["open"] == normalized["high"] == normalized["low"] == 0:
+            # A halted session (KRX and Naver report 0 open/high/low and the prior close):
+            # no trade happened, so the bar is flat at the close instead of voiding the history.
+            normalized.update(open=normalized["close"], high=normalized["close"], low=normalized["close"])
+        for field in ("open", "high", "low"):
+            if normalized[field] == 0:
+                raise ValueError(f"invalid OHLCV field: {field}")
         if not normalized["low"] <= min(normalized["open"], normalized["close"]) <= max(normalized["open"], normalized["close"]) <= normalized["high"]:
             raise ValueError("inconsistent OHLC values")
         observations_by_time = by_date.setdefault(day, {})
@@ -142,6 +155,10 @@ def price_features(rows: list[dict], as_of: datetime) -> tuple[dict, list[dict]]
             if latest is None or content != {key: value for key, value in latest.items() if key != "observed_at"}:
                 latest = row
         known.append(latest)
+    if (any(row.get("source") == "kis" for row in known)
+            and any(row.get("price_basis") != "unadjusted" for row in known)):
+        # Unlabeled bars (e.g. adjusted local test prices) would splice two bases into one chart.
+        raise ValueError("mixed_price_basis:kis_unadjusted_with_unverified_bars")
     if known and sessions:
         if known[-1]["trade_date"] != sessions[-1][0]:
             raise ValueError(f"stale_daily_prices:latest={known[-1]['trade_date']}:expected={sessions[-1][0]}")
@@ -217,6 +234,15 @@ class LocalAnalysisData:
             raise ValueError(f"missing_analysis_generation:{theme}:{generation}")
         return path
 
+    @staticmethod
+    def _member_codes(path: Path) -> list[str]:
+        """Best-effort member codes of a theme that failed to load, so a preview of one of
+        its stocks reports the theme's error instead of "not in any theme"."""
+        try:
+            return sorted({code for code in map(ThemeUniverseLoader._stock_code, read_jsonl(path)) if code})
+        except (OSError, ValueError, TypeError, AttributeError):
+            return []
+
     def load_universe(self, as_of: datetime) -> tuple[list[dict], list[dict]]:
         if abs((datetime.now(UTC) - as_of).total_seconds()) > 60:
             raise ValueError("historical_replay_requires_versioned_price_and_universe_store")
@@ -229,21 +255,32 @@ class LocalAnalysisData:
         errors = []
         for path in paths:
             key = path.stem
-            generation = self._current_generation(key)
-            for target in read_jsonl(path):
-                code = ThemeUniverseLoader._stock_code(target)
-                name = ThemeUniverseLoader._stock_name(target)
-                if not code or len(code) != 6 or not code.isdigit() or not name:
-                    raise ValueError(f"invalid theme target:{path}")
+            # One theme's unpublished generation or malformed file must not stop every
+            # other theme; the failing theme is excluded and reported explicitly.
+            try:
+                generation = self._current_generation(key)
+                members = []
+                for target in read_jsonl(path):
+                    code = ThemeUniverseLoader._stock_code(target)
+                    name = ThemeUniverseLoader._stock_name(target)
+                    if not code or len(code) != 6 or not code.isdigit() or not name:
+                        raise ValueError(f"invalid theme target:{path}")
+                    members.append((code, name))
+                price_path = ((self._generation_dir(key, generation) if generation is not None
+                               else self.data_dir / "market_data" / key) / "chart.jsonl")
+                theme_prices = read_jsonl(price_path) if price_path.exists() else None
+            except (OSError, ValueError, TypeError) as exc:
+                errors.append({"theme_key": key, "stage": "theme_data", "error": str(exc),
+                               "stock_codes": self._member_codes(path)})
+                continue
+            for code, name in members:
                 stock = stocks.setdefault(code, {"stock_code": code, "stock_name": name, "theme_keys": [], "theme_generations": {}})
                 stock["theme_keys"].append(key)
                 stock["theme_generations"][key] = generation
-            price_path = ((self._generation_dir(key, generation) if generation is not None
-                           else self.data_dir / "market_data" / key) / "chart.jsonl")
-            if not price_path.exists():
+            if theme_prices is None:
                 errors.append({"theme_key": key, "stage": "price_data", "error": "missing_chart_file"})
                 continue
-            for row in read_jsonl(price_path):
+            for row in theme_prices:
                 code = ThemeUniverseLoader._stock_code(row)
                 if code:
                     price_rows.setdefault(code, []).append(row)
@@ -262,6 +299,8 @@ class LocalAnalysisData:
         errors = []
         if features["history_days"] < int(self.filters.get("min_history_days", 150)):
             errors.append("min_history_days")
+        if features["volume_ratio_20d"] <= 0:
+            errors.append("no_trade_latest_session")  # halted: no new entry, holdings still analyzed
         for setting, factor, minimum in (("min_avg_trading_value_20d", "avg_trading_value_20d", True),
                                         ("max_volatility_20d", "volatility_20d", False),
                                         ("max_return_5d", "return_5d", False),
@@ -292,6 +331,7 @@ class LocalAnalysisData:
         from src.runner.event_evidence import build_event_evidence, select_event_evidence
         from src.runner.financial_snapshot import load_financial_snapshot
         documents, errors = {}, []
+        invalid: dict[str, list[str]] = {}
         conflicting_fragments = False
         for theme in candidate["theme_keys"]:
             captured = candidate.get("theme_generations")
@@ -383,9 +423,14 @@ class LocalAnalysisData:
                         existing["_fragment_times"][index] = min(available.isoformat(),
                             existing["_fragment_times"].get(index, available.isoformat()))
                 except (ValueError, TypeError) as exc:
-                    errors.append(f"invalid_evidence:{meta.get('doc_id', 'unknown')}:{exc}")
+                    reason = re.sub(r"'[^']*'", "'…'", str(exc))[:120]
+                    invalid.setdefault(reason, []).append(str(meta.get("doc_id", "unknown")))
         if conflicting_fragments:
             raise ValueError("conflicting canonical chunks without a source version")
+        # One gap per reason: a corpus with many unusable rows (such as news with only a
+        # relative search date) must not flood the specialist and RiskManager prompts.
+        errors.extend(f"invalid_evidence:{reason}:count={len(ids)}:first={ids[0]}"
+                      for reason, ids in sorted(invalid.items()))
         for document in documents.values():
             full_body = document.pop("_full_body")
             fragments = document.pop("_fragments")
@@ -429,8 +474,11 @@ class LocalAnalysisData:
 
 class BackendAccountClient:
     def __init__(self, base_url: str | None = None, internal_token: str | None = None, timeout: int = 10):
-        self.base_url = (base_url or os.getenv("BACKEND_INTERNAL_BASE_URL") or os.environ["BACKEND_BASE_URL"]).rstrip("/")
-        self.token = internal_token if internal_token is not None else os.environ["HQA_INTERNAL_TOKEN"]
+        url = base_url or os.getenv("BACKEND_INTERNAL_BASE_URL") or os.getenv("BACKEND_BASE_URL")
+        if not url:
+            raise ValueError("BACKEND_INTERNAL_BASE_URL is required for account snapshots")
+        self.base_url = url.rstrip("/")
+        self.token = (internal_token if internal_token is not None else os.getenv("HQA_INTERNAL_TOKEN", "")).strip()
         if not self.token:
             raise ValueError("HQA_INTERNAL_TOKEN is required for account snapshots")
         self.timeout = timeout
@@ -444,7 +492,18 @@ class BackendAccountClient:
         for row in rows:
             if row.get("success") is not True:
                 raise ValueError(f"account_snapshot_failed:{row.get('userId')}:{row.get('error')}")
-            snapshot = AccountSnapshot.model_validate(row)
+            # A holding the pipeline cannot analyse (e.g. an alphanumeric KRX code) must not
+            # block the account's other plans; it is kept aside and reported, and the
+            # monitor still flags it as uncovered.
+            supported, unsupported = [], []
+            for holding in row.get("holdings") or []:
+                try:
+                    Holding.model_validate(holding)
+                    supported.append(holding)
+                except (ValueError, TypeError):
+                    unsupported.append({"stockCode": str(holding.get("stockCode")) if isinstance(holding, dict) else None,
+                                        "reason": "unsupported_holding"})
+            snapshot = AccountSnapshot.model_validate({**row, "holdings": supported, "unsupportedHoldings": unsupported})
             age = datetime.now(UTC) - snapshot.capturedAt
             if age.total_seconds() < -5 or age > timedelta(seconds=60):
                 raise ValueError(f"stale_account_snapshot:{snapshot.userId}")
@@ -456,25 +515,36 @@ class BackendAccountClient:
         return result
 
     def fetch_prices(self, user_id: str, stock_codes: list[str]) -> dict[str, dict]:
+        """Quotes by code; a code whose quote failed maps to {"error": reason} so one bad
+        quote does not fail the whole account review."""
+        # The backend fetches each uncached quote one KIS call per second.
+        timeout = max(self.timeout, 10 + 1.5 * len(stock_codes))
         response = requests.post(f"{self.base_url}/api/v1/internal/market/price-snapshots",
                                  json={"userId": user_id, "stockCodes": stock_codes},
-                                 headers={"X-HQA-Internal-Token": self.token}, timeout=self.timeout)
+                                 headers={"X-HQA-Internal-Token": self.token}, timeout=timeout)
         response.raise_for_status()
         result = {}
         for row in response.json()["snapshots"]:
+            code = row.get("stockCode")
+            if code in result:
+                raise ValueError("duplicate KIS quote in price snapshot response")
             value = row.get("currentPrice")
             if (row.get("success") is not True or isinstance(value, bool)
                     or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0):
-                raise ValueError(f"price_snapshot_failed:{row.get('stockCode')}:{row.get('failureReason')}")
-            if row.get("source") != "kis" or row["stockCode"] in result:
-                raise ValueError("invalid or duplicate KIS quote source")
+                result[code] = {"error": f"price_snapshot_failed:{code}:{row.get('failureReason')}"}
+                continue
+            if row.get("source") != "kis":
+                result[code] = {"error": f"unverified_quote_source:{code}"}
+                continue
             at = source_time(row["snapshotAt"])
             age = (datetime.now(UTC) - at).total_seconds()
             if not -5 <= age <= 60:
-                raise ValueError(f"stale_price_snapshot:{row['stockCode']}")
-            result[row["stockCode"]] = {"source_id": f"quote:{row['stockCode']}:{at.isoformat()}",
-                                        "current_price": row["currentPrice"], "available_at": at.isoformat(),
-                                        "source": row["source"]}
-        if set(result) != set(stock_codes):
-            raise ValueError("price snapshot response does not match requested stocks")
+                result[code] = {"error": f"stale_price_snapshot:{code}"}
+                continue
+            result[code] = {"source_id": f"quote:{code}:{at.isoformat()}", "current_price": row["currentPrice"],
+                            "available_at": at.isoformat(), "source": row["source"]}
+        if set(result) - set(stock_codes):
+            raise ValueError("price snapshot response contains unrequested stocks")
+        for code in stock_codes:
+            result.setdefault(code, {"error": f"price_snapshot_missing:{code}"})
         return result

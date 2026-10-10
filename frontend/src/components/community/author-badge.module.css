@@ -1,0 +1,4 @@
+.author { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 3px; max-width: 100%; vertical-align: middle; }
+.name { color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
+.rank { display: inline-block; font-size: .7rem; color: var(--moss); line-height: 1.5; white-space: nowrap; }
+.rank[data-board="STOCK"] { color: var(--spark); }

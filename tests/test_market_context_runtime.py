@@ -177,10 +177,12 @@ def test_unverified_mechanical_action_blocks_model_buy_even_outside_event_packet
     assert cycle["errors"] == []
     assert cycle["completed_stock_count"] == 1
     account = cycle["accounts"]["account-a"]
-    assert account["status"] == "failed" and account["plans"] == []
-    assert "unverified_corporate_action_price_basis" in account["error"]
-    analyst = next(payload for role, payload in calls if role == "analyst")
     risk = next(payload for role, payload in calls if role == "risk_manager")["candidates"][0]
+    # The blocked BUY is rejected on its own and reported; it no longer fails the account.
+    assert account["status"] == "completed" and account["plans"] == []
+    assert account["rejected_plans"] == [{"stock_code": risk["stock_code"], "action": "BUY",
+                                          "reason": "BUY blocked: unverified_corporate_action_price_basis"}]
+    analyst = next(payload for role, payload in calls if role == "analyst")
     assert "corporate:outside-event-packet" not in analyst["source_ids"]
     assert risk["price_safety"]["entry_block_reasons"] == ["unverified_corporate_action_price_basis"]
     assert "corporate:outside-event-packet" in risk["source_ids"]
@@ -396,3 +398,49 @@ def test_max_event_benchmark_prompts_fit_role_input_budget_offline(role, full_be
     assert estimated_tokens < limit, f"{role} offline estimate {estimated_tokens} exceeds {limit}"
     if role == "risk_manager":
         assert limit - estimated_tokens >= 5000
+
+
+def _designed_largest_account(full_benchmark_prompts):
+    from src.runner.shared_analysis import _payload_tokens
+
+    payload = json.loads(full_benchmark_prompts["risk_manager"][-1][1])
+    largest = max(payload["candidates"], key=lambda row: _payload_tokens({"candidates": [row]}))
+    return {**payload, "candidates": [{**largest, "stock_code": f"{index:06d}"} for index in range(15)]}
+
+
+def test_the_designed_largest_account_fits_the_risk_manager_budget_offline(full_benchmark_prompts):
+    """10 holdings (the monitored-symbol capacity) plus 5 new stocks, each row as large as the
+    maximum-event benchmark rows, must fit by the conservative offline estimate, so the
+    budget step never drops a stock from an account the design allows."""
+    from src.runner.shared_analysis import _payload_tokens
+
+    engine, _ = service(FullBenchmarkData(), ScopedAccounts())
+    assert _payload_tokens(_designed_largest_account(full_benchmark_prompts)) <= engine._risk_manager_budget()
+
+
+def test_the_offline_estimate_bounds_the_real_risk_manager_input(full_benchmark_prompts, monkeypatch):
+    """The budget step trusts the offline estimate; with the real o200k tokenizer it must not
+    undercount a RiskManager row, and the designed largest account must fit the role limit."""
+    from src.agents.llm_config import get_role_limits
+    from src.runner.analysis_contracts import AccountDecision
+    from src.runner.shared_analysis import PROMPT_SUFFIX, RISK_MANAGER_INSTRUCTIONS, estimate_tokens
+
+    tiktoken = pytest.importorskip("tiktoken")
+    import tiktoken.load
+
+    def unavailable_cache(_):
+        pytest.skip("Local tokenizer cache unavailable; this regression test never downloads tokenizers")
+
+    with monkeypatch.context() as local:
+        local.setattr(tiktoken.load, "read_file", unavailable_cache)
+        encoding = tiktoken.get_encoding("o200k_base")
+    designed = _designed_largest_account(full_benchmark_prompts)
+    for row in json.loads(full_benchmark_prompts["risk_manager"][-1][1])["candidates"]:
+        text = json.dumps(row, ensure_ascii=False)
+        assert estimate_tokens(text) >= len(encoding.encode(text))
+    messages = [("system", RISK_MANAGER_INSTRUCTIONS + PROMPT_SUFFIX), ("human", json.dumps(designed, ensure_ascii=False))]
+    wire = json.dumps({"messages": messages, "schema": AccountDecision.model_json_schema()}, ensure_ascii=False)
+    real = len(encoding.encode(wire))
+    limit = get_role_limits("risk_manager").input_tokens
+    assert real < limit, f"designed largest RiskManager input {real} exceeds {limit}"
+    assert estimate_tokens(wire) >= real

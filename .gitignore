@@ -46,6 +46,7 @@ corp_codes.csv
 
 # 9. 루트 package-lock.json (프론트엔드용은 frontend/에 있음)
 package-lock.json
+!/frontend/package-lock.json
 
 backend/target/
 backend/.m2/
@@ -56,3 +57,10 @@ logs/
 # Historical snapshots are curated in research/, not new output roots.
 /artifacts/
 /experiment_results/
+
+# 11. 로컬 포스터/논문 작업물 (docs/의 프로젝트 문서는 계속 추적)
+docs/cde_2026_*
+docs/paper_introduction.md
+docs/performance_charts.png
+docs/ppt_inspect_final.txt
+test_presentation.pptx

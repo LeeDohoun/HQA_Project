@@ -32,7 +32,7 @@ nonzero exit code and do not build or analyze that batch.
 | Financials | Fiscal-year lookback is independent of the incremental disclosure window. Keep CFS/OFS, original units, receipt and actual observation time. Select the latest known observation, including A -> B -> A reversions. |
 | News | Prefer actual publisher time. Relative search times remain estimates, never authoritative timestamps. Distinguish document, summary and available fragments. Require an explicit company-name/code mention before attaching a stock; unrelated results are quarantined. A mention is not proof that the company is the economic subject of every claim. |
 | Events | Merge only exact full-body syndication with compatible date/category/headline facts. Preserve corrections, withdrawals, opposing claims and different numbers. This is not general semantic clustering or consensus extraction. |
-| Stock OHLCV | Validate provider schema and numeric fields; retain actual collection time and content/observation versions; check calendar-session coverage before computing period factors. Do not fill missing prices or infer trading suspensions. |
+| Stock OHLCV | Validate provider schema and numeric fields; retain actual collection time and content/observation versions; check calendar-session coverage before computing period factors. Do not fill missing prices or infer trading suspensions. A session the provider reports as halted (0 open/high/low, the prior close, 0 volume) is kept as a flat no-trade bar; a stock with no trade on the latest session gets `no_trade_latest_session` and is not an entry candidate. |
 | Benchmarks | Keep the existing versioned index archive; choose a mapping valid for each event comparison window. A classification change inside the window prevents a spliced comparison. |
 | Forum | Optional, excluded from default collection and the current fixed analysis DAG. Use post URL identity rather than title/time collisions. |
 
@@ -72,7 +72,7 @@ With no explicit date options they enable shared incremental collection:
   after the build completes; an interrupted build cannot replace the last published
   generation. Financial observations remain a separately dated, as-of-filtered
   archive. Legacy RAG compatibility files are individually atomic, not one combined
-  cross-file transaction. Old generations are retained, not deleted automatically.
+  cross-file transaction. After each publish, generations other than the current one, the newest `HQA_GENERATION_KEEP` (default 8) and any replaced less than `HQA_GENERATION_MIN_AGE_HOURS` (default 24) ago are deleted, so an analysis keeps the generation it captured for at least that long; `HQA_GENERATION_KEEP=0` keeps everything. Empty values use the defaults, malformed values stop the build before it publishes, and a failed cleanup only logs a warning.
   Legacy RAG vector-store identities still collapse document revisions; the fixed
   DAG does not use those stores. Do not use that legacy retrieval path to evaluate
   correction-sensitive trading decisions without a separate migration.
@@ -81,9 +81,19 @@ The XKRX session dependency is pinned in `requirements.txt`; its coverage is not
 substitute for a live exchange calendar feed. See the source-backed special-session
 notes in `src/runner/trading_calendar.py`. Missing bars fail completeness checks,
 and absence of a corporate-action warning still does not certify adjusted prices.
-The current verified special-session coverage expires on **2026-11-01**. Dates
-from then onward, and unverified November sessions in 2021-2023, fail explicitly
-until official schedules are reviewed; no future CSAT close time is guessed.
+The calendar was last reviewed on 2026-09-27 and is valid through **2027-09-30**;
+later sessions fail with `calendar_review_expired` until the KRX rules are reviewed
+again. The September 2026 KRX after-market does not change regular close times,
+market value or index; its volume is added to daily statistics, which the collector
+reads only for past sessions. Known special days without a published KRX notice
+(currently the CSAT day 2026-11-19) and unverified November sessions in 2021-2023
+fail explicitly; no future CSAT close time is guessed. Exchange holidays announced after the pinned
+`exchange-calendars` release (2026-06-03 local elections and 2026-07-17 Constitution Day)
+are applied from `EXCHANGE_HOLIDAY_OVERRIDES` with their announcement sources; add new
+ad-hoc closures there, or upgrade the dependency and remove entries it already covers. When KRX publishes the notice,
+add it to `SPECIAL_CLOSES` with its source URLs. `calendar_review_warnings()` reports
+pending notices and the review expiry 21 days in advance; the AI `/health` response
+and the scheduler log carry these warnings.
 
 ## Offline Verification
 

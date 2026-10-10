@@ -35,8 +35,8 @@ export default function KisSettingsPage() {
           kisIsReal: current.kisIsReal
         }));
       })
-      .catch(() => {
-        // not configured yet — that's fine
+      .catch((cause) => {
+        if (active) setError(cause instanceof Error ? cause.message : "계좌 설정을 불러오지 못했습니다.");
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -148,14 +148,14 @@ export default function KisSettingsPage() {
             </div>
             <p className="field-hint">
               {form.kisIsReal
-                ? "⚠️ 실제 자금이 사용돼요. 발급받은 키가 실전용인지 확인해주세요."
+                ? "⚠️ 실계좌는 연결·잔고 조회만 지원해요. 자동매매와 주문은 모의투자 계좌에서만 동작해요."
                 : "안전한 모의투자로 먼저 테스트해볼 수 있어요."}
             </p>
           </div>
 
           <div className="field">
-            <label>App Key</label>
-            <input
+            <label htmlFor="kisAppKey">App Key</label>
+            <input id="kisAppKey"
               className="wiz-input"
               type="password"
               autoComplete="off"
@@ -167,8 +167,8 @@ export default function KisSettingsPage() {
           </div>
 
           <div className="field">
-            <label>App Secret</label>
-            <input
+            <label htmlFor="kisAppSecret">App Secret</label>
+            <input id="kisAppSecret"
               className="wiz-input"
               type="password"
               autoComplete="off"
@@ -180,8 +180,8 @@ export default function KisSettingsPage() {
           </div>
 
           <div className="field">
-            <label>계좌번호 (CANO)</label>
-            <input
+            <label htmlFor="kisAccountNo">계좌번호 (CANO)</label>
+            <input id="kisAccountNo"
               className="wiz-input"
               type="password"
               inputMode="numeric"
@@ -193,8 +193,8 @@ export default function KisSettingsPage() {
           </div>
 
           <div className="field">
-            <label>계좌상품코드 (ACNT_PRDT_CD)</label>
-            <input
+            <label htmlFor="kisAccountProductCode">계좌상품코드 (ACNT_PRDT_CD)</label>
+            <input id="kisAccountProductCode"
               className="wiz-input"
               type="text"
               inputMode="numeric"
@@ -205,8 +205,8 @@ export default function KisSettingsPage() {
             />
           </div>
 
-          {error ? <p className="error-text">{error}</p> : null}
-          {savedMessage ? <p className="meta">{savedMessage}</p> : null}
+          {error ? <p role="alert" className="error-text">{error}</p> : null}
+          {savedMessage ? <p role="status" className="meta">{savedMessage}</p> : null}
 
           <button type="submit" className="wiz-cta" disabled={!valid || saving}>
             {saving ? "KIS 연결 확인 중..." : "연결 확인하고 저장"}

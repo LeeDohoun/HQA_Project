@@ -174,7 +174,10 @@ class TemporalEvidence:
                 if include_undated:
                     out.append(row)
                 continue
-            if published_ymd > as_of_ymd:
+            # Decisions are made at the as-of close and most dates are day-precision
+            # (DART receipts, many filings after 15:30), so same-day documents are
+            # treated as not yet known; they become usable on the next day.
+            if published_ymd >= as_of_ymd:
                 continue
 
             days = lookbacks.get(source)

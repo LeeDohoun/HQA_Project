@@ -1,0 +1,119 @@
+.community {
+  color-scheme: dark;
+  --bg: var(--paper);
+  --bg-tint: var(--paper-2);
+  --surface: var(--card);
+  --surface-2: var(--paper-2);
+  --surface-hover: var(--paper-2);
+  --text: var(--ink);
+  --text-bright: var(--ink);
+  --muted: var(--ink-2);
+  --muted-2: var(--ink-2);
+  --line: var(--rule);
+  --line-2: var(--rule);
+  --accent: var(--moss);
+  --accent-hover: var(--moss-2);
+  --accent-soft: rgba(54, 176, 121, .12);
+  --accent-dim: rgba(54, 176, 121, .16);
+  --accent-border: rgba(54, 176, 121, .32);
+  --good: var(--moss);
+  --bad: var(--up);
+  --bad-dim: rgba(210, 85, 74, .12);
+  --warn: var(--spark);
+  --r-md: 5px;
+  --r-lg: 5px;
+  --shadow-xs: none;
+  --shadow-sm: none;
+}
+
+.community :global(.page-shell) {
+  width: 100%;
+  max-width: 1180px;
+  padding: clamp(24px, 4vw, 44px) clamp(18px, 4vw, 52px) 110px;
+}
+
+.community :global(.hero) { margin-bottom: 24px; padding-bottom: 20px; }
+.community :global(.hero h1) {
+  font-size: clamp(1.5rem, 3vw, 2.2rem);
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.community :global(.hero p) { color: var(--ink-2); line-height: 1.6; }
+.community :global(.card), .community :global(.empty-state) { box-shadow: none; }
+.community :global(.card) { overflow-wrap: anywhere; }
+
+.community :global(.button),
+.community :global(.button-secondary),
+.community :global(.button-ghost),
+.community :global(.button-danger) {
+  min-height: 40px;
+  padding: 9px 14px;
+  font-family: var(--sans);
+  font-size: .86rem;
+  font-weight: 800;
+  border-radius: 5px;
+  box-shadow: none;
+}
+.community :global(.button) { color: #0b2417; }
+.community :global(.button:hover:not(:disabled)) {
+  background: var(--moss-2);
+  border-color: var(--moss-2);
+  box-shadow: none;
+  transform: none;
+}
+.community :global(.button-secondary), .community :global(.button-ghost) {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--rule);
+}
+.community :global(.button-secondary:hover:not(:disabled)),
+.community :global(.button-ghost:hover:not(:disabled)) {
+  background: transparent;
+  border-color: var(--ink-2);
+}
+.community :global(:is(.button, .button-secondary, .button-ghost, .button-danger):disabled) {
+  opacity: .4;
+  cursor: not-allowed;
+}
+.community :global(:is(a, button):focus-visible) {
+  outline: 2px solid var(--moss);
+  outline-offset: 3px;
+}
+
+.community :global(input:not([type="checkbox"]):not([type="radio"])),
+.community :global(select), .community :global(textarea) {
+  width: 100%;
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  padding: 11px 13px;
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: .95rem;
+  outline: none;
+  transition: border-color .14s;
+}
+.community :global(textarea) { resize: vertical; line-height: 1.7; }
+.community :global(input::placeholder), .community :global(textarea::placeholder) { color: var(--ink-2); }
+.community :global(input:not([type="checkbox"]):not([type="radio"]):focus),
+.community :global(select:focus), .community :global(textarea:focus) { border-color: var(--moss); }
+.community :global(input[type="checkbox"]) { accent-color: var(--moss); }
+
+.community :global(.backtest-table) { min-width: 680px; }
+.community :global(.backtest-table th) { color: var(--ink-2); font-weight: 700; }
+.community :global(.backtest-table td) { color: var(--ink-2); vertical-align: middle; }
+.community :global(.backtest-table td:first-child a) { color: var(--ink); font-weight: 700; }
+.community :global(.backtest-table td a:hover) { color: var(--moss); }
+.community :global(.backtest-table tbody tr:hover) { background: var(--paper-2); }
+.community :global(.community-status) {
+  margin: 0;
+  white-space: nowrap;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: .75rem;
+  font-weight: 700;
+  color: var(--spark);
+  background: rgba(224, 163, 65, .12);
+}
+.community :global(.community-status[data-status="RESOLVED"]) { color: var(--moss); background: var(--accent-soft); }
+.community :global(.community-status[data-status="REJECTED"]) { color: var(--bad); background: var(--bad-dim); }

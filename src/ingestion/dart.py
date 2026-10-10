@@ -16,7 +16,7 @@ try:
 except ImportError:
     BeautifulSoup = None
 
-from .base import BaseCollector
+from .base import BaseCollector, http_status_suffix
 from .dart_api import DartAPIError, read_dart_payload
 from .types import DocumentRecord
 
@@ -242,8 +242,8 @@ class DartDisclosureCollector(BaseCollector):
                             "page_no": page_no, "last_reprt_at": "N", "sort": "date", "sort_mth": "asc"},
                     timeout=self.timeout, log_prefix=f"DART:{corp_code}",
                 )
-            except Exception:
-                raise DartAPIError(f"DART list transport failure page={page_no}") from None
+            except Exception as exc:
+                raise DartAPIError(f"DART list transport failure page={page_no}{http_status_suffix(exc)}") from None
             payload = read_dart_payload(response)
             if payload["status"] == "013":
                 if page_no != 1:

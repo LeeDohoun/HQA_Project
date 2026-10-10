@@ -9,13 +9,13 @@ import com.hqa.backend.entity.User;
 import com.hqa.backend.repository.TradeSignalExecutionRepository;
 import com.hqa.backend.repository.TradeSignalRepository;
 import java.time.Clock;
-import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,6 +31,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class PaperTradeLifecycle {
     private static final Logger log = LoggerFactory.getLogger(PaperTradeLifecycle.class);
+    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
     private final TradeSignalRepository signals;
     private final TradeSignalExecutionRepository executions;
     private final PaperAccountSnapshotService accounts;
@@ -38,15 +39,24 @@ public class PaperTradeLifecycle {
     private final KisClient kis;
     private final ObjectMapper mapper;
     private final Clock clock;
+    private final KrxSessionCalendar sessions;
 
     @Autowired
     public PaperTradeLifecycle(TradeSignalRepository signals, TradeSignalExecutionRepository executions,
-            PaperAccountSnapshotService accounts, PaperTradeStore store, KisClient kis, ObjectMapper mapper) {
-        this(signals, executions, accounts, store, kis, mapper, Clock.system(ZoneId.of("Asia/Seoul")));
+            PaperAccountSnapshotService accounts, PaperTradeStore store, KisClient kis, ObjectMapper mapper,
+            KrxSessionCalendar sessions) {
+        this(signals, executions, accounts, store, kis, mapper, Clock.system(ZoneId.of("Asia/Seoul")), sessions);
     }
 
     public PaperTradeLifecycle(TradeSignalRepository signals, TradeSignalExecutionRepository executions,
             PaperAccountSnapshotService accounts, PaperTradeStore store, KisClient kis, ObjectMapper mapper, Clock clock) {
+        this(signals, executions, accounts, store, kis, mapper, clock, KrxSessionCalendar.regular());
+    }
+
+    public PaperTradeLifecycle(TradeSignalRepository signals, TradeSignalExecutionRepository executions,
+            PaperAccountSnapshotService accounts, PaperTradeStore store, KisClient kis, ObjectMapper mapper, Clock clock,
+            KrxSessionCalendar sessions) {
+        this.sessions = sessions;
         this.signals = signals;
         this.executions = executions;
         this.accounts = accounts;
@@ -76,8 +86,12 @@ public class PaperTradeLifecycle {
             User user = accounts.paperUser(signal.getUserId());
             if (!"PAPER".equals(signal.getAccountMode())) throw new IllegalStateException("PAPER_ACCOUNT_REQUIRED");
             if (!accounts.binding(user).equals(signal.getAccountBinding())) throw new IllegalStateException("ACCOUNT_BINDING_CHANGED");
-            if (!user.isAutoTradeEnabled()) throw new IllegalStateException("AUTO_TRADE_DISABLED");
             TradeConditions.TriggerType type = TradeConditions.TriggerType.valueOf(String.valueOf(request.get("triggerType")));
+            // Auto-trade is the entry switch (as in the account snapshot's entryEligible); turning it
+            // off must not leave open positions without their stops and exits.
+            if (type == TradeConditions.TriggerType.ENTRY && !user.isAutoTradeEnabled()) {
+                throw new IllegalStateException("AUTO_TRADE_DISABLED");
+            }
             Map<String, Object> payload = payload(signal);
             int version = request.get("planVersion") instanceof Number n ? integer(n) : -1;
             if (!TradeConditions.isV2(payload) && version < 0) version = signal.getPlanVersion();
@@ -100,7 +114,8 @@ public class PaperTradeLifecycle {
             snapshot.put("holding_quantity", holding == null ? 0L : holding.get("quantity"));
             double averagePrice = holding == null ? 0 : TradeConditions.number(holding.get("avgPrice"));
             snapshot.put("pnl_rate", averagePrice > 0 ? (price / averagePrice - 1) * 100 : null);
-            snapshot.put("market_time", now().toLocalTime().toString());
+            // Whole seconds, like the monitor's snapshot, so "==" and "<=" boundaries agree.
+            snapshot.put("market_time", now().toLocalTime().truncatedTo(java.time.temporal.ChronoUnit.SECONDS).toString());
             if (!scheduledExit && !TradeConditions.matches(group, snapshot)) throw new IllegalStateException("CONDITION_NO_LONGER_MATCHES");
             if (type == TradeConditions.TriggerType.ENTRY && TradeConditions.groups(payload, TradeConditions.TriggerType.INVALIDATION)
                     .stream().anyMatch(invalidation -> TradeConditions.matches(invalidation, snapshot))) {
@@ -114,7 +129,17 @@ public class PaperTradeLifecycle {
                 return signals.findById(signalId);
             }
             if (!pending.isEmpty()) {
-                if (type != TradeConditions.TriggerType.ENTRY) reconcileAccount(user.getUserId(), signalId);
+                // A protective trigger cancels a still-working entry BUY. A working SELL is kept when it
+                // is this same trigger (the monitor re-sends a condition that stays true every poll, and
+                // cancelling it would leave the position unprotected between polls) or when this trigger
+                // is only a reduction. Otherwise it is cancelled so this exit can follow: a partial
+                // reduction, or another group's limit order the falling price has left, must not hold
+                // back a full stop until it expires.
+                String base = signalId + ":" + version + ":" + type.name() + ":" + groupId + ":";
+                boolean keepWorkingSell = pending.stream().anyMatch(item -> "SELL".equals(item.getOrderSide())
+                        && (type == TradeConditions.TriggerType.REDUCE
+                            || (item.getTriggerKey() != null && item.getTriggerKey().startsWith(base))));
+                if (type != TradeConditions.TriggerType.ENTRY) reconcileAccount(user.getUserId(), keepWorkingSell ? null : signalId);
                 throw new IllegalStateException("ORDER_RECONCILIATION_REQUIRED");
             }
             long powerCash = 0;
@@ -159,9 +184,13 @@ public class PaperTradeLifecycle {
                 .contains(reason == null ? "" : reason);
         boolean invalidated = "INVALIDATION".equals(request.get("triggerType")) && "EXPIRED".equals(signal.getStatus())
                 && "ENTRY_EXPIRED_OR_INVALIDATED".equals(reason);
+        // A trigger whose order is still being worked or reconciled is reported as accepted. One
+        // already consumed is refused, even when its order filled, so the monitor stops sending it
+        // and moves on to the plan's next group: a filled first take-profit tier must not hold
+        // back the second.
         boolean accepted = invalidated || (execution != null
                 && Set.of("ORDER_SUBMITTED", "PARTIALLY_FILLED", "FILLED").contains(status)
-                && (reason == null || deduplicated));
+                && (reason == null || "ORDER_RECONCILIATION_REQUIRED".equals(reason)));
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("signalId", signalId);
         result.put("status", signal.getStatus());
@@ -176,8 +205,20 @@ public class PaperTradeLifecycle {
         if (page < 0 || size < 1 || size > 500) throw new IllegalArgumentException("Invalid active signal page");
         var result = signals.findByStatusIn(PaperTradeStore.ACTIVE,
                 PageRequest.of(page, size, Sort.by("createdAt").ascending().and(Sort.by("id").ascending())));
+        // A plan's unresolved orders hold back every trigger until they are reconciled; an
+        // UNKNOWN order (no broker ID) needs an operator, so the monitor reports it.
+        Map<String, List<Map<String, Object>>> unresolved = new HashMap<>();
+        for (TradeSignalExecution execution : executions.findByStatusInOrderBySubmittedAtAsc(PaperTradeStore.UNRESOLVED)) {
+            Map<String, Object> order = new LinkedHashMap<>();
+            order.put("status", execution.getStatus());
+            order.put("orderSide", execution.getOrderSide());
+            order.put("brokerOrderKnown", execution.getOrderId() != null && !execution.getOrderId().isBlank());
+            order.put("submittedAt", execution.getSubmittedAt());
+            unresolved.computeIfAbsent(execution.getSignalId(), ignored -> new ArrayList<>()).add(order);
+        }
         Map<String, Object> response = new LinkedHashMap<>();
-        response.put("signals", result.getContent().stream().map(this::monitorRow).toList());
+        response.put("signals", result.getContent().stream()
+                .map(signal -> monitorRow(signal, unresolved.getOrDefault(signal.getId(), List.of()))).toList());
         response.put("hasMore", result.hasNext());
         response.put("nextPage", result.hasNext() ? page + 1 : null);
         return response;
@@ -200,6 +241,95 @@ public class PaperTradeLifecycle {
             if ("WAITING_ENTRY".equals(signal.getStatus()) && signal.getEntryValidUntil() != null
                     && !signal.getEntryValidUntil().isAfter(now())) store.expireEntry(signal.getId(), signal.getPlanVersion(), false, now());
         }
+    }
+
+    /** UNKNOWN orders (no broker ID) with what an operator needs to find them in the broker's order history. */
+    public List<Map<String, Object>> ordersAwaitingOperator() {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (TradeSignalExecution execution : executions.findByStatusInOrderBySubmittedAtAsc(List.of("UNKNOWN"))) {
+            if (execution.getOrderId() != null && !execution.getOrderId().isBlank()) continue;
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("executionId", execution.getId());
+            row.put("signalId", execution.getSignalId());
+            row.put("userId", execution.getUserId());
+            row.put("stockCode", execution.getStockCode());
+            row.put("triggerType", execution.getTriggerType());
+            row.put("orderSide", execution.getOrderSide());
+            row.put("quantity", execution.getSubmittedQuantity());
+            row.put("orderPrice", execution.getOrderPrice());
+            row.put("submittedAt", execution.getSubmittedAt());
+            row.put("rejectReason", execution.getRejectReason());
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    /**
+     * Records an operator's finding for an UNKNOWN order, checked against the broker's own order
+     * history for the submission date. brokerOrderId adopts that order if it has the same stock,
+     * side and quantity, and reconciliation then resumes. notSubmitted is refused while the broker
+     * lists an order from that time on that could be this submission and is tied to no other one,
+     * so a real order is never treated as unsent (and later sent again).
+     */
+    public Map<String, Object> resolveUnknownOrder(String executionId, String brokerOrderId, boolean notSubmitted, String note) {
+        if (note == null || note.isBlank() || note.length() > 500) {
+            throw new IllegalArgumentException("A note of at most 500 characters is required");
+        }
+        boolean adopt = brokerOrderId != null && !brokerOrderId.isBlank();
+        if (adopt == notSubmitted) throw new IllegalArgumentException("Give either brokerOrderId or notSubmitted");
+        if (adopt && !brokerOrderId.matches("[0-9]{1,20}")) throw new IllegalArgumentException("Invalid broker order ID");
+        TradeSignalExecution execution = executions.findById(executionId)
+                .orElseThrow(() -> new IllegalArgumentException("EXECUTION_NOT_FOUND"));
+        PaperTradeStore.requireAwaitingOperator(execution);
+        User user = accounts.paperUser(execution.getUserId());
+        if (!accounts.binding(user).equals(execution.getAccountBinding())) throw new IllegalStateException("ACCOUNT_BINDING_CHANGED");
+        var submitted = execution.getSubmittedAt().atZoneSameInstant(KST);
+        LocalDate day = submitted.toLocalDate();
+        String side = "BUY".equals(execution.getOrderSide()) ? "02" : "01";
+        List<Map<String, Object>> sameOrder = kis.paperOrders(user.getUserId(), user.getSecret(), token(user), day, day).stream()
+                .filter(row -> day.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE).equals(String.valueOf(row.get("ord_dt")))
+                        && execution.getStockCode().equals(String.valueOf(row.get("pdno")))
+                        && side.equals(String.valueOf(row.get("sll_buy_dvsn_cd")))
+                        && integer(row.get("ord_qty")) == execution.getSubmittedQuantity())
+                .toList();
+        if (adopt) {
+            List<Map<String, Object>> match = sameOrder.stream().filter(row -> sameOrderNumber(brokerOrderId, row.get("odno"))).toList();
+            if (match.size() != 1) throw new IllegalStateException("BROKER_ORDER_NOT_FOUND_FOR_THIS_SUBMISSION");
+            String orderId = String.valueOf(match.get(0).get("odno"));
+            if (associated(execution, orderId, day)) throw new IllegalStateException("BROKER_ORDER_ALREADY_ASSOCIATED");
+            store.adoptBrokerOrder(executionId, orderId, String.valueOf(match.get(0).get("ord_gno_brno")), note.trim(), now());
+        } else {
+            LocalTime from = submitted.toLocalTime().minusMinutes(1);
+            List<String> possible = sameOrder.stream()
+                    .filter(row -> { LocalTime at = orderTime(row.get("ord_tmd")); return at == null || !at.isBefore(from); })
+                    .map(row -> String.valueOf(row.get("odno")))
+                    .filter(orderId -> !associated(execution, orderId, day)).toList();
+            if (!possible.isEmpty()) throw new IllegalStateException("BROKER_LISTS_POSSIBLE_ORDER:" + String.join(",", possible));
+            store.confirmNotSubmitted(executionId, note.trim(), now());
+        }
+        TradeSignalExecution updated = executions.findById(executionId).orElseThrow();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("executionId", executionId);
+        result.put("signalId", updated.getSignalId());
+        result.put("status", updated.getStatus());
+        result.put("orderId", updated.getOrderId());
+        return result;
+    }
+
+    private boolean associated(TradeSignalExecution execution, String orderId, LocalDate day) {
+        return executions.findByUserIdAndOrderId(execution.getUserId(), orderId).stream()
+                .anyMatch(other -> !other.getId().equals(execution.getId())
+                        && other.getSubmittedAt().atZoneSameInstant(KST).toLocalDate().equals(day));
+    }
+
+    private static boolean sameOrderNumber(String typed, Object listed) {
+        try { return new java.math.BigInteger(typed).equals(new java.math.BigInteger(String.valueOf(listed).trim())); }
+        catch (NumberFormatException ex) { return false; }
+    }
+
+    private static LocalTime orderTime(Object raw) {
+        try { return LocalTime.parse(String.valueOf(raw), java.time.format.DateTimeFormatter.ofPattern("HHmmss")); }
+        catch (java.time.format.DateTimeParseException ex) { return null; }
     }
 
     public void reconcilePendingOrders() {
@@ -267,7 +397,7 @@ public class PaperTradeLifecycle {
         }
     }
 
-    private Map<String, Object> monitorRow(TradeSignal signal) {
+    private Map<String, Object> monitorRow(TradeSignal signal, List<Map<String, Object>> unresolvedOrders) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("signalId", signal.getId());
         row.put("userId", signal.getUserId());
@@ -282,8 +412,19 @@ public class PaperTradeLifecycle {
         row.put("entryValidUntil", signal.getEntryValidUntil());
         row.put("plannedExitAt", signal.getPlannedExitAt());
         row.put("managedQuantity", signal.getManagedQuantity());
-        row.put("conditionPayload", payload(signal));
-        row.put("rejectReason", signal.getRejectReason());
+        // One unreadable stored plan (legacy NULL or malformed conditions) must not fail the page
+        // for every account; it is listed without conditions so the monitor reports it uncovered.
+        Map<String, Object> conditions;
+        String reason = signal.getRejectReason();
+        try {
+            conditions = payload(signal);
+        } catch (IllegalArgumentException ex) {
+            conditions = null;
+            reason = "INVALID_STORED_CONDITIONS";
+        }
+        row.put("conditionPayload", conditions);
+        row.put("rejectReason", reason);
+        row.put("unresolvedOrders", unresolvedOrders);
         return row;
     }
     private Map<String, Object> account(String userId) {
@@ -305,9 +446,7 @@ public class PaperTradeLifecycle {
     }
     private OffsetDateTime now() { return OffsetDateTime.now(clock); }
     private boolean marketOpen() {
-        var now = now();
-        return now.getDayOfWeek() != DayOfWeek.SATURDAY && now.getDayOfWeek() != DayOfWeek.SUNDAY
-                && !now.toLocalTime().isBefore(LocalTime.of(9, 0)) && now.toLocalTime().isBefore(LocalTime.of(15, 30));
+        return sessions.isOpen(now());
     }
     private static double decimal(Object raw) {
         if (raw == null) throw new IllegalStateException("BROKER_NUMBER_MISSING");

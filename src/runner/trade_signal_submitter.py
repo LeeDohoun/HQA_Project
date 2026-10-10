@@ -4,6 +4,8 @@ import json
 import hashlib
 import logging
 import os
+import socket
+import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -11,6 +13,8 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 KST = timezone(timedelta(hours=9))
+# A plan POST makes a fresh paced KIS balance call on the backend.
+SUBMIT_TIMEOUT_SECONDS = 30
 
 
 def build_trade_signal_payloads(
@@ -21,12 +25,13 @@ def build_trade_signal_payloads(
     now: Optional[datetime] = None,
     ttl_minutes: int = 15,
     active_plans: Optional[List[Dict[str, Any]]] = None,
+    skipped: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     if not user_id:
         return []
 
     if result.get("schema_version") == 2:
-        return _build_v2_payloads(user_id, result, source, now or datetime.now(KST), active_plans or [])
+        return _build_v2_payloads(user_id, result, source, now or datetime.now(KST), active_plans or [], skipped)
 
     base_time = now or datetime.now(KST)
     expires_at = base_time + timedelta(minutes=max(1, int(ttl_minutes)))
@@ -85,12 +90,32 @@ def build_trade_signal_payloads(
     return payloads
 
 
+def _hard_stop(conditions: Dict[str, Any]) -> Optional[float]:
+    """The backend's hard stop: the highest single-predicate current_price <= group."""
+    stops = [atom["value"] for name in ("exit_conditions", "invalidation_conditions")
+             for group in conditions.get(name) or [] if isinstance(group, dict) and len(group.get("all") or []) == 1
+             for atom in group["all"] if atom.get("field") == "current_price" and atom.get("operator") == "<="
+             and isinstance(atom.get("value"), (int, float)) and not isinstance(atom.get("value"), bool)]
+    return max(stops) if stops else None
+
+
+def _free_id(conditions: Dict[str, Any], base: str) -> str:
+    used = {group.get("id") for name in ("entry_conditions", "exit_conditions", "reduce_conditions",
+                                         "invalidation_conditions") for group in conditions.get(name) or []}
+    candidate, index = base, 1
+    while candidate in used:
+        index += 1
+        candidate = f"{base}-{index}"
+    return candidate
+
+
 def _build_v2_payloads(
     user_id: str,
     result: Dict[str, Any],
     source: str,
     now: datetime,
     active_plans: List[Dict[str, Any]],
+    skipped: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     from src.runner.analysis_contracts import TradingPlan
 
@@ -115,13 +140,18 @@ def _build_v2_payloads(
     active = {str(row["stockCode"]): row for row in active_plans if str(row["userId"]) == user_id}
     ranked = {str(row["stock_code"]): row for row in result.get("global_ranked_leaders", [])}
     payloads = []
+    skipped = [] if skipped is None else skipped
     for plan in plans:
         if plan.action == "HOLD" and plan.holding_quantity == 0:
             continue
+        # One unusable plan is skipped and reported; it must not stop the account's other
+        # plans, above all the protection updates for its holdings.
         if plan.entry_valid_until > as_of + timedelta(minutes=15):
-            raise ValueError("Entry expiry must be within 15 minutes of the analysis snapshot")
+            skipped.append(f"{plan.stock_code}:entry_validity_beyond_15_minutes")
+            continue
         if plan.action == "BUY" and plan.holding_quantity == 0 and plan.entry_valid_until <= now:
-            raise ValueError("Cannot publish an expired entry plan")
+            skipped.append(f"{plan.stock_code}:entry_plan_expired")
+            continue
         previous = active.get(plan.stock_code)
         version = int(previous["planVersion"]) + 1 if previous else 1
         key = hashlib.sha256(json.dumps([user_id, analysis_id, plan.stock_code, strategy],
@@ -129,17 +159,36 @@ def _build_v2_payloads(
         row = ranked.get(plan.stock_code, {})
         action = "HOLD" if plan.action == "BUY" and plan.holding_quantity else plan.action
         data = plan.model_dump(mode="json")
+        conditions = plan.condition_payload.model_dump(mode="json")
+        if plan.holding_quantity and previous:
+            # The backend refuses to lower or drop an open position's hard stop; keep the
+            # current floor instead of losing every other update in this plan.
+            prior = _hard_stop(previous.get("conditionPayload") or {})
+            current = _hard_stop(conditions)
+            if prior is not None and (current is None or current < prior):
+                conditions["exit_conditions"].append({"id": _free_id(conditions, "carried-stop"), "all": [
+                    {"field": "current_price", "operator": "<=", "value": prior}]})
+        if action == "SELL":
+            # A SELL decision is an exit at the monitor's next poll, not a plan waiting for a trigger.
+            conditions["exit_conditions"].append({"id": _free_id(conditions, "sell-now"), "all": [
+                {"field": "holding_quantity", "operator": ">", "value": 0.0}]})
+        signal_price = int(round(plan.entry_price)) if plan.entry_price is not None else None
+        if action == "BUY" and (signal_price is None or plan.stop_loss_price >= signal_price):
+            skipped.append(f"{plan.stock_code}:stop_not_below_whole_won_entry")
+            continue
+        score = row.get("leader_score")
+        leader_score = int(round(score)) if isinstance(score, (int, float)) and not isinstance(score, bool) else None
         payloads.append({
             "userId": user_id, "source": source, "strategyProfile": strategy,
             "analysisId": analysis_id, "analysisAsOf": as_of.isoformat(), "accountMode": "PAPER", "planVersion": version,
             "stockCode": plan.stock_code, "stockName": plan.stock_name,
-            "action": action, "leaderScore": row.get("leader_score"),
+            "action": action, "leaderScore": leader_score,
             "confidence": plan.confidence, "riskLevel": plan.risk_level,
             "targetPositionPct": plan.position_size_pct, "positionSize": f"{plan.position_size_pct:g}%",
-            "signalPrice": plan.entry_price, "stopLoss": str(plan.stop_loss_price) if plan.stop_loss_price is not None else None,
+            "signalPrice": signal_price, "stopLoss": str(plan.stop_loss_price) if plan.stop_loss_price is not None else None,
             "reason": plan.reasoning, "entryValidUntil": plan.entry_valid_until.isoformat(),
             "expiresAt": plan.entry_valid_until.isoformat(), "plannedExitAt": plan.planned_exit_at.isoformat(),
-            "tradePlanJson": data, "conditionPayload": plan.condition_payload.model_dump(mode="json"),
+            "tradePlanJson": data, "conditionPayload": conditions,
             "idempotencyKey": key,
             "rawPayload": {"analysis_id": analysis_id, "as_of": as_of.isoformat(), "plan": data},
         })
@@ -166,7 +215,7 @@ def submit_trade_signals(
     internal_token: Optional[str] = None,
     ttl_minutes: int = 15,
 ) -> Dict[str, Any]:
-    url = backend_signal_url or os.getenv("BACKEND_SIGNAL_URL", "").strip()
+    url = (backend_signal_url or os.getenv("BACKEND_SIGNAL_URL", "")).strip().rstrip("/")
     token = internal_token if internal_token is not None else os.getenv("HQA_INTERNAL_TOKEN", "").strip()
     if result.get("schema_version") == 2 and not url:
         raise ValueError("BACKEND_SIGNAL_URL is required to publish v2 trading plans")
@@ -178,9 +227,11 @@ def submit_trade_signals(
         if not url.endswith(suffix):
             raise ValueError("BACKEND_SIGNAL_URL must point to the internal trading signals endpoint")
         active_plans = BackendSignalClient(base_url=url[:-len(suffix)], internal_token=token).fetch_active_signals()
-    payloads = build_trade_signal_payloads(user_id=user_id, result=result, ttl_minutes=ttl_minutes, active_plans=active_plans)
+    skipped: List[str] = []
+    payloads = build_trade_signal_payloads(user_id=user_id, result=result, ttl_minutes=ttl_minutes,
+                                           active_plans=active_plans, skipped=skipped)
     if not url or not payloads:
-        return {"submitted": 0, "skipped": len(payloads), "enabled": bool(url)}
+        return {"submitted": 0, "skipped": len(payloads), "enabled": bool(url), "skipped_plans": skipped}
 
     submitted = 0
     failures: List[str] = []
@@ -189,15 +240,30 @@ def submit_trade_signals(
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         if token:
             headers["X-HQA-Internal-Token"] = token
-        request = urllib.request.Request(url, data=body, headers=headers, method="POST")
-        try:
-            with urllib.request.urlopen(request, timeout=10) as response:
-                if 200 <= int(response.status) < 300:
-                    submitted += 1
-                else:
-                    failures.append(f"{payload.get('stockCode')}:HTTP_{response.status}")
-        except Exception as exc:
-            logger.warning("trade signal submit failed: %s", exc)
-            failures.append(f"{payload.get('stockCode')}:{type(exc).__name__}")
+        code = payload.get("stockCode")
+        # The backend paces every KIS call at 1/s, so a slow answer is not a refusal. The
+        # idempotency key makes a single retry safe: a committed first attempt is replayed.
+        for attempt in (1, 2):
+            request = urllib.request.Request(url, data=body, headers=headers, method="POST")
+            try:
+                with urllib.request.urlopen(request, timeout=SUBMIT_TIMEOUT_SECONDS) as response:
+                    if 200 <= int(response.status) < 300:
+                        submitted += 1
+                    else:
+                        failures.append(f"{code}:HTTP_{response.status}")
+                break
+            except urllib.error.HTTPError as exc:
+                reason = exc.read(300).decode("utf-8", "replace") if exc.fp is not None else ""
+                failures.append(f"{code}:HTTP_{exc.code}:{reason}".rstrip(":"))
+                break
+            except (TimeoutError, socket.timeout, urllib.error.URLError) as exc:
+                if attempt == 2:
+                    logger.warning("trade signal submit failed twice: %s", exc)
+                    failures.append(f"{code}:{type(exc).__name__}:outcome_unknown_after_retry")
+            except Exception as exc:
+                logger.warning("trade signal submit failed: %s", exc)
+                failures.append(f"{code}:{type(exc).__name__}")
+                break
 
-    return {"submitted": submitted, "failed": len(failures), "failures": failures, "enabled": True}
+    return {"submitted": submitted, "failed": len(failures), "failures": failures, "enabled": True,
+            "skipped_plans": skipped}

@@ -145,3 +145,52 @@ def test_missing_key_fails_when_collection_is_requested(monkeypatch):
     collector = KrxChartCollector(session=Session())
     with pytest.raises(ValueError, match="required"):
         collector.collect_daily("Stock", "005930", "20260904", "20260904")
+
+
+def test_krx_rate_limit_keeps_only_the_numeric_http_status(monkeypatch):
+    import requests
+    from types import SimpleNamespace
+    from src.ingestion.krx_chart import KrxChartCollector
+
+    monkeypatch.setenv("KRX_OPEN_API_KEY", "secret-key-value")
+    collector = KrxChartCollector()
+    collector.session = SimpleNamespace(get=lambda *a, **k: SimpleNamespace(status_code=429, text="quota secret-key-value"))
+    with pytest.raises(requests.RequestException) as error:
+        collector._fetch_market_rows(KrxChartCollector.KOSPI_DAILY_URL, "20260925")
+    assert str(error.value) == "KRX chart request failed (HTTPError) status=429"
+    assert "secret" not in str(error.value)
+
+
+def test_previous_session_is_not_requested_before_the_0800_publication(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from src.ingestion import krx_chart
+
+    monkeypatch.setenv("KRX_OPEN_API_KEY", "key")
+    kst = timezone(timedelta(hours=9))
+    monkeypatch.setattr(krx_chart, "_now", lambda: datetime(2026, 9, 29, 7, 30, tzinfo=kst))
+    collector = krx_chart.KrxChartCollector()
+    with pytest.raises(ValueError, match="published at 08:00 KST"):
+        collector.collect_daily("삼성전자", "005930", "20260925", "20260928")
+    collector.session = type("S", (), {"get": lambda *a, **k: pytest.fail("older sessions need no request here")})()
+    assert collector.collect_daily("삼성전자", "005930", "20260926", "20260927") == []  # weekend only
+
+
+@pytest.mark.parametrize("now,window,collected", [
+    # Monday before 08:00: Friday's session was published on Saturday.
+    (datetime(2026, 9, 21, 7, 30, tzinfo=timezone(timedelta(hours=9))), ("20260918", "20260920"), ["20260918"]),
+    # Saturday after the 2026-07-17 KRX holiday: Thursday was published on Friday.
+    (datetime(2026, 7, 18, 7, 30, tzinfo=timezone(timedelta(hours=9))), ("20260716", "20260717"), ["20260716"]),
+])
+def test_0800_gate_opens_when_yesterday_had_no_session(monkeypatch, now, window, collected):
+    monkeypatch.setattr(krx_chart, "_now", lambda: now)
+    rows = [Response({"OutBlock_1": [stock_row(BAS_DD=day)]}) for day in collected]
+    holiday = Response({"OutBlock_1": []})
+    responses = []
+    cursor = datetime.strptime(window[0], "%Y%m%d")
+    while cursor <= datetime.strptime(window[1], "%Y%m%d"):
+        if cursor.weekday() < 5:  # the collector asks KOSPI then KOSDAQ when KOSPI lacks the stock
+            responses += [rows.pop(0)] if cursor.strftime("%Y%m%d") in collected else [holiday, holiday]
+        cursor += timedelta(days=1)
+    collector = KrxChartCollector("key", Session(*responses))
+    records = collector.collect_daily("삼성전자", "005930", *window)
+    assert [record.metadata["trade_date"].replace("-", "") for record in records] == collected

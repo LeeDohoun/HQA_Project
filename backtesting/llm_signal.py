@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import signal
+import threading
+import time
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
@@ -18,11 +23,33 @@ from src.config.settings import get_data_dir
 logger = logging.getLogger(__name__)
 
 
-PROMPT_VERSION = "temporal_theme_leader_llm_v2"
-MULTI_AGENT_PROMPT_VERSION = "temporal_theme_leader_multi_agent_v3"
+# v3/v4: evidence is limited to documents published before the as-of day, so scores
+# cached with same-day context (v2/v3) are not reused unless explicitly requested.
+PROMPT_VERSION = "temporal_theme_leader_llm_v3_prior_day_evidence"
+MULTI_AGENT_PROMPT_VERSION = "temporal_theme_leader_multi_agent_v4_prior_day_evidence"
+LEGACY_MULTI_AGENT_PROMPT_VERSION = "temporal_theme_leader_multi_agent_v3"
 
 SHORT_AGENT_WEIGHTS = {"analyst": 0.30, "quant": 0.15, "chartist": 0.55}
 LONG_AGENT_WEIGHTS = {"analyst": 0.45, "quant": 0.40, "chartist": 0.15}
+VALID_AGENT_SCORE_PROFILES = {
+    "current_hybrid_4agent",
+    "three_agent_no_risk_manager",
+    "four_agent_supervisor_final",
+    "four_agent_raw_blend",
+    "four_agent_risk_adjusted",
+    "four_agent_plus_liquidity",
+    "risk_manager_raw_only",
+    "remove_analyst",
+    "remove_quant",
+    "remove_chartist",
+    "analyst_only",
+    "quant_only",
+    "chartist_only",
+}
+
+
+class LLMCacheMissError(RuntimeError):
+    """A cache-only run needed a score that is not cached; it must never be replaced."""
 
 
 class LLMThemeLeaderEvaluation(BaseModel):
@@ -195,6 +222,8 @@ class TemporalLLMStockScorer:
                 str(round(float(row.get("leader_score") or 0.0), 2)),
                 str(round(float(row.get("return_20d") or 0.0), 4)),
                 str(round(float(row.get("return_60d") or 0.0), 4)),
+                # The prompt shows context_docs documents; the default keeps existing keys.
+                *([] if self.context_docs == 5 else [f"context_docs={self.context_docs}"]),
             ]
         )
 
@@ -298,11 +327,7 @@ class TemporalLLMStockScorer:
 
     @staticmethod
     def _validate_structured_payload(payload: Any) -> Dict[str, Any]:
-        if isinstance(payload, BaseModel):
-            return payload.model_dump()
-        if not isinstance(payload, dict):
-            raise TypeError(f"Expected dict payload, got {type(payload).__name__}")
-        return LLMThemeLeaderEvaluation.model_validate(payload).model_dump()
+        return _validate_payload(payload, LLMThemeLeaderEvaluation)
 
     @staticmethod
     def _mock_payload(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -354,6 +379,7 @@ class TemporalMultiAgentStockScorer:
         context_docs: int = 5,
         cache_path: str | Path | None = None,
         horizon: str = "short",
+        agent_score_profile: str | None = None,
     ) -> None:
         self.data_dir = Path(data_dir) if data_dir else get_data_dir()
         self.theme = theme
@@ -371,9 +397,14 @@ class TemporalMultiAgentStockScorer:
             or "unknown"
         )
         self.thinking_model_name = str(agent_models.get("risk_manager") or self.model_name)
+        self.agent_score_profile = _normalize_agent_score_profile(
+            agent_score_profile or os.environ.get("AGENT_SCORE_PROFILE", "")
+        )
+        self.cache_only = _env_flag("AGENT_SCORE_CACHE_ONLY")
         self.cache_path = Path(cache_path) if cache_path else self._default_cache_path()
         self.cache: Dict[str, Dict[str, Any]] = {}
         self._load_cache()
+        self.legacy_cache_hits = 0
         self.instruct_llm = get_analyst_llm()
         self.thinking_llm = get_risk_manager_llm()
 
@@ -396,13 +427,32 @@ class TemporalMultiAgentStockScorer:
         payload["agents"] = ["analyst", "quant", "chartist", "risk_manager"]
         payload["agent_weight_profile"] = self.horizon
         payload["agent_weights"] = _agent_weights(self.horizon)
+        payload["agent_score_profile"] = self.agent_score_profile
+        payload["cache_only"] = self.cache_only
+        payload["pure_features"] = _env_flag("AGENT_PURE_FEATURES")
+        payload["free_risk_manager"] = _env_flag("AGENT_FREE_RISK_MANAGER")
+        # Scores served from pre-v4 (same-day evidence) entries are not current results.
+        payload["legacy_cache_keys"] = _env_flag("AGENT_CACHE_LEGACY_KEYS")
+        payload["legacy_cache_hits"] = self.legacy_cache_hits
         return payload
 
     def score(self, *, as_of_ymd: str, row: Dict[str, Any]) -> Dict[str, Any]:
         key = self._cache_key(as_of_ymd=as_of_ymd, row=row)
         cached = self.cache.get(key)
+        if not cached and _env_flag("AGENT_CACHE_LEGACY_KEYS"):
+            # Opt-in to reproduce pre-fix experiments: legacy entries used same-day
+            # evidence and did not record the flag regime in the key.
+            cached = self.cache.get(self._cache_key(as_of_ymd=as_of_ymd, row=row, legacy=True))
+            if cached:
+                self.legacy_cache_hits += 1
         if cached:
-            return {**cached, "cache_hit": True}
+            return self._apply_agent_score_profile({**cached, "cache_hit": True}, row)
+
+        if self.cache_only:
+            raise LLMCacheMissError(
+                "multi-agent cache miss with AGENT_SCORE_CACHE_ONLY=1 "
+                f"for {self.theme_key} {self.horizon} {as_of_ymd} {row.get('stock_code')}"
+            )
 
         context = self._context_for_row(as_of_ymd=as_of_ymd, row=row)
         feature_payload = _feature_payload(row)
@@ -427,8 +477,29 @@ class TemporalMultiAgentStockScorer:
                 "llm_horizon": self.horizon,
             }
         )
-        self.cache[key] = result
+        if result.get("llm_fallback_used"):
+            # A rule-based stand-in for a failed agent call must not be replayed later
+            # as if it were a multi-agent LLM score (e.g. by AGENT_SCORE_CACHE_ONLY runs).
+            logger.warning("Multi-agent fallback score not cached: %s %s", as_of_ymd, row.get("stock_code"))
+            return self._apply_agent_score_profile(result, row)
+        self.cache[key] = dict(result)
         self._append_cache(key, result)
+        return self._apply_agent_score_profile(result, row)
+
+    def _apply_agent_score_profile(self, payload: Dict[str, Any], row: Dict[str, Any]) -> Dict[str, Any]:
+        result = dict(payload)
+        profile = self.agent_score_profile
+        original_score = _bounded_int(result.get("llm_score", 50))
+        profiled_score = _agent_profile_score(
+            result,
+            row=row,
+            horizon=self.horizon,
+            profile=profile,
+            default=original_score,
+        )
+        result["llm_original_score"] = original_score
+        result["llm_score_profile"] = profile
+        result["llm_score"] = profiled_score
         return result
 
     def _default_cache_path(self) -> Path:
@@ -455,10 +526,21 @@ class TemporalMultiAgentStockScorer:
         with self.cache_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps({"cache_key": key, "result": result}, ensure_ascii=False) + "\n")
 
-    def _cache_key(self, *, as_of_ymd: str, row: Dict[str, Any]) -> str:
+    def _regime_parts(self) -> list[str]:
+        """Settings that change the prompt or the stored score; empty for the defaults."""
+        parts = []
+        if _env_flag("AGENT_PURE_FEATURES"):
+            parts.append("pure_features=1")
+        if _env_flag("AGENT_FREE_RISK_MANAGER"):
+            parts.append("free_risk_manager=1")
+        if self.context_docs != 5:
+            parts.append(f"context_docs={self.context_docs}")
+        return parts
+
+    def _cache_key(self, *, as_of_ymd: str, row: Dict[str, Any], legacy: bool = False) -> str:
         return "|".join(
             [
-                MULTI_AGENT_PROMPT_VERSION,
+                LEGACY_MULTI_AGENT_PROMPT_VERSION if legacy else MULTI_AGENT_PROMPT_VERSION,
                 self.horizon,
                 self.provider,
                 self.model_name,
@@ -469,6 +551,7 @@ class TemporalMultiAgentStockScorer:
                 str(round(float(row.get("leader_score") or 0.0), 2)),
                 str(round(float(row.get("return_20d") or 0.0), 4)),
                 str(round(float(row.get("return_60d") or 0.0), 4)),
+                *([] if legacy else self._regime_parts()),
             ]
         )
 
@@ -528,11 +611,13 @@ JSON:
   "catalysts": ["", ""],
   "risks": ["", ""]
 }}
-"""
+        """
         try:
             return _invoke_schema(self.instruct_llm, prompt, AnalystBacktestEvaluation)
         except Exception as exc:
             logger.warning("AnalystAgent backtest score failed: %s", exc)
+            if _env_flag("AGENT_FAIL_ON_AGENT_FALLBACK"):
+                raise
             return self._fallback_analyst(row)
 
     def _evaluate_quant(
@@ -576,11 +661,13 @@ JSON:
   "summary": "",
   "risks": ["", ""]
 }}
-"""
+        """
         try:
             return _invoke_schema(self.instruct_llm, prompt, QuantBacktestEvaluation)
         except Exception as exc:
             logger.warning("QuantAgent backtest score failed: %s", exc)
+            if _env_flag("AGENT_FAIL_ON_AGENT_FALLBACK"):
+                raise
             return self._fallback_quant(row)
 
     def _evaluate_chartist(self, row: Dict[str, Any]) -> Dict[str, Any]:
@@ -640,7 +727,44 @@ JSON:
         horizon_rules = _risk_manager_horizon_rules(self.horizon)
         agent_weight_text = _format_agent_weights(agent_totals["agent_weights"])
         identity_guard = _identity_guard(row)
-        prompt = f"""
+        if _env_flag("AGENT_FREE_RISK_MANAGER"):
+            prompt = f"""
+당신은 멀티 에이전트 백테스트의 상위 RiskManagerAgent입니다.
+아래 Analyst/Quant/Chartist 결과를 종합해 as_of={as_of_ymd} 기준
+{objective} AI 테마 주도주 가능성을 최종 점수화하세요.
+
+[중요]
+- {identity_guard}
+- 보유기간 프로필은 '{self.horizon}'입니다.
+- {horizon_rules}
+- Analyst/Quant/Chartist 중 특정 하나를 기계적으로 따르지 말고, 근거 충돌과 리스크를 직접 조정하세요.
+- 모든 점수는 0~100 정수이며 risk_score는 높을수록 위험합니다.
+
+[후보]
+{json.dumps(feature_payload, ensure_ascii=False, indent=2)}
+
+[AnalystAgent]
+{json.dumps(analyst, ensure_ascii=False, indent=2)}
+
+[QuantAgent]
+{json.dumps(quant, ensure_ascii=False, indent=2)}
+
+[ChartistAgent]
+{json.dumps(chartist, ensure_ascii=False, indent=2)}
+
+JSON:
+{{
+  "final_score": 0,
+  "confidence": 0,
+  "risk_score": 0,
+  "action": "BUY/HOLD/REDUCE",
+  "summary": "",
+  "catalysts": ["", ""],
+  "risks": ["", ""]
+}}
+"""
+        else:
+            prompt = f"""
 당신은 멀티 에이전트 백테스트의 RiskManagerAgent입니다.
 아래 Analyst/Quant/Chartist 결과를 종합해 as_of={as_of_ymd} 기준
 {objective} AI 테마 주도주 가능성을 최종 점수화하세요.
@@ -683,6 +807,8 @@ JSON:
             return _invoke_schema(self.thinking_llm, prompt, RiskManagerBacktestEvaluation)
         except Exception as exc:
             logger.warning("RiskManagerAgent backtest score failed: %s", exc)
+            if _env_flag("AGENT_FAIL_ON_AGENT_FALLBACK"):
+                raise
             return self._fallback_risk_manager(analyst, quant, chartist, self.horizon)
 
     def _normalize_multi_agent_payload(
@@ -697,9 +823,14 @@ JSON:
         quant_total = agent_totals["quant_total"]
         chartist_total = agent_totals["chartist_total"]
         raw_risk_final_score = _get_score(risk, "final_score")
-        final_score = agent_totals["recommended_final_score"]
+        final_score = raw_risk_final_score if _env_flag("AGENT_FREE_RISK_MANAGER") else agent_totals["recommended_final_score"]
         confidence = _get_score(risk, "confidence")
         risk_score = _get_score(risk, "risk_score")
+        fallback_used = (
+            _payload_uses_fallback(analyst)
+            or _payload_uses_fallback(quant)
+            or _payload_uses_fallback(risk)
+        )
         return {
             "llm_score": final_score,
             "llm_confidence": confidence,
@@ -710,6 +841,7 @@ JSON:
             "llm_catalysts": _clean_string_list(risk.get("catalysts") or analyst.get("catalysts")),
             "llm_risks": _clean_string_list(risk.get("risks") or analyst.get("risks") or quant.get("risks")),
             "llm_horizon": self.horizon,
+            "llm_fallback_used": fallback_used,
             "llm_agent_scores": {
                 "analyst": {
                     "total_score": analyst_total,
@@ -812,11 +944,18 @@ def _clean_string_list(value: Any) -> list[str]:
     return [str(item).strip()[:160] for item in value if str(item).strip()][:5]
 
 
+def _payload_uses_fallback(payload: Dict[str, Any]) -> bool:
+    text = " ".join(
+        str(payload.get(key) or "")
+        for key in ["summary", "action"]
+    ).lower()
+    return "fallback" in text
+
+
 def _feature_payload(row: Dict[str, Any]) -> Dict[str, Any]:
-    return {
+    payload = {
         "stock_name": row.get("stock_name"),
         "stock_code": row.get("stock_code"),
-        "deterministic_leader_score": row.get("leader_score"),
         "return_5d": round(float(row.get("return_5d") or 0.0), 4),
         "return_20d": round(float(row.get("return_20d") or 0.0), 4),
         "return_60d": round(float(row.get("return_60d") or 0.0), 4),
@@ -826,6 +965,9 @@ def _feature_payload(row: Dict[str, Any]) -> Dict[str, Any]:
         "avg_trading_value_20d": round(float(row.get("avg_trading_value_20d") or 0.0), 2),
         "doc_counts": row.get("doc_counts") or {},
     }
+    if not _env_flag("AGENT_PURE_FEATURES"):
+        payload["deterministic_leader_score"] = row.get("leader_score")
+    return payload
 
 
 def _agent_totals(
@@ -896,6 +1038,118 @@ def _normalize_llm_horizon(value: str) -> str:
 
 def _agent_weights(horizon: str) -> Dict[str, float]:
     return dict(SHORT_AGENT_WEIGHTS if _normalize_llm_horizon(horizon) == "short" else LONG_AGENT_WEIGHTS)
+
+
+def _normalize_agent_score_profile(value: str | None) -> str:
+    profile = str(value or "current_hybrid_4agent").strip().lower().replace("-", "_")
+    aliases = {
+        "": "current_hybrid_4agent",
+        "current": "current_hybrid_4agent",
+        "hybrid": "current_hybrid_4agent",
+        "default": "current_hybrid_4agent",
+        "supervisor_final": "four_agent_supervisor_final",
+        "risk_manager_final": "four_agent_supervisor_final",
+        "three_agent": "three_agent_no_risk_manager",
+        "no_risk_manager": "three_agent_no_risk_manager",
+        "risk_adjusted": "four_agent_risk_adjusted",
+        "raw_blend": "four_agent_raw_blend",
+        "plus_liquidity": "four_agent_plus_liquidity",
+        "liquidity": "four_agent_plus_liquidity",
+        "risk_only": "risk_manager_raw_only",
+    }
+    profile = aliases.get(profile, profile)
+    if profile not in VALID_AGENT_SCORE_PROFILES:
+        raise ValueError(f"invalid AGENT_SCORE_PROFILE: {value}")
+    return profile
+
+
+def _agent_profile_score(
+    payload: Dict[str, Any],
+    *,
+    row: Dict[str, Any],
+    horizon: str,
+    profile: str,
+    default: int = 50,
+) -> int:
+    default = _bounded_int(payload.get("llm_score", default))
+    agent_scores = payload.get("llm_agent_scores") if isinstance(payload.get("llm_agent_scores"), dict) else {}
+    weights = _agent_weights(horizon)
+    analyst_total = _nested_score(agent_scores, "analyst", "total_score", default)
+    quant_total = _nested_score(agent_scores, "quant", "total_score", default)
+    chartist_total = _nested_score(agent_scores, "chartist", "total_score", default)
+    risk_raw_total = _nested_score(agent_scores, "risk_manager", "raw_final_score", default)
+    risk_score = _nested_score(agent_scores, "risk_manager", "risk_score", payload.get("llm_risk_score", 50))
+
+    def weighted(selected: Iterable[str]) -> float:
+        selected = tuple(selected)
+        denom = sum(weights[name] for name in selected)
+        if denom <= 0:
+            return float(default)
+        totals = {
+            "analyst": analyst_total,
+            "quant": quant_total,
+            "chartist": chartist_total,
+        }
+        return sum((weights[name] / denom) * totals[name] for name in selected)
+
+    three_agent_score = weighted(("analyst", "quant", "chartist"))
+    if profile == "current_hybrid_4agent":
+        return _bounded_int(default)
+    if profile == "three_agent_no_risk_manager":
+        return _bounded_int(three_agent_score)
+    if profile == "four_agent_supervisor_final":
+        return _bounded_int(risk_raw_total)
+    if profile == "four_agent_raw_blend":
+        return _bounded_int(0.70 * three_agent_score + 0.30 * risk_raw_total)
+    if profile == "four_agent_risk_adjusted":
+        return _bounded_int(three_agent_score - max(0.0, risk_score - 60.0) * 0.25)
+    if profile == "four_agent_plus_liquidity":
+        return _bounded_int(0.85 * three_agent_score + 0.15 * _liquidity_profile_score(row))
+    if profile == "risk_manager_raw_only":
+        return _bounded_int(risk_raw_total)
+    if profile == "remove_analyst":
+        return _bounded_int(weighted(("quant", "chartist")))
+    if profile == "remove_quant":
+        return _bounded_int(weighted(("analyst", "chartist")))
+    if profile == "remove_chartist":
+        return _bounded_int(weighted(("analyst", "quant")))
+    if profile == "analyst_only":
+        return _bounded_int(analyst_total)
+    if profile == "quant_only":
+        return _bounded_int(quant_total)
+    if profile == "chartist_only":
+        return _bounded_int(chartist_total)
+    return _bounded_int(default)
+
+
+def _nested_score(agent_scores: Dict[str, Any], agent: str, key: str, default: Any = 50) -> int:
+    payload = agent_scores.get(agent) if isinstance(agent_scores.get(agent), dict) else {}
+    return _bounded_int(payload.get(key, default))
+
+
+def _liquidity_profile_score(row: Dict[str, Any]) -> int:
+    volume_ratio = _safe_float(row.get("volume_ratio_20d"), 0.0)
+    volatility = _safe_float(row.get("volatility_20d"), 0.0)
+    score = 35.0 + min(max(volume_ratio, 0.0), 3.0) * 18.0 - max(0.0, volatility - 0.8) * 20.0
+    return _bounded_int(score)
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_flag(name: str) -> bool:
+    return str(os.environ.get(name) or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(str(os.environ.get(name) or "").strip() or default)
+    except ValueError:
+        return default
 
 
 def _format_agent_weights(weights: Dict[str, float]) -> str:
@@ -982,28 +1236,76 @@ def _identity_guard(row: Dict[str, Any]) -> str:
 
 
 def _invoke_schema(llm: Any, prompt: str, schema: type[BaseModel]) -> Dict[str, Any]:
+    max_attempts = max(1, _env_int("LLM_SCHEMA_RETRIES", 1))
+    last_error: Exception | None = None
     if hasattr(llm, "with_structured_output"):
-        try:
-            structured_llm = llm.with_structured_output(schema, method="json_schema")
-        except Exception:
-            structured_llm = llm.with_structured_output(schema, method="json_mode")
-        structured = structured_llm.invoke(prompt)
-        return _validate_payload(structured, schema)
+        for attempt in range(1, max_attempts + 1):
+            try:
+                with _llm_call_timeout():
+                    try:
+                        structured_llm = llm.with_structured_output(schema, method="json_schema")
+                    except Exception:
+                        structured_llm = llm.with_structured_output(schema, method="json_mode")
+                    structured = structured_llm.invoke(prompt)
+                return _validate_payload(structured, schema)
+            except Exception as exc:
+                last_error = exc
+                if attempt < max_attempts:
+                    time.sleep(min(2.0, 0.5 * attempt))
+        if last_error:
+            raise last_error
 
-    response = llm.invoke(prompt)
-    content = _response_to_text(getattr(response, "content", response))
-    payload = _extract_first_json_object(content)
-    if not payload:
-        raise ValueError(f"LLM response did not include JSON: {content[:200]}")
-    return _validate_payload(payload, schema)
+    for attempt in range(1, max_attempts + 1):
+        try:
+            with _llm_call_timeout():
+                response = llm.invoke(prompt)
+            content = _response_to_text(getattr(response, "content", response))
+            payload = _extract_first_json_object(content)
+            if not payload:
+                raise ValueError(f"LLM response did not include JSON: {content[:200]}")
+            return _validate_payload(payload, schema)
+        except Exception as exc:
+            last_error = exc
+            if attempt < max_attempts:
+                time.sleep(min(2.0, 0.5 * attempt))
+    if last_error:
+        raise last_error
+    raise RuntimeError("LLM schema invocation failed without an error")
+
+
+@contextmanager
+def _llm_call_timeout() -> Any:
+    timeout_seconds = _env_int("LLM_SCHEMA_TIMEOUT_SECONDS", 0)
+    if timeout_seconds <= 0 or threading.current_thread() is not threading.main_thread():
+        yield
+        return
+
+    previous_handler = signal.getsignal(signal.SIGALRM)
+
+    def _raise_timeout(_signum: int, _frame: Any) -> None:
+        raise TimeoutError(f"LLM schema invocation timed out after {timeout_seconds}s")
+
+    signal.signal(signal.SIGALRM, _raise_timeout)
+    signal.alarm(timeout_seconds)
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, previous_handler)
 
 
 def _validate_payload(payload: Any, schema: type[BaseModel]) -> Dict[str, Any]:
-    if isinstance(payload, BaseModel):
-        return payload.model_dump()
-    if not isinstance(payload, dict):
-        raise TypeError(f"Expected dict payload, got {type(payload).__name__}")
-    return schema.model_validate(payload).model_dump()
+    if not isinstance(payload, BaseModel):
+        if not isinstance(payload, dict):
+            raise TypeError(f"Expected dict payload, got {type(payload).__name__}")
+        payload = schema.model_validate(payload)
+    # Score fields default to neutral values for fallbacks; an LLM answer that omits one
+    # would otherwise be cached and replayed as a genuine neutral score.
+    missing = sorted(name for name in type(payload).model_fields
+                     if (name.endswith("_score") or name == "confidence") and name not in payload.model_fields_set)
+    if missing:
+        raise ValueError("LLM response omitted score fields: " + ", ".join(missing))
+    return payload.model_dump()
 
 
 def _get_score(payload: Dict[str, Any], key: str, default: int = 50) -> int:

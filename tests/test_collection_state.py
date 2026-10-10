@@ -253,3 +253,16 @@ def test_positive_cache_cannot_publish_success_when_authoritative_archive_is_mis
     assert "missing_shared_archive" in result.report.failures["news"]
     assert result.documents == []
     assert not (tmp_path / "raw/news/second.jsonl").exists()
+
+
+def test_incremental_collection_keeps_provider_no_data_notes(tmp_path):
+    class NoAnnualReport:
+        def collect_annual_series(self, **_):
+            return []
+
+    service = IngestionService(financial_collector=NoAnnualReport())
+    first = service.collect(request(tmp_path, sources=["financials"]))
+    second = service.collect(request(tmp_path, "second", sources=["financials"]))
+    for result in (first, second):
+        assert result.report.source_status["financials"] == "no_data"
+        assert result.report.notes == {"financials": "provider_no_annual_report"}

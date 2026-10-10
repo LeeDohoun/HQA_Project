@@ -608,6 +608,9 @@ def place_domestic_stock_order(
     Returns:
         KIS API 원문 응답에 request metadata를 더한 dict
     """
+    if paper is not True:
+        # REAL trading is outside this system; PAPER orders are owned by the Spring backend.
+        raise PermissionError("REAL (non-PAPER) KIS orders are disabled in the Python runtime")
     normalized_side = side.upper().strip()
     if normalized_side not in {"BUY", "SELL"}:
         return {"rt_cd": "-1", "msg1": f"지원하지 않는 주문 방향: {side}"}
