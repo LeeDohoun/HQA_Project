@@ -21,7 +21,8 @@
 | `HQA_KIS_ENC_KEY` | 백엔드 | KIS 자격증명 암호화 키. 바꾸면 저장된 계좌 지문을 다시 검토해야 함 |
 | 사용자별 KIS 모의투자 앱키·시크릿·계좌 | 백엔드 자격증명 등록 | 사용자 하나에 계좌 하나, 앱키 공유 금지. AI 서버는 증권사 자격증명을 받지 않음(Compose는 AI 쪽 컨테이너에서 KIS 키와 `HQA_KIS_ENC_KEY`를 빈 값으로 덮어씀) |
 | `DART_API_KEY` | 수집 | OpenDART 키 |
-| `KRX_OPEN_API_KEY` | 수집 | 일별 시세와 지수(시장 맥락) 서비스 승인 |
+| `KRX_OPEN_API_KEY` | 수집 | 일별 시세와 지수(시장 맥락) 서비스 승인. 승인 전에는 일봉을 `kis_chart`로 받음([3장](#3-데이터-준비)) |
+| `KIS_PAPER_APP_KEY` / `KIS_PAPER_APP_SECRET` | 수집(`kis_chart`) | KRX 승인 전 일봉용. 백엔드에 등록한 앱키와 같으면 초당 호출 한도를 함께 쓰므로, 수집기는 1.1초 간격으로 하루 한 번만 부름. 계좌번호는 쓰지 않음 |
 | `BACKEND_INTERNAL_BASE_URL` | AI 서버, 모니터, 운영 도구 | 보통 `http://localhost:8000`(Compose에서는 `http://backend:8000`) |
 | `BACKEND_SIGNAL_URL` | AI 서버 | `<백엔드>/api/v1/internal/trading/signals`. 없으면 계획 게시가 명시적으로 실패 |
 | `AI_SERVER_URL` | 백엔드, 스케줄러 | 보통 `http://localhost:8001` |
@@ -64,18 +65,32 @@
 
 가격 선별에는 종목마다 완료된 일봉이 151개 이상 필요합니다. 수집 기간은 전날(KST)에 끝나도록 설계돼 있습니다.
 
+**일봉 출처는 KRX(`chart`)가 기본이지만, KRX 키 승인 전까지는 `kis_chart`를 씁니다.** 승인 전 KRX Open API는 모든 서비스에 `401 Unauthorized API Call`을 돌려주고, 그러면 `chart` 수집이 실패해 빌드가 막힙니다. `kis_chart`는 KIS 모의투자 일봉에서 원주가(`FID_ORG_ADJ_PRC=1`)를 받아 KRX와 같은 무수정 기준으로 저장합니다. 분석은 정확한 KIS 엔드포인트와 무수정 기준이 붙은 KIS 봉만 받고, 근거 없는 봉과 한 창에 섞이면 그 종목을 거부합니다. 자세한 내용은 [변경 내역 7.11](ai-data-changes-2026-09.md#711-krx-승인-전-kis-일봉과-종목-확장-2026-10-10)에 있습니다.
+
+- `chart`와 `kis_chart`는 둘 중 하나만 켭니다. 함께 켜면 수집기가 거부하고, `chart`가 실패해도 KIS로 몰래 바꾸지 않습니다.
+- `KIS_PAPER_APP_KEY`와 `KIS_PAPER_APP_SECRET`이 필요합니다. 이 앱키는 백엔드 주문과 함께 쓰므로 호출을 1.1초 간격으로 보내고, KIS는 하루 한 번만 부릅니다. 그날 받은 결과에 마지막 거래일 봉이 있으면 같은 날의 다음 수집은 KIS를 다시 부르지 않으므로, 30분 루프가 장중에 백엔드의 호출 한도를 쓰지 않습니다.
+- 처음 수집하면 종목당 550일(약 370거래일, 호출 4회 안팎)을 받아 분석 창 300거래일을 한 출처로 채웁니다. 이후에는 최근 7일만 다시 봅니다.
+- 수집 데이터 위치는 `HQA_DATA_DIR`입니다(기본 `./data`). 로컬에서 Git에 올리지 않는 폴더에 모으려면 수집, 루프, AI 서버를 모두 같은 값으로 띄웁니다(예: `HQA_DATA_DIR=$PWD/.local/data`). 루프는 `--data-dir`, `--corp-codes-csv`를 넘기지 않으므로, 루프가 쓰는 기업코드 목록은 기본값 `./corp_codes.csv`입니다.
+
 ```bash
 venv/bin/python -m scripts.data.corp_codes
-venv/bin/python -m scripts.data.collect --theme 2차전지 --theme-key 2차전지 --enabled-sources news,dart,financials,chart
-venv/bin/python -m scripts.data.market_context --from-date 20250901 --to-date 20261008
+venv/bin/python -m scripts.data.collect --theme 2차전지 --theme-key 2차전지 --enabled-sources news,dart,financials,kis_chart
 venv/bin/python -m scripts.data.build --theme-key 2차전지 --stats
 ```
 
+KRX 승인 뒤에는 `chart`로 돌아가고 지수(시장 맥락)도 함께 모읍니다. 두 출처 모두 무수정 기준이라 한 창에 KIS 봉과 KRX 봉이 섞여도 됩니다(같은 날짜는 나중 관측이 이깁니다).
+
+```bash
+venv/bin/python -m scripts.data.collect --theme 2차전지 --theme-key 2차전지 --enabled-sources news,dart,financials,chart
+venv/bin/python -m scripts.data.market_context --from-date 20250901 --to-date 20261008
+```
+
 - 기업코드 목록은 기본으로 `./corp_codes.csv`이고, 수집기가 7일마다 자동으로 갱신합니다(`DART_API_KEY` 필요). OpenDART 점검(`status=800`) 중에는 기존 파일을 그대로 씁니다.
-- 분석 대상 테마는 `data/raw/theme_targets/<key>.jsonl`입니다. `scripts.data.discover`는 기본으로 카탈로그에만 저장하고, `--as-targets`일 때만 대상 목록을 바꿉니다.
-- 운영 중에는 수집 루프를 띄워 둡니다. `--themes` 없이 실행하면 저장된 테마 전부를 수집하고, `--market-context`는 08:00 이후 하루 한 번 지수를 갱신합니다.
+- 분석 대상 테마는 `data/raw/theme_targets/<key>.jsonl`입니다. 10-10에 수익률이 아닌 데이터 기준(20일 평균 거래대금 10억 원 이상, DART 기업코드, 2차전지와 겹치지 않는 업종)으로 2차전지 8종목, 자율주행차 8종목, 5G 8종목을 정했습니다. 규칙과 결과는 [변경 내역 7.11](ai-data-changes-2026-09.md#711-krx-승인-전-kis-일봉과-종목-확장-2026-10-10)에 있습니다. `scripts.data.discover`는 기본으로 카탈로그에만 저장하고, `--as-targets`일 때만 대상 목록을 바꿉니다. 다만 Naver가 테마 페이지를 새 사이트(`stock.naver.com`, 브라우저에서 그리는 화면)로 옮겨, `discover`와 `collect --refresh-targets`의 파서는 지금 테마를 찾지 못합니다. 저장된 대상 목록으로 수집하는 기본 동작에는 영향이 없습니다.
+- 운영 중에는 수집 루프를 띄워 둡니다. `--themes` 없이 실행하면 저장된 테마 전부를 수집합니다. KRX 승인 전에는 출처를 `kis_chart`로 넘기고, 승인 뒤에는 기본 출처(`chart`)에 `--market-context`를 더해 08:00 이후 하루 한 번 지수를 갱신합니다.
 
   ```bash
+  venv/bin/python -m scripts.data.loop --enabled-sources news,dart,financials,kis_chart
   venv/bin/python -m scripts.data.loop --market-context
   ```
 
@@ -129,6 +144,7 @@ Docker Compose에서는 `docker compose --profile paper up`이 5·6(모니터, �
 **장 전 (08:00–09:00)**
 
 - 수집 루프 로그: 테마별 `[COLLECT] ... 완료`, `[MARKET] 지수 갱신 완료`. 한도 초과(`status=020`/`status=429`)면 다음 날까지 쉽니다.
+- 전 거래일 봉: 수집 기간이 전날에 끝나므로 전 거래일 봉은 자정(KST)이 지나야 들어옵니다. 00:00부터 09:00 전 사이에 루프가 한 번은 돌아야 합니다(밤에 컴퓨터가 잠들면 깨어난 뒤 첫 수집). KRX 승인 전에는 `reports/<테마>_ingestion_report.json`의 `kis_chart`가 `success`이고, 분석 로더 오류에 `stale_daily_prices`가 없는지 봅니다.
 - `/health`의 `calendar_warnings`가 비었는지(10월 29일부터는 수능일 경고가 뜹니다).
 - 예산과 결과 불명 주문:
 
