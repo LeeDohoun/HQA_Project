@@ -20,7 +20,7 @@
 | `ANTHROPIC_API_KEY` | AI 서버 | `LLM_PROVIDER=anthropic`일 때. Claude Max·Team 요금제의 월 API 크레딧을 쓰려면 claude.ai 설정 > 결제 > API 크레딧에서 연결한 Console 조직에서 키를 만듦. `scripts.claude_check`로 확인 |
 | `HQA_CLAUDE_MODEL`, `HQA_CLAUDE_<역할>_MODEL` | AI 서버 | Claude 모델(기본 `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`). 관찰 기간 시작 전에 확정 |
 | `HQA_LLM_MONTHLY_BUDGET_USD` / `HQA_LLM_OPERATING_TARGET_USD` | AI 서버 | 기본 100 / 90달러. 일반 분석은 90에서 멈추고 보유 종목 보호는 100까지. Claude 크레딧은 요금제 결제 주기마다 충전·만료되고 원장은 달력 월 기준이므로, 운영 목표를 결제 주기 한 번의 크레딧 안으로 둠 |
-| `HQA_LLM_RPM` / `HQA_LLM_TPM` | AI 서버 | OpenAI 프로젝트 또는 Claude 조직의 실제 한도로 설정. 기본 120 RPM·200,000 TPM은 보수적이라, 사이클마다 전문가 입력이 최대 약 80만 토큰이면 첫 사이클이 몇 분 늦어짐(OpenAI 공식 Build 등급 기본 5,000 RPM·2,000,000 TPM). Claude 한도는 `scripts.claude_check --send`가 응답 헤더에서 보여 줌 |
+| `HQA_LLM_RPM` / `HQA_LLM_TPM` | AI 서버 | OpenAI 프로젝트 또는 Claude 조직의 실제 한도로 설정. 기본 120 RPM·200,000 TPM은 보수적이라, 사이클마다 전문가 입력이 최대 약 80만 토큰이면 첫 사이클이 몇 분 늦어짐(OpenAI 공식 Build 등급 기본 5,000 RPM·2,000,000 TPM). Claude 한도는 `scripts.claude_check --send`가 응답 헤더에서 보여 줌. `claude_plan`은 공개된 분당 한도가 없으니 `HQA_LLM_TPM=2000000` 정도로 올림(기본값이면 첫 사이클 전문가 호출이 대기열 시간 초과로 실패) |
 | `HQA_INTERNAL_TOKEN` | AI 서버, 백엔드, 모니터, 스케줄러 | 세 곳 모두 같은 값, 앞뒤 공백 없이 |
 | `HQA_KIS_ENC_KEY` | 백엔드 | KIS 자격증명 암호화 키. 바꾸면 저장된 계좌 지문을 다시 검토해야 함 |
 | 사용자별 KIS 모의투자 앱키·시크릿·계좌 | 백엔드 자격증명 등록 | 사용자 하나에 계좌 하나, 앱키 공유 금지. AI 서버는 증권사 자격증명을 받지 않음(Compose는 AI 쪽 컨테이너에서 KIS 키와 `HQA_KIS_ENC_KEY`를 빈 값으로 덮어씀) |

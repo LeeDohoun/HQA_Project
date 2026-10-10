@@ -163,6 +163,14 @@ the subscriber's own PAPER account on their own machine.
   subscription's 5-hour and weekly limits are shared with the user's claude.ai and Claude Code use;
   reaching them raises `LLMBudgetExceeded` (counted in `budget_rejections`) until they reset, and
   nothing is charged unless extra usage is turned on in claude.ai.
+- **Admission:** the subscription publishes no token-per-minute limit, while HQA's own admission
+  window defaults to 200,000 tokens a minute. A cold cycle's specialist burst (about 57 calls)
+  exceeds it, and calls that wait more than `HQA_LLM_QUEUE_TIMEOUT_SECONDS` fail with
+  `LLMQueueTimeout`, so raise `HQA_LLM_TPM` (for example to 2,000,000) on this provider.
+- **Measured on 2026-10-10 (Pro, Claude Opus 5.5):** one full specialist pass over 20 stocks
+  (57 calls, 6 at a time) took 122 s and used about 5% of the 5-hour session limit; one
+  RiskManager call with six candidates took 30 s (22k input, 3k output tokens), about 0.3%.
+  Every structured answer takes two CLI turns.
 - **Where it runs:** on the host only; the Compose AI image has no Claude CLI.
 
 `venv/bin/python -m scripts.claude_check --plan` shows the CLI version and its login as HQA starts
