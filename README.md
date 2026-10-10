@@ -48,11 +48,11 @@ python -m pip install -r requirements-dev.txt
 선택적인 종목토론방 수집은 `playwright install chromium`이 필요합니다. 현재 기본 수집 소스에는 종목토론방이 포함되지 않습니다.
 
 - 수집만 실행: `DART_API_KEY`, `KRX_OPEN_API_KEY`와 서비스별 이용 승인.
-- LLM 분석: `OPENAI_API_KEY`와 예산·호출 한도 설정.
+- LLM 분석: `LLM_PROVIDER`에 맞는 키(`openai`는 `OPENAI_API_KEY`, `anthropic`은 `ANTHROPIC_API_KEY`)와 예산·호출 한도 설정. Claude 키 점검은 `python -m scripts.claude_check`.
 - PAPER 연동: 내부 인증 토큰, 백엔드 암호화 키, 백엔드에 등록한 사용자별 PAPER 계좌.
 - 백엔드: Java 17과 Maven. 프론트엔드: `frontend/package.json` 기준 Node/npm 환경.
 
-수집용 컴퓨터에는 OpenAI·KIS 키가 필요하지 않습니다. 시크릿·계좌 DB·예산 원장은 Git이나 연구 결과 폴더에 저장하지 마세요.
+수집용 컴퓨터에는 OpenAI·Claude·KIS 키가 필요하지 않습니다. 시크릿·계좌 DB·예산 원장은 Git이나 연구 결과 폴더에 저장하지 마세요.
 
 ## 데이터 수집
 

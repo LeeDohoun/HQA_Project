@@ -98,7 +98,7 @@ services:
       ENV: production
       PORT: "8001"
       REDIS_URL: redis://redis:6379/0
-      LLM_PROVIDER: openai
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
       HQA_DATA_DIR: /app/data
       HQA_LLM_BUDGET_PATH: /app/data/llm_budget.sqlite3
       HQA_PAPER_AUDIT_PATH: /app/data/paper_audit.sqlite3

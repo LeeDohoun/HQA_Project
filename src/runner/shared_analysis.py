@@ -377,7 +377,7 @@ class SharedAnalysisService:
                        " well the supplied evidence supports that score.")
         messages = [("system", prompt + PROMPT_SUFFIX),
                     ("human", json.dumps(payload, ensure_ascii=False, allow_nan=False))]
-        request_id = self.audit.append("llm_request", {"role": role, "model": MODEL_VERSION,
+        request_id = self.audit.append("llm_request", {"role": role, "model": self._model_names().get(role, MODEL_VERSION),
             "prompt_version": PROMPT_VERSION, "input_hash": content_hash(payload),
             "holding_priority": critical,
             "instructions": messages[0][1], "payload": payload, "schema": schema.model_json_schema()}) if self.audit else None
@@ -398,6 +398,15 @@ class SharedAnalysisService:
             self.audit.append("llm_response", {"request_id": request_id, "role": role,
                                               "validation": "schema_only", "output": output})
         return result
+
+    def _model_names(self) -> dict[str, str]:
+        """The model each role calls, for audit records and cycle manifests."""
+        return {role: str(getattr(model, "model_name", None) or getattr(model, "model", None) or MODEL_VERSION)
+                for role, model in self.models.items()}
+
+    def _manifest_models(self) -> dict:
+        names = self._model_names()
+        return {"model": names.get("risk_manager", MODEL_VERSION), "role_models": names}
 
     def _input_budget(self, role: str) -> int:
         limit = getattr(self.models.get(role), "hqa_input_limit", None) or DEFAULT_SPECIALIST_INPUT_TOKENS
@@ -466,7 +475,7 @@ class SharedAnalysisService:
                      "reason": "no_available_accounts", "no_paid_work": True,
                      "prefilter_count": 0, "specialist_stock_count": 0, "completed_stock_count": 0,
                      "global_ranked_leaders": [], "errors": [], "accounts": account_errors,
-                     "manifest": {"model": MODEL_VERSION, "prompt_version": PROMPT_VERSION,
+                     "manifest": {**self._manifest_models(), "prompt_version": PROMPT_VERSION,
                                   "factor_version": FACTOR_VERSION, "role_input_hashes": {}},
                      "timings_ms": {"data": elapsed, "specialists": 0, "accounts": 0, "total": elapsed}}
             if self.audit:
@@ -638,7 +647,7 @@ class SharedAnalysisService:
         cycle = {"schema_version": 2, "as_of": as_of.isoformat(), "prefilter_count": len(prefiltered),
                 "specialist_stock_count": len(selected_codes), "completed_stock_count": len(completed),
                 "global_ranked_leaders": public_rows, "errors": errors, "accounts": results,
-                "manifest": {"model": MODEL_VERSION, "prompt_version": PROMPT_VERSION, "factor_version": FACTOR_VERSION,
+                "manifest": {**self._manifest_models(), "prompt_version": PROMPT_VERSION, "factor_version": FACTOR_VERSION,
                              "role_input_hashes": {f"{code}:{role}": content_hash(payload) for (code, role), payload in payloads.items()}},
                 "timings_ms": {"data": round((data_finished - started) * 1000),
                                "specialists": round((specialists_finished - data_finished) * 1000),
