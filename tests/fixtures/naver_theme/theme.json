@@ -1,0 +1,46 @@
+{
+  "stockListSortType": "THEME",
+  "groups": [
+    {
+      "no": 579,
+      "name": "2차전지(나트륨이온)",
+      "totalCount": 2,
+      "changeRate": "7.24",
+      "riseCount": 0,
+      "fallCount": 0,
+      "steadyCount": 0
+    },
+    {
+      "no": 64,
+      "name": "2차전지",
+      "totalCount": 5,
+      "changeRate": "1.33",
+      "riseCount": 0,
+      "fallCount": 0,
+      "steadyCount": 0
+    },
+    {
+      "no": 373,
+      "name": "5G(5세대 이동통신)",
+      "totalCount": 2,
+      "changeRate": "0.41",
+      "riseCount": 0,
+      "fallCount": 0,
+      "steadyCount": 0
+    },
+    {
+      "no": 362,
+      "name": "자율주행차",
+      "totalCount": 3,
+      "changeRate": "-0.52",
+      "riseCount": 0,
+      "fallCount": 0,
+      "steadyCount": 0
+    }
+  ],
+  "totalCount": 4,
+  "page": 1,
+  "pageSize": 100,
+  "localOpenTimeDesc": "",
+  "marketStatus": "CLOSE"
+}

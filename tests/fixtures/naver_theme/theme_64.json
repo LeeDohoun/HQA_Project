@@ -1,0 +1,111 @@
+{
+  "stockListSortType": "THEME",
+  "stocks": [
+    {
+      "stockType": "domestic",
+      "stockEndType": "stock",
+      "itemCode": "240600",
+      "reutersCode": "240600",
+      "stockName": "유진테크놀로지",
+      "sosok": "1",
+      "closePrice": "1,170",
+      "fluctuationsRatio": "30.00",
+      "tradeStopType": {
+        "code": "1",
+        "text": "운영.Trading",
+        "name": "TRADING"
+      },
+      "closePriceRaw": "1170",
+      "accumulatedTradingValueRaw": "606000000",
+      "marketValueRaw": "9710309700"
+    },
+    {
+      "stockType": "domestic",
+      "stockEndType": "stock",
+      "itemCode": "247540",
+      "reutersCode": "247540",
+      "stockName": "에코프로비엠",
+      "sosok": "1",
+      "closePrice": "120,000",
+      "fluctuationsRatio": "4.10",
+      "tradeStopType": {
+        "code": "1",
+        "text": "운영.Trading",
+        "name": "TRADING"
+      },
+      "closePriceRaw": "120000",
+      "accumulatedTradingValueRaw": "210000000000",
+      "marketValueRaw": "12000000000000"
+    },
+    {
+      "stockType": "domestic",
+      "stockEndType": "stock",
+      "itemCode": "0011A0",
+      "reutersCode": "0011A0",
+      "stockName": "액스비스",
+      "sosok": "1",
+      "closePrice": "10,520",
+      "fluctuationsRatio": "1.95",
+      "tradeStopType": {
+        "code": "1",
+        "text": "운영.Trading",
+        "name": "TRADING"
+      },
+      "closePriceRaw": "10520",
+      "accumulatedTradingValueRaw": "1441000000",
+      "marketValueRaw": "98190944800"
+    },
+    {
+      "stockType": "domestic",
+      "stockEndType": "stock",
+      "itemCode": "373220",
+      "reutersCode": "373220",
+      "stockName": "LG에너지솔루션",
+      "sosok": "0",
+      "closePrice": "385,000",
+      "fluctuationsRatio": "1.20",
+      "tradeStopType": {
+        "code": "1",
+        "text": "운영.Trading",
+        "name": "TRADING"
+      },
+      "closePriceRaw": "385000",
+      "accumulatedTradingValueRaw": "150000000000",
+      "marketValueRaw": "90000000000000"
+    },
+    {
+      "stockType": "domestic",
+      "stockEndType": "stock",
+      "itemCode": "006400",
+      "reutersCode": "006400",
+      "stockName": "삼성SDI",
+      "sosok": "0",
+      "closePrice": "360,000",
+      "fluctuationsRatio": "-0.80",
+      "tradeStopType": {
+        "code": "1",
+        "text": "운영.Trading",
+        "name": "TRADING"
+      },
+      "closePriceRaw": "360000",
+      "accumulatedTradingValueRaw": "190000000000",
+      "marketValueRaw": "25000000000000"
+    }
+  ],
+  "groupInfo": {
+    "no": 64,
+    "name": "2차전지",
+    "totalCount": 5,
+    "changeRate": "1.33",
+    "riseCount": 0,
+    "fallCount": 0,
+    "steadyCount": 0
+  },
+  "themeDescription": "2차전지 테마 설명(시험용).",
+  "themeItemInfoMap": {},
+  "totalCount": 5,
+  "page": 1,
+  "pageSize": 100,
+  "localOpenTimeDesc": "",
+  "marketStatus": "CLOSE"
+}
