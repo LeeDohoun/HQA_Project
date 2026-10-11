@@ -3,10 +3,10 @@
 `feat/dohoon-changes` 브랜치에서 AI 분석, 데이터 수집, 백테스트를 무엇을, 왜, 어떻게 바꿨는지 정리한 문서입니다. 코드를 열지 않고도 바뀐 동작과 운영 시 주의할 점을 알 수 있게 썼습니다. 각 변경의 자세한 근거는 괄호 안 커밋의 메시지(`git show <커밋>`)에 있습니다.
 
 - **기간:** 2026-09-21 ~ 2026-09-29, 그리고 PAPER 준비 작업 2026-10-09 ([7장](#7-10월-paper-준비-작업-2026-10-09))
-- **구성:** `main`에서 분기 → `ai-data-main` 작업 이식 4개 커밋(`498e6e3`~`54e581e`) → 점검·수정 30개 커밋(`2088844`~`8ef0e83`) → 10월 PAPER 준비 9개 커밋(`22db295`~`f4bd145`) → 10월 전체 점검 17개 커밋(`7d2c0f9`~`2b514b1`, [7.7](#77-전체-점검-2026-10-09-저녁)) → 독립 검토 수정 5개 커밋(`4c435c4`~`969a5f5`)과 후속 수정·시뮬레이션(`d137a69`~, [7.8](#78-독립-검토-2026-10-09-밤)) → PostgreSQL 검증(`8937d72`~, [7.9](#79-postgresql-검증-2026-10-09-밤)) → KIS 연결 확인과 Compose 비밀값(`4f5da49`~, [7.10](#710-kis-연결-확인과-compose-비밀값-2026-10-09-밤)) → Claude API 연결(`39d00d5`, [7.11](#711-claude-api-연결-39d00d5-2026-10-10)) → KRX 승인 전 KIS 일봉과 종목 확장(`9ceb34c`~, [7.12](#712-krx-승인-전-kis-일봉과-종목-확장-2026-10-10))
+- **구성:** `main`에서 분기 → `ai-data-main` 작업 이식 4개 커밋(`498e6e3`~`54e581e`) → 점검·수정 30개 커밋(`2088844`~`8ef0e83`) → 10월 PAPER 준비 9개 커밋(`22db295`~`f4bd145`) → 10월 전체 점검 17개 커밋(`7d2c0f9`~`2b514b1`, [7.7](#77-전체-점검-2026-10-09-저녁)) → 독립 검토 수정 5개 커밋(`4c435c4`~`969a5f5`)과 후속 수정·시뮬레이션(`d137a69`~, [7.8](#78-독립-검토-2026-10-09-밤)) → PostgreSQL 검증(`8937d72`~, [7.9](#79-postgresql-검증-2026-10-09-밤)) → KIS 연결 확인과 Compose 비밀값(`4f5da49`~, [7.10](#710-kis-연결-확인과-compose-비밀값-2026-10-09-밤)) → Claude API 연결(`39d00d5`, [7.11](#711-claude-api-연결-39d00d5-2026-10-10)) → KRX 승인 전 KIS 일봉과 종목 확장(`9ceb34c`~, [7.12](#712-krx-승인-전-kis-일봉과-종목-확장-2026-10-10)) → Claude 구독 한도로 분석(`186638c`, [7.13](#713-claude-구독-한도로-분석-186638c-2026-10-10)) → Naver 테마 탐색 복구(`ecc0509`, [7.14](#714-naver-테마-탐색-복구-ecc0509-2026-10-11))
 - **규모 (9월 수정 30개 커밋):** 64개 파일, +3,142 / −298줄, 그중 테스트 파일 23개. 9월에는 Spring 백엔드와 프론트엔드 코드를 바꾸지 않았습니다.
 - **규모 (10월 9개 커밋):** 36개 파일, +2,168 / −173줄, 그중 테스트 파일 14개. Spring 백엔드도 수정했습니다(주문 수명주기, 세션 캘린더, 운영자 도구).
-- **테스트:** 9월 기준 오프라인 1,247개 통과, 3개 건너뜀. 10월 작업 뒤(7.12까지) Python 1,424개 통과·5개 건너뜀(실제 KIS 테스트), 백엔드 `mvn test` 131개 실행·실패 0. 기본 실행은 7개를 건너뛰고(PostgreSQL 6개, 종단 시뮬레이션 1개), 시험용 PostgreSQL과 시뮬레이션을 켜면 건너뛰는 테스트가 없습니다. 커밋 각각에서 따로 돌려도 통과합니다.
+- **테스트:** 9월 기준 오프라인 1,247개 통과, 3개 건너뜀. 10월 작업 뒤(7.12까지) Python 1,424개 통과·5개 건너뜀(실제 KIS 테스트), 7.14 뒤 1,471개 통과·5개 건너뜀, 백엔드 `mvn test` 131개 실행·실패 0. 기본 실행은 7개를 건너뛰고(PostgreSQL 6개, 종단 시뮬레이션 1개), 시험용 PostgreSQL과 시뮬레이션을 켜면 건너뛰는 테스트가 없습니다. 커밋 각각에서 따로 돌려도 통과합니다.
 - **데이터:** 수집 데이터, 가격, 예산 원장, 실험 결과는 커밋하지 않았습니다. 실제 실행은 Git이 추적하지 않는 `.local/`에서 했습니다.
 
 ## 진행 순서
@@ -489,7 +489,7 @@ KRX Open API 키는 모든 서비스에 `401 Unauthorized API Call`을 돌려줍
 
 **로컬 데이터 정리:** `raw/chart/2차전지.jsonl`에 있던 FDR 시험 봉 1,287개(수정주가, `+09:00`가 붙은 시각)를 `.local/backup/`으로 옮겼습니다. 분석 로더는 KIS 봉이 이겨 영향이 없었지만, 옛 가격 로더(`PriceLoader`, 백테스트의 `TemporalPriceLoader`)는 시각대가 있는 봉과 없는 봉이 섞이면 정렬에서 `Cannot compare tz-naive and tz-aware timestamps`로 멈췄습니다. 정리 뒤에는 두 로더 모두 300개 봉을 읽습니다. 정리 전 데이터 전체는 `.local/backup/data-2026-10-10-before-kis-chart`에 있습니다.
 
-**테마 탐색:** Naver가 테마 페이지(`finance.naver.com/sise/theme.naver`)를 브라우저에서 그리는 새 사이트(`stock.naver.com`)로 옮겨, `scripts.data.discover`와 `collect --refresh-targets`의 파서는 지금 테마를 하나도 찾지 못합니다. 저장된 대상 목록으로 수집하는 기본 동작에는 영향이 없습니다. 아래 종목 확장은 Naver 모바일 JSON API(`m.stock.naver.com/api/stocks/theme`)로 카탈로그를 받아 `discover`의 카탈로그 저장 함수로 저장했습니다.
+**테마 탐색:** Naver가 테마 페이지(`finance.naver.com/sise/theme.naver`)를 브라우저에서 그리는 새 사이트(`stock.naver.com`)로 옮겨, 10-10에는 `scripts.data.discover`와 `collect --refresh-targets`의 파서가 테마를 하나도 찾지 못했습니다. 저장된 대상 목록으로 수집하는 기본 동작에는 영향이 없었습니다. 아래 종목 확장은 Naver 모바일 JSON API(`m.stock.naver.com/api/stocks/theme`)로 카탈로그를 받아 `discover`의 카탈로그 저장 함수로 저장했습니다. 10-11에 수집기를 이 API로 옮겨 복구했습니다([7.14](#714-naver-테마-탐색-복구-ecc0509-2026-10-11)).
 
 **PAPER 종목 확장:** 2차전지 시험 종목 3개만으로는 분석 후보가 너무 적어, 객관적인 데이터 기준으로 테마 2개를 더하고 2차전지도 넓혔습니다. 기대 수익률이나 과거 수익률로는 고르지 않았습니다. 과거 수익률로 고르면 관찰 기간의 성과가 선택 단계에서 이미 정해진 셈이 되고(선택 편향), 20거래일 PAPER 결과를 시스템의 판단력으로 해석할 수 없게 되기 때문입니다. Naver API가 3개월 수익률을 함께 주지만 쓰지 않았습니다. 기준은 데이터를 안정적으로 모을 수 있는지와 모의 체결이 현실적인지입니다.
 
@@ -518,7 +518,7 @@ KRX Open API 키는 모든 서비스에 `401 Unauthorized API Call`을 돌려줍
 
 **남은 일:**
 1. **KRX 승인:** openapi.krx.co.kr에서 일별 시세·지수 서비스 승인을 확인합니다. 승인되면 수집 출처를 `chart`로 되돌리고 `--market-context`를 켭니다. KIS로 받은 봉은 같은 기준이라 그대로 둡니다.
-2. **테마 탐색 복구:** `NaverThemeStockCollector`를 Naver 모바일 JSON API로 옮기고, 위 선정 규칙을 재현할 수 있는 명령으로 만듭니다. 이번 선정은 저장소 밖 스크립트로 했습니다.
+2. **테마 탐색 복구:** `NaverThemeStockCollector`는 10-11에 Naver 모바일 JSON API로 옮겼습니다([7.14](#714-naver-테마-탐색-복구-ecc0509-2026-10-11)). 위 선정 규칙을 재현하는 명령은 아직 없습니다. 이번 선정은 저장소 밖 스크립트로 했습니다.
 3. **자율주행차 묶음:** 업종이 섞인 대형주 묶음을 그대로 쓸지, 업종 집중도 조건을 더해 다시 고를지 정해야 합니다.
 4. **같은 앱키:** 수집기가 백엔드에 등록한 사용자와 같은 모의투자 앱키를 씁니다. 그날 첫 수집이 성공하면 이후에는 KIS를 부르지 않지만, 토큰 발급(앱키당 1분 1회)이 백엔드의 토큰 갱신과 같은 분에 겹치면 수집기는 1분 기다렸다 다시 받고, 백엔드는 그 요청이 실패한 뒤 다음 요청에서 다시 받습니다. 백엔드 토큰은 24시간 유효해 겹칠 일은 드뭅니다.
 
@@ -544,6 +544,33 @@ Claude Pro 요금제에는 월 API 크레딧이 없어서(Max·Team 전용), API
   구조화 출력 한 건마다 CLI가 모델과 두 번 주고받습니다. 하루로 환산하면 아침 전문가 분석 약 5%, RiskManager 26회 약 7%, 뉴스 재분석 1~2%로, 세션 한도의 약 14%입니다. 주간 한도(화요일 05:00 재설정)는 아직 재지 못했습니다.
 - **대기열 한도:** 구독에는 공개된 분당 토큰 한도가 없는데, HQA 자체 대기열은 기본으로 분당 200,000토큰만 받습니다. 첫 사이클의 전문가 57건이 이를 넘으면 45초 넘게 기다린 호출이 `LLMQueueTimeout`으로 실패하므로, `claude_plan`에서는 `HQA_LLM_TPM`을 2,000,000 정도로 올립니다.
 - **결정 (사용자, 2026-10-10):** 관찰 기간 모델은 Claude Opus 5.5입니다. 주간 사용률을 월요일 장 마감 뒤 확인하고, 너무 높으면 화요일 개장 전에 Sonnet 5.5로 바꿉니다(이 경우 관찰 하루를 다시 셉니다). '자율주행차' 테마는 사실상 대형 반도체·자동차·인터넷 묶음이지만 미리 정한 데이터 기준을 통과했으므로 그대로 둡니다.
+
+### 7.14 Naver 테마 탐색 복구 (`ecc0509`, 2026-10-11)
+
+Naver가 테마 페이지(`finance.naver.com/sise/theme.naver`, `sise_group_detail.naver?type=theme`)를 `stock.naver.com`으로 옮겼습니다. 새 사이트는 브라우저가 스크립트로 화면을 그려서 HTML에 테마 정보가 없습니다. 그래서 Selenium으로 페이지를 열어 링크를 읽던 `NaverThemeStockCollector`가 테마를 하나도 찾지 못했고, `scripts.data.discover`와 `collect --refresh-targets`가 빈 결과를 냈습니다(7.12). 수집기를 Naver 모바일 JSON API로 옮겼습니다.
+
+- **출처:** 테마 목록은 `m.stock.naver.com/api/stocks/theme?page=N&pageSize=100`, 테마 종목은 `.../api/stocks/theme/{번호}?page=N&pageSize=100`입니다. `requests`만 쓰고 Selenium, Chrome, chromedriver는 필요 없습니다.
+- **페이지:** API는 100개보다 큰 페이지를 거부하고(HTTP 400) 마지막 페이지 다음은 404를 줍니다. 그래서 응답의 `totalCount`로 계산한 마지막 페이지까지만 읽습니다. 요청 간격은 0.4초이고, 시간 제한(20초)과 재시도(3회)는 기존 수집기 공통 설정을 따릅니다.
+- **장중 순서 변화:** Naver는 테마 목록과 테마 종목을 모두 그날 등락률 순으로 줍니다. 장중에는 페이지를 읽는 사이에 순서가 바뀌어 한 행이 두 페이지에 나오고 다른 행이 빠질 수 있습니다. 읽은 행이 `totalCount`보다 적으면 다시 읽고, 세 번 모두 모자라면 실패합니다.
+- **실패는 오류로:** HTTP 오류, JSON이 아닌 응답(예: 옮겨 간 HTML 페이지), 모양이 바뀐 응답(목록이나 `totalCount`가 없거나, 번호·이름·6자리 코드가 없는 행), 없어진 테마(요청과 다른 `groupInfo.no`)는 모두 `NaverThemeApiError`로 멈춥니다. 빈 목록을 "테마 없음"으로 돌려주지 않습니다. `collect --refresh-targets`는 이 오류를 수집 보고서의 `reason`에 남기고 1로 끝나며, 저장된 대상 목록은 그대로 둡니다.
+- **순서에 수익률을 쓰지 않음:** Naver 순서를 그대로 쓰면 `--refresh-targets`(기본 30종목)가 그날 많이 오른 종목부터 고르게 됩니다. 옛 파서도 페이지 순서를 그대로 썼습니다. 이제 테마 안 종목은 시가총액이 큰 순(같으면 종목코드 순)입니다. 키워드는 예전처럼 테마 이름에 들어 있는지로 찾되, 이름이 키워드와 같은 테마가 먼저이고 나머지는 테마 번호 순입니다. 예를 들어 `2차전지`는 `2차전지`(64번) 다음에 `2차전지(장비)` 등 6개 테마가 이어집니다. 카탈로그는 테마 번호 순입니다.
+- **그대로인 것:** 반환 형식(`ThemeStock`, `ThemeTargets`), 영숫자 종목코드를 같은 경고와 함께 건너뛰는 동작, 그리고 `discover`가 기본으로 카탈로그(`data/theme_catalog/`)에만 저장하고 `--as-targets`일 때만 대상 목록을 바꾸는 동작입니다. `detail_url`은 테마 API 주소(`.../api/stocks/theme/{번호}`)로, 10-10 카탈로그와 같습니다. `--max-pages`와 `--theme-max-pages`는 이제 100개짜리 페이지 수입니다(기본 10, 테마 1,000개).
+
+테스트 35개는 네트워크 없이 돌아갑니다. API 응답 모양을 그대로 본뜬 JSON 고정 응답(`tests/fixtures/naver_theme/`, 숫자는 시험용)을 가짜 서버가 Naver처럼 페이지로 나눠 줍니다. 페이지 읽기와 요청 간격, 정렬, 키워드 일치, 영숫자 코드, 실패 10가지(카탈로그와 키워드 각각), 재시도, 장중 순서 변화, 그리고 `discover` 카탈로그 모드와 `collect --refresh-targets`를 명령 끝까지 확인합니다. 핵심 조건 21곳을 하나씩 일부러 망가뜨려 보니 모두 테스트가 잡았습니다. Chrome 경로를 찾던 코드와 그 테스트(`test_naver_theme_docker_runtime.py`)는 지웠습니다. 전체 Python 테스트는 1,471개 통과·5개 건너뜀(실제 KIS)입니다. 토크나이저 캐시가 없으면 토크나이저 테스트 3개를 더 건너뜁니다.
+
+**실데이터 확인 (10-11 일 22:40~22:50, 장 밖, 읽기만, 임시 폴더에 저장):**
+
+| 확인 | 결과 |
+|---|---|
+| `discover`(카탈로그 모드) | 테마 264개, 편입 6,521건. 영숫자 코드 103건(61종목)을 경고와 함께 건너뛰고 6,418건 저장. 110초, 재시도·다시 읽기 없음. `raw/theme_targets`는 만들지 않음 |
+| 응답 | 모든 행이 보통주(`stockEndType`이 `stock`)이고 시가총액 값이 있음. 가장 큰 테마는 148종목. 테마 이름으로 만든 카탈로그 파일 이름이 겹치지 않음 |
+| `collect --refresh-targets --save-only --theme 2차전지 --theme-max-stocks 8` | 일치 테마 7개 중 `2차전지`(64번)부터 시가총액 순 8종목: LG에너지솔루션, 삼성SDI, SK이노베이션, POSCO홀딩스, 고려아연, LG화학, 포스코퓨처엠, 에코프로 |
+
+PAPER 대상 목록과 `.local/data`는 건드리지 않았습니다. 위 8종목은 시가총액 순 예시이고, PAPER 유니버스는 7.12의 20일 거래대금 규칙으로 고른 그대로입니다.
+
+**남은 일:**
+1. **선정 규칙 명령:** 7.12의 선정 규칙(종목 자격, 20일 평균 거래대금, 겹침)을 재현하는 명령은 아직 없습니다. `list_themes()`와 `theme_members()`가 그 스크립트가 쓰던 원본 행(`stockEndType`, `tradeStopType`, `accumulatedTradingValueRaw`, `marketValueRaw`)을 그대로 돌려주므로 그 위에 만들 수 있습니다.
+2. **안 쓰는 의존성:** Selenium을 쓰는 코드가 없어져 `requirements.txt`의 `selenium`·`webdriver-manager`와 `ai_server/Dockerfile`의 `chromium`·`chromium-driver`, `CHROME_BINARY`·`CHROMEDRIVER`가 쓰이지 않습니다. 정리할 때 `tests/test_runtime_cleanup.py`의 의존성 목록도 같이 고칩니다.
 
 ## 부록: 커밋 목록
 
@@ -630,3 +657,4 @@ Claude Pro 요금제에는 월 API 크레딧이 없어서(Max·Team 전용), API
 | `39d00d5` | 2026-10-10 | Claude | feat(llm): run the analysis on Claude with the same token, budget and refusal checks as Luna |
 | `9ceb34c` | 2026-10-10 | KIS 일봉 | feat(collect): KIS daily prices as an explicit kis_chart source until KRX approves the key |
 | `186638c` | 2026-10-10 | Claude | feat(llm): run the analysis on the user's Claude subscription through the Claude CLI |
+| `ecc0509` | 2026-10-11 | 테마 탐색 | fix(collect): find Naver themes through the mobile JSON API after the theme pages moved |
