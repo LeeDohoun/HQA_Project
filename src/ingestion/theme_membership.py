@@ -114,7 +114,10 @@ def is_membership_active(row: ThemeMembership, as_of_date: str) -> bool:
         return False
     first_seen = _normalize_date(row.first_seen_at)
     last_seen = _normalize_date(row.last_seen_at)
-    if first_seen and first_seen > as_of:
+    # A membership inferred from documents is known only once its first document is,
+    # and a document dated on the as-of day is not known at that day's close.
+    inferred = "corpus_inferred" in str(row.source or "")
+    if first_seen and (first_seen >= as_of if inferred else first_seen > as_of):
         return False
     if last_seen and last_seen < as_of:
         return False

@@ -6,6 +6,7 @@ import java.time.OffsetDateTime;
 public record AuthUserResponse(
         String id,
         String userId,
+        String nickname,
         String firstName,
         String lastName,
         UserRole role,

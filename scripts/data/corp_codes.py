@@ -35,6 +35,7 @@ def _extract_corp_code_xml(zip_bytes: bytes) -> bytes:
 def _parse_corp_codes(xml_bytes: bytes, *, include_unlisted: bool = False) -> list[dict[str, str]]:
     root = ET.fromstring(xml_bytes)
     rows: list[dict[str, str]] = []
+    alphanumeric_listings = 0
 
     for item in root.findall(".//list"):
         corp_code = (item.findtext("corp_code") or "").strip()
@@ -42,8 +43,14 @@ def _parse_corp_codes(xml_bytes: bytes, *, include_unlisted: bool = False) -> li
         stock_code = (item.findtext("stock_code") or "").strip()
         modify_date = (item.findtext("modify_date") or "").strip()
 
-        if not re.fullmatch(r"[0-9]{8}", corp_code) or (stock_code and not re.fullmatch(r"[0-9]{6}", stock_code)):
+        if not re.fullmatch(r"[0-9]{8}", corp_code) or (stock_code and not re.fullmatch(r"[0-9A-Z]{6}", stock_code)):
             raise ValueError("DART corpCode contains invalid corporate or stock code")
+        if stock_code and not stock_code.isdigit():
+            # KRX issues alphanumeric short codes (e.g. 0126Z0) to recent listings. The
+            # theme, collection and analysis pipeline is numeric-only, so these rows are
+            # skipped and counted instead of rejecting the whole mapping file.
+            alphanumeric_listings += 1
+            continue
         if not include_unlisted and not stock_code:
             continue
 
@@ -56,6 +63,8 @@ def _parse_corp_codes(xml_bytes: bytes, *, include_unlisted: bool = False) -> li
             }
         )
 
+    if alphanumeric_listings:
+        print(f"[WARN][DART] skipped {alphanumeric_listings} listings with alphanumeric KRX codes (not supported yet)")
     if not rows:
         raise ValueError("DART corpCode contains no eligible records")
     listed = {}

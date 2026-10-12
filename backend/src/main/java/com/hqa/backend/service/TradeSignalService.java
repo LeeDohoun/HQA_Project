@@ -56,6 +56,10 @@ public class TradeSignalService {
     public void processSubmittedOrderExpirations() { lifecycle.reconcilePendingOrders(); }
     public List<Map<String, Object>> activeSignalsForMonitor() { return lifecycle.allActive(); }
     public Map<String, Object> activeSignalsForMonitor(int page, int size) { return lifecycle.active(page, size); }
+    public List<Map<String, Object>> ordersAwaitingOperator() { return lifecycle.ordersAwaitingOperator(); }
+    public Map<String, Object> resolveUnknownOrder(String executionId, String brokerOrderId, boolean notSubmitted, String note) {
+        return lifecycle.resolveUnknownOrder(executionId, brokerOrderId, notSubmitted, note);
+    }
     public Optional<TradeSignal> triggerSignal(String signalId, Map<String, Object> payload) {
         return lifecycle.trigger(signalId, payload);
     }

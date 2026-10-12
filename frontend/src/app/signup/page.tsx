@@ -39,12 +39,12 @@ export default function SignupPage() {
     <div className="auth-wrap">
       <div className="auth-card">
         <div className="auth-brand">
-          <span className="auth-brand-mark">H</span>
+          <span className="auth-brand-mark">◒</span>
           <span>HQA</span>
         </div>
 
         <div>
-          <h1 className="auth-title">계정 하나면<br />AI가 함께해요 ✨</h1>
+          <h1 className="auth-title">계정 하나면<br />새로운 시선이 함께해요</h1>
           <p className="auth-sub">몇 가지만 입력하면 바로 시작할 수 있어요.</p>
         </div>
 
@@ -52,7 +52,7 @@ export default function SignupPage() {
           <div className="field">
             <label htmlFor="userId">아이디</label>
             <input
-              id="userId"
+              id="userId" autoComplete="username"
               placeholder="4자 이상으로 만들어주세요"
               minLength={4}
               value={form.userId}
@@ -64,7 +64,7 @@ export default function SignupPage() {
             <div className="field">
               <label htmlFor="lastName">성</label>
               <input
-                id="lastName"
+                id="lastName" autoComplete="family-name"
                 placeholder="홍"
                 value={form.lastName}
                 onChange={(event) => setForm((prev) => ({ ...prev, lastName: event.target.value }))}
@@ -74,7 +74,7 @@ export default function SignupPage() {
             <div className="field">
               <label htmlFor="firstName">이름</label>
               <input
-                id="firstName"
+                id="firstName" autoComplete="given-name"
                 placeholder="길동"
                 value={form.firstName}
                 onChange={(event) => setForm((prev) => ({ ...prev, firstName: event.target.value }))}
@@ -85,7 +85,7 @@ export default function SignupPage() {
           <div className="field">
             <label htmlFor="password">비밀번호</label>
             <input
-              id="password"
+              id="password" autoComplete="new-password"
               placeholder="8자 이상"
               minLength={8}
               type="password"
@@ -97,7 +97,7 @@ export default function SignupPage() {
           <div className="field">
             <label htmlFor="confirmPassword">비밀번호 확인</label>
             <input
-              id="confirmPassword"
+              id="confirmPassword" autoComplete="new-password"
               placeholder="한 번 더 입력해주세요"
               minLength={8}
               type="password"
@@ -106,7 +106,7 @@ export default function SignupPage() {
               required
             />
           </div>
-          {error ? <p className="error-text">{error}</p> : null}
+          {error ? <p role="alert" className="error-text">{error}</p> : null}
           <button className="wiz-cta" disabled={loading} type="submit">
             {loading ? "만드는 중..." : "계정 만들기"}
           </button>
