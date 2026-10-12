@@ -473,6 +473,14 @@ class LocalAnalysisData:
 
 
 class BackendAccountClient:
+    # The backend sends every KIS call through one queue at one call per second, and the signal
+    # monitor reads each account and its quotes every 20 s, so a request can wait behind those
+    # polls. An account snapshot is a few paced calls; quotes are one call per uncached code.
+    # Quotes must still arrive inside the 60 s freshness window that _review_account checks
+    # against the account snapshot, so their wait is capped below it.
+    ACCOUNT_TIMEOUT_SECONDS = 30
+    PRICE_TIMEOUT_CAP_SECONDS = 50
+
     def __init__(self, base_url: str | None = None, internal_token: str | None = None, timeout: int = 10):
         url = base_url or os.getenv("BACKEND_INTERNAL_BASE_URL") or os.getenv("BACKEND_BASE_URL")
         if not url:
@@ -485,7 +493,8 @@ class BackendAccountClient:
 
     def fetch_accounts(self, user_ids: list[str]) -> dict[str, AccountSnapshot]:
         response = requests.post(f"{self.base_url}/api/v1/internal/trading/account-snapshots",
-                                 json={"userIds": user_ids}, headers={"X-HQA-Internal-Token": self.token}, timeout=self.timeout)
+                                 json={"userIds": user_ids}, headers={"X-HQA-Internal-Token": self.token},
+                                 timeout=max(self.timeout, self.ACCOUNT_TIMEOUT_SECONDS))
         response.raise_for_status()
         rows = response.json()["snapshots"]
         result = {}
@@ -517,8 +526,7 @@ class BackendAccountClient:
     def fetch_prices(self, user_id: str, stock_codes: list[str]) -> dict[str, dict]:
         """Quotes by code; a code whose quote failed maps to {"error": reason} so one bad
         quote does not fail the whole account review."""
-        # The backend fetches each uncached quote one KIS call per second.
-        timeout = max(self.timeout, 10 + 1.5 * len(stock_codes))
+        timeout = min(self.PRICE_TIMEOUT_CAP_SECONDS, max(self.timeout, 20 + 2 * len(stock_codes)))
         response = requests.post(f"{self.base_url}/api/v1/internal/market/price-snapshots",
                                  json={"userId": user_id, "stockCodes": stock_codes},
                                  headers={"X-HQA-Internal-Token": self.token}, timeout=timeout)

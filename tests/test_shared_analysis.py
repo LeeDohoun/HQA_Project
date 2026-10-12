@@ -1025,6 +1025,27 @@ def test_an_unsupported_holding_is_set_aside_instead_of_failing_the_account(monk
     assert account.unsupportedHoldings == [{"stockCode": "0126Z0", "reason": "unsupported_holding"}]
 
 
+def test_backend_reads_wait_for_the_paced_kis_queue_but_quotes_stay_inside_the_freshness_window(monkeypatch):
+    from src.runner.analysis_data import BackendAccountClient
+
+    row = snapshot("a", []).model_dump(mode="json")
+    row["capturedAt"] = datetime.now(timezone.utc).isoformat()
+    timeouts = []
+
+    def post(url, **kwargs):
+        timeouts.append(kwargs["timeout"])
+        codes = kwargs["json"].get("stockCodes")
+        body = {"snapshots": [row]} if codes is None else {"snapshots": []}
+        return SimpleNamespace(raise_for_status=lambda: None, json=lambda: body)
+
+    monkeypatch.setattr("src.runner.analysis_data.requests.post", post)
+    client = BackendAccountClient(base_url="http://backend.invalid", internal_token="t")
+    client.fetch_accounts(["a"])
+    client.fetch_prices("a", [f"{n:06d}" for n in range(7)])
+    client.fetch_prices("a", [f"{n:06d}" for n in range(25)])
+    assert timeouts == [30, 34, 50]
+
+
 @pytest.mark.parametrize("blocked", [{"entryEligible": False, "entryBlockReason": "DAILY_LOSS_LIMIT"},
                                      {"monitorCapacityExceeded": True},
                                      {"monitorSymbolCount": 10}])

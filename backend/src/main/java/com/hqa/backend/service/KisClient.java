@@ -23,11 +23,15 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.concurrent.ConcurrentHashMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+import reactor.util.retry.Retry;
 
 @Component
 public class KisClient {
@@ -221,6 +225,17 @@ public class KisClient {
         }
     }
 
+    /** The log names the path and status only, never the query, which holds the account number. */
+    private static Retry readRetry(String path) {
+        return Retry.fixedDelay(READ_RETRIES, READ_RETRY_DELAY)
+                .filter(error -> (error instanceof WebClientResponseException response
+                        && response.getStatusCode().is5xxServerError()) || error instanceof WebClientRequestException)
+                .doBeforeRetry(signal -> log.warn("[KisClient] transient KIS failure on {} (retry {} of {}): {}", path,
+                        signal.totalRetries() + 1, READ_RETRIES, signal.failure() instanceof WebClientResponseException response
+                                ? "HTTP " + response.getStatusCode().value() : signal.failure().getClass().getSimpleName()))
+                .onRetryExhaustedThrow((spec, signal) -> signal.failure());
+    }
+
     private static void requirePaper(UserSecret secret) {
         if (secret == null || secret.isKisIsReal()) throw new IllegalArgumentException("PAPER_ACCOUNT_REQUIRED");
     }
@@ -242,7 +257,7 @@ public class KisClient {
                 .header("appkey", secretCipher.decrypt(secret.getKisAppKey()))
                 .header("appsecret", secretCipher.decrypt(secret.getKisAppSecret()))
                 .header("tr_id", trId).header("tr_cont", continuation).header("custtype", "P")
-                .retrieve().toEntity(String.class).block(Duration.ofSeconds(20));
+                .retrieve().toEntity(String.class).retryWhen(readRetry(path)).block(ACCOUNT_READ_TIMEOUT);
         if (response == null || response.getBody() == null) throw new IllegalStateException("KIS_RESPONSE_EMPTY");
         try {
             Map<String, Object> payload = objectMapper.readValue(response.getBody(), new TypeReference<>() { });
@@ -302,6 +317,16 @@ public class KisClient {
     static final Duration ORDER_TIMEOUT = Duration.ofSeconds(40);
     /** No KIS call may block a request thread (or the token lock) indefinitely. */
     static final Duration KIS_CALL_TIMEOUT = Duration.ofSeconds(25);
+    /**
+     * Read-only inquiries retry a transient broker failure twice: an HTTP 5xx (KIS paper also answers
+     * its per-second limit with one) or a dropped connection. Orders and cancellations are never
+     * retried, because a retry could place them twice.
+     */
+    static final int READ_RETRIES = 2;
+    static final Duration READ_RETRY_DELAY = Duration.ofMillis(300);
+    /** Covers the pacing filter's wait, the call and its retries. */
+    static final Duration ACCOUNT_READ_TIMEOUT = Duration.ofSeconds(30);
+    private static final Logger log = LoggerFactory.getLogger(KisClient.class);
     private final ConcurrentHashMap<String, Object> tokenLocks = new ConcurrentHashMap<>();
     public static final String PAPER_RATE_QUEUE_FULL = "PAPER_RATE_QUEUE_CAPACITY_EXCEEDED";
 
@@ -443,6 +468,7 @@ public class KisClient {
                     .header("custtype", "P")
                     .retrieve()
                     .bodyToMono(String.class)
+                    .retryWhen(readRetry(CURRENT_PRICE_PATH))
                     .block(KIS_CALL_TIMEOUT);
             Map<String, Object> body = objectMapper.readValue(response, new TypeReference<>() {});
             if (!"0".equals(String.valueOf(body.getOrDefault("rt_cd", "")))) {
