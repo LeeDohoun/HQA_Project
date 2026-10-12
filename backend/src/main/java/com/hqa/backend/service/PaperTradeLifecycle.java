@@ -376,7 +376,9 @@ public class PaperTradeLifecycle {
             }
             int filled = integer(row.get("tot_ccld_qty"));
             int remaining = integer(row.get("rmn_qty"));
-            int cancelledQuantity = integer(row.get("cnc_cfrm_qty"));
+            // KIS paper answers cncl_cfrm_qty (seen on the first live order, 2026-10-12); the
+            // documented cnc_cfrm_qty stays a fallback.
+            int cancelledQuantity = integer(row.containsKey("cncl_cfrm_qty") ? row.get("cncl_cfrm_qty") : row.get("cnc_cfrm_qty"));
             int rejectedQuantity = integer(row.get("rjct_qty"));
             boolean cancelled = remaining == 0 && ("Y".equals(String.valueOf(row.get("cncl_yn")))
                     || filled + cancelledQuantity + rejectedQuantity == execution.getSubmittedQuantity());

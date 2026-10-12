@@ -244,7 +244,7 @@ class PaperLifecycleSimulationTest {
             row.put("ord_qty", String.valueOf(order.qty));
             row.put("tot_ccld_qty", String.valueOf(order.filled));
             row.put("rmn_qty", String.valueOf(order.remaining()));
-            row.put("cnc_cfrm_qty", String.valueOf(order.cancelled));
+            row.put("cncl_cfrm_qty", String.valueOf(order.cancelled));
             row.put("rjct_qty", "0");
             row.put("cncl_yn", order.cancelled > 0 ? "Y" : "N");
             row.put("avg_prvs", String.valueOf(order.filled > 0 ? order.limit : 0));

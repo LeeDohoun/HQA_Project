@@ -126,7 +126,7 @@ class PaperTradeLifecycleTest {
         when(kis.paperOrders(anyString(), any(), anyString(), any(), any())).thenReturn(List.of(Map.ofEntries(
                 Map.entry("odno", "order1"), Map.entry("ord_dt", "20260904"), Map.entry("pdno", "005930"),
                 Map.entry("sll_buy_dvsn_cd", "02"), Map.entry("ord_qty", "10"), Map.entry("tot_ccld_qty", "2"),
-                Map.entry("rmn_qty", "8"), Map.entry("cnc_cfrm_qty", "0"), Map.entry("rjct_qty", "0"),
+                Map.entry("rmn_qty", "8"), Map.entry("cncl_cfrm_qty", "0"), Map.entry("rjct_qty", "0"),
                 Map.entry("cncl_yn", "N"), Map.entry("avg_prvs", "100"), Map.entry("ord_gno_brno", "org"))));
         when(store.markCancelRequested("e1")).thenReturn(true, false);
         when(kis.cancelPaperOrder(anyString(), any(), anyString(), anyString(), anyString(), anyInt()))
