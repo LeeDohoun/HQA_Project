@@ -19,6 +19,42 @@ NET_METRICS = {"net_metric": "net_excess", "net_at_cost_1_5_metric": "net_excess
 REGISTRATION = Path(__file__).resolve().parents[1] / "research/experiments" / EXPERIMENT_ID / "preregistration.md"
 
 
+@pytest.mark.parametrize("compressed", [False, True])
+def test_result_size_threshold_round_trip_and_filename(repo, monkeypatch, compressed):
+    root, _, _ = repo
+    payload = result_payload()
+    size = len((json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False) + "\n").encode("utf-8"))
+    monkeypatch.setattr(common, "RESULT_GZIP_THRESHOLD_BYTES", size - 1 if compressed else size)
+    path, summary = common.write_results(EXPERIMENT_ID, payload, repo_root=root)
+    assert path.name.endswith(".json.gz" if compressed else ".json")
+    assert common.read_result_json(path) == payload
+    assert path.name in summary.read_text(encoding="utf-8")
+    if compressed:
+        # No timestamp or filename in the gzip header; distinct result names
+        # must encode the identical payload into identical compressed bytes.
+        second, _ = common.write_results(EXPERIMENT_ID, payload, repo_root=root)
+        assert path.read_bytes() == second.read_bytes()
+        assert path.read_bytes()[4:8] == b"\0\0\0\0"
+
+
+def test_compressed_result_collision_preserves_existing_pair(repo, monkeypatch):
+    root, _, _ = repo
+    monkeypatch.setattr(common, "RESULT_GZIP_THRESHOLD_BYTES", 0)
+    frozen = datetime(2026, 10, 10, tzinfo=timezone.utc)
+
+    class Clock:
+        @staticmethod
+        def now(zone):
+            return frozen
+
+    monkeypatch.setattr(common, "datetime", Clock)
+    path, summary = common.write_results(EXPERIMENT_ID, result_payload(), repo_root=root)
+    before = path.read_bytes(), summary.read_bytes()
+    with pytest.raises(FileExistsError):
+        common.write_results(EXPERIMENT_ID, result_payload(), repo_root=root)
+    assert (path.read_bytes(), summary.read_bytes()) == before
+
+
 @pytest.mark.parametrize("day,dimension,expected", [
     ("2020-03-15", "short_sale", "before_documented_intervals"),
     ("2020-03-16", "short_sale", "full_ban_2020"),

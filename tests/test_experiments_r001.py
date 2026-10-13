@@ -633,7 +633,9 @@ def test_runner_profitable_variant_uses_financial_e_and_all_quarterly_hashes(tmp
     assert [result["variants"][variant]["judgement_inputs"]["holm_p_value"] for variant in r001.VARIANTS] == expected
 
 
-def test_writer_reports_delisting_sensitive_without_mapping_it_to_pass(tmp_path, fields, registration):
+@pytest.mark.parametrize("compressed", [False, True])
+def test_writer_reports_delisting_sensitive_without_mapping_it_to_pass(tmp_path, fields, registration, monkeypatch, compressed):
+    monkeypatch.setattr(common, "RESULT_GZIP_THRESHOLD_BYTES", 0 if compressed else 50 * 1024 * 1024)
     frame = metric_frame()
     frame.loc[frame.stock_code.eq("000010"), "delisted"] = True
     base = {variant: r001.portfolio_metrics(frame, variant) for variant in r001.VARIANTS}
@@ -643,8 +645,10 @@ def test_writer_reports_delisting_sensitive_without_mapping_it_to_pass(tmp_path,
     r001.apply_delisting_sensitivity(base, stress)
     payload = {"verdict": base["r21"]["verdict"], "reasons": base["r21"]["reasons"], "variants": base, "assumptions": r001.ASSUMPTIONS}
     json_path, summary = r001.write_results(payload, repo_root=tmp_path)
-    assert json.loads(json_path.read_text())["verdict"] == "delisting_sensitive"
+    assert json_path.name.endswith(".json.gz" if compressed else ".json")
+    assert common.read_result_json(json_path)["verdict"] == "delisting_sensitive"
     assert "verdict: delisting_sensitive" in summary.read_text()
+    assert json_path.name in summary.read_text()
 
 
 def test_local_latest_episodes_are_loaded_and_all_read_sources_are_hashed(tmp_path, monkeypatch, registration):

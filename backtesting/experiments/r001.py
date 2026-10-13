@@ -536,14 +536,8 @@ def write_results(payload, *, repo_root=PROJECT_ROOT):
     lines += ["", "Source hashes, fixed sets, valuations, full random paths, skipped months and secondary metrics are in the accompanying JSON.", "", "## Assumptions", ""]
     lines += [f"- {assumption}" for assumption in payload["assumptions"]]
     directory = Path(repo_root) / "research/experiments" / EXPERIMENT_ID / "results"
-    directory.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-    json_path, summary_path = directory / f"{stamp}.json", directory / f"{stamp}.md"
-    with json_path.open("x", encoding="utf-8") as json_file:
-        with summary_path.open("x", encoding="utf-8") as summary_file:
-            json_file.write(encoded)
-            summary_file.write("\n".join(lines) + "\n")
-    return json_path, summary_path
+    return common.write_result_files(directory, stamp, encoded, lines)
 
 
 def run_experiment(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT, prices=None, sessions=None):

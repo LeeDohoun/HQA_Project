@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from backtesting import experiment_registry
 from backtesting.experiment_registry import (
     REGISTRY_COLUMNS, REQUIRED_FIELDS, record_trial, required_t_stat, trial_count, verify_preregistration,
 )
@@ -37,6 +38,72 @@ def repo(tmp_path):
 def _commit(root, path):
     _git(root, "add", "--", str(path.relative_to(root)))
     _git(root, "commit", "-qm", "Register offline experiment")
+
+
+def test_historical_large_field_remains_readable_and_append_only(repo):
+    root, prereg, _ = repo
+    _commit(root, prereg)
+    registry = root / experiment_registry.REGISTRY_PATH
+    oversized = json.dumps({"detail": "x" * 200_000})
+    with registry.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(REGISTRY_COLUMNS)
+        writer.writerow(("2026-10-10T06:06:07+00:00", "legacy", "old", "b_num", "fail", oversized, "screening"))
+    before = registry.read_bytes()
+    original = csv.field_size_limit()
+    try:
+        csv.field_size_limit(131072)
+        assert trial_count("legacy", repo_root=root) == 1
+        record_trial("D001", "next", {"count": 1}, "fail", repo_root=root)
+        assert trial_count("D001", repo_root=root) == 1
+        with registry.open(encoding="utf-8", newline="") as handle:
+            assert experiment_registry._registry_rows(handle)[0]["metrics_json"] == oversized
+        assert registry.read_bytes().startswith(before)
+    finally:
+        csv.field_size_limit(original)
+
+
+def test_csv_limit_overflow_uses_smaller_platform_limit(monkeypatch):
+    from io import StringIO
+    original = csv.field_size_limit
+    previous = original()
+    attempted = []
+
+    def platform_limit(limit):
+        attempted.append(limit)
+        if limit > experiment_registry.sys.maxsize // 100:
+            raise OverflowError
+        return original(limit)
+
+    monkeypatch.setattr(csv, "field_size_limit", platform_limit)
+    try:
+        experiment_registry._registry_rows(StringIO(",".join(REGISTRY_COLUMNS) + "\n"))
+        assert attempted == [experiment_registry.sys.maxsize, experiment_registry.sys.maxsize // 10,
+                             experiment_registry.sys.maxsize // 100]
+    finally:
+        original(previous)
+
+
+@pytest.mark.parametrize("text", ["x" * 32768, "한" * 11000])
+def test_metrics_size_rejected_before_append(repo, text):
+    root, prereg, _ = repo
+    _commit(root, prereg)
+    record_trial("D001", "small", {}, "fail", repo_root=root)
+    registry = root / experiment_registry.REGISTRY_PATH
+    before = registry.read_bytes()
+    with pytest.raises(ValueError, match="metrics_json.*32768.*compact metrics"):
+        record_trial("D001", "too-large", {"detail": text}, "fail", repo_root=root)
+    assert registry.read_bytes() == before
+
+
+def test_metrics_exact_byte_cap_is_accepted(repo):
+    root, prereg, _ = repo
+    _commit(root, prereg)
+    overhead = len(experiment_registry.encode_metrics({"detail": ""}).encode("utf-8"))
+    metrics = {"detail": "x" * (experiment_registry.MAX_METRICS_BYTES - overhead)}
+    assert len(experiment_registry.encode_metrics(metrics).encode("utf-8")) == 32768
+    record_trial("D001", "boundary", metrics, "fail", repo_root=root)
+    assert trial_count("D001", repo_root=root) == 1
 
 
 def test_untracked_and_staged_only_preregistrations_are_rejected(repo):

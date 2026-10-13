@@ -6,6 +6,7 @@ import fcntl
 import json
 import os
 import subprocess
+import sys
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -22,6 +23,7 @@ COMMIT_MAP_COLUMNS = ("experiment_id", "old_commit", "new_commit", "prereg_blob"
 REQUIRED_FIELDS = ("experiment_id", "sleeve", "hypothesis", "counterparty", "data_periods",
                    "metrics", "pass_criteria", "variants_planned", "uses_llm", "uses_holdout")
 REGISTRY_COLUMNS = ("recorded_at", "experiment_id", "prereg_commit", "variant", "verdict", "metrics_json", "note")
+MAX_METRICS_BYTES = 32 * 1024
 
 
 @dataclass(frozen=True)
@@ -126,8 +128,20 @@ def _locked_append(path: Path) -> Iterator[TextIO]:
             fcntl.flock(handle, fcntl.LOCK_UN)
 
 
+def _csv_reader(handle: TextIO) -> csv.DictReader:
+    # Preserve historical large fields; platforms may use a smaller C long.
+    limit = sys.maxsize
+    while True:
+        try:
+            csv.field_size_limit(limit)
+            break
+        except OverflowError:
+            limit //= 10
+    return csv.DictReader(handle)
+
+
 def _registry_rows(handle: TextIO) -> list[dict[str, str]]:
-    reader = csv.DictReader(handle)
+    reader = _csv_reader(handle)
     if reader.fieldnames != list(REGISTRY_COLUMNS):
         raise ValueError("registry.csv has an invalid header")
     rows = list(reader)
@@ -152,7 +166,7 @@ def _commit_aliases(root: Path, experiment_id: str, current: str) -> set[str]:
     if not path.is_file():
         return set()
     with path.open(encoding="utf-8", newline="") as handle:
-        reader = csv.DictReader(handle)
+        reader = _csv_reader(handle)
         if reader.fieldnames != list(COMMIT_MAP_COLUMNS):
             raise ValueError("commit_map.csv has an invalid header")
         rows = [row for row in reader if row["experiment_id"] == experiment_id]
@@ -167,6 +181,21 @@ def _commit_aliases(root: Path, experiment_id: str, current: str) -> set[str]:
         if row["new_commit"] == current and row["prereg_blob"] == blob:
             aliases.add(row["old_commit"])
     return aliases
+
+
+def encode_metrics(metrics: dict[str, Any]) -> str:
+    """Validate registry metrics without opening or appending the registry."""
+    if not isinstance(metrics, dict):
+        raise ValueError("metrics must be a mapping")
+    try:
+        encoded = json.dumps(metrics, ensure_ascii=False, sort_keys=True, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("metrics must contain finite JSON values") from exc
+    size = len(encoded.encode("utf-8"))
+    if size > MAX_METRICS_BYTES:
+        raise ValueError(f"metrics_json is {size} bytes; limit is {MAX_METRICS_BYTES} bytes (32 KiB); "
+                         "record compact metrics and keep full detail in the results file")
+    return encoded
 
 
 def record_trial(
@@ -184,10 +213,7 @@ def record_trial(
         raise ValueError("variant and verdict must be nonempty strings")
     if not isinstance(metrics, dict) or not isinstance(note, str):
         raise ValueError("metrics must be a mapping and note must be a string")
-    try:
-        metrics_json = json.dumps(metrics, ensure_ascii=False, sort_keys=True, allow_nan=False)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("metrics must contain finite JSON values") from exc
+    metrics_json = encode_metrics(metrics)
     path = _resolve_path(repo_root, registry_path)
     with _locked_append(path) as handle:
         empty = path.stat().st_size == 0

@@ -774,3 +774,169 @@ def test_lh002_dry_run_is_read_only_and_estimates_27_calls(offline_repo, monkeyp
     assert alias.main(["status", "--data-dir", str(offline_repo)]) == 0
     assert json.loads(capsys.readouterr().out)["holdout_claimed"] is False
     assert before == list(offline_repo.rglob("*"))
+
+
+@pytest.fixture
+def interrupted_publication(offline_repo):
+    prompt_dir = offline_repo / "prompts"
+    prompt_dir.mkdir()
+    (prompt_dir / "v2_probe.md").write_text("synthetic frozen prompt", encoding="utf-8")
+    config = ExperimentConfig(LH002.experiment_id, prompt_dir, LH002.workspace_subdir, "v2")
+    root = workspace(offline_repo / "data", config)
+    snapshot = {"prepared": [], "observations": [], "exclusions": []}
+    save_json(root / "screening_snapshot.json", {"data": snapshot, "sha256": inputs.digest(snapshot),
+                                               "metadata": {"stage": "screening", "limit": None, "planned": []}})
+    variants = {arm: cli._unmeasured("insufficient", "synthetic") for arm in cli.VARIANTS}
+    variants["b_num"].update(per_decision=[{"detail": "x" * 200_000}])
+    payload = cli._payload("screening", variants, 0, config=config, smoke=False,
+                           snapshot_hash=inputs.digest(snapshot), prompt_hashes=prompt_hashes(prompt_dir))
+    path = offline_repo / "research/experiments" / config.experiment_id / "results/20261010T060607459741Z.json"
+    save_json(path, payload)
+    registry = offline_repo / experiment_registry.REGISTRY_PATH
+    registry.parent.mkdir(parents=True, exist_ok=True)
+    with registry.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(experiment_registry.REGISTRY_COLUMNS)
+        # A prior trial and a different stage at/after the result are not this publication.
+        writer.writerow(("2026-10-09T00:00:00+00:00", config.experiment_id,
+                         "synthetic-" + config.experiment_id, "c_num", "fail", "{}", "LH002 screening; prior run"))
+        writer.writerow(("2026-10-10T06:06:07.563597+00:00", config.experiment_id,
+                         "synthetic-" + config.experiment_id, "c_text", "insufficient", '{"stage": "probe"}', "LH002 probe;"))
+        writer.writerow(("2026-10-10T06:06:07.563597+00:00", config.experiment_id,
+                         "synthetic-" + config.experiment_id, "b_num", "insufficient",
+                         json.dumps(variants["b_num"]), "LH002 screening; fixed variant; no selection of winner"))
+    return offline_repo, config, path, payload
+
+
+@pytest.mark.parametrize("compressed", [False, True])
+def test_resume_records_missing_rows_once_preserves_legacy_and_checkpoints(interrupted_publication, monkeypatch, compressed):
+    repo, config, path, payload = interrupted_publication
+    if compressed:
+        monkeypatch.setattr(common, "RESULT_GZIP_THRESHOLD_BYTES", 0)
+        path, _ = common.write_result_files(path.parent, path.stem, json.dumps(payload), ["synthetic"])
+    for name in ("execute_screening", "execute_final", "_prepare_decisions", "_run_snapshot"):
+        monkeypatch.setattr(cli, name, lambda *a, **k: pytest.fail("computation during publication resume"))
+    monkeypatch.setattr(holdout, "HoldoutSession", lambda *a, **k: pytest.fail("holdout during resume"))
+    registry = repo / experiment_registry.REGISTRY_PATH
+    before = registry.read_bytes()
+    results_before = {file: file.read_bytes() for file in path.parent.iterdir()}
+    result = cli.resume_publication(path, data_dir=repo / "data", repo_root=repo, config=config)
+    assert result["recorded_variants"] == [arm for arm in cli.VARIANTS if arm != "b_num"]
+    assert registry.read_bytes().startswith(before)
+    with registry.open(encoding="utf-8", newline="") as handle:
+        rows = experiment_registry._registry_rows(handle)
+    assert len(rows) == 7 and sum(row["variant"] == "b_num" for row in rows) == 1
+    for row in rows[3:]:
+        assert "publication resumed after registry field-limit failure; result file " + path.name == row["note"]
+        metrics = json.loads(row["metrics_json"])
+        assert metrics["stage"] == "screening" and metrics["result_file"] == path.name
+        assert metrics["trial_count_after_run"] == 7
+        assert len(row["metrics_json"].encode("utf-8")) <= experiment_registry.MAX_METRICS_BYTES
+        assert "per_decision" not in metrics
+    assert read_json(workspace(repo / "data", config) / "screening.json") == payload
+    first_append = registry.read_bytes()
+    second = cli.resume_publication(path, data_dir=repo / "data", repo_root=repo, config=config)
+    assert second["recorded_variants"] == [] and "no registry rows recorded" in second["note"]
+    assert registry.read_bytes() == first_append
+    assert {file: file.read_bytes() for file in path.parent.iterdir()} == results_before
+
+
+@pytest.mark.parametrize("mismatch", ["experiment_id", "stage", "smoke", "snapshot_hash", "prompt_hashes", "interruption"])
+def test_resume_mismatch_rejected_without_registry_or_checkpoint(interrupted_publication, mismatch):
+    repo, config, path, payload = interrupted_publication
+    payload[mismatch] = {"experiment_id": LH001.experiment_id, "stage": "final", "smoke": True,
+                         "snapshot_hash": "wrong", "prompt_hashes": {}, "interruption": "stopped"}[mismatch]
+    save_json(path, payload)
+    registry = repo / experiment_registry.REGISTRY_PATH
+    before = registry.read_bytes()
+    with pytest.raises(ValueError):
+        cli.resume_publication(path, data_dir=repo / "data", repo_root=repo, config=config)
+    assert registry.read_bytes() == before
+    assert not (workspace(repo / "data", config) / "screening.json").exists()
+
+
+@pytest.mark.parametrize("mutation", ["data", "sha256", "stage", "limit"])
+def test_resume_rejects_changed_or_smoke_snapshot(interrupted_publication, mutation):
+    repo, config, path, _ = interrupted_publication
+    cached = workspace(repo / "data", config) / "screening_snapshot.json"
+    snapshot = read_json(cached)
+    if mutation in ("stage", "limit"):
+        snapshot["metadata"][mutation] = "final" if mutation == "stage" else 1
+    else:
+        snapshot[mutation] = {"changed": True} if mutation == "data" else "changed"
+    save_json(cached, snapshot)
+    registry = repo / experiment_registry.REGISTRY_PATH
+    before = registry.read_bytes()
+    with pytest.raises(ValueError, match="snapshot"):
+        cli.resume_publication(path, data_dir=repo / "data", repo_root=repo, config=config)
+    assert registry.read_bytes() == before
+    assert not (workspace(repo / "data", config) / "screening.json").exists()
+
+
+@pytest.mark.parametrize("invalid", [float("nan"), "x" * 32768])
+def test_resume_validates_every_compact_row_before_appending(interrupted_publication, invalid):
+    repo, config, path, payload = interrupted_publication
+    payload["variants"]["hc002_holdout"]["reasons"] = [invalid]
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    registry = repo / experiment_registry.REGISTRY_PATH
+    before = registry.read_bytes()
+    with pytest.raises(ValueError):
+        cli.resume_publication(path, data_dir=repo / "data", repo_root=repo, config=config)
+    assert registry.read_bytes() == before
+    assert not (workspace(repo / "data", config) / "screening.json").exists()
+
+
+def test_resume_cli_is_explicit_and_idempotent(interrupted_publication, monkeypatch, capsys):
+    repo, config, path, _ = interrupted_publication
+    monkeypatch.setattr(cli, "PROJECT_ROOT", repo)
+    monkeypatch.setitem(cli.EXPERIMENTS, "LH002", config)
+    command = ["--experiment", "LH002", "screening", "--resume-publication", str(path), "--data-dir", str(repo / "data")]
+    # Function defaults are bound at import; forward the temporary repo explicitly.
+    resume = cli.resume_publication
+    monkeypatch.setattr(cli, "resume_publication", lambda p, **kwargs: resume(p, repo_root=repo, **kwargs))
+    assert cli.main(command) == 0
+    assert len(json.loads(capsys.readouterr().out)["recorded_variants"]) == 4
+    assert cli.main(command) == 0
+    assert json.loads(capsys.readouterr().out)["recorded_variants"] == []
+    with pytest.raises(SystemExit):
+        cli.main(command + ["--execute"])
+    with pytest.raises(SystemExit):
+        cli.main(command + ["--limit-decisions", "1"])
+
+
+@pytest.mark.parametrize("config", [LH001, LH002])
+def test_publish_records_compact_metrics_keeps_full_gz_result(offline_repo, monkeypatch, config):
+    frame, decisions = metric_example()
+    variants = evaluate.metrics(frame, decisions)["variants"]
+    for value in variants.values():
+        value.update(verdict="insufficient", reasons=["synthetic"],
+                     liquidity_buckets={"detail": "x" * 200_000})
+    variants["hc002_holdout"] = cli._unmeasured("not_applicable", "synthetic")
+    payload = cli._payload("screening", variants, 0, config=config, return_counts={"filled": 20})
+    recorded = []
+    monkeypatch.setattr(experiment_registry, "record_trial", lambda *a, **k: recorded.append(a))
+    monkeypatch.setattr(common, "RESULT_GZIP_THRESHOLD_BYTES", 0)
+    value, paths = evaluate.publish(payload, repo_root=offline_repo, config=config)
+    assert paths[0].name.endswith(".json.gz") and paths[0].name in paths[1].read_text()
+    assert common.read_result_json(paths[0]) == value
+    assert [row[1] for row in recorded] == list(cli.VARIANTS)
+    for _, arm, summary, verdict in recorded:
+        assert len(experiment_registry.encode_metrics(summary).encode("utf-8")) < 32768
+        assert summary["primary"] == variants[arm]["primary"] and summary["verdict"] == verdict
+        assert summary["result_file"] == paths[0].name and summary["trial_count_after_run"] == 5
+        assert summary["return_counts"] == {"filled": 20}
+        assert not {"liquidity_buckets", "per_decision", "invalid_by_call", "monthly"}.intersection(summary)
+        assert "mean_excess" not in summary["random_control"]
+    assert recorded[0][2]["random_control"]["n_paths"] == 200
+    assert value["variants"]["b_num"]["liquidity_buckets"]["detail"] == "x" * 200_000
+
+
+@pytest.mark.parametrize("invalid", [float("nan"), "x" * 32768])
+def test_publish_validates_last_row_before_any_append(offline_repo, monkeypatch, invalid):
+    variants = {arm: cli._unmeasured("insufficient", "synthetic") for arm in cli.VARIANTS}
+    variants["hc002_holdout"]["reasons"] = [invalid]
+    payload = cli._payload("screening", variants, 0, config=LH002)
+    monkeypatch.setattr(experiment_registry, "record_trial", lambda *a, **k: pytest.fail("partial publication"))
+    with pytest.raises(ValueError, match="finite JSON|metrics_json"):
+        evaluate.publish(payload, repo_root=offline_repo, config=LH002)
+    assert not (offline_repo / "research/experiments" / LH002.experiment_id / "results").exists()

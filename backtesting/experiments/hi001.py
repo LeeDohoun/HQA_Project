@@ -581,6 +581,7 @@ def _write_results(payload, repo_root):
               "월별 수익률·교체 비용·IC·대조군·보조 포트폴리오·연도별·국면별·제외 사유·분류 비중은 같은 이름의 JSON에 기록했습니다.",
               f"실행 시간: {payload['performance']['runtime_seconds']:.3f}초. "
               f"최대 RSS: {payload['performance']['peak_memory_mib']:.1f} MiB."]
+    lines += ["", f"Result JSON: `{json_path.name}`"]
     summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return json_path, summary_path
 

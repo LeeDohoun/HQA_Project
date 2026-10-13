@@ -412,7 +412,9 @@ def test_cli_defaults_to_dry_run(monkeypatch, capsys):
     assert "No returns, random draws, registry rows or result files written" in capsys.readouterr().out
 
 
-def test_synthetic_run_records_eight_categories_with_batch_threshold_and_finite_results(fields, tmp_path, monkeypatch):
+@pytest.mark.parametrize("compressed", [False, True])
+def test_synthetic_run_records_eight_categories_with_batch_threshold_and_finite_results(fields, tmp_path, monkeypatch, compressed):
+    monkeypatch.setattr(common, "RESULT_GZIP_THRESHOLD_BYTES", 0 if compressed else 50 * 1024 * 1024)
     prices, benchmarks, dates = sample()
     monkeypatch.setattr(experiment_registry, "trial_count", lambda *args, **kwargs: 16)
     captured = []
@@ -425,10 +427,11 @@ def test_synthetic_run_records_eight_categories_with_batch_threshold_and_finite_
     assert all(row[2]["trial_count_after_run"] == 24 and row[2]["required_t_stat"] == 3 for row in captured)
     assert all(row[3] == "insufficient" for row in captured)
     directory = tmp_path / "research/experiments" / b001.EXPERIMENT_ID / "results"
-    json_path, = directory.glob("*.json")
+    json_path, = directory.glob("*.json.gz" if compressed else "*.json")
     summary_path, = directory.glob("*.md")
-    assert json.loads(json_path.read_text(encoding="utf-8")) == payload
+    assert common.read_result_json(json_path) == payload
     summary = summary_path.read_text(encoding="utf-8")
+    assert json_path.name in summary
     assert "interpretations" in summary and b001.INTERPRETATIONS["note"] in summary
     json.dumps(payload, allow_nan=False)
 

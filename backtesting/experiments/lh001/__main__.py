@@ -5,6 +5,7 @@ import argparse
 import json
 import resource
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import exchange_calendars as calendars
@@ -311,6 +312,69 @@ def execute_screening(*, data_dir, repo_root=PROJECT_ROOT, limit_decisions=None,
     return _publish(payload, data_dir, repo_root, limit_decisions is not None, config)
 
 
+def resume_publication(result_path, *, data_dir, repo_root=PROJECT_ROOT, config=LH001):
+    """Finish a saved official screening publication without recomputing anything."""
+    _registration(repo_root, config)
+    path = Path(result_path).resolve()
+    directory = (Path(repo_root) / "research/experiments" / config.experiment_id / "results").resolve()
+    if not path.is_relative_to(directory) or not path.name.endswith((".json", ".json.gz")):
+        raise ValueError("resume result must be a .json or .json.gz in this experiment's results directory")
+    stamp = path.name.removesuffix(".gz").removesuffix(".json")
+    try:
+        result_time = datetime.strptime(stamp, "%Y%m%dT%H%M%S%fZ").replace(tzinfo=timezone.utc)
+    except ValueError as exc:
+        raise ValueError("resume result filename must contain its UTC publication timestamp") from exc
+    payload = common.read_result_json(path)
+    if (not isinstance(payload, dict) or payload.get("experiment_id") != config.experiment_id
+            or payload.get("stage") != "screening" or payload.get("smoke") is not False
+            or "interruption" in payload):
+        raise ValueError("resume requires a completed screening result for this experiment with smoke=False")
+    json.dumps(payload, ensure_ascii=False, allow_nan=False)
+    root = workspace(data_dir, config)
+    snapshot = read_json(root / "screening_snapshot.json")
+    if (not isinstance(snapshot, dict) or "data" not in snapshot
+            or snapshot.get("metadata", {}).get("stage") != "screening"
+            or snapshot.get("metadata", {}).get("limit") is not None):
+        raise ValueError("resume requires an official cached screening snapshot")
+    snapshot_hash = inputs.digest(snapshot["data"])
+    if snapshot.get("sha256") != snapshot_hash or payload.get("snapshot_hash") != snapshot_hash:
+        raise ValueError("resume result snapshot_hash differs from the current cached screening inputs")
+    if payload.get("prompt_hashes") != prompt_hashes(config.prompt_dir):
+        raise ValueError("resume result prompt hashes differ from the current prompts")
+    checkpoint = root / "screening.json"
+    if checkpoint.exists() and read_json(checkpoint) != payload:
+        raise ValueError("official screening checkpoint differs from the resume result")
+    registry = Path(repo_root) / experiment_registry.REGISTRY_PATH
+    if registry.exists():
+        with registry.open(encoding="utf-8", newline="") as handle:
+            rows = experiment_registry._registry_rows(handle)
+    else:
+        rows = []
+    recorded = set()
+    for row in rows:
+        if row["experiment_id"] != config.experiment_id or row["variant"] not in VARIANTS:
+            continue
+        metrics = json.loads(row["metrics_json"])
+        screening = metrics.get("stage") == "screening" or row["note"].startswith(f"{config.name} screening;")
+        if screening and datetime.fromisoformat(row["recorded_at"]) >= result_time:
+            recorded.add(row["variant"])
+    missing = [arm for arm in VARIANTS if arm not in recorded]
+    trials = sum(row["experiment_id"] == config.experiment_id for row in rows) + len(missing)
+    try:
+        pending = evaluate.registry_metrics(payload, path, trials)
+    except KeyError as exc:
+        raise ValueError(f"resume result is missing required variant summary data: {exc}") from exc
+    note = f"publication resumed after registry field-limit failure; result file {path.name}"
+    for arm in missing:
+        experiment_registry.record_trial(config.experiment_id, arm, pending[arm], pending[arm]["verdict"],
+                                         repo_root=repo_root, note=note)
+    save_json(checkpoint, payload)
+    return {"experiment_id": config.experiment_id, "stage": "screening", "result_file": str(path),
+            "recorded_variants": missing, "already_recorded_variants": [arm for arm in VARIANTS if arm in recorded],
+            "checkpoint": str(checkpoint),
+            "note": "publication resumed" if missing else "publication already complete; no registry rows recorded"}
+
+
 def _prepare_hc002(*, data_dir, repo_root, sessions, config=LH001):
     passing = evaluate.hc002_passing_row(repo_root)
     if passing is None:
@@ -411,15 +475,20 @@ def main(argv=None, *, default_experiment="LH001"):
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--execute", action="store_true")
     mode.add_argument("--dry-run", action="store_true", help="default: metadata-only plan")
+    mode.add_argument("--resume-publication", type=Path, help="finish publication from an existing screening .json[.gz]; no computation or calls")
     parser.add_argument("--data-dir", type=Path, default=PROJECT_ROOT / "data")
     parser.add_argument("--limit-decisions", type=int, help="smoke only; never records registry rows")
     args = parser.parse_args(argv)
     config = EXPERIMENTS[args.experiment]
     if args.limit_decisions is not None and args.limit_decisions < 1:
         parser.error("--limit-decisions must be positive")
+    if args.resume_publication is not None and (args.stage != "screening" or args.limit_decisions is not None):
+        parser.error("--resume-publication requires screening without --limit-decisions")
     started = time.perf_counter()
     try:
-        if args.stage == "status":
+        if args.resume_publication is not None:
+            result = resume_publication(args.resume_publication, data_dir=args.data_dir, config=config)
+        elif args.stage == "status":
             result = status(data_dir=args.data_dir, config=config)
         elif not args.execute:
             result = dry_run(args.stage, data_dir=args.data_dir, limit_decisions=args.limit_decisions, config=config)

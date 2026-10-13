@@ -1,6 +1,7 @@
 """Shared preregistration, monthly universe, verdict and result publication rules."""
 from __future__ import annotations
 
+import gzip
 import json
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -16,6 +17,7 @@ from backtesting.experiment_registry import PROJECT_ROOT, REGISTRY_PATH
 
 
 _READ_EXPERIMENT = ContextVar("experiment_price_reads", default=None)
+RESULT_GZIP_THRESHOLD_BYTES = 50 * 1024 * 1024
 
 
 @contextmanager
@@ -195,6 +197,34 @@ def judge(fields, results, *, net_metric, net_at_cost_1_5_metric,
     return ("fail", failures) if failures else ("pass", ["all preregistered criteria satisfied"])
 
 
+def read_result_json(path):
+    """Read either a plain or compressed experiment result."""
+    path = Path(path)
+    opener = gzip.open if path.name.endswith(".json.gz") else open
+    with opener(path, "rt", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def write_result_files(directory, stamp, encoded, lines) -> tuple[Path, Path]:
+    """Reserve the result pair and compress large UTF-8 JSON deterministically."""
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    content = encoded.encode("utf-8")
+    compressed = len(content) > RESULT_GZIP_THRESHOLD_BYTES
+    json_path = directory / f"{stamp}.json{'.gz' if compressed else ''}"
+    summary_path = directory / f"{stamp}.md"
+    # Reserve both before writing. A collision is an explicit error, never an overwrite.
+    with json_path.open("xb") as json_file:
+        with summary_path.open("x", encoding="utf-8") as summary_file:
+            if compressed:
+                with gzip.GzipFile(filename="", mode="wb", fileobj=json_file, mtime=0) as zipped:
+                    zipped.write(content)
+            else:
+                json_file.write(content)
+            summary_file.write("\n".join(lines) + f"\n\nResult JSON: `{json_path.name}`\n")
+    return json_path, summary_path
+
+
 def write_results(experiment_id, payload, *, repo_root=PROJECT_ROOT) -> tuple[Path, Path]:
     """Publish finite JSON and a Korean summary with exclusive UTC filenames."""
     load_preregistration(experiment_id, repo_root=repo_root)
@@ -227,12 +257,5 @@ def write_results(experiment_id, payload, *, repo_root=PROJECT_ROOT) -> tuple[Pa
               "제외 월, 원주가 대체, 상장폐지 관련 제외, 비용 배수, 연도별 IC, 유동성 및 용량은 같은 이름의 JSON에 기록했습니다.", "",
               "가정과 제한:", ""] + [f"- {note}" for note in payload["assumptions"]]
     directory = Path(repo_root) / "research/experiments" / experiment_id / "results"
-    directory.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-    json_path, summary_path = directory / f"{stamp}.json", directory / f"{stamp}.md"
-    # Reserve both before writing. A collision is an explicit error, never an overwrite.
-    with json_path.open("x", encoding="utf-8") as json_file:
-        with summary_path.open("x", encoding="utf-8") as summary_file:
-            json_file.write(encoded)
-            summary_file.write("\n".join(lines) + "\n")
-    return json_path, summary_path
+    return write_result_files(directory, stamp, encoded, lines)

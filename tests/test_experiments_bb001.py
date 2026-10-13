@@ -713,7 +713,9 @@ def temp_preregistration(root):
     path.write_bytes((experiment_registry.PROJECT_ROOT / "research/experiments" / b.EXPERIMENT_ID / "preregistration.md").read_bytes())
 
 
-def test_execute_writes_exact_three_trials_all_metrics_hashes_and_exclusive_results(tmp_path, registration):
+@pytest.mark.parametrize("compressed", [False, True])
+def test_execute_writes_exact_three_trials_all_metrics_hashes_and_exclusive_results(tmp_path, registration, monkeypatch, compressed):
+    monkeypatch.setattr(common, "RESULT_GZIP_THRESHOLD_BYTES", 0 if compressed else 50 * 1024 * 1024)
     temp_preregistration(tmp_path)
     prices, days, _ = market()
     row = item()
@@ -733,6 +735,9 @@ def test_execute_writes_exact_three_trials_all_metrics_hashes_and_exclusive_resu
         assert "continuous_adjustment" in payload["variants"][name]["secondary"]
     paths = list((tmp_path / "research/experiments" / b.EXPERIMENT_ID / "results").glob("*"))
     assert len(paths) == 2 and any(path.suffix == ".md" and "Interpretations" in path.read_text() for path in paths)
+    json_path = next(path for path in paths if path.name.endswith(".json.gz" if compressed else ".json"))
+    assert common.read_result_json(json_path) == payload
+    assert json_path.name in next(path for path in paths if path.suffix == ".md").read_text()
     json.dumps(payload, allow_nan=False)
     before = {path: path.read_bytes() for path in paths}
     b.write_results(payload, repo_root=tmp_path)

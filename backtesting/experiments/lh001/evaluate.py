@@ -275,11 +275,48 @@ def hc002_verdict(primary, passing):
     return "pass", ["HC002 linked single-use holdout conditions satisfied"]
 
 
+def registry_metrics(payload, result_file, trial_count_after_run):
+    """Bounded summaries only; decision, bucket and control paths stay in JSON."""
+    stat_fields = ("count", "mean", "std", "standard_error", "t_stat", "lag")
+
+    def stats(value):
+        return {key: value[key] for key in stat_fields if key in value}
+
+    rows = {}
+    for arm in VARIANTS:
+        result = payload["variants"][arm]
+        control = result.get("random_control", {})
+        rows[arm] = {
+            "stage": payload["stage"], "primary": stats(result["primary"]),
+            "verdict": result["verdict"], "reasons": result["reasons"],
+            "events": result.get("events"), "return_counts": payload.get("return_counts"),
+            "cost_sensitivity": {
+                str(m): {key: value[key] for key in ("top_net", "top_net_excess") if key in value}
+                for m in MULTIPLIERS if (value := result.get("cost_sensitivity", {}).get(str(m))) is not None},
+            "random_control": {"share_of_controls": control.get("share_of_controls"),
+                               "n_paths": len(control.get("mean_excess", [])),
+                               "decisions": control.get("decisions"), "seed": control.get("seed")},
+            "b_vs_a": stats(result.get("b_vs_a", {})), "avoid_excess": stats(result.get("avoid_excess", {})),
+            "invalid_calls": result.get("invalid_calls"), "text_missing": result.get("text_missing"),
+            "no_selection_decisions": result.get("no_selection_decisions"),
+            "skipped_month_count": result.get("skipped_month_count", 0),
+            "trial_count_after_run": trial_count_after_run, "result_file": Path(result_file).name,
+        }
+    # Validate every row before any caller starts an append batch.
+    for metrics in rows.values():
+        experiment_registry.encode_metrics(metrics)
+    return rows
+
+
 def publish(payload, *, repo_root=PROJECT_ROOT, smoke=False, record=True, config=LH001):
     """Use shared publication/registry, replacing its legacy IC prose afterwards."""
-    payload = json_value(payload)
     if payload["experiment_id"] != config.experiment_id:
         raise ValueError("result experiment ID differs from its configuration")
+    trials = experiment_registry.trial_count(config.experiment_id, repo_root=repo_root) + len(VARIANTS) if record and not smoke else 0
+    if record and not smoke:
+        # Check raw summary values before report normalization can turn NaN into null.
+        registry_metrics(payload, "pending.json.gz", trials)
+    payload = json_value(payload)
     payload["smoke"] = smoke
     for result in payload["variants"].values():
         # Adapter fields required by common.write_results; 'ic' is explicitly an
@@ -291,6 +328,7 @@ def publish(payload, *, repo_root=PROJECT_ROOT, smoke=False, record=True, config
         result.setdefault("unadjusted_fallback", 0)
         result.setdefault("delisting_exclusions", 0)
     paths = common.write_results(config.experiment_id, payload, repo_root=repo_root)
+    pending = registry_metrics(payload, paths[0], trials) if record and not smoke else {}
     lines = [f"# {config.experiment_id}: {payload['stage']}", "", f"Smoke: {smoke}; aggregate status: {payload['verdict']}", "",
              "No winning variant is selected. Returns are decimal. LLM t: NW lag 4; HC002: its monthly statistics.", "",
              "| variant | verdict | decisions | mean paired net excess | t | random share | cost x1.5 excess |",
@@ -303,10 +341,11 @@ def publish(payload, *, repo_root=PROJECT_ROOT, smoke=False, record=True, config
     lines += ["", "## interpretations", "", INTERPRETATIONS["note"]]
     lines += [f"- {key}: {value['metric']}: {value['definition']}" for key, value in INTERPRETATIONS["criteria"].items()]
     lines += ["", "Assumptions:", ""] + [f"- {note}" for note in payload["assumptions"]]
+    lines += ["", f"Result JSON: `{paths[0].name}`"]
     paths[1].write_text("\n".join(lines) + "\n", encoding="utf-8")
     if record and not smoke:
         for arm in VARIANTS:
             result = payload["variants"][arm]
-            experiment_registry.record_trial(config.experiment_id, arm, result, result["verdict"], repo_root=repo_root,
+            experiment_registry.record_trial(config.experiment_id, arm, pending[arm], result["verdict"], repo_root=repo_root,
                                              note=f"{config.name} {payload['stage']}; fixed variant; no selection of winner")
     return payload, paths

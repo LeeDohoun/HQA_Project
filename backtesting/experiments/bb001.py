@@ -745,14 +745,8 @@ def write_results(payload, *, repo_root=PROJECT_ROOT):
         lines += [f"- {name}: {definition}" for name, definition in INTERPRETATIONS[section].items()]
     lines += ["", "## Assumptions", "", *[f"- {value}" for value in payload["assumptions"]]]
     directory = Path(repo_root) / "research/experiments" / EXPERIMENT_ID / "results"
-    directory.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-    paths = directory / f"{stamp}.json", directory / f"{stamp}.md"
-    with paths[0].open("x", encoding="utf-8") as jf:
-        with paths[1].open("x", encoding="utf-8") as mf:
-            jf.write(encoded)
-            mf.write("\n".join(lines) + "\n")
-    return paths
+    return common.write_result_files(directory, stamp, encoded, lines)
 
 
 def run_experiment(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT, prices=None, sessions=None):

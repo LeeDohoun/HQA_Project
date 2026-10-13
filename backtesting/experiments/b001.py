@@ -550,14 +550,8 @@ def write_results(payload, *, repo_root=PROJECT_ROOT):
               f"실행 시간: {payload['performance']['runtime_seconds']:.3f}초; 최고 RSS: {payload['performance']['peak_memory_mib']:.1f} MiB.", "",
               *[f"- {note}" for note in payload["assumptions"]]]
     directory = Path(repo_root) / "research/experiments" / EXPERIMENT_ID / "results"
-    directory.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-    json_path, md_path = directory / f"{stamp}.json", directory / f"{stamp}.md"
-    with json_path.open("x", encoding="utf-8") as json_file:
-        with md_path.open("x", encoding="utf-8") as md_file:
-            json_file.write(encoded)
-            md_file.write("\n".join(lines) + "\n")
-    return json_path, md_path
+    return common.write_result_files(directory, stamp, encoded, lines)
 
 
 def run_experiment(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT, listings=None, prices=None, benchmarks=None, sessions=None):

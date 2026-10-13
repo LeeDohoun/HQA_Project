@@ -527,7 +527,9 @@ def test_guarded_loaders_refuse_before_contents_read(offline_repo, monkeypatch):
     assert not (offline_repo / holdout.LEDGER_PATH).exists()
 
 
-def test_design_runner_records_three_trials_hashed_november_state_all_metrics(market, offline_repo, monkeypatch):
+@pytest.mark.parametrize("compressed", [False, True])
+def test_design_runner_records_three_trials_hashed_november_state_all_metrics(market, offline_repo, monkeypatch, compressed):
+    monkeypatch.setattr(common, "RESULT_GZIP_THRESHOLD_BYTES", 0 if compressed else 50 * 1024 * 1024)
     prices, days = market
     monkeypatch.setattr(hc003, "N_CONTROLS", 3)
     for _ in range(18):
@@ -552,8 +554,10 @@ def test_design_runner_records_three_trials_hashed_november_state_all_metrics(ma
     assert all(json.loads(row["metrics_json"])["stage"] == "design_validation" for row in rows[-3:])
     directory = offline_repo / "research/experiments" / hc003.EXPERIMENT_ID / "results"
     assert len(list(directory.iterdir())) == 2
-    assert json.loads(next(directory.glob("*.json")).read_text()) == result
-    assert "Control buy/sell turnover" in next(directory.glob("*.md")).read_text()
+    path = next(directory.glob("*.json.gz" if compressed else "*.json"))
+    assert common.read_result_json(path) == result
+    summary = next(directory.glob("*.md")).read_text()
+    assert "Control buy/sell turnover" in summary and path.name in summary
     assert not (offline_repo / holdout.LEDGER_PATH).exists()
 
 
@@ -625,6 +629,22 @@ def test_saved_design_hash_and_pass_must_match_registered_bundle(offline_repo, m
     loaded, passed = hc003._saved_design(hc003.registry_rows(offline_repo), offline_repo, registration)
     assert loaded == design and passed == ["t_hold"]
     path.write_text(path.read_text() + " ")
+    with pytest.raises(ValueError, match="hash"):
+        hc003._saved_design(hc003.registry_rows(offline_repo), offline_repo, registration)
+
+
+def test_saved_compressed_design_hash_and_pass_are_checked(offline_repo, monkeypatch):
+    monkeypatch.setattr(hc003, "N_CONTROLS", 2)
+    monkeypatch.setattr(common, "RESULT_GZIP_THRESHOLD_BYTES", 0)
+    design = saved_design_fixture(offline_repo)
+    directory = offline_repo / "research/experiments" / hc003.EXPERIMENT_ID / "results"
+    path, _ = common.write_result_files(directory, "synthetic", json.dumps(design), ["synthetic"])
+    record(offline_repo, metrics={"stage": "design_validation", "result_file": str(path.relative_to(offline_repo)),
+                                 "result_sha256": hc003._digest(path), "state_sha256": design["state_sha256"]})
+    registration = experiment_registry.verify_preregistration(hc003.EXPERIMENT_ID, offline_repo)
+    loaded, passed = hc003._saved_design(hc003.registry_rows(offline_repo), offline_repo, registration)
+    assert loaded == design and passed == ["t_hold"]
+    path.write_bytes(path.read_bytes() + b"tampered")
     with pytest.raises(ValueError, match="hash"):
         hc003._saved_design(hc003.registry_rows(offline_repo), offline_repo, registration)
 

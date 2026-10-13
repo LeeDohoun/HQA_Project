@@ -743,14 +743,8 @@ def write_results(payload, *, repo_root=PROJECT_ROOT):
     lines += ["", "## interpretations", ""] + [f"- {key}: {value}" for key, value in INTERPRETATIONS.items()]
     lines += ["", "## assumptions", ""] + [f"- {value}" for value in ASSUMPTIONS]
     directory = Path(repo_root) / "research/experiments" / EXPERIMENT_ID / "results"
-    directory.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-    paths = directory / f"{stamp}.json", directory / f"{stamp}.md"
-    with paths[0].open("x", encoding="utf-8") as jf:
-        with paths[1].open("x", encoding="utf-8") as mf:
-            jf.write(encoded)
-            mf.write("\n".join(lines) + "\n")
-    return paths
+    return common.write_result_files(directory, stamp, encoded, lines)
 
 
 def run_experiment(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT, prices=None, sessions=None):
@@ -850,7 +844,7 @@ def _saved_design(rows, repo_root, registration):
     directory = (Path(repo_root) / "research/experiments" / EXPERIMENT_ID / "results").resolve()
     if not path.is_relative_to(directory) or _digest(path) != metrics["result_sha256"]:
         raise ValueError("saved design result hash/path differs")
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload = common.read_result_json(path)
     if (payload["stage"] != "design_validation" or payload["prereg_commit"] != registration.commit_hash
             or _content_hash(payload["design_states"]) != payload["state_sha256"]
             or payload["state_sha256"] != metrics["state_sha256"]

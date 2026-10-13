@@ -12,6 +12,7 @@ from pathlib import Path
 from jsonschema import Draft202012Validator, ValidationError
 
 from backtesting.experiment_registry import PROJECT_ROOT
+from backtesting.experiments import common
 from src.ingestion.storage import atomic_write, file_lock
 
 from . import CODEX_VERSION, MODEL, PROMPT_DIR, PROMPT_VERSION, workspace
@@ -28,7 +29,7 @@ def save_json(path, value):
 
 
 def read_json(path):
-    return json.loads(Path(path).read_text(encoding="utf-8"))
+    return common.read_result_json(path)
 
 
 def prompt_hashes(prompt_dir=PROMPT_DIR):

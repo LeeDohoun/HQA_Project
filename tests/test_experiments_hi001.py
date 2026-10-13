@@ -690,7 +690,9 @@ def test_dry_run_real_file_layout_coverage_and_no_2026_read(tmp_path, monkeypatc
     assert not (tmp_path / "research").exists()
 
 
-def test_summary_keeps_primary_net_metric_and_classification_limitation(tmp_path, monkeypatch, fields):
+@pytest.mark.parametrize("compressed", [False, True])
+def test_summary_keeps_primary_net_metric_and_classification_limitation(tmp_path, monkeypatch, fields, compressed):
+    monkeypatch.setattr(common, "RESULT_GZIP_THRESHOLD_BYTES", 0 if compressed else 50 * 1024 * 1024)
     monkeypatch.setattr(common, "load_preregistration", lambda *args, **kwargs: fields)
     result = hi001.evaluate_variant(snapshots(), "rs")
     result.update(skipped_month_count=0, unadjusted_fallback=0, delisting_exclusions=0)
@@ -704,7 +706,9 @@ def test_summary_keeps_primary_net_metric_and_classification_limitation(tmp_path
     assert "현재 DART 스냅샷" in summary
     assert hi001.INTERPRETATIONS["note"] in summary
     assert hi001.NET_METRIC in summary
-    assert json.loads(json_path.read_text(encoding="utf-8")) == payload
+    assert json_path.name.endswith(".json.gz" if compressed else ".json")
+    assert json_path.name in summary
+    assert common.read_result_json(json_path) == payload
 
 
 def test_synthetic_runner_records_three_variants_and_final_with_monthly_judge(monkeypatch, tmp_path, fields):

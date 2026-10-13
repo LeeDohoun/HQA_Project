@@ -608,7 +608,9 @@ def test_source_hashes_cover_actual_files_and_latest_daily_versions(tmp_path):
 
 
 @pytest.mark.parametrize("existing_trials,threshold", [(17, 2.0), (18, 3.0)])
-def test_runner_records_exactly_three_rows_finite_results_interpretations_and_hashes(registered_repo, monkeypatch, existing_trials, threshold):
+@pytest.mark.parametrize("compressed", [False, True])
+def test_runner_records_exactly_three_rows_finite_results_interpretations_and_hashes(registered_repo, monkeypatch, existing_trials, threshold, compressed):
+    monkeypatch.setattr(common, "RESULT_GZIP_THRESHOLD_BYTES", 0 if compressed else 50 * 1024 * 1024)
     root = registered_repo
     data = root / "data"
     prices, days = market("2024-01-01", codes=["000010", "000020"], krx_sessions=True)
@@ -647,8 +649,10 @@ def test_runner_records_exactly_three_rows_finite_results_interpretations_and_ha
     output = root / "research/experiments" / hf001.EXPERIMENT_ID / "results"
     files = list(output.glob("*"))
     assert len(files) == 2
-    assert json.loads(next(path for path in files if path.suffix == ".json").read_text()) == result
+    json_path = next(path for path in files if path.name.endswith(".json.gz" if compressed else ".json"))
+    assert common.read_result_json(json_path) == result
     summary = next(path for path in files if path.suffix == ".md").read_text()
+    assert json_path.name in summary
     assert "NW t" in summary and "Holm p" in summary and "interpretations" in summary and "assumptions" in summary
     assert "월별 IC 한 개" not in summary
     assert not (root / "research/experiments/holdout_ledger.jsonl").exists()
