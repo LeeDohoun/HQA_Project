@@ -82,7 +82,7 @@ def test_missing_characteristics_fail_without_substitution(column):
 def test_matching_respects_all_cells_and_industry_without_selected_names():
     features, selection, returns = cube()
     result = matched_controls(selection, features, returns, draws=17, seed=3)
-    assert result["relaxations"] == {"industry": 0, "vol": 0}
+    assert result["relaxations"] == {"industry": 0, "vol": 0, "adv": 0, "size": 0}
     assert result["replacement_slots"] == 0
     month = result["monthly"][0]
     controls = month["control_counts"]
@@ -109,7 +109,7 @@ def test_industry_relaxation_threshold_counts_stock_months_not_draws(same_indust
     features = flat(8)
     features.loc[same_industry + 1:, "industry"] = "자동차·부품"
     result = matched_controls(choose(features, ["000010"]), features, outcomes(features), draws=11)
-    assert result["relaxations"] == {"industry": expected, "vol": 0}
+    assert result["relaxations"] == {"industry": expected, "vol": 0, "adv": 0, "size": 0}
     assert result["monthly"][0]["matching"][0]["relaxed"] == (["industry"] if expected else [])
 
 
@@ -119,7 +119,7 @@ def test_vol_relaxation_follows_industry_and_preserves_market_size_adv():
     features.loc[2:, "volatility_60d"] = 0.04
     result = matched_controls(choose(features, ["000010"]), features, outcomes(features), draws=9)
     match = result["monthly"][0]["matching"][0]
-    assert result["relaxations"] == {"industry": 1, "vol": 1}
+    assert result["relaxations"] == {"industry": 1, "vol": 1, "adv": 0, "size": 0}
     assert match["relaxed"] == ["industry", "vol"]
     assert set(match["conditions"]) == {"market", "size3", "adv3"}
     assert match["candidate_count"] == 14
@@ -130,7 +130,7 @@ def test_nested_relaxed_pools_use_tightest_pool_first():
     features.loc[[0, 11, 12, 13, 14], "industry"] = "자동차·부품"
     selection = choose(features, features.stock_code.iloc[:6])
     result = matched_controls(selection, features, outcomes(features), draws=23)
-    assert result["relaxations"] == {"industry": 1, "vol": 0}
+    assert result["relaxations"] == {"industry": 1, "vol": 0, "adv": 0, "size": 0}
     assert result["replacement_slots"] == 0
     counts = result["monthly"][0]["control_counts"]
     assert max(counts.values()) == 23
@@ -140,12 +140,24 @@ def test_nested_relaxed_pools_use_tightest_pool_first():
 def test_unavoidable_replacement_is_counted_and_months_can_reuse_names():
     features = flat(8, ("2024-05-31", "2024-06-28"))
     result = matched_controls(choose(features, features.stock_code.iloc[:6]), features, outcomes(features), draws=13)
-    assert result["relaxations"] == {"industry": 12, "vol": 12}
+    assert result["relaxations"] == {"industry": 12, "vol": 12, "adv": 0, "size": 0}
     assert result["replacement_slots"] == 2 * 13 * 4
     for row in result["monthly"]:
         assert set(row["control_counts"]) == {"000070", "000080"}
         assert sum(row["control_counts"].values()) == 13 * 6
         assert min(row["control_counts"].values()) >= 13
+
+
+def test_empty_cell_relaxes_liquidity_then_size_but_never_market():
+    features = flat(4)
+    features["avg_trading_value_20d"] = [1e9, 1e9, 2e9, 3e9]
+    features["market_cap"] = [1e10, 2e10, 1e10, 3e10]
+    # Every non-selected KOSPI name sits in another ADV tercile; one also shares no size tercile.
+    result = matched_controls(choose(features, ["000010"]), features, outcomes(features), draws=5)
+    match = result["monthly"][0]["matching"][0]
+    assert "adv" in match["relaxed"]
+    assert result["relaxations"]["adv"] == 1
+    assert match["candidate_count"] >= 1
 
 
 def test_empty_pool_fails_after_only_requested_relaxations():

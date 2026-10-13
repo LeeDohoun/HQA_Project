@@ -79,11 +79,16 @@ def _snapshot_features(prices, universe, sessions, profiles, data_dir):
     features["market_cap"] = caps.xs(day, level="trade_date").market_cap.reindex(codes).to_numpy()
     features["volatility_60d"] = vol.reindex(codes).to_numpy()
     features["industry"] = [profiles.get(code, industry_map.UNCLASSIFIED) for code in codes]
-    invalid = ~np.isfinite(features.market_cap) | ~np.isfinite(features.volatility_60d)
-    if invalid.any():
-        raise ValueError(f"missing market_cap or complete verified 60-session ret_1d history at "
-                         f"{day.date().isoformat()}: {features.loc[invalid, 'stock_code'].tolist()}")
-    return features
+    # A stock without a cap or a complete verified 60-session history cannot be
+    # matched. Exclude it from selection, universe and controls alike, and
+    # report every exclusion by month rather than imputing a feature.
+    no_cap = ~np.isfinite(features.market_cap)
+    no_vol = ~np.isfinite(features.volatility_60d)
+    invalid = no_cap | no_vol
+    exclusions = {"decision_date": day.date().isoformat(), "missing_market_cap": int(no_cap.sum()),
+                  "incomplete_60_session_history": int((no_vol & ~no_cap).sum()),
+                  "stock_codes": features.loc[invalid, "stock_code"].tolist()}
+    return features.loc[~invalid].reset_index(drop=True), exclusions
 
 
 def dry_run(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT):
@@ -110,10 +115,10 @@ def dry_run(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT):
                 "2025년까지 종목별 마지막 관측일만 스트리밍하여 보존",
                 "월별 최대 80세션 가격 창; HC002 universe_on_decision / forward_observations 재사용",
                 "월말 시총·HC002 20세션 ADV·검증된 60세션 ret_1d 표본 표준편차",
-                "업종→변동성 순서로 후보 5개 미만 셀 완화; 불가피한 중복 별도 집계",
+                "업종→변동성 순서로 후보 5개 미만 셀 완화, 후보 0개면 거래대금→시총 완화(시장 유지); 불가피한 중복 별도 집계",
                 "200 draws, seed=0; 매칭 차이 및 회귀 국면 계수의 Bartlett NW lag 1",
                 "--execute만 진단 JSON/한국어 MD 저장; 판정·대장 행 없음",
-            ], "coverage_note": "파일 존재만 확인합니다. 종목별 특성의 완전성은 execute에서 검사하며 결측이면 명시적으로 중단합니다."}
+            ], "coverage_note": "파일 존재만 확인합니다. 종목별 특성의 완전성은 execute에서 검사하며, 결측 종목은 그 달 선정·유니버스·대조군에서 함께 빼고 feature_exclusions에 기록합니다."}
 
 
 def run_diagnostic(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT):
@@ -130,6 +135,7 @@ def run_diagnostic(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT):
     last_dates = _last_dates(files, repo_root)
     profiles = industry_map.load_industry_map(Path(data_dir) / "reference/dart_company/companies.jsonl")
     features, outcomes, selections, counts, return_counts, stale = [], [], [], [], [], []
+    feature_exclusions = []
     for rebalance in planned:
         day = pd.Timestamp(rebalance["decision_date"])
         position = sessions.get_loc(day)
@@ -153,11 +159,14 @@ def run_diagnostic(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT):
             excluded.append({**rebalance, "reason": "no_eligible_signals"})
             continue
         universe = eligible.assign(decision_date=day, trade_date=pd.Timestamp(rebalance["trade_date"])).reset_index()
-        snapshot = _snapshot_features(prices, universe, sessions, profiles, data_dir)
+        snapshot, missing_features = _snapshot_features(prices, universe, sessions, profiles, data_dir)
+        selected = universe.loc[universe.phase.eq(2), ["decision_date", "stock_code"]]
+        missing_features["selected_stock_codes"] = sorted(set(selected.stock_code) & set(missing_features["stock_codes"]))
+        feature_exclusions.append(missing_features)
         observations = hc002.forward_observations(prices, universe, repo_root=repo_root, last_dates=last_dates)
         features.append(snapshot)
         outcomes.append(observations[["decision_date", "stock_code", "gross"]])
-        selections.append(universe.loc[universe.phase.eq(2), ["decision_date", "stock_code"]])
+        selections.append(selected.loc[selected.stock_code.isin(snapshot.stock_code)])
         return_counts.append(signal_eval._return_counts(observations))
         stale.extend(signal_eval._stale_records(observations))
         # Drop this window before loading the next; retain only monthly tables.
@@ -172,6 +181,12 @@ def run_diagnostic(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT):
     return {**result, "experiment_id": hc002.EXPERIMENT_ID, "selected_variant": "phase2_ew",
             "period": {"design": "2017-05..2024-12", "validation": "2025-01..2025-11", "holdout_used": False},
             "calendar_exclusions": excluded, "universe_counts": counts,
+            "feature_exclusions": {
+                "universe_stock_months": sum(len(row["stock_codes"]) for row in feature_exclusions),
+                "selected_stock_months": sum(len(row["selected_stock_codes"]) for row in feature_exclusions),
+                "missing_market_cap": sum(row["missing_market_cap"] for row in feature_exclusions),
+                "incomplete_60_session_history": sum(row["incomplete_60_session_history"] for row in feature_exclusions),
+                "monthly": [row for row in feature_exclusions if row["stock_codes"]]},
             "return_counts": {**{name: sum(row[name] for row in return_counts) for name in (*signal_eval._RETURN_FLAGS, "no_later_price", "excluded_count")},
                               "excluded": {reason: sum(row["excluded"].get(reason, 0) for row in return_counts)
                                            for reason in sorted({reason for row in return_counts for reason in row["excluded"]})}},
@@ -182,9 +197,9 @@ def run_diagnostic(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT):
                 "사후 진단, 판정에 쓰지 않음. 사전등록·기존 결과·registry.csv는 변경하지 않습니다.",
                 "HC002와 같은 유니버스·2국면 선택 및 다음 시가→진입일 포함 20번째 종가의 ret_1d 체인·체결 제외를 사용합니다. 비용을 차감하지 않는 총수익입니다.",
                 "특성·tercile은 미래 수익률 제외 전의 월말 유니버스에서 시장별로 계산합니다. 균형표의 유니버스와 수익률 비교는 HC002의 체결 가능 집합입니다.",
-                "시총은 월말 KRX market_cap, ADV는 HC002의 20세션 평균 거래대금, 변동성은 월말 포함 검증된 60세션 ret_1d의 표본 표준편차입니다. 결측 특성은 대체하거나 종목을 몰래 제외하지 않고 중단합니다.",
+                "시총은 월말 KRX market_cap, ADV는 HC002의 20세션 평균 거래대금, 변동성은 월말 포함 검증된 60세션 ret_1d의 표본 표준편차입니다. 결측 특성은 대체하지 않습니다. 시총이 없거나 검증된 60세션 이력이 완전하지 않은 종목은 그 달 선정·유니버스·대조군 후보에서 함께 빼고, 월별 종목과 선정 종목 수를 feature_exclusions에 기록합니다 (2026-10-13 수정: 첫 실행이 2019-11-29의 1개 종목에서 중단).",
                 "업종은 industry_map의 현재 저장 분류이며 역사적 업종 변경을 재현하지 못합니다. 가격도 HC002처럼 최신 저장 버전으로, 당시 수집 시각까지 재현하는 것은 아닙니다.",
-                "비복원 추출은 달마다 초기화합니다. 부족한 셀은 업종→변동성만 해제하며 시총·ADV·시장은 유지합니다. 남은 후보가 없으면 중단합니다.",
+                "비복원 추출은 달마다 초기화합니다. 후보가 5개 미만인 셀은 업종→변동성 순서로 해제합니다. 그래도 후보가 0개면 거래대금→시총 순서로 해제합니다(2026-10-13 추가: 첫 실행이 2017-10-31 002240에서 중단). 시장은 해제하지 않으며 남은 후보가 없으면 중단합니다.",
                 "대조군 비율은 평균(대조군−유니버스) ≥ 평균(선정−유니버스)인 draw 비율입니다. 평균(선정−대조군) ≤ 0과 같으며 검정 p값이 아닙니다.",
                 "NW는 인접한 달의 Bartlett lag 1, 자기공분산 분모 n, 유한표본 보정 없음입니다. 관측 공백을 인접 월로 연결하지 않으며 0분산 t와 식별 불가능한 회귀 계수는 null입니다.",
             ]}
@@ -202,13 +217,15 @@ def write_diagnostic(payload, *, repo_root=PROJECT_ROOT):
              f"- 유효 월: {stats['count']}; 평균 매칭 차이: {number(stats['mean'])}; NW lag 1 t: {number(stats['t_stat'])}",
              f"- 실제 이상 대조군 draw 비율: {number(payload['random_control']['share_of_controls'])} (200 draws, seed=0)",
              f"- 회귀 국면 계수: 평균 {number(regression['mean'])}; NW lag 1 t {number(regression['t_stat'])}; 식별된 월 {regression['count']}",
-             f"- 완화 (선정 종목×월): 업종 {payload['relaxations']['industry']}, 변동성 {payload['relaxations']['vol']}; 비복원 후보 소진 후 중복 슬롯 {payload['replacement_slots']}",
-             f"- 수익률 제외: 유니버스 {payload['exclusions']['universe_returns']}, 선정 {payload['exclusions']['selection_returns']}; 선정 없는 월 {len(payload['exclusions']['skipped_months'])}", "",
-             "| 의사결정일 | 선정 수 | 선정 총수익 | 매칭 대조군 총수익 (draw 평균) | 차이 | 업종 완화 | 변동성 완화 |",
-             "| --- | ---: | ---: | ---: | ---: | ---: | ---: |"]
+             f"- 완화 (선정 종목×월): 업종 {payload['relaxations']['industry']}, 변동성 {payload['relaxations']['vol']}, 거래대금 {payload['relaxations']['adv']}, 시총 {payload['relaxations']['size']}; 비복원 후보 소진 후 중복 슬롯 {payload['replacement_slots']}",
+             f"- 수익률 제외: 유니버스 {payload['exclusions']['universe_returns']}, 선정 {payload['exclusions']['selection_returns']}; 선정 없는 월 {len(payload['exclusions']['skipped_months'])}",
+             f"- 특성 결측 제외 (종목×월): 유니버스 {payload['feature_exclusions']['universe_stock_months']}, 그중 선정 {payload['feature_exclusions']['selected_stock_months']} "
+             f"(시총 결측 {payload['feature_exclusions']['missing_market_cap']}, 60세션 이력 불완전 {payload['feature_exclusions']['incomplete_60_session_history']})", "",
+             "| 의사결정일 | 선정 수 | 선정 총수익 | 매칭 대조군 총수익 (draw 평균) | 차이 | 업종 완화 | 변동성 완화 | 거래대금 완화 | 시총 완화 |",
+             "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
     for row in payload["monthly"]:
         lines.append(f"| {row['decision_date']} | {row['selection_count']} | {number(row['selection_gross'])} | "
-                     f"{number(row['matched_control_gross'])} | {number(row['difference'])} | {row['relaxations']['industry']} | {row['relaxations']['vol']} |")
+                     f"{number(row['matched_control_gross'])} | {number(row['difference'])} | {row['relaxations']['industry']} | {row['relaxations']['vol']} | {row['relaxations']['adv']} | {row['relaxations']['size']} |")
     cohorts = ("selection", "universe", "matched_controls")
     lines += ["", "특성 균형 (월 동일가중, percentile은 0~1):", "",
               "| 특성 | 선정 | 유니버스 | 매칭 대조군 |", "| --- | ---: | ---: | ---: |"]

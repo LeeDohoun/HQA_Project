@@ -113,10 +113,13 @@ def _mean_balance(rows):
     } for cohort in ("selection", "universe", "matched_controls")}
 
 
+_RELAXATIONS = ("industry", "vol", "adv", "size")
+
+
 def _pools(group, cells, industry):
     controls = group.loc[~group.selected]
     cache, requests, audit = {}, {}, []
-    relaxations = {"industry": 0, "vol": 0}
+    relaxations = dict.fromkeys(_RELAXATIONS, 0)
 
     def candidates(columns, row):
         columns = tuple(columns)
@@ -141,10 +144,16 @@ def _pools(group, cells, industry):
             columns.remove("vol3")
             pool, identity = candidates(columns, row)
             relaxed.append("vol")
+        # Only an empty pool relaxes liquidity, then size; the market is never relaxed.
+        for column, name in (("adv3", "adv"), ("size3", "size")):
+            if not len(pool) and column in columns:
+                columns.remove(column)
+                pool, identity = candidates(columns, row)
+                relaxed.append(name)
         for name in relaxed:
             relaxations[name] += 1
         if not len(pool):
-            raise ValueError(f"no non-selected matched controls after industry/vol relaxation: "
+            raise ValueError(f"no non-selected matched controls after industry/vol/adv/size relaxation: "
                              f"{row.decision_date.date().isoformat()} {row.stock_code}")
         if identity not in requests:
             requests[identity] = {"pool": pool, "slots": 0}
@@ -203,7 +212,9 @@ def matched_controls(selection, universe_features, returns, *, cells=CELLS, indu
 
     Relaxation counts are selected stock-months, not multiplied by draws. Reuse
     is counted in draw slots, only after exhausting unused eligible names. An
-    empty pool after the two permitted relaxations is an explicit error.
+    empty pool after the permitted relaxations is an explicit error: industry
+    and vol relax when fewer than five candidates remain; adv, then size,
+    relax only when none remain; the market is never relaxed.
 
     The draw comparison uses the same executable-universe benchmark for actual
     selection and controls: mean(control - universe) >= mean(selection - universe).
@@ -233,7 +244,7 @@ def matched_controls(selection, universe_features, returns, *, cells=CELLS, indu
     frame["selected"] = frame.index.isin(chosen.index)
     rng = np.random.default_rng(seed)
     monthly, regressions, skipped = [], [], []
-    relaxations = {"industry": 0, "vol": 0}
+    relaxations = dict.fromkeys(_RELAXATIONS, 0)
     control_excess, actual_excess, matched_differences = [], [], []
     replacement_slots = 0
     for day, original in frame.groupby(level="decision_date", sort=True):
