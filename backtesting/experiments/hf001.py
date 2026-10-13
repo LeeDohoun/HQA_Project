@@ -16,7 +16,7 @@ import pandas as pd
 from backtesting import cost_model, experiment_registry, signal_eval
 from backtesting.experiment_registry import PROJECT_ROOT
 from backtesting.experiments import common, hc001, hc002
-from src.ingestion.storage import read_rows
+from src.ingestion.dart_listing import listing_paths, listing_rows, listing_version, require_supplement, supplement_paths, covered_listing_days, listing_status
 from src.research import market_regimes
 
 
@@ -88,17 +88,14 @@ def price_limit(day):
 
 
 def _listing_files(data_dir):
-    directory = Path(data_dir) / "disclosures/dart_full/list"
     # Missing coverage is an explicit exclusion of raise variants, never no-events data.
-    return {pd.Timestamp(path.stem): path for path in sorted(directory.glob("*/*.jsonl"))
-            if len(path.stem) == 8 and path.stem.isdigit()
-            and LISTING_START <= pd.Timestamp(path.stem) <= LISTING_END}
+    return {pd.Timestamp(day): path for day, path in listing_paths(data_dir, LISTING_START, LISTING_END).items()}
 
 
-def load_listings(files):
+def load_listings(files, *, data_dir=None):
     rows = []
     for day, path in files.items():
-        for row in read_rows(path):
+        for row in listing_rows(data_dir if data_dir is not None else path.parents[4], day):
             if row.get("rcept_dt") != day.strftime("%Y%m%d"):
                 raise ValueError(f"listing receipt date does not match archive: {path}")
             rows.append({name: row.get(name) for name in LISTING_COLUMNS})
@@ -153,7 +150,7 @@ def rights_events(listings, sessions):
     return frame.sort_values(["known_position", "stock_code", "rcept_no"]), counts
 
 
-def listing_coverage(decision, sessions, files):
+def listing_coverage(decision, sessions, files, *, data_dir, status=None):
     days = signal_eval._dates(sessions).sort_values().unique()
     pos = days.get_loc(pd.Timestamp(decision))
     if pos < 126:
@@ -161,7 +158,8 @@ def listing_coverage(decision, sessions, files):
                 "available_days": 0, "missing_days": []}
     start, end = days[pos - 126], days[pos] - pd.Timedelta(days=1)
     required = pd.date_range(start, end)
-    missing = required.difference(pd.DatetimeIndex(list(files)))
+    available = pd.to_datetime(covered_listing_days(data_dir, required, status=status))
+    missing = required.difference(pd.DatetimeIndex(available))
     return {"covered": len(missing) == 0, "reason": None if not len(missing) else "incomplete_listing_window",
             "known_window_start": days[pos - 125].date().isoformat(),
             "receipt_start": start.date().isoformat(), "receipt_end": end.date().isoformat(),
@@ -194,6 +192,7 @@ def build_selections(prices, *, data_dir, repo_root, sessions, listing_files, ev
         universe[flag] = False
     universe["raise_covered"] = False
     reports = []
+    status = listing_status(data_dir)
     for day, group in universe.groupby("decision_date", sort=True):
         pos = sessions.get_loc(day)
         history = prices.loc[prices.index.get_level_values("trade_date").isin(sessions[pos - 19:pos + 1])]
@@ -204,7 +203,7 @@ def build_selections(prices, *, data_dir, repo_root, sessions, listing_files, ev
             raise AssertionError(f"HF001 P differs from HC002 phase-2 set on {day.date()}: {sorted(p ^ expected)}")
         eligible = group.set_index("stock_code")
         volatility = volatility_filter(prices, eligible, day, sessions)
-        covered = listing_coverage(day, sessions, listing_files)
+        covered = listing_coverage(day, sessions, listing_files, data_dir=data_dir, status=status)
         known = events.loc[events.known_position.between(pos - 125, pos)]
         vol = group.stock_code.map(volatility.f_vol)
         raised = group.stock_code.isin(known.stock_code)
@@ -519,7 +518,8 @@ def source_hashes(data_dir, price_files, listing_files, prices=None):
     profile = root / "reference/dart_company/companies.jsonl"
     groups = {"krx_daily": [path for _, path in price_files],
               "quarterly": sorted((root / "fundamentals/dart_quarterly").glob("[0-9][0-9][0-9][0-9]_110*.jsonl")),
-              "company_profile": [profile] if profile.is_file() else [], "dart_listings": list(listing_files.values())}
+              "company_profile": [profile] if profile.is_file() else [], "dart_listings": list(listing_files.values()),
+              "dart_supplement": supplement_paths(data_dir, listing_files)}
     result = {name: {str(path.relative_to(root)): _digest(path) for path in paths} for name, paths in groups.items()}
     result["code"] = {str(path.relative_to(PROJECT_ROOT)): _digest(path)
                       for path in (Path(__file__), Path(hc001.__file__), Path(hc002.__file__), Path(cost_model.__file__))}
@@ -558,6 +558,7 @@ def run_experiment(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT, pr
     price_files = [] if injected else hc001.d001._price_files(
         Path(data_dir) / "market/krx_daily", hc001.PRICE_START, hc001.PRICE_END, repo_root=repo_root)
     files = _listing_files(data_dir)
+    version = require_supplement(data_dir, pd.date_range(LISTING_START, LISTING_END))
     hashes = source_hashes(data_dir, price_files, files, prices if injected else None)
     if prices is None:
         prices = hc001.d001._load_prices(Path(data_dir) / "market/krx_daily", hc001.PRICE_START, hc001.PRICE_END, repo_root=repo_root)
@@ -567,7 +568,7 @@ def run_experiment(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT, pr
     if prices.index.has_duplicates:
         raise ValueError("price keys must be unique")
     prices = prices.sort_index()
-    events, event_counts = rights_events(load_listings(files), sessions)
+    events, event_counts = rights_events(load_listings(files, data_dir=data_dir), sessions)
     universe, counts, reports, excluded, financials = build_selections(
         prices, data_dir=data_dir, repo_root=repo_root, sessions=sessions, listing_files=files, events=events)
     observations = forward_observations(prices, universe, sessions, repo_root=repo_root)
@@ -576,7 +577,8 @@ def run_experiment(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT, pr
     primary = variants["f_both"]
     # Coverage is reported for every planned month, even if HC002 has no signal there.
     planned, _ = hc002.rebalance_calendar(sessions)
-    listing_months = [{**row, **listing_coverage(row["decision_date"], sessions, files)} for row in planned]
+    status = listing_status(data_dir)
+    listing_months = [{**row, **listing_coverage(row["decision_date"], sessions, files, data_dir=data_dir, status=status)} for row in planned]
     days = common._sessions(prices)
     exit_flags = ("filled", "delisted", "halted_exit", "stale_exit", "limit_down_exit", "unadjusted_fallback")
     payload = {"experiment_id": EXPERIMENT_ID, "selected_variant": "f_both", "verdict": primary["verdict"],
@@ -585,6 +587,7 @@ def run_experiment(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT, pr
                "variants": variants, "delisting_sensitivity": {"gross_return": -1.0, "variants": sensitivity},
                "cost_model_v2": cost_model_v2_metrics(observations, prices),
                "interpretations": INTERPRETATIONS, "assumptions": ASSUMPTIONS, "source_hashes": hashes,
+               "listing_version": version,
                "selections": reports, "skipped_months": excluded,
                "counts": {"hc002_by_month": counts, "rights_events": event_counts,
                           **{flag: int(observations[flag].sum()) for flag in exit_flags},
@@ -642,13 +645,14 @@ def dry_run(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT):
     price_days = pd.DatetimeIndex([day for day, _ in prices])
     files = _listing_files(data_dir)
     listing_days = pd.DatetimeIndex(list(files))
+    status = listing_status(data_dir)
     months = []
     for row in planned:
         pos = sessions.get_loc(pd.Timestamp(row["decision_date"]))
         required = sessions[pos - 19:pos + 1 + hc002.HORIZON]
         months.append({**row, "price_covered": not len(required.difference(price_days)),
                        "volatility_window_covered": pos >= 59 and not len(sessions[pos - 59:pos + 1].difference(price_days)),
-                       "listing": listing_coverage(row["decision_date"], sessions, files)})
+                       "listing": listing_coverage(row["decision_date"], sessions, files, data_dir=data_dir, status=status)})
     financials, _ = hc001._financial_inventory(data_dir)
     profiles = hc001._industries(data_dir)
     return {"experiment_id": EXPERIMENT_ID, "variants": list(VARIANTS), "data_dir": str(Path(data_dir)),

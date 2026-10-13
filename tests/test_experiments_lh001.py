@@ -1,5 +1,6 @@
 """Synthetic LH001 checks. Every Codex subprocess is injected; no real model."""
 from __future__ import annotations
+from dart_listing_fixtures import checkpoint
 
 import hashlib
 import json
@@ -71,6 +72,7 @@ def synthetic(tmp_path):
     profiles = {code: inputs.GROUPS[index % 3] for index, code in enumerate(codes)}
     benchmarks = pd.DataFrame([{"trade_date": day, "series": series, "index_name": name, "close": 100 * 1.001 ** index}
                                for index, day in enumerate(days) for series, name in (("KOSPI", "코스피"), ("KOSDAQ", "코스닥"))])
+    checkpoint(tmp_path)
     return prices, days, known, profiles, benchmarks, tmp_path
 
 
@@ -161,6 +163,7 @@ def test_disclosure_counts_partial_none_complete_zero_and_future_ignored(tmp_pat
     first = sessions[0].strftime("%Y%m%d")
     row = {"stock_code": "000010", "rcept_dt": first, "rcept_no": first + "000001", "report_nm": "단일판매·공급계약체결"}
     (directory / f"{first}.jsonl").write_text(json.dumps(row) + "\n")
+    checkpoint(tmp_path, days=[first])
     partial = inputs.disclosure_counts(tmp_path, sessions, {"000010", "000020"})
     assert partial["000010"]["counts"] is None and partial["000020"]["counts"] is None
     assert partial["000010"]["coverage"]["available"] and not partial["000010"]["coverage"]["complete"]
@@ -170,6 +173,7 @@ def test_disclosure_counts_partial_none_complete_zero_and_future_ignored(tmp_pat
             path.write_text("")
     future = sessions[-1] + pd.Timedelta(days=1)
     (directory / f"{future:%Y%m%d}.jsonl").write_text(json.dumps({**row, "rcept_dt": f"{future:%Y%m%d}"}) + "\n")
+    checkpoint(tmp_path, days=[f"{d:%Y%m%d}" for d in pd.date_range(sessions[0], sessions[-1])])
     complete = inputs.disclosure_counts(tmp_path, sessions, {"000010", "000020"})
     assert complete["000010"]["counts"]["contract"] == 1
     assert all(value == 0 for value in complete["000020"]["counts"].values())
@@ -797,6 +801,7 @@ def test_minimum_events_enforced_conservatively_in_addition_to_weekly_count(fiel
 
 
 def test_final_opens_before_source_reads_and_resume_uses_one_frozen_snapshot(offline_repo, monkeypatch):
+    checkpoint(offline_repo)
     scores = probe_scores()
     root = workspace(offline_repo)
     save_json(root / "probe.json", {**probe.clean_window(scores), "scores": scores})
@@ -983,6 +988,7 @@ def test_decision_day_date_only_disclosures_never_enter_close_known_input(synthe
         path.parent.mkdir(parents=True, exist_ok=True)
         row = {"stock_code": "000010", "rcept_dt": f"{stamp:%Y%m%d}", "rcept_no": f"{stamp:%Y%m%d}000001", "report_nm": title}
         path.write_text(json.dumps(row, ensure_ascii=False) + "\n")
+    checkpoint(root, days=[f"{d:%Y%m%d}" for d in pd.date_range(prior[0], prior[-1])])
     bundle = bundle_for(synthetic)
     stock = bundle["stocks"][0]
     assert stock["listing_coverage"]["complete"] and stock["disclosures_contract"] == 1

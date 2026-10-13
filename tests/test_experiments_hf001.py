@@ -1,5 +1,6 @@
 """Synthetic, offline checks of the immutable HF001 rules and publication."""
 from __future__ import annotations
+from dart_listing_fixtures import checkpoint
 
 import csv
 import hashlib
@@ -68,6 +69,7 @@ def listing_archive(data_dir, start, end, rows=()):
         path.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows
                                 if row["rcept_dt"] == day.strftime("%Y%m%d")), encoding="utf-8")
         files[day] = path
+    checkpoint(data_dir, days=[day.strftime("%Y%m%d") for day in files])
     return files
 
 
@@ -293,16 +295,16 @@ def test_listing_entire_window_includes_weekends_zero_files_and_internal_gaps(tm
     position = days.get_loc(day)
     start = days[position - 126]
     files = listing_archive(tmp_path, start, day - pd.Timedelta(days=1))
-    covered = hf001.listing_coverage(day, days, files)
+    covered = hf001.listing_coverage(day, days, files, data_dir=tmp_path)
     assert covered["covered"] and covered["required_days"] > 126
     assert covered["receipt_start"] == str(start.date())
     assert covered["known_window_start"] == str(days[position - 125].date())
     weekend = next(date for date in files if date.weekday() == 6)
     files[weekend].unlink()
     files = hf001._listing_files(tmp_path)
-    missing = hf001.listing_coverage(day, days, files)
+    missing = hf001.listing_coverage(day, days, files, data_dir=tmp_path)
     assert not missing["covered"] and missing["missing_days"] == [str(weekend.date())]
-    assert not hf001.listing_coverage(days[125], days, files)["covered"]
+    assert not hf001.listing_coverage(days[125], days, files, data_dir=tmp_path)["covered"]
 
 
 @pytest.mark.parametrize("entry_date,nominal", [("2015-06-12", 0.15), ("2015-06-15", 0.30), ("2024-06-03", 0.30)])
@@ -616,6 +618,7 @@ def test_runner_records_exactly_three_rows_finite_results_interpretations_and_ha
     prices, days = market("2024-01-01", codes=["000010", "000020"], krx_sessions=True)
     financials(data, ["000010", "000020"])
     listing_archive(data, "2023-01-01", "2025-11-30", [listing_row("2024-05-30")])
+    checkpoint(data)
     registry = root / experiment_registry.REGISTRY_PATH
     with registry.open("w", newline="") as handle:
         writer = csv.writer(handle)
@@ -631,6 +634,7 @@ def test_runner_records_exactly_three_rows_finite_results_interpretations_and_ha
     assert result["coverage"]["planned_months"] == 103
     assert result["source_hashes"]["quarterly"] and result["source_hashes"]["dart_listings"]
     assert result["source_hashes"]["in_memory_prices"]
+    assert result["listing_version"] == hf001.listing_version(data)
     v2 = result["cost_model_v2"]
     assert v2["used_for_judgement"] is False and "not used for verdicts" in v2["interpretation"]
     assert set(v2["variants"]) == set(hf001.VARIANTS)

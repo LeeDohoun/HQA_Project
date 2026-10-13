@@ -396,9 +396,7 @@ def load_prices(data_dir, start, end, *, repo_root=PROJECT_ROOT, experiment_id=N
 def listing_files(data_dir, end, *, repo_root=PROJECT_ROOT, experiment_id=None):
     end = pd.Timestamp(end)
     holdout.guard_period(hf001.LISTING_START.date(), end.date(), experiment_id=experiment_id, repo_root=repo_root)
-    directory = Path(data_dir) / "disclosures/dart_full/list"
-    return {pd.Timestamp(path.stem): path for path in sorted(directory.glob("*/*.jsonl"))
-            if len(path.stem) == 8 and path.stem.isdigit() and hf001.LISTING_START <= pd.Timestamp(path.stem) <= end}
+    return {pd.Timestamp(day): path for day, path in hf001.listing_paths(data_dir, hf001.LISTING_START, end).items()}
 
 
 def build_selections(prices, planned, *, data_dir, repo_root, sessions, files, events):
@@ -406,6 +404,7 @@ def build_selections(prices, planned, *, data_dir, repo_root, sessions, files, e
     common.guard_prices(prices, experiment_id=EXPERIMENT_ID, repo_root=repo_root)
     selections, counts = [], []
     available = common._sessions(prices)
+    status = hf001.listing_status(data_dir)
     through = max(row["decision_date"] for row in planned)
     with common.guarded_reads(EXPERIMENT_ID), common.quarterly_view(
             data_dir, through, experiment_id=EXPERIMENT_ID, repo_root=repo_root) as view:
@@ -426,7 +425,7 @@ def build_selections(prices, planned, *, data_dir, repo_root, sessions, files, e
                 uncomputable = int(vol.volatility_60d.isna().sum())
             else:
                 blocked, uncomputable = set(), 0
-            coverage = hf001.listing_coverage(day, sessions, files)
+            coverage = hf001.listing_coverage(day, sessions, files, data_dir=data_dir, status=status)
             selections.append({**row, "universe": universe, "blocked_buys": blocked,
                                "filter_covered": coverage["covered"], "listing": coverage,
                                "vol_uncomputable_U": uncomputable})
@@ -621,6 +620,7 @@ def source_hashes(data_dir, price_paths, files, *, prices=None, end=DESIGN_END):
     root = Path(data_dir)
     profile = root / "reference/dart_company/companies.jsonl"
     groups = {"krx_daily": [path for _, path in price_paths], "dart_listings": list(files.values()),
+              "dart_supplement": hf001.supplement_paths(data_dir, files),
               "quarterly": sorted(path for path in (root / "fundamentals/dart_quarterly").glob("[0-9][0-9][0-9][0-9]_110*.jsonl")
                                   if int(path.stem[:4]) <= pd.Timestamp(end).year),
               "company_profile": [profile] if profile.is_file() else []}
@@ -657,7 +657,9 @@ def _prepare(prices, planned, *, data_dir, repo_root, sessions, files):
         listing_days = pd.DatetimeIndex(list(files))
         holdout.guard_period(listing_days.min().date(), listing_days.max().date(),
                              experiment_id=EXPERIMENT_ID, repo_root=repo_root)
-    events, event_counts = hf001.rights_events(hf001.load_listings(files), sessions)
+    through = max(pd.Timestamp(planned[-1]["decision_date"]), max(files) if files else hf001.LISTING_START)
+    hf001.require_supplement(data_dir, (hf001.LISTING_START, through))
+    events, event_counts = hf001.rights_events(hf001.load_listings(files, data_dir=data_dir), sessions)
     selections, counts = build_selections(prices, planned, data_dir=data_dir, repo_root=repo_root,
                                           sessions=sessions, files=files, events=events)
     return selections, counts, event_counts
@@ -787,7 +789,8 @@ def run_experiment(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT, pr
                "variants": variants, "delisting_sensitivity": {"variants": sensitivity},
                "design_states": states, "state_sha256": _content_hash(states),
                "state_decision_month": "2025-11", "state_valuation_date": "2025-12-30",
-               "source_hashes": hashes, "interpretations": INTERPRETATIONS, "assumptions": ASSUMPTIONS,
+               "source_hashes": hashes, "listing_version": hf001.listing_version(data_dir),
+               "interpretations": INTERPRETATIONS, "assumptions": ASSUMPTIONS,
                "selections": [{**{key: value for key, value in row.items() if key not in ("universe", "blocked_buys")},
                                "U": list(row["universe"].index),
                                "P": sorted(target_set("t_hold", row["universe"], ())),
@@ -918,6 +921,7 @@ def run_holdout(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT):
     planned, excluded = rebalance_calendar(sessions, holdout_mode=True)
     if len(planned) != 6 or excluded:
         raise ValueError("holdout calendar must contain the six preregistered months")
+    hf001.require_supplement(data_dir, (hf001.LISTING_START, "2026-05-31"))
     try:
         with holdout.HoldoutSession(EXPERIMENT_ID, repo_root=repo_root):
             protected, paths = load_prices(data_dir, "20260101", "20260630", repo_root=repo_root, experiment_id=EXPERIMENT_ID)
@@ -947,6 +951,7 @@ def run_holdout(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT):
         payload = {"experiment_id": EXPERIMENT_ID, "stage": "holdout", "selected_variant": "passed_design_variants",
                    "verdict": headline["verdict"], "reasons": headline["reasons"], "variants": variants,
                    "delisting_sensitivity": {"variants": sensitivity}, "source_hashes": hashes,
+                   "listing_version": hf001.listing_version(data_dir),
                    "design_state_sha256": design["state_sha256"], "prereg_commit": registration.commit_hash,
                    "interpretations": INTERPRETATIONS, "assumptions": ASSUMPTIONS,
                    "counts": {**book.counts, "hc002_by_month": counts, "rights_events": events,
@@ -972,6 +977,7 @@ def dry_run(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT):
     prices = price_files(data_dir, "20150101", "20251230", repo_root=repo_root)
     files = listing_files(data_dir, "20251130", repo_root=repo_root)
     price_days = pd.DatetimeIndex([day for day, _ in prices])
+    status = hf001.listing_status(data_dir)
     months = []
     for row in planned:
         pos = sessions.get_loc(pd.Timestamp(row["decision_date"]))
@@ -979,7 +985,7 @@ def dry_run(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT):
         required = sessions[max(0, pos - 19):end + 1]
         months.append({**row, "price_covered": not len(required.difference(price_days)),
                        "vol60_covered": pos >= 59 and not len(sessions[pos - 59:pos + 1].difference(price_days)),
-                       "listing": hf001.listing_coverage(row["decision_date"], sessions, files)})
+                       "listing": hf001.listing_coverage(row["decision_date"], sessions, files, data_dir=data_dir, status=status)})
     financials, _ = hc001._financial_inventory(data_dir)
     return {"experiment_id": EXPERIMENT_ID, "prereg_commit": registration.commit_hash,
             "planned_months": len(hc002.MONTHS), "calendar_months": len(planned), "excluded_months": excluded,

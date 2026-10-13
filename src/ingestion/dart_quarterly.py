@@ -21,6 +21,8 @@ from .dart_api import DartAPIError, read_dart_payload
 from .dart_financials import DartFinancialStatementCollector
 from .dart_poller import KST, _kst
 from .storage import atomic_write, file_lock, read_rows, write_rows
+from .dart_listing import listing_paths, listing_rows, listing_version
+from .dart_filing_dates import annotate_versions, provenance_index
 
 
 DEFAULT_DATA_DIR = Path(__file__).resolve().parents[2] / "data"
@@ -56,8 +58,9 @@ def load_universe(*, corp_codes_path=DEFAULT_CORP_CODES, listing_dir=None,
                 if not {"corp_code", "stock_code"}.issubset(reader.fieldnames or []):
                     raise ValueError("DART invalid corporate-code CSV columns")
                 yield from reader
-            for path in sorted(listing_dir.rglob("*.jsonl")):
-                yield from read_rows(path)
+            root = listing_dir.parents[2] if listing_dir.parent.name == "dart_full" else listing_dir.parent
+            for day in listing_paths(root, main_dir=listing_dir):
+                yield from listing_rows(root, day, main_dir=listing_dir)
 
         rows = sources()
     else:
@@ -457,7 +460,7 @@ def backfill(from_year: int, to_year: int, *, execute=False, max_requests=DEFAUL
     return summary
 
 
-def load_quarterly(as_of, *, data_dir=DEFAULT_DATA_DIR) -> pd.DataFrame:
+def load_quarterly(as_of, *, data_dir=DEFAULT_DATA_DIR, date_rule="stored") -> pd.DataFrame:
     """Latest known CFS per corp/quarter, or OFS only if no CFS is known.
 
     as_of is the caller's trading-session date (aware timestamps use KST).
@@ -465,13 +468,19 @@ def load_quarterly(as_of, *, data_dir=DEFAULT_DATA_DIR) -> pd.DataFrame:
     the caller supplies real trading sessions, no weekday calendar is guessed.
     Keep missing CFS accounts missing rather than borrowing OFS values. Emit a
     row for every stock alias and expose receipt, currency and missing reasons.
+    The default retains the legacy receipt-prefix policy byte for byte.
+    date_rule="original" uses merged-list provenance (later of receipt/list
+    dates), assigning corrected saved values to the earliest original report.
     """
+    if date_rule not in {"stored", "original"}:
+        raise ValueError("DART quarterly date_rule must be stored or original")
     session_date = pd.Timestamp(as_of)
     if pd.isna(session_date):
         raise ValueError("DART as_of trading session is required")
     if session_date.tzinfo is not None:
         session_date = session_date.tz_convert(KST)
     day = session_date.date().isoformat()
+    dates = provenance_index(data_dir) if date_rule == "original" else None
     directory = Path(data_dir) / "fundamentals/dart_quarterly"
     rows = []
     paths = sorted(directory.glob("[0-9][0-9][0-9][0-9]_110*.jsonl"))
@@ -485,6 +494,9 @@ def load_quarterly(as_of, *, data_dir=DEFAULT_DATA_DIR) -> pd.DataFrame:
                     raise ValueError("DART quarterly archive business year disagrees with filename")
                 if row["available_date"] != _filing_date(row["rcept_no"]):
                     raise ValueError("DART quarterly availability does not match receipt")
+                if date_rule == "original":
+                    annotated = annotate_versions([row], index=dates)[0]
+                    row = {**row, "available_date": annotated["known_date_original"]}
                 if row["available_date"] < day:
                     records.append(row)
         latest = {}
@@ -503,6 +515,9 @@ def load_quarterly(as_of, *, data_dir=DEFAULT_DATA_DIR) -> pd.DataFrame:
     frame = pd.DataFrame(rows, columns=COLUMNS)
     for metric in ACCOUNTS:
         frame[metric] = pd.to_numeric(frame[metric]).astype(float)
+    if date_rule == "original":
+        frame.attrs.update(date_rule=date_rule, listing_version=listing_version(data_dir),
+                           assumption="Corrected saved values assigned to original filing dates; originals not reconstructed")
     return frame
 
 

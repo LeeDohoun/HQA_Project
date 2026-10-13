@@ -468,7 +468,8 @@ def test_streaming_plan_equals_previous_full_archive_plan(tmp_path, short_range,
     fields = ("rcept_no", "rcept_dt", "report_nm", "corp_code", "stock_code", "corp_name", "corp_cls")
     full_rows = sorted(({field: row.get(field) for field in fields} for row in rows),
                        key=lambda row: (row["rcept_dt"], row["rcept_no"]))
-    counts = {"raw_rows": 7, "duplicate_receipts": 1, "unique_receipts": 6,
+    # The shared reader removes matching observations before projection.
+    counts = {"raw_rows": 6, "duplicate_receipts": 0, "unique_receipts": 6,
               "title_candidates": 3, "receipt_prefix_differs_from_public_date": 1, "withdrawal_titles": 1}
     candidates, files, actual_counts = dart.load_listings(tmp_path, candidates_only=True)
     assert candidates == [row for row in full_rows if dart.title_matches(row["report_nm"])]
@@ -481,7 +482,7 @@ def test_streaming_plan_equals_previous_full_archive_plan(tmp_path, short_range,
 @pytest.mark.parametrize("cross_day", [False, True])
 def test_streaming_rejects_conflicting_non_candidate_receipts(tmp_path, short_range, cross_day):
     first = item(report_nm="기타공시")
-    second = {**first, "corp_name": "conflict"}
+    second = {**first, "report_nm": "다른기타공시"}
     if cross_day:
         second["rcept_dt"] = "20160603"
     listing_archive(tmp_path, first, second)

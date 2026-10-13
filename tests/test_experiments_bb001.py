@@ -1,5 +1,6 @@
 """BB001 rules on synthetic point-in-time data and independent references."""
 from __future__ import annotations
+from dart_listing_fixtures import checkpoint
 
 import copy
 import csv
@@ -68,6 +69,7 @@ def cover(root, rows, *, start="2023-10-02", end=None):
         path = root / "disclosures/dart_full/list" / str(day.year) / f"{key}.jsonl"
         write_rows(path, [row for row in rows if row["rcept_dt"] == key])
         files[key] = path
+    checkpoint(root, days=files)
     return files
 
 
@@ -175,9 +177,9 @@ def test_weekend_clock_next_exchange_open_and_archive_completeness(tmp_path):
     planned, reason = b.schedule(events[0], 21, days)
     assert reason is None and planned["entry_date"] == "2024-02-05"
     assert planned["exit_position"] == planned["entry_position"] + 20
-    coverage = b.listing_coverage(row["rcept_dt"], days, files)
+    coverage = b.listing_coverage(row["rcept_dt"], days, files, data_dir=tmp_path)
     assert coverage["covered"]
-    files.pop("20240107")  # Empty Sunday still belongs to the observation window.
+    files.pop("20240107").unlink()  # Empty Sunday still belongs to the observation window.
     events, report = b.construct_events([row], files, days, tmp_path)
     assert events == [] and report["filter_counts"]["incomplete_listing_window"] == 1
 
@@ -195,7 +197,7 @@ def test_every_required_original_field_must_be_nonempty(tmp_path, field):
 
 @pytest.mark.parametrize("change,reason", [
     ({"stock_code": ""}, "stock_code_link_failed"), ({"stock_code": "a00010"}, "stock_code_link_failed"),
-    ({"stock_code": "000015"}, "not_common_share_market_or_spac"), ({"corp_cls": "N"}, "not_common_share_market_or_spac"),
+    ({"stock_code": "000015"}, "not_common_share_market_or_spac"),
     ({"corp_name": "합성스팩"}, "not_common_share_market_or_spac")])
 def test_original_listing_identifiers_and_share_type_filters(tmp_path, change, reason):
     _, days, _ = market()
@@ -213,6 +215,18 @@ def test_alphanumeric_common_code_and_historical_delisted_identity_are_kept(tmp_
     save_values(tmp_path, row)
     events, _ = b.construct_events([row], files, days, tmp_path)
     assert events[0]["stock_code"] == "A12340"
+
+
+@pytest.mark.parametrize("corp_cls", ["E", "N"])
+def test_current_delisted_or_konex_class_does_not_exclude_historical_event(tmp_path, corp_cls):
+    prices, days, _ = market()
+    row = item(corp_cls=corp_cls)
+    files = cover(tmp_path, [row])
+    save_values(tmp_path, row)
+    events, _ = b.construct_events([row], files, days, tmp_path)
+    assert events[0]["corp_cls"] == corp_cls
+    chosen, _ = b.select_events(events, b.PriceReader(tmp_path, days, prices=prices), [row], 21)
+    assert len(chosen) == 1
 
 
 @pytest.mark.parametrize("case,reason", [("missing", "original_document_unavailable"), ("014", "original_document_unavailable"),
@@ -729,6 +743,7 @@ def test_execute_writes_exact_three_trials_all_metrics_hashes_and_exclusive_resu
     assert payload["selected_variant"] == "d21" and payload["verdict"] == "insufficient"
     assert payload["prereg_commit"] == registration.commit_hash and payload["source_hashes"]
     assert payload["supplied_price_frame_sha256"]
+    assert payload["listing_version"]["supplement_state_sha256"] is not None
     for name in b.VARIANTS:
         assert set(payload["variants"][name]["secondary_horizons"]) == {"1", "5", "63"}
         assert payload["variants"][name]["primary"]["count"] == 1

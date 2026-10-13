@@ -106,13 +106,13 @@ def price_limit(day):
     return 0.15 if pd.Timestamp(day) < pd.Timestamp("2015-06-15") else 0.30
 
 
-def listing_coverage(public, sessions, files):
+def listing_coverage(public, sessions, files, *, data_dir, status=None):
     public = pd.Timestamp(public)
     end = sessions.searchsorted(public, side="right")
     if end < 64:
         return {"covered": False, "reason": "incomplete_63_session_calendar", "missing_days": None}
     required = pd.date_range(sessions[end - 64], public - pd.Timedelta(days=1))
-    available = pd.DatetimeIndex(pd.to_datetime(list(files)))
+    available = pd.DatetimeIndex(pd.to_datetime(dart.covered_listing_days(data_dir, required, status=status)))
     missing = required.difference(available)
     return {"covered": not len(missing), "required_days": len(required), "available_days": len(required) - len(missing),
             "missing_days": len(missing), "start": required[0].date().isoformat(), "end": required[-1].date().isoformat(),
@@ -134,6 +134,7 @@ def construct_events(listings, files, sessions, data_dir):
                         key=lambda row: (row["rcept_dt"], row["rcept_no"]))
     events, audit, counts, previous, structured = [], [], Counter(), {}, {}
     availability = Counter()
+    status = dart.listing_status(data_dir)
     for item in candidates:
         corp, receipt = item["corp_code"], item["rcept_no"]
         public = pd.Timestamp(item["rcept_dt"])
@@ -153,7 +154,7 @@ def construct_events(listings, files, sessions, data_dir):
         availability.update(structured_original_rows=int(row is not None), required_fields_complete=int(complete),
             original_documents_stored=int(document is not None), original_documents_available=int(bool(document and document["status"] == "000" and document["text"])),
             original_values_verified=int(verified))
-        coverage = listing_coverage(public, sessions, files)
+        coverage = listing_coverage(public, sessions, files, data_dir=data_dir, status=status)
         code = item.get("stock_code")
         reason = None
         if repeated:
@@ -164,7 +165,7 @@ def construct_events(listings, files, sessions, data_dir):
             reason = "incomplete_listing_window"
         elif not is_stock_code(code):
             reason = "stock_code_link_failed"
-        elif item.get("corp_cls") not in ("Y", "K") or not code.endswith("0") or "스팩" in (item.get("corp_name") or ""):
+        elif not code.endswith("0") or "스팩" in (item.get("corp_name") or ""):
             reason = "not_common_share_market_or_spac"
         elif row is None:
             reason = "structured_original_row_missing"
@@ -713,6 +714,7 @@ def _grid(sessions):
 
 def _input_hashes(data_dir, repo_root, files, listings):
     paths = list(files.values())
+    paths += dart.supplement_paths(data_dir, files)
     paths += [Path(repo_root) / "research/experiments" / EXPERIMENT_ID / "preregistration.md"]
     paths += [Path(__file__), Path(dart.__file__), Path(cost_model.__file__), Path(holdout.__file__),
               Path(experiment_registry.__file__), Path(common.__file__), Path(market_regimes.__file__), Path(hc001.__file__)]
@@ -752,7 +754,8 @@ def write_results(payload, *, repo_root=PROJECT_ROOT):
 def run_experiment(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT, prices=None, sessions=None):
     started, registration = time.perf_counter(), _registration(repo_root)
     sessions = _days(sessions)
-    listings, files, listing_counts = dart.load_listings(data_dir)
+    listings, files, listing_counts = dart.load_listings(data_dir, require_complete=True)
+    version = dart.require_supplement(data_dir, (dart.START, dart.END))
     hashes = _input_hashes(data_dir, repo_root, files, listings)
     events, construction = construct_events(listings, files, sessions, data_dir)
     reader, grid = PriceReader(data_dir, sessions, prices=prices, repo_root=repo_root), _grid(sessions)
@@ -789,7 +792,8 @@ def run_experiment(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT, pr
         "prereg_commit": registration.commit_hash, "variants": variants, "delisting_sensitivity": sensitivity,
         "counts": {"listings": listing_counts, "construction": construction, "variants": filtering},
         "coverage": {"listings": dart.plan(data_dir)["listing_coverage"], "calendar_version": f"exchange-calendars:{hc001.calendars.__version__}:XKRX"},
-        "source_hashes": all_hashes, "supplied_price_frame_sha256": supplied,
+        "source_hashes": all_hashes, "listing_version": version,
+        "supplied_price_frame_sha256": supplied,
         "interpretations": INTERPRETATIONS, "assumptions": ASSUMPTIONS,
         "regime_markers": {"2024-12-31": "buyback disclosure strengthening", "2025-12-30": "1% disclosure threshold",
                            "2026-03-06": "mandatory cancellation principle; holdout, not evaluated", "2026-06-30": "trust disposal ban; holdout, not evaluated"},

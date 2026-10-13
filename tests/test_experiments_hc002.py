@@ -120,6 +120,27 @@ def test_month_end_signal_excludes_same_day_filing_and_uses_known_correction(tmp
     assert june_count["corrections_used"] == 1
 
 
+@pytest.mark.parametrize("day,quarter,revenue_yoy,income_yoy,phase", [
+    ("2024-05-31", "2023Q1", 25.0, 25.0, None),
+    ("2024-06-28", "2024Q1", 100.0, 50.0, 3),
+    ("2024-07-31", "2024Q1", 150.0, 500.0, 2)])
+def test_default_hc002_universe_matches_legacy_fixture_months(tmp_path, monkeypatch, day, quarter, revenue_yoy, income_yoy, phase):
+    prices, _ = market()
+    archive(tmp_path, [(2022, 80, 8, "2022-05-15", 1), (2023, 100, 10, "2023-05-15", 1),
+                       (2024, 150, 30, "2024-05-31", 1), (2024, 200, 15, "2024-06-27", 2),
+                       (2024, 250, 100, "2024-06-28", 3)])
+    monkeypatch.setattr(dart_quarterly, "provenance_index", lambda *a, **k: pytest.fail("legacy default read listing"))
+    history = prices.loc[prices.index.get_level_values("trade_date") <= pd.Timestamp(day)]
+    universe, _ = hc002.universe_on_decision(history, day, data_dir=tmp_path)
+    assert universe.index.tolist() == ["000010"]
+    row = universe.iloc[0]
+    assert row.fiscal_quarter == quarter and row.revenue_yoy == revenue_yoy and row.operating_income_yoy == income_yoy
+    if phase is None:
+        assert pd.isna(row.phase)
+    else:
+        assert row.phase == phase
+
+
 def test_universe_uses_month_end_prices_without_entry_day_leakage(tmp_path):
     prices, dates = market()
     archive(tmp_path, [(2023, 100, 10, "2023-05-15", 1), (2024, 150, 30, "2024-05-15", 1)])

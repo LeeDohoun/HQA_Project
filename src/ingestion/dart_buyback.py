@@ -20,6 +20,7 @@ from .dart_api import DartAPIError, DartProviderMaintenance
 from .dart_backfill import (DEFAULT_DATA_DIR, DEFAULT_MAX_REQUESTS, KST,
                             DartBackfillCollector, _QuotaReached, _date, _write_json)
 from .storage import file_lock, read_rows
+from .dart_listing import listing_paths, listing_rows, require_supplement, supplement_paths, covered_listing_days, listing_status
 
 
 START, END = "20160601", "20251231"
@@ -70,18 +71,18 @@ def verify_values(row, text):
 
 
 def listing_files(data_dir):
-    directory = Path(data_dir) / "disclosures/dart_full/list"
-    return {path.stem: path for path in sorted(directory.glob("*/*.jsonl"))
-            if re.fullmatch(r"[0-9]{8}", path.stem) and START <= path.stem <= END}
+    return listing_paths(data_dir, START, END)
 
 
-def load_listings(data_dir, *, candidates_only=False):
+def load_listings(data_dir, *, candidates_only=False, require_complete=False):
+    if require_complete:
+        require_supplement(data_dir, (START, END))
     files, receipts = listing_files(data_dir), {}
     identities = {} if candidates_only else receipts
     raw_count = prefix_differs = withdrawals = title_count = 0
     for day, path in files.items():
         _date(day)
-        for row in read_rows(path):
+        for row in listing_rows(data_dir, day):
             raw_count += 1
             receipt = row.get("rcept_no")
             if (row.get("rcept_dt") != day or not isinstance(receipt, str)
@@ -170,11 +171,12 @@ def plan(data_dir=DEFAULT_DATA_DIR):
                            and request["page_no"] == 1 for request in (saved[corp] or {}).get("requests", []))
                    for corp, day in targets if corp not in complete)
     required_days = (_date(END) - _date(START)).days + 1
+    covered = covered_listing_days(data_dir, files)
     return {"status": "dry_run", "dry_run": True, "from_date": START, "to_date": END,
             "listing_coverage": {"required_calendar_days": required_days, "stored_days": len(files),
-                "missing_days": required_days - len(files), "first_day": min(files) if files else None,
+                "covered_days": len(covered), "missing_days": required_days - len(covered), "first_day": min(files) if files else None,
                 "last_day": max(files) if files else None,
-                "days_by_year": {str(year): sum(day.startswith(str(year)) for day in files) for year in range(2016, 2026)}},
+                "days_by_year": {str(year): sum(day.startswith(str(year)) for day in covered) for year in range(2016, 2026)}},
             "counts": counts, "corp_codes": corporations, "structured_corporations_complete": len(complete),
             "original_documents_stored": len(candidates) - len(missing), "original_documents_missing": len(missing),
             "estimated_requests_still_needed": requests + len(missing),

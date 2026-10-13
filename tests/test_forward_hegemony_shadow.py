@@ -222,8 +222,8 @@ def test_tags_never_change_selection_and_partial_archive_is_unknown(data):
     assert all(row["tags"]["capital_raise_prior_60_sessions"] == "unknown" for row in before["holdings"])
     window_start = pd.Timestamp(before["data_snapshot"]["dart_listing"]["window_start"])
     directory = data / "disclosures/dart_full/list/2026"
-    rows = [{"stock_code": "000010", "rcept_dt": "20261029", "report_nm": "[정정] 유 상 증 자 결정"},
-            {"stock_code": "000050", "rcept_dt": "20261029", "report_nm": "전환사채 발행 및 유상증자"}]
+    rows = [{"stock_code": "000010", "rcept_dt": "20261029", "rcept_no": "20261029000001", "report_nm": "[정정] 유 상 증 자 결정"},
+            {"stock_code": "000050", "rcept_dt": "20261029", "rcept_no": "20261029000002", "report_nm": "전환사채 발행 및 유상증자"}]
     write_rows(directory / "20261029.jsonl", rows)
     partial = shadow.decide(DECISION, data)
     tags = {row["stock_code"]: row["tags"] for row in partial["holdings"]}
@@ -235,7 +235,7 @@ def test_tags_never_change_selection_and_partial_archive_is_unknown(data):
             write_rows(path, [])
     # Future receipts never leak into the informational tag.
     write_rows(directory / "20261102.jsonl",
-               [{"stock_code": "000050", "rcept_dt": "20261102", "report_nm": "유상증자"}])
+               [{"stock_code": "000050", "rcept_dt": "20261102", "rcept_no": "20261102000001", "report_nm": "유상증자"}])
     complete = shadow.decide(DECISION, data)
     assert complete["holdings"][1]["tags"]["capital_raise_prior_60_sessions"] is False
     for record in (partial, complete):

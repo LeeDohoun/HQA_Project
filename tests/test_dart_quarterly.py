@@ -104,6 +104,8 @@ def test_universe_union_keeps_delisted_codes_and_all_stock_aliases(tmp_path):
     listing.mkdir(parents=True)
     rows = [*UNIVERSE, {"corp_code": CORP, "stock_code": "005935"},
             {"corp_code": "00000004", "stock_code": "0015G0"}]
+    rows = [{**row, "rcept_dt": "20261001", "rcept_no": f"20261001{number:06d}"}
+            for number, row in enumerate(rows, 1)]
     (listing / "20261001.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
     assert load_universe(corp_codes_path=path, listing_dir=listing.parent) == {
         "00000002": ["00088K"], "00000004": ["0015G0"], CORP: [STOCK, "005935"]}

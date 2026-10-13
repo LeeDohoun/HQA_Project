@@ -1,5 +1,6 @@
 """Offline LH002 regression checks; model subprocesses are always injected."""
 from __future__ import annotations
+from dart_listing_fixtures import checkpoint
 
 import csv
 import hashlib
@@ -608,6 +609,7 @@ def test_failed_v2_probe_blocks_final_before_data_or_holdout(offline_repo, monke
 
 
 def test_final_uses_lh002_ledger_registry_and_frozen_snapshot(offline_repo, monkeypatch):
+    checkpoint(offline_repo)
     with holdout.HoldoutSession(LH001.experiment_id, repo_root=offline_repo):
         pass
     ledger = offline_repo / holdout.LEDGER_PATH

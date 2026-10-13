@@ -20,7 +20,8 @@ from src.utils.stock_codes import is_stock_code
 from .dart import BeautifulSoup, DartDisclosureCollector
 from .dart_api import DartAPIError, DartProviderMaintenance
 from .dart_backfill import DartBackfillCollector, KST, _date, _QuotaReached, _write_json
-from .storage import file_lock, read_rows
+from .storage import file_lock
+from .dart_listing import listing_paths, listing_rows
 
 
 EXTRACTION_VERSION = "dart-business-text-v1"
@@ -57,12 +58,11 @@ def _validate_stock(stock_code) -> None:
 
 def _reports_by_stock(stock_codes: set[str], before, data_dir) -> dict[str, list[dict]]:
     reports = {code: {} for code in stock_codes}
-    directory = Path(data_dir) / "disclosures" / "dart_full" / "list"
-    for path in sorted(directory.glob("*/*.jsonl")):
+    for day, path in listing_paths(data_dir).items():
         archive_day = _date(path.stem)
         if archive_day >= before:
             continue
-        for row in read_rows(path):
+        for row in listing_rows(data_dir, day):
             code = row.get("stock_code")
             if code not in stock_codes:
                 continue

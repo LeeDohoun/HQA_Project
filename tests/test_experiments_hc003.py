@@ -1,5 +1,6 @@
 """Synthetic, offline HC003 accounting, point-in-time and single-use tests."""
 from __future__ import annotations
+from dart_listing_fixtures import checkpoint
 
 import copy
 import json
@@ -436,6 +437,7 @@ def offline_repo(tmp_path, monkeypatch):
     source = experiment_registry.PROJECT_ROOT / "research/experiments" / hc003.EXPERIMENT_ID / "preregistration.md"
     destination.write_bytes(source.read_bytes())
     write_financials(tmp_path / "data")
+    checkpoint(tmp_path / "data")
     return tmp_path
 
 
@@ -452,9 +454,9 @@ def test_exact_hc002_universe_and_imported_hf001_filters(market, offline_repo, m
     def track_vol(*args):
         calls.append("vol")
         return vol(*args)
-    def track_coverage(*args):
+    def track_coverage(*args, **kwargs):
         calls.append("coverage")
-        return coverage(*args)
+        return coverage(*args, **kwargs)
     monkeypatch.setattr(hf001, "volatility_filter", track_vol)
     monkeypatch.setattr(hf001, "listing_coverage", track_coverage)
     selected, counts = hc003.build_selections(prices, planned, data_dir=offline_repo / "data", repo_root=offline_repo,
@@ -540,6 +542,7 @@ def test_design_runner_records_three_trials_hashed_november_state_all_metrics(ma
     assert result["selected_variant"] == "t_hold" and set(result["variants"]) == set(hc003.VARIANTS)
     assert result["counts"]["financial_signal_missing_by_year"]["2025"]["price_eligible_stock_months"] > 0
     assert result["source_hashes"]["in_memory_prices"]
+    assert result["listing_version"] == hf001.listing_version(offline_repo / "data")
     for name, variant in result["variants"].items():
         assert variant["judgement_inputs"]["trial_count_after_run"] == 21
         assert variant["judgement_inputs"]["t_threshold"] == 3

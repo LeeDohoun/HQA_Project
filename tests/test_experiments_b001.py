@@ -1,4 +1,5 @@
 from __future__ import annotations
+from dart_listing_fixtures import checkpoint
 
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -78,12 +79,12 @@ def test_listing_filters_dedup_and_unmodified_category_rules():
     assert events.event_id.is_unique
     assert counts["raw"]["contract"] == 13
     assert counts["period"]["contract"] == 12
-    assert counts["listed_market"]["contract"] == 11
-    assert counts["no_corrections"]["contract"] == 10
-    assert counts["no_withdrawals"]["contract"] == 8
-    assert counts["stock_code"]["contract"] == 6
-    assert counts["common_share"]["contract"] == 5
-    assert counts["no_spac"]["contract"] == 3
+    assert counts["listed_market"]["contract"] == 12
+    assert counts["no_corrections"]["contract"] == 11
+    assert counts["no_withdrawals"]["contract"] == 9
+    assert counts["stock_code"]["contract"] == 7
+    assert counts["common_share"]["contract"] == 6
+    assert counts["no_spac"]["contract"] == 4
     assert counts["registered_category"]["other"] == 0
     assert counts["deduplicated"]["contract"] == 2
 
@@ -374,7 +375,8 @@ def test_dry_run_loads_synthetic_archives_only_and_writes_nothing(fields, tmp_pa
     rows = [listing(day=dates[24].strftime("%Y%m%d")), listing(2, day=dates[25].strftime("%Y%m%d"))]
     path = tmp_path / "disclosures/dart_full/list/2024" / (dates[24].strftime("%Y%m%d") + ".jsonl")
     path.parent.mkdir(parents=True)
-    path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    path.write_text(json.dumps(rows[0]) + "\n", encoding="utf-8")
+    (path.parent / (rows[1]["rcept_dt"] + ".jsonl")).write_text(json.dumps(rows[1]) + "\n", encoding="utf-8")
     # No 2026 listing should be opened, even if it is invalid JSON.
     forbidden = tmp_path / "disclosures/dart_full/list/2026/20260102.jsonl"
     forbidden.parent.mkdir()
@@ -394,7 +396,7 @@ def test_dry_run_loads_synthetic_archives_only_and_writes_nothing(fields, tmp_pa
     plan = b001.dry_run(data_dir=tmp_path, repo_root=tmp_path)
     after = {str(path.relative_to(tmp_path)): path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()}
     assert before == after
-    assert plan["listing_files"] == 1
+    assert plan["listing_files"] == 2
     assert plan["filter_counts"]["adv20"]["contract"] == 2
     assert plan["horizons"]["5"]["planned"]["contract"] == 2
     assert plan["horizons"]["5"]["benchmark_covered"]["contract"] == 0
@@ -414,6 +416,12 @@ def test_cli_defaults_to_dry_run(monkeypatch, capsys):
 
 @pytest.mark.parametrize("compressed", [False, True])
 def test_synthetic_run_records_eight_categories_with_batch_threshold_and_finite_results(fields, tmp_path, monkeypatch, compressed):
+    main = tmp_path / "disclosures/dart_full/list"
+    for day in pd.date_range("2023-01-01", "2025-12-31"):
+        path = main / day.strftime("%Y") / (day.strftime("%Y%m%d") + ".jsonl")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("")
+    checkpoint(tmp_path)
     monkeypatch.setattr(common, "RESULT_GZIP_THRESHOLD_BYTES", 0 if compressed else 50 * 1024 * 1024)
     prices, benchmarks, dates = sample()
     monkeypatch.setattr(experiment_registry, "trial_count", lambda *args, **kwargs: 16)
@@ -421,8 +429,9 @@ def test_synthetic_run_records_eight_categories_with_batch_threshold_and_finite_
     monkeypatch.setattr(experiment_registry, "record_trial", lambda experiment, variant, metrics, verdict, **kwargs:
                         captured.append((experiment, variant, metrics, verdict)))
     payload = b001.run_experiment(listings=pd.DataFrame([listing(day=dates[24].strftime("%Y%m%d"))]),
-                                  prices=prices, benchmarks=benchmarks, sessions=dates, repo_root=tmp_path)
+                                  prices=prices, benchmarks=benchmarks, sessions=dates, data_dir=tmp_path, repo_root=tmp_path)
     assert len(captured) == 8
+    assert payload["listing_version"]["supplement_state_sha256"] is not None
     assert [row[1] for row in captured] == list(b001.CATEGORIES)
     assert all(row[2]["trial_count_after_run"] == 24 and row[2]["required_t_stat"] == 3 for row in captured)
     assert all(row[3] == "insufficient" for row in captured)
@@ -437,9 +446,15 @@ def test_synthetic_run_records_eight_categories_with_batch_threshold_and_finite_
 
 
 def test_missing_benchmark_execution_fails_before_trials_or_results(fields, tmp_path, monkeypatch):
+    main = tmp_path / "disclosures/dart_full/list"
+    for day in pd.date_range("2023-01-01", "2025-12-31"):
+        path = main / day.strftime("%Y") / (day.strftime("%Y%m%d") + ".jsonl")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("")
+    checkpoint(tmp_path)
     prices, benchmarks, dates = sample()
     monkeypatch.setattr(experiment_registry, "record_trial", lambda *args, **kwargs: pytest.fail("recorded incomplete experiment"))
     with pytest.raises(ValueError, match="benchmark coverage"):
         b001.run_experiment(listings=pd.DataFrame([listing(day=dates[24].strftime("%Y%m%d"))]),
-                             prices=prices, benchmarks=benchmarks.iloc[:-1], sessions=dates, repo_root=tmp_path)
+                             prices=prices, benchmarks=benchmarks.iloc[:-1], sessions=dates, data_dir=tmp_path, repo_root=tmp_path)
     assert not (tmp_path / "research").exists()

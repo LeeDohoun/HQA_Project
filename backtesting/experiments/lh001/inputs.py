@@ -13,6 +13,7 @@ from backtesting.experiment_registry import PROJECT_ROOT
 from backtesting.experiments import hc001
 from src.ingestion import dart_quarterly
 from src.ingestion.storage import read_rows
+from src.ingestion.dart_listing import (listing_rows, listing_status, covered_listing_days, require_supplement)
 from src.research import industry_index, industry_map
 from src.runner.event_evidence import _category, _PATTERNS
 
@@ -191,17 +192,16 @@ def disclosure_counts(data_dir, sessions, codes, *, repo_root=PROJECT_ROOT, conf
                 for code in codes}
     guard_data(sessions[0], sessions[-1], repo_root=repo_root, config=config)
     expected = pd.date_range(sessions[0], sessions[-1])
-    directory = Path(data_dir) / "disclosures/dart_full/list"
-    completed, rows = 0, {}
+    status = listing_status(data_dir)
+    covered = set(covered_listing_days(data_dir, expected, status=status))
+    completed, rows = len(covered), {}
     for day in expected:
         stamp = day.strftime("%Y%m%d")
-        path = directory / stamp[:4] / f"{stamp}.jsonl"
-        if not path.is_file():
+        if stamp not in covered:
             continue
-        completed += 1
-        for row in read_rows(path):
+        for row in listing_rows(data_dir, stamp):
             if row.get("rcept_dt") != stamp or not isinstance(row.get("report_nm"), str):
-                raise ValueError(f"invalid DART listing: {path.name}")
+                raise ValueError(f"invalid DART listing: {stamp}")
             if row.get("stock_code") in codes:
                 rows[row["rcept_no"]] = row
     complete = completed == len(expected)
@@ -231,6 +231,8 @@ def build_inputs(prices, decision_date, *, data_dir, repo_root=PROJECT_ROOT, kno
         raise ValueError("unique close-known prices are required")
     days = pd.DatetimeIndex(history.index.get_level_values("trade_date").unique()).sort_values()
     guard_data(days[0], day, repo_root=repo_root, config=config)
+    prior = days[days < day][-60:]
+    version = require_supplement(data_dir, pd.date_range(prior[0], prior[-1]) if len(prior) else [])
     if known is None:
         known = load_financials(day, data_dir=data_dir, repo_root=repo_root, config=config)
     else:
@@ -323,7 +325,8 @@ def build_inputs(prices, decision_date, *, data_dir, repo_root=PROJECT_ROOT, kno
         row["financial_coverage"] = len(matched) / members.corp_code.nunique() if len(members) else None
         industries.append(row)
     return json_value({"decision_date": day, "market": market, "industries": industries, "stocks": stocks,
-                       "coverage": coverage, "a_codes": universe.index[universe.phase.eq(2)].tolist(),
+                       "coverage": coverage, "listing_version": version,
+                       "a_codes": universe.index[universe.phase.eq(2)].tolist(),
                        "source_window": [days[0], day]})
 
 

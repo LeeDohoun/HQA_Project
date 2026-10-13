@@ -92,15 +92,19 @@ def _volatility_tags(prices, sessions, codes):
 
 
 def _capital_raise_tags(data_dir, start, end, codes):
+    from src.ingestion.dart_listing import listing_rows, listing_status
     directory = Path(data_dir) / "disclosures/dart_full/list"
     days = [day.strftime("%Y%m%d") for day in pd.date_range(start, end)]
     tags, completed, archive = dict.fromkeys(codes, "unknown"), set(), []
+    supplement_dir = directory.parent / "list_supplement"
     for day in days:
         path = directory / day[:4] / f"{day}.jsonl"
-        if not path.is_file():
+        supplement = supplement_dir / day[:4] / f"{day}.jsonl"
+        if not path.is_file() and not supplement.is_file():
             continue
-        completed.add(day)
-        for row in read_rows(path):
+        if path.is_file():
+            completed.add(day)
+        for row in listing_rows(data_dir, day):
             if (row.get("rcept_dt") != day or not isinstance(row.get("report_nm"), str)
                     or not isinstance(row.get("stock_code"), str)):
                 raise ValueError(f"invalid DART listing archive: {path}")
@@ -110,7 +114,11 @@ def _capital_raise_tags(data_dir, start, end, codes):
     complete = directory.is_dir() and set(days).issubset(completed)
     if complete:
         tags = {code: value if value is True else False for code, value in tags.items()}
+    used = any((supplement_dir / day[:4] / f"{day}.jsonl").is_file() for day in days)
+    status = listing_status(data_dir)
     return tags, {"available": directory.is_dir(), "complete": complete,
+                  "source": "main+supplement" if used else "main", "listing_version": status["listing_version"],
+                  "supplement_complete": status["supplement_complete"],
                   "window_start": start.date().isoformat(), "window_end": end.date().isoformat(),
                   "sha256": _digest(archive) if directory.is_dir() else "unknown"}
 

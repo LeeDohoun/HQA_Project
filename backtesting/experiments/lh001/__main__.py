@@ -203,6 +203,9 @@ def _prepare_decisions(planned, *, data_dir, repo_root, sessions, with_text, tex
     available = price_days(data_dir)
     if not planned:
         return {"prepared": [], "observations": [], "exclusions": []}
+    first_day = pd.Timestamp(planned[0]["decision_date"])
+    pos = sessions.get_loc(first_day)
+    version = inputs.require_supplement(data_dir, (sessions[max(0, pos - 60)], pd.Timestamp(planned[-1]["decision_date"]) - pd.Timedelta(days=1)))
     first = pd.Timestamp(planned[0]["decision_date"])
     start = sessions[max(0, sessions.get_loc(first) - 251)]
     end = price_end or (FINAL_END if first.year == 2026 else "2025-12-31")
@@ -234,7 +237,8 @@ def _prepare_decisions(planned, *, data_dir, repo_root, sessions, with_text, tex
                 texts[stock["stock_code"]] = text_loader(stock["stock_code"], row["decision_date"], data_dir)
         prepared.append({"bundle": bundle, "texts": texts})
     records = pd.concat(frames, ignore_index=True).to_dict("records") if frames else []
-    return {"prepared": prepared, "observations": inputs.json_value(records), "exclusions": excluded}
+    return {"prepared": prepared, "observations": inputs.json_value(records), "exclusions": excluded,
+            "listing_version": version}
 
 
 def _snapshot(path, prepare, *, metadata):
@@ -308,7 +312,7 @@ def execute_screening(*, data_dir, repo_root=PROJECT_ROOT, limit_decisions=None,
     memory = {**evaluate.paired_stats(memory_pairs, "effect", "monthly"), "per_decision": memory_pairs, "named": named}
     payload = _payload("screening", variants, started, config=config, **result, memory_dependence=memory, decisions=decisions,
                        exclusions=excluded + snapshot["exclusions"], holdout_horizon_exclusions=sum(row["reason"] == "holdout_horizon" for row in excluded),
-                       snapshot_hash=inputs.digest(snapshot), prompt_hashes=runner.hashes)
+                       snapshot_hash=inputs.digest(snapshot), listing_version=snapshot.get("listing_version"), prompt_hashes=runner.hashes)
     return _publish(payload, data_dir, repo_root, limit_decisions is not None, config)
 
 
@@ -445,6 +449,11 @@ def execute_final(*, data_dir, repo_root=PROJECT_ROOT, limit_decisions=None, run
         planned = planned[:limit_decisions]
     snapshot_path = root / ("final_smoke_snapshot.json" if limit_decisions is not None else "final_snapshot.json")
     def prepare():
+        # Preflight before the irreversible holdout claim. Cached snapshots
+        # bypass prepare(), retaining their original input and metadata hashes.
+        if planned:
+            pos = sessions.get_loc(pd.Timestamp(planned[0]["decision_date"]))
+            inputs.require_supplement(data_dir, (sessions[max(0, pos - 60)], pd.Timestamp(planned[-1]["decision_date"]) - pd.Timedelta(days=1)))
         # First protected source read occurs only after this durable single claim.
         guard_hc003_ordering(repo_root=repo_root, config=config)
         with holdout.HoldoutSession(config.experiment_id, repo_root=repo_root):
@@ -463,7 +472,8 @@ def execute_final(*, data_dir, repo_root=PROJECT_ROOT, limit_decisions=None, run
                              screening_fraction_applicable=arm.endswith("num"))
     variants["hc002_holdout"] = snapshot["hc002_holdout"]
     payload = _payload("final", variants, started, config=config, **result, decisions=decisions, probe=saved_probe,
-                       exclusions=excluded + snapshot["exclusions"], snapshot_hash=inputs.digest(snapshot), prompt_hashes=runner.hashes,
+                       exclusions=excluded + snapshot["exclusions"], snapshot_hash=inputs.digest(snapshot),
+                       listing_version=snapshot.get("listing_version"), prompt_hashes=runner.hashes,
                        source_reads=f"single {config.name} HoldoutSession; resume uses frozen source snapshot only")
     return _publish(payload, data_dir, repo_root, limit_decisions is not None, config)
 

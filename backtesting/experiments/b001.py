@@ -23,6 +23,7 @@ from backtesting import cost_model, event_study, experiment_registry, holdout, s
 from backtesting.experiment_registry import PROJECT_ROOT
 from backtesting.experiments import common, d001
 from src.ingestion.krx_benchmarks import validate_benchmark_record
+from src.ingestion.dart_listing import listing_paths, listing_rows, require_supplement, covered_listing_days
 from src.strategies import _runner_module
 
 
@@ -97,19 +98,15 @@ def _keep(frame, mask, name, counts):
 
 
 def load_listings(data_dir, *, repo_root=PROJECT_ROOT):
-    directory = Path(data_dir) / "disclosures/dart_full/list"
-    if not directory.is_dir():
-        raise ValueError(f"listing directory does not exist: {directory}")
     holdout.guard_period("20230101", "20251231", repo_root=repo_root)
     rows, files = [], 0
-    for path in sorted(directory.glob("*/*.jsonl")):
-        if not path.stem.isdigit() or len(path.stem) != 8 or not "20230101" <= path.stem <= "20251231":
-            continue
+    paths = listing_paths(data_dir, "20230101", "20251231")
+    if not paths:
+        raise ValueError("listing directory does not exist or contains no research days")
+    for day in paths:
         files += 1
-        with path.open(encoding="utf-8") as handle:
-            for line in handle:
-                row = json.loads(line)
-                rows.append({name: row[name] for name in LISTING_COLUMNS})
+        for row in listing_rows(data_dir, day):
+            rows.append({name: row[name] for name in LISTING_COLUMNS})
     return pd.DataFrame(rows, columns=LISTING_COLUMNS), files
 
 
@@ -127,7 +124,9 @@ def build_events(listings):
     frame["category"] = frame.report_nm.map(lambda title: _category({"title": title, "source_type": "dart"}))
     counts = {"raw": _counts(frame)}
     frame = _keep(frame, frame.available_at.between("2023-01-01", "2025-12-31"), "period", counts)
-    frame = _keep(frame, frame.corp_cls.isin(("Y", "K")), "listed_market", counts)
+    # corp_cls is current classification, including for historical filings.
+    # KOSPI/KOSDAQ membership is validated against historical prices below.
+    frame = _keep(frame, frame.corp_cls.isin(("Y", "K", "E", "N")), "listed_market", counts)
     frame = _keep(frame, ~frame.report_nm.str.contains("정정", regex=False), "no_corrections", counts)
     # rm '정' describes a subsequent correction, not a correction filing itself.
     withdrawal = frame.report_nm.str.contains("철회", regex=False) | frame.rm.str.contains("철", regex=False)
@@ -300,6 +299,7 @@ def dry_run(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT):
         horizon_counts["benchmark_covered"] = _counts(events.loc[planned & covered])
         horizons[str(h)] = horizon_counts
     return {"experiment_id": EXPERIMENT_ID, "data_dir": str(Path(data_dir)), "listing_files": listing_files,
+            "listing_covered_days": len(covered_listing_days(data_dir, pd.date_range("20230101", "20251231"))),
             "price_sessions": len(price_days), "price_rows": len(prices), "read_start": "2022-12-01", "read_end": "2025-12-31",
             "missing_price_sessions": [day.date().isoformat() for day in missing], "filter_counts": counts,
             "benchmark_file_exists": path.is_file(), "benchmark_coverage": _coverage(benchmarks, sessions),
@@ -558,6 +558,10 @@ def run_experiment(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT, li
     started = time.perf_counter()
     fields = _registration(repo_root)
     sessions = _session_calendar() if sessions is None else sessions
+    required = pd.date_range("20230101", "20251231")
+    version = require_supplement(data_dir, required)
+    if len(covered_listing_days(data_dir, required)) != len(required):
+        raise ValueError("B001 execution requires complete main and supplement listing coverage")
     if listings is None:
         listings, _ = load_listings(data_dir, repo_root=repo_root)
     events, counts = build_events(listings)
@@ -580,6 +584,7 @@ def run_experiment(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT, li
         verdict, reasons = judge_category(fields, name, inputs, repo_root=repo_root)
         result.update(judgement_inputs=inputs, verdict=verdict, reasons=reasons)
     payload = {"experiment_id": EXPERIMENT_ID, "categories": categories, "filter_counts": counts,
+               "listing_version": version,
                "benchmark_coverage": _coverage(benchmarks, sessions), "interpretations": INTERPRETATIONS,
                "performance": {"runtime_seconds": time.perf_counter() - started,
                                "peak_memory_mib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024},
