@@ -30,6 +30,19 @@ class KrxSessionCalendarTest {
     }
 
     @Test
+    void theClosingCallAuctionIsTheSessionsLastTenMinutes() {
+        KrxSessionCalendar calendar = new KrxSessionCalendar("2026-12-25", "2026-11-19@10:00-16:30");
+        assertThat(calendar.closingAuctionClose(kst("2026-10-15T15:19:59"))).isEmpty();
+        assertThat(calendar.closingAuctionClose(kst("2026-10-15T15:20:00"))).contains(kst("2026-10-15T15:30:00"));
+        assertThat(calendar.closingAuctionClose(OffsetDateTime.parse("2026-10-15T06:29:59Z"))).contains(kst("2026-10-15T15:30:00"));
+        assertThat(calendar.closingAuctionClose(kst("2026-10-15T15:30:00"))).isEmpty();
+        assertThat(calendar.closingAuctionClose(kst("2026-10-17T15:25:00"))).isEmpty();   // Saturday
+        assertThat(calendar.closingAuctionClose(kst("2026-12-25T15:25:00"))).isEmpty();   // closed
+        assertThat(calendar.closingAuctionClose(kst("2026-11-19T15:25:00"))).isEmpty();   // CSAT day closes at 16:30
+        assertThat(calendar.closingAuctionClose(kst("2026-11-19T16:20:00"))).contains(kst("2026-11-19T16:30:00"));
+    }
+
+    @Test
     void aBlankClosedDatesSettingKeepsTheBuiltInClosures() {
         for (String blank : new String[] {"", " ", null}) {
             KrxSessionCalendar calendar = new KrxSessionCalendar(blank, "");

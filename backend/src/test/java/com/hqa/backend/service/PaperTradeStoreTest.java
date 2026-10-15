@@ -18,7 +18,8 @@ class PaperTradeStoreTest {
     private final TradeSignalExecutionRepository executions = mock(TradeSignalExecutionRepository.class);
     private final PaperAccountGuard accountGuard = mock(PaperAccountGuard.class);
     private final TradePlanReceiptRepository receipts = mock(TradePlanReceiptRepository.class);
-    private final PaperTradeStore store = new PaperTradeStore(signals, executions, accountGuard, new ObjectMapper(), receipts, 1, 0.5);
+    private final PaperTradeStore store = new PaperTradeStore(signals, executions, accountGuard, new ObjectMapper(), receipts,
+            KrxSessionCalendar.regular(), 1, 0.5);
     private final OffsetDateTime now = OffsetDateTime.parse("2026-09-04T10:00:00+09:00");
     private final User user = user();
     private final Map<String, TradeSignalExecution> savedExecutions = new LinkedHashMap<>();
@@ -356,6 +357,47 @@ class PaperTradeStoreTest {
         assertThat(signal.getPlannedExitAt()).isEqualTo(now.plusDays(3));
         store.save(reduceHold(3, 0.5, now.plusDays(2)), account(10), now.plusSeconds(3));
         assertThat(signal.getPlannedExitAt()).isEqualTo(now.plusDays(2));
+    }
+
+    /** Claims a sell at {@code at} and returns its expiry; the order is then recorded as cancelled unfilled. */
+    private OffsetDateTime sellExpiry(TradeSignal plan, TradeConditions.TriggerType type, String group, Double fraction,
+            OffsetDateTime at) {
+        Map<String, Object> account = account(10);
+        account.put("capturedAt", at.toString());
+        TradeSignalExecution sell = store.claim(plan.getId(), 1, type, group, account, 100, 0, 0, fraction, at);
+        assertThat(sell.getOrderSide()).isEqualTo("SELL");
+        store.observeFill(sell.getId(), 0, 0, 0, true, "org", at);
+        return sell.getOrderExpiresAt();
+    }
+
+    @Test
+    void aSellPlacedInTheClosingAuctionWorksUntilAfterTheCloseInsteadOfTwoMinutes() {
+        TradeSignal plan = store.save(reduceHold(1, 0.5, now.plusDays(3)), account(10), now);
+        OffsetDateTime auction = OffsetDateTime.parse("2026-09-04T15:20:00+09:00");
+        OffsetDateTime afterClose = OffsetDateTime.parse("2026-09-04T15:32:00+09:00");
+        assertThat(sellExpiry(plan, TradeConditions.TriggerType.EXIT, "stop", null, now)).isEqualTo(now.plusMinutes(2));
+        assertThat(sellExpiry(plan, TradeConditions.TriggerType.EXIT, "stop", null, auction.minusSeconds(1)))
+                .isEqualTo(auction.plusSeconds(119));                     // placed before the auction: 2 minutes
+        assertThat(sellExpiry(plan, TradeConditions.TriggerType.EXIT, "planned-exit", null, auction)).isEqualTo(afterClose);
+        assertThat(sellExpiry(plan, TradeConditions.TriggerType.EXIT, "stop", null, auction.plusMinutes(7))).isEqualTo(afterClose);
+        assertThat(sellExpiry(plan, TradeConditions.TriggerType.REDUCE, "trim", 0.5, auction.plusSeconds(599))).isEqualTo(afterClose);
+    }
+
+    @Test
+    void anEntryPlacedInTheClosingAuctionKeepsItsFiveMinutes() {
+        OffsetDateTime at = OffsetDateTime.parse("2026-09-04T15:25:00+09:00");
+        Map<String, Object> payload = Map.of("schema_version", 2,
+                "entry_conditions", List.of(Map.of("id", "entry", "all", List.of(Map.of("field", "current_price", "operator", ">=", "value", 100)))),
+                "exit_conditions", List.of(Map.of("id", "stop", "all", List.of(Map.of("field", "current_price", "operator", "<=", "value", 90)))));
+        TradeSignal plan = store.save(new InternalTradeSignalRequest("u1", "luna", "short", null, null, "005930", "Samsung", "BUY",
+                null, null, "MEDIUM", "10%", 100L, "90", "reason", at.plusMinutes(4), Map.of(), Map.of("stop_loss_price", 90), payload,
+                "late", 1, at.plusMinutes(4), at.plusDays(3), 10.0, "PAPER", "late", at), account(0), at);
+        Map<String, Object> account = account(0);
+        account.put("capturedAt", at.toString());
+        TradeSignalExecution entry = store.claim(plan.getId(), 1, TradeConditions.TriggerType.ENTRY, "entry", account,
+                100, 10000, 100, null, at);
+        assertThat(entry.getOrderSide()).isEqualTo("BUY");
+        assertThat(entry.getOrderExpiresAt()).isEqualTo(at.plusMinutes(5));
     }
 
     @Test

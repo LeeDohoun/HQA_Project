@@ -6,7 +6,8 @@ broker, and runs this script with HQA_SIM_BASE_URL set; run it from backend/ wit
 ``HQA_SIM_PYTHON=$PWD/../venv/bin/python mvn -q -o test -Dtest=PaperLifecycleSimulationTest``.
 
 Each poll is 20 simulated seconds. Prices are set per simulated second, and a limit order fills
-once the price reaches it. Every scenario runs twice, with the backend's 20-second schedulers
+once the price reaches it, except in the closing call auction (15:20-15:30), whose orders are
+matched once, after the close. Every scenario runs twice, with the backend's 20-second schedulers
 aligned with the monitor's polls and 10 seconds apart. Names of scenarios given as arguments run
 alone. Exits 1 when a check fails.
 """
@@ -25,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import requests  # noqa: E402
 
 import src.runner.trade_signal_submitter as submitter  # noqa: E402
-from src.runner.signal_monitor import BackendSignalClient, SignalMonitor  # noqa: E402
+from src.runner.signal_monitor import BackendSignalClient, SignalMonitor, market_session  # noqa: E402
 
 BASE = os.environ.get("HQA_SIM_BASE_URL", "").rstrip("/")
 
@@ -40,14 +41,14 @@ PHASE = [0]
 
 
 class Run:
-    def __init__(self, name, **reset):
+    def __init__(self, name, session=lambda at: "open", **reset):
         self.name = f"{name}@{PHASE[0]}"
         reset.setdefault("pollerPhase", PHASE[0])
         self.state = call("/sim/reset", reset)
         self.start = datetime.fromisoformat(self.state["now"])
         self.client = BackendSignalClient(base_url=BASE, internal_token="sim", timeout=60)
         self.monitor = SignalMonitor(self.client, price_provider=self.snapshot, clock=self.now,
-                                     session=lambda at: "open")
+                                     session=session)
         self.polls = []
 
     def now(self):
@@ -425,12 +426,47 @@ def publishing_while_an_order_works_keeps_the_plan():
     return run
 
 
+CLOSING_MATCH = 680   # 15:30:20 in a run that starts at 15:19:00
+
+
+def closing_auction_exit(name, due):
+    """A planned exit falls due `due` seconds after 15:19:00, in the closing call auction from 15:20."""
+    # The broker matches the auction 20 s after the close: on 2026-10-15 KIS paper still listed
+    # that day's 15:28 sell as unfilled after 15:30:05. The monitor stops at the real close.
+    run = Run(name, price=100, held=10, avg=100, start="15:19:00", matchDelay=20, session=market_session)
+    run.plan(action="HOLD", stop=80, plannedExitSeconds=due, entrySeconds=30)
+    run.run(lambda t: 101 if t >= CLOSING_MATCH else 100, until=840)   # the sell's limit is 100; the auction clears at 101
+    common(run, 10)
+    exits = run.orders_for(":EXIT:planned-exit:")
+    check(run, "one planned-exit order, placed when due and never cancelled",
+          len(exits) == 1 and run.first_submitted(exits) == due and not run.events("cancel"),
+          (exits, run.events("cancel")))
+    fills = [(e["t"], e["qty"], e["price"]) for e in run.events("fill")]
+    check(run, "it sold all 10 at the auction price at the match", fills == [(CLOSING_MATCH, 10, 101)], fills)
+    check(run, "the backend recorded the fill and closed the plan, leaving no position",
+          [(e["status"], e["avgFill"]) for e in run.final["executions"]] == [("FILLED", 101)]
+          and [(s["status"], s["managed"]) for s in run.final["signals"]] == [("CLOSED", 0)] and run.final["held"] == 0,
+          (run.final["executions"], run.final["signals"], run.final["held"]))
+    return run
+
+
+def planned_exit_at_closing_auction_start():
+    return closing_auction_exit("planned_exit_at_closing_auction_start", 60)    # due 15:20:00
+
+
+def planned_exit_late_in_closing_auction():
+    # Due 15:27:40. With a 2-minute life the order was cancelled at 15:29:40 and could not be
+    # placed again before the close, so the position was carried overnight.
+    return closing_auction_exit("planned_exit_late_in_closing_auction", 520)
+
+
 SCENARIOS = [stop_behind_working_reduction, planned_exit_during_working_reduction, take_profit_tiers,
              entry_then_stop, unfilled_reduction_retries, reissued_version_does_not_repeat_reduction,
              stop_flicker_with_planned_exit_due, entry_partial_fill_then_stop, rate_limited_stop,
              entry_fill_recorded_after_the_stop_crossed, entry_invalidated_before_it_triggers,
              entry_expires_untriggered, working_entry_cancelled_at_expiry, published_plans_trade_end_to_end,
-             republished_cycles_replace_plans_in_place, publishing_while_an_order_works_keeps_the_plan]
+             republished_cycles_replace_plans_in_place, publishing_while_an_order_works_keeps_the_plan,
+             planned_exit_at_closing_auction_start, planned_exit_late_in_closing_auction]
 
 
 def main():

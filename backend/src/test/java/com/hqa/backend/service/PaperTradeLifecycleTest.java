@@ -158,6 +158,37 @@ class PaperTradeLifecycleTest {
     }
 
     @Test
+    void aClosingAuctionSellKeepsWorkingThroughResentTriggersAndOnlyItsLeftoverIsCancelledAfterTheClose() {
+        signal.setPlannedExitAt(OffsetDateTime.parse("2026-09-04T15:20:00+09:00"));
+        TradeSignalExecution working = workingSell("s1:1:EXIT:planned-exit:0", 10);
+        working.setSubmittedAt(OffsetDateTime.parse("2026-09-04T15:20:06+09:00"));
+        working.setOrderExpiresAt(OffsetDateTime.parse("2026-09-04T15:32:00+09:00"));   // as PaperTradeStore sets it
+        when(store.markCancelRequested("e1")).thenReturn(true);
+        when(kis.cancelPaperOrder(anyString(), any(), anyString(), anyString(), anyString(), anyInt()))
+                .thenReturn(Map.of("success", true));
+        for (String time : List.of("15:22:30", "15:29:59")) {          // past the 2-minute life, then the last auction second
+            PaperTradeLifecycle auction = at(time);
+            assertThat(auction.triggerResponse("s1", request("EXIT", 1, "planned-exit"))).containsEntry("accepted", true)
+                    .containsEntry("deduplicated", true).containsEntry("executionStatus", "ORDER_SUBMITTED");
+            auction.reconcileAccount("u1", null);
+        }
+        at("15:31:59").reconcileAccount("u1", null);
+        verify(kis, never()).cancelPaperOrder(anyString(), any(), anyString(), anyString(), anyString(), anyInt());
+        verify(kis, never()).paperOrder(anyString(), any(), anyString(), anyString(), anyInt(), anyLong(), anyString());
+        at("15:32:00").reconcileAccount("u1", null);
+        verify(kis).cancelPaperOrder("u1", user.getSecret(), "token", "order1", "org", 10);
+    }
+
+    /** The lifecycle at this time of the test day, with an account snapshot taken then. */
+    private PaperTradeLifecycle at(String time) {
+        OffsetDateTime at = OffsetDateTime.parse("2026-09-04T" + time + "+09:00");
+        Map<String, Object> snapshot = PaperTradeStoreTest.account(10);
+        snapshot.put("capturedAt", at.toString());
+        when(accounts.snapshot("u1")).thenReturn(snapshot);
+        return new PaperTradeLifecycle(signals, executions, accounts, store, kis, mapper, Clock.fixed(at.toInstant(), at.getOffset()));
+    }
+
+    @Test
     void aStopCancelsAWorkingReductionSoTheFullExitCanFollow() {
         TradeSignalExecution reduction = workingSell("s1:1:REDUCE:trim:abc:0", 5);
         when(store.markCancelRequested("e1")).thenReturn(true);

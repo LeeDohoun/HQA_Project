@@ -10,6 +10,7 @@ import com.hqa.backend.entity.User;
 import com.hqa.backend.repository.TradePlanReceiptRepository;
 import com.hqa.backend.repository.TradeSignalExecutionRepository;
 import com.hqa.backend.repository.TradeSignalRepository;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -27,15 +28,23 @@ public class PaperTradeStore {
     public static final List<String> UNRESOLVED = List.of("INTENT", "UNKNOWN", "ORDER_SUBMITTED", "PARTIALLY_FILLED", "CANCEL_REQUESTED");
     /** Rejections that say nothing about the trade itself; the same trigger may be tried again. */
     public static final Set<String> TRANSIENT_REJECTIONS = Set.of("KIS_RATE_LIMITED", "ORDER_NOT_SENT_RATE_QUEUE_FULL");
+    /**
+     * How long after the close a sell placed in the closing call auction keeps working. The match
+     * reaches KIS's order inquiry only some time after the close: on 2026-10-15 KIS paper still
+     * listed the 15:28 sell as unfilled after 15:30:05, and its auction fill was first seen at 15:30:40.
+     */
+    static final Duration CLOSING_MATCH_MARGIN = Duration.ofMinutes(2);
     private final TradeSignalRepository signals;
     private final TradeSignalExecutionRepository executions;
     private final PaperAccountGuard accountGuard;
     private final ObjectMapper mapper;
     private final double quoteCapacity;
     private final TradePlanReceiptRepository receipts;
+    private final KrxSessionCalendar sessions;
 
     public PaperTradeStore(TradeSignalRepository signals, TradeSignalExecutionRepository executions,
             PaperAccountGuard accountGuard, ObjectMapper mapper, TradePlanReceiptRepository receipts,
+            KrxSessionCalendar sessions,
             @Value("${hqa.kis-paper-requests-per-second:1}") double requestsPerSecond,
             @Value("${hqa.paper-account-reserved-requests-per-second:0.5}") double reservedRequests) {
         if (!Double.isFinite(requestsPerSecond) || !Double.isFinite(reservedRequests)
@@ -47,6 +56,7 @@ public class PaperTradeStore {
         this.accountGuard = accountGuard;
         this.mapper = mapper;
         this.receipts = receipts;
+        this.sessions = sessions;
         this.quoteCapacity = Math.floor((requestsPerSecond - reservedRequests) * 20);
     }
 
@@ -283,7 +293,7 @@ public class PaperTradeStore {
         execution.setOrderPrice(price);
         execution.setCurrentPrice(price);
         execution.setSubmittedAt(now);
-        execution.setOrderExpiresAt(now.plusMinutes(buy ? 5 : 2));
+        execution.setOrderExpiresAt(orderExpiry(buy, now));
         execution.setReservedCash(buy ? Math.multiplyExact((long) quantity, price) : 0);
         signal.setRejectReason(null);
         signals.save(signal);
@@ -466,6 +476,18 @@ public class PaperTradeStore {
         if ("CANCELLED".equals(item.getStatus())) return false;
         return !("REJECTED".equals(item.getStatus()) && (TRANSIENT_REJECTIONS.contains(item.getRejectReason())
                 || "OPERATOR_CONFIRMED_NOT_SUBMITTED".equals(item.getRejectReason())));
+    }
+
+    /**
+     * Reconciliation cancels a limit order once it expires: an entry after 5 minutes, a sell after
+     * 2, so that a sell the price has left is placed again at the new price. In the closing call
+     * auction KRX only collects orders, and matches them once at the close, so a sell placed then
+     * works until the match has been reported. Placing it again would not change its price (no
+     * trade moves the price before the match) and could leave the match without an order.
+     */
+    private OffsetDateTime orderExpiry(boolean buy, OffsetDateTime now) {
+        if (buy) return now.plusMinutes(5);
+        return sessions.closingAuctionClose(now).map(close -> close.plus(CLOSING_MATCH_MARGIN)).orElse(now.plusMinutes(2));
     }
 
     /** Only an UNKNOWN order without a broker ID waits for an operator; nothing else may be changed this way. */

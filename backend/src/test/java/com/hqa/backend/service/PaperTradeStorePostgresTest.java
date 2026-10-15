@@ -40,7 +40,7 @@ import org.springframework.transaction.annotation.Transactional;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @EnabledIfEnvironmentVariable(named = "HQA_TEST_DATABASE_URL", matches = "jdbc:postgresql:.*")
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
-@Import({PaperTradeStore.class, PaperAccountGuard.class, SecretCipher.class})
+@Import({PaperTradeStore.class, PaperAccountGuard.class, SecretCipher.class, KrxSessionCalendar.class})
 @EnableConfigurationProperties(HqaProperties.class)
 @ImportAutoConfiguration({JacksonAutoConfiguration.class, JdbcTemplateAutoConfiguration.class})
 class PaperTradeStorePostgresTest {

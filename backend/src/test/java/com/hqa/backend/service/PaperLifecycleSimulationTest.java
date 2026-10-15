@@ -47,12 +47,15 @@ import org.springframework.test.util.ReflectionTestUtils;
  *
  * <pre>HQA_SIM_PYTHON=$PWD/../venv/bin/python mvn -q test -Dtest=PaperLifecycleSimulationTest</pre>
  *
- * The scenario report is written to target/paper-lifecycle-sim.txt.
+ * The broker fills a limit order once the price reaches it, except in the closing call auction
+ * (15:20-15:30), where it only collects orders and matches them once, after the close. The
+ * scenario report is written to target/paper-lifecycle-sim.txt.
  */
 @EnabledIfEnvironmentVariable(named = "HQA_SIM_PYTHON", matches = ".+")
 class PaperLifecycleSimulationTest {
     static final ZoneId KST = ZoneId.of("Asia/Seoul");
     static final OffsetDateTime START = OffsetDateTime.parse("2026-10-12T10:00:00+09:00");
+    static final LocalTime CLOSING_AUCTION = LocalTime.of(15, 20), CLOSE = LocalTime.of(15, 30);
 
     static final class MutableClock extends Clock {
         Instant now = START.toInstant();
@@ -64,7 +67,7 @@ class PaperLifecycleSimulationTest {
     static final class Order {
         String odno, side, date;
         int qty, filled, cancelled;
-        long limit;
+        long limit, fillValue;
         String submittedAt;
         int remaining() { return qty - filled - cancelled; }
     }
@@ -91,6 +94,8 @@ class PaperLifecycleSimulationTest {
     int partial = 0;          // most shares one order fills per second (0: all)
     int pollerPhase = 0;      // second within each 20 s at which the backend's schedulers run
     int rateLimited = 0;      // next order calls KIS answers with EGW00201
+    int matchDelay = 0;       // seconds after the close at which the closing call auction matches
+    Instant origin = START.toInstant();   // the run's t=0
     int orderSeq = 0, signalSeq = 0, executionSeq = 0;
 
     final TradeSignalRepository signals = mock(TradeSignalRepository.class);
@@ -107,7 +112,7 @@ class PaperLifecycleSimulationTest {
 
     void event(String kind, Object... pairs) {
         Map<String, Object> row = new LinkedHashMap<>();
-        row.put("t", Duration.between(START.toInstant(), clock.now).toSeconds());
+        row.put("t", Duration.between(origin, clock.now).toSeconds());
         row.put("kind", kind);
         for (int i = 0; i + 1 < pairs.length; i += 2) row.put(String.valueOf(pairs[i]), pairs[i + 1]);
         events.add(row);
@@ -148,7 +153,7 @@ class PaperLifecycleSimulationTest {
     }
 
     void wire() {
-        store = new PaperTradeStore(signals, executions, guard, json, receipts, 1, 0.5);
+        store = new PaperTradeStore(signals, executions, guard, json, receipts, KrxSessionCalendar.regular(), 1, 0.5);
         lifecycle = new PaperTradeLifecycle(signals, executions, accounts, store, kis, json, clock);
         when(guard.lock("u1")).thenReturn(user);
         when(guard.binding(any())).thenReturn("binding");
@@ -223,6 +228,10 @@ class PaperLifecycleSimulationTest {
                 event("broker_refused", "side", side, "qty", quantity, "sellable", sellable());
                 return Map.of("success", false, "response", Map.of("rt_cd", "1", "msg_cd", "APBK0400", "msg1", "sellable exceeded"));
             }
+            if (!now().toLocalTime().isBefore(CLOSE)) {
+                event("broker_refused", "side", side, "qty", quantity, "reason", "session closed");
+                return Map.of("success", false, "response", Map.of("rt_cd", "1", "msg_cd", "SIM_CLOSED", "msg1", "session closed"));
+            }
             Order order = new Order();
             order.odno = "o" + (++orderSeq);
             order.side = side;
@@ -247,7 +256,7 @@ class PaperLifecycleSimulationTest {
             row.put("cncl_cfrm_qty", String.valueOf(order.cancelled));
             row.put("rjct_qty", "0");
             row.put("cncl_yn", order.cancelled > 0 ? "Y" : "N");
-            row.put("avg_prvs", String.valueOf(order.filled > 0 ? order.limit : 0));
+            row.put("avg_prvs", String.valueOf(order.filled > 0 ? (double) order.fillValue / order.filled : 0));
             row.put("ord_gno_brno", "org");
             return row;
         }).toList());
@@ -271,7 +280,9 @@ class PaperLifecycleSimulationTest {
     }
 
     void reset(Map<String, Object> body) {
-        clock.now = START.toInstant();
+        // A run starts at 10:00 or at the given time of the same day.
+        origin = START.with(LocalTime.parse(String.valueOf(body.getOrDefault("start", "10:00:00")))).toInstant();
+        clock.now = origin;
         signalRows.clear();
         executionRows.clear();
         receiptRows.clear();
@@ -288,33 +299,42 @@ class PaperLifecycleSimulationTest {
         fills = !Boolean.FALSE.equals(body.get("fills"));
         partial = ((Number) body.getOrDefault("partial", 0)).intValue();
         pollerPhase = ((Number) body.getOrDefault("pollerPhase", 0)).intValue();
+        matchDelay = ((Number) body.getOrDefault("matchDelay", 0)).intValue();
         rateLimited = 0;
     }
 
-    /** One simulated second: limit orders fill when the price reaches them, then the backend's schedulers run every 20 s. */
+    /**
+     * One simulated second: before the closing call auction limit orders fill at their limit when
+     * the price reaches them; the auction matches its orders once, matchDelay seconds after the
+     * close, at that second's price. Then the backend's schedulers run every 20 s.
+     */
     void tick() {
         clock.now = clock.now.plusSeconds(1);
-        if (fills) {
+        LocalTime time = now().toLocalTime();
+        boolean continuous = time.isBefore(CLOSING_AUCTION);
+        if (fills && (continuous || time.equals(CLOSE.plusSeconds(matchDelay)))) {
             for (Order order : orders) {
                 int open = order.remaining();
                 if (open <= 0) continue;
-                if (partial > 0) open = Math.min(open, partial);
+                if (partial > 0 && continuous) open = Math.min(open, partial);
                 boolean reaches = "SELL".equals(order.side) ? price >= order.limit : price <= order.limit;
                 if (!reaches) continue;
+                long fillPrice = continuous ? order.limit : price;
                 order.filled += open;
+                order.fillValue += open * fillPrice;
                 if ("SELL".equals(order.side)) {
                     held -= open;
-                    cash += open * order.limit;
+                    cash += open * fillPrice;
                     if (held == 0) avg = 0;
                 } else {
-                    avg = (avg * held + order.limit * (double) open) / (held + open);
+                    avg = (avg * held + fillPrice * (double) open) / (held + open);
                     held += open;
-                    cash -= open * order.limit;
+                    cash -= open * fillPrice;
                 }
-                event("fill", "odno", order.odno, "side", order.side, "qty", open, "price", order.limit);
+                event("fill", "odno", order.odno, "side", order.side, "qty", open, "price", fillPrice);
             }
         }
-        long elapsed = Duration.between(START.toInstant(), clock.now).toSeconds();
+        long elapsed = Duration.between(origin, clock.now).toSeconds();
         if (elapsed % 20 == pollerPhase) {
             lifecycle.expireEntries();
             lifecycle.reconcilePendingOrders();
@@ -362,7 +382,7 @@ class PaperLifecycleSimulationTest {
     Map<String, Object> state() {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("now", now().toString());
-        result.put("t", Duration.between(START.toInstant(), clock.now).toSeconds());
+        result.put("t", Duration.between(origin, clock.now).toSeconds());
         result.put("price", price);
         result.put("held", held);
         result.put("sellable", sellable());
@@ -379,6 +399,8 @@ class PaperLifecycleSimulationTest {
             row.put("status", e.getStatus());
             row.put("qty", e.getSubmittedQuantity());
             row.put("filled", e.getFilledQuantity());
+            row.put("avgFill", e.getAverageFillPrice());
+            row.put("expires", e.getOrderExpiresAt() == null ? null : e.getOrderExpiresAt().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
             row.put("reject", e.getRejectReason());
             row.put("order", e.getOrderId());
             return row;

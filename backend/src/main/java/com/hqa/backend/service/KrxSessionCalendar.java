@@ -1,6 +1,7 @@
 package com.hqa.backend.service;
 
 import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
@@ -8,6 +9,7 @@ import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -23,6 +25,7 @@ public class KrxSessionCalendar {
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
     private static final LocalTime OPEN = LocalTime.of(9, 0);
     private static final LocalTime CLOSE = LocalTime.of(15, 30);
+    private static final Duration CLOSING_AUCTION = Duration.ofMinutes(10);
     /**
      * Weekday closures of src/runner/trading_calendar.py from 2026-10 through its review horizon
      * (CALENDAR_REVIEWED_THROUGH = 2027-09-30); a Python test keeps the two lists equal. Used when
@@ -59,13 +62,29 @@ public class KrxSessionCalendar {
 
     public boolean isOpen(OffsetDateTime at) {
         var local = at.atZoneSameInstant(KST);
-        LocalDate day = local.toLocalDate();
-        if (local.getDayOfWeek() == DayOfWeek.SATURDAY || local.getDayOfWeek() == DayOfWeek.SUNDAY || closed.contains(day)) {
-            return false;
-        }
-        LocalTime[] hours = special.getOrDefault(day, new LocalTime[] {OPEN, CLOSE});
+        LocalTime[] hours = hours(local.toLocalDate());
         LocalTime time = local.toLocalTime();
-        return !time.isBefore(hours[0]) && time.isBefore(hours[1]);
+        return hours != null && !time.isBefore(hours[0]) && time.isBefore(hours[1]);
+    }
+
+    /**
+     * The session's close when {@code at} falls in its closing call auction, the last ten minutes
+     * (15:20-15:30 on a regular day), in which KRX collects orders and matches them once, at the
+     * close; empty at any other time.
+     */
+    public Optional<OffsetDateTime> closingAuctionClose(OffsetDateTime at) {
+        if (!isOpen(at)) return Optional.empty();
+        LocalDate day = at.atZoneSameInstant(KST).toLocalDate();
+        OffsetDateTime close = day.atTime(hours(day)[1]).atZone(KST).toOffsetDateTime();
+        return at.isBefore(close.minus(CLOSING_AUCTION)) ? Optional.empty() : Optional.of(close);
+    }
+
+    /** The day's open and close, or null on a weekend or closure. */
+    private LocalTime[] hours(LocalDate day) {
+        if (day.getDayOfWeek() == DayOfWeek.SATURDAY || day.getDayOfWeek() == DayOfWeek.SUNDAY || closed.contains(day)) {
+            return null;
+        }
+        return special.getOrDefault(day, new LocalTime[] {OPEN, CLOSE});
     }
 
     private static String[] split(String value) {
