@@ -24,15 +24,18 @@ STAGE_CUTOFFS = {"design_validation": "2026-01-01", "holdout": "2026-07-01"}
 
 
 class FilingDates:
-    def __init__(self, listings, *, conflicts=()):
+    def __init__(self, listings, *, conflicts=(), receipt_filter=None):
         self.receipts, self.originals = {}, {}
         self.conflicts = conflicts if isinstance(conflicts, set) else set(conflicts)
-        lags = []
+        max_lag = None
         fingerprints = {}
         for row in listings:
             receipt = row["rcept_no"]
             actual = known_date(receipt, row["rcept_dt"])
-            lags.append((pd.Timestamp(row["rcept_dt"]) - pd.Timestamp(receipt[:8])).days)
+            lag = (pd.Timestamp(row["rcept_dt"]) - pd.Timestamp(receipt[:8])).days
+            max_lag = lag if max_lag is None else max(max_lag, lag)
+            if receipt_filter is not None and receipt not in receipt_filter:
+                continue
             record = {key: row.get(key) for key in
                       ("corp_code", "rcept_no", "rcept_dt", "report_nm", "stock_code")}
             fingerprint = hashlib.sha256(json.dumps(row, sort_keys=True, ensure_ascii=False, allow_nan=False).encode()).digest()
@@ -40,9 +43,9 @@ class FilingDates:
                 self.conflicts.add(receipt)
             fingerprints[receipt] = fingerprint
             self.receipts[receipt] = record
-        if not lags:
+        if max_lag is None:
             raise ValueError("L is undefined: the merged listing has no dated rows")
-        self.L = int(max(lags))
+        self.L = int(max_lag)
         for receipt, row in self.receipts.items():
             period = periodic_period(row["report_nm"])
             if receipt in self.conflicts or period is None or "정정" in row["report_nm"]:
@@ -53,14 +56,14 @@ class FilingDates:
                 self.originals[key] = rank, row
 
     @classmethod
-    def from_data(cls, data_dir):
+    def from_data(cls, data_dir, *, receipt_filter=None):
         conflicts = set()
 
         def rows():
             for day in listing_paths(data_dir):
                 yield from listing_rows(data_dir, day, conflicts=conflicts)
 
-        result = cls(rows(), conflicts=conflicts)
+        result = cls(rows(), conflicts=conflicts, receipt_filter=receipt_filter)
         # The generator discovers conflicts while being consumed.
         result.conflicts.update(conflicts)
         for key, (_, row) in list(result.originals.items()):

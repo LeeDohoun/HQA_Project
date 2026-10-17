@@ -137,8 +137,7 @@ def test_deployed_transfer_manifest_can_record_without_repo_or_research(shadow_d
     sources = [argument for argument in arguments if "/./" in argument]
     server = tmp_path / "server"
     server.mkdir()
-    # Apply the actual rsync exclusions locally, without SSH or sudo. In
-    # particular /research/ must not remove required src/research/ modules.
+    # Apply the transfer locally, including only FW001's sealed research inputs.
     rsync_program = shutil.which("rsync")
     assert rsync_program is not None, "local rsync is required for deployment verification"
     excludes = [argument for argument in arguments if argument.startswith("--exclude=")]
@@ -160,7 +159,9 @@ result = shadow_daily.daily_shadow(sys.argv[2], execute=True)
 assert result['status'] == 'ok', result
 record = shadow._decisions(sys.argv[2])[0]
 assert record['preregistration_commit'] == 'unknown (server)'
-assert not Path('research').exists() and not Path('.git').exists()
+assert Path('research/experiments/FW001_forward_replication/preregistration.md').is_file()
+assert not Path('research/experiments/HC002_operating_leverage_monthly').exists()
+assert not Path('.git').exists()
 assert not any(name.startswith(('src.runner', 'src.tools.kis')) for name in sys.modules)
 print(json.dumps(result))
 """

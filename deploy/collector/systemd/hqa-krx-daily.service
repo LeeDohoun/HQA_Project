@@ -2,6 +2,7 @@
 Description=HQA KRX full-market weekday catch-up through yesterday
 Wants=network-online.target
 After=network-online.target
+OnSuccess=hqa-shadow-daily.service
 
 [Service]
 Type=oneshot

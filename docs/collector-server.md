@@ -52,7 +52,8 @@ bash scripts/ops/push_collector_code.sh --execute ubuntu@PUBLIC_IP ~/.ssh/ncp_hq
 `src/`, `scripts/data/`, `scripts/ops/`, `scripts/forward/`, `scripts/__init__.py`,
 `deploy/collector/`, 루트 requirements와 shadow가 import하는 최소 `backtesting/`
 파일만 `/opt/hqa`에 전송합니다. `backtesting/experiments/`에서는 `__init__`,
-`common`, `d001`, `hc001`, `hc002`만 포함합니다. 로컬 수집 데이터, venv,
+`common`, `d001`, `hc001`, `hc002`, `hc003`, `hf001`, `av001`, `ordering`을 포함합니다.
+FW001 사전등록·봉인 비교값·배포 manifest 세 파일도 전송합니다. 로컬 수집 데이터, venv,
 `.env*`, 협업 기록, 프론트엔드·백엔드, 연구·테스트, Python 캐시는 제외합니다.
 코드를 갱신할 때도 같은 명령을 사용합니다. 코드 갱신 전에는 아래 중지 명령으로
 수집을 멈추고, 전송·재설치 후 다시 가동하세요.
@@ -118,13 +119,13 @@ sudo systemd-run --unit=hqa-dart-check --wait --pipe --collect \
 
 - DART: `--loop --execute`로 상주하며 기존 코드의 평일 **07:00–19:30 KST** 창과
   오류 backoff를 따릅니다. 종료 시 systemd가 30초 후 재시작합니다.
-- KRX: 평일 **08:40 KST**. 마지막 저장일을 포함해 **한국 기준 어제까지** 요청
+- KRX: 평일 및 토요일 **08:40 KST**, 매일 **18:30 KST**. 마지막 저장일을 포함해 **한국 기준 어제까지** 요청
   범위를 만들고 저장된 파일과 토·일요일을 건너뜁니다. 저장 파일이 전혀 없으면
   14일 전부터 시작합니다. 오늘 일봉은 요청하지 않습니다. 휴일 달력을 임의로
   적용하지 않으며 평일 빈 응답은 기존 `_state.json`에 남깁니다.
 - 상태 보고: 매일 **20:00 KST**. 외부 접속 없이 로컬 파일과 여유 공간만 읽습니다.
 - 타이머는 `Persistent=true`라 서버가 꺼져 있는 동안 놓친 일정을 부팅 후 실행합니다.
-  실패한 KRX 작업은 자동 재시도하지 않으며 다음 평일 작업이 저장일 이후를 따라잡습니다.
+  실패한 KRX 작업은 다음 catch-up 일정이 저장일 이후를 따라잡습니다.
 
 KRX 범위를 요청 없이 확인하거나, 필요하면 실제 작업을 수동 시작합니다.
 
@@ -328,7 +329,9 @@ PC가 꺼져 있어도 모든 반복 작업은 서버 systemd에서 실행됩니
 | `hqa-shadow-daily.timer` | 매일 08:55, 12:30 (주말 포함) | DART 요청 0회, `MemoryMax=800M` |
 | `hqa-fundamentals-refresh.timer` | 일요일 03:00 | 재무 400회/주 + 누락 프로필 200회/주 |
 
-두 타이머는 `Persistent=true`입니다. shadow는 08:40 KRX 수집 이후 로컬에 저장된
+두 타이머는 `Persistent=true`입니다. KRX 서비스의 `OnSuccess`가 shadow를 시작하고
+shadow의 `After`가 진행 중인 KRX 수집 완료를 기다립니다. 08:55·12:30은 복구 점검입니다.
+shadow는 수집 이후 로컬에 저장된
 최신 날짜가 XKRX 달력의 월 마지막 세션인지 확인합니다. 토요일에 들어온 금요일
 월말 일봉도 대상입니다. 최신 날짜의 모든 종목이 `calendar_status=verified`여야
 하며 그 월의 결정이 이미 있으면 새로 만들지 않습니다. 결정 파일의 `recorded_at`은
@@ -385,6 +388,15 @@ shadow 명령은 종료 코드 0과 JSON 요약을 출력하므로 `status`, `de
 `min(8×B, 400) + min(P, 200)`회입니다. 예를 들어 N=3,000, 누락이 없으면 **240회/주**,
 월 4~5회의 일요일 기준 **960~1,200회/월**입니다. 기본 최악 상한은 **600회/주**,
 **2,400~3,000회/월**이며 이미 쓴 예산·공급자 한도로 더 적을 수 있습니다.
+
+FW001은 같은 서비스에서 HC002보다 먼저 별도 프로세스로 실행하며 `MemoryMax=800M`을
+유지합니다. 결정과 비용 시나리오별 체결은 `forward/fw001/`의 불변 파일입니다.
+08:59 KST 마감 뒤의 재구성은 관측이 아니며 기존 HC002의 3세션 유예를 적용하지
+않습니다. 배포 준비·필수 데이터·봉인·2027 세율 및 공식 달력 차단 조건은
+[FW001 구현 기록](../research/experiments/FW001_forward_replication/implementation_notes.md)을
+따르세요. 보완 목록만 복사하면 안 되며 그 상태의 frozen target scan이 요구하는
+KRX 파일 목록과 비보호 구간 해시도 서버에 있어야 합니다. 재무 배치의 새 성공 시각은
+`fundamentals/dart_quarterly/_batch_status.json`에 기록하고, 없는 과거 시각은 추정하지 않습니다.
 갱신일에 backfill 17,000 + 갱신 최대 600 + 폴러 약 1,000 = **약 18,600회**로,
 키 전체의 20,000회/일 안에 약 1,400회의 여유가 남습니다. 실제 요청 수와 남은
 `pending_requests`를 마지막 실행에서 확인하세요.
