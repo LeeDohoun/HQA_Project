@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import fcntl
+import io
 import json
 import os
 import subprocess
@@ -234,6 +235,47 @@ def record_aborted_trial(
     verify_captured_preregistration(experiment_id, preregistration, repo_root)
     _record_trial(experiment_id, preregistration.commit_hash, variant, metrics, verdict,
                   note=note, repo_root=repo_root, registry_path=registry_path)
+
+
+def record_trials(experiment_id, trials, *, note="", repo_root=PROJECT_ROOT,
+                  registry_path=REGISTRY_PATH, aborted_registration=None):
+    """Validate a whole terminal run before one locked append (no partial variants)."""
+    registration = aborted_registration
+    if registration is None:
+        registration = verify_preregistration(experiment_id, repo_root)
+    else:
+        verify_captured_preregistration(experiment_id, registration, repo_root)
+        if any(verdict != "holdout_aborted" for _, _, verdict in trials):
+            raise ValueError("captured batch registration requires holdout_aborted")
+    if not trials or len({variant for variant, _, _ in trials}) != len(trials):
+        raise ValueError("trial batch requires nonempty, unique variants")
+    encoded = []
+    for variant, metrics, verdict in trials:
+        if (not isinstance(variant, str) or not variant.strip()
+                or not isinstance(verdict, str) or not verdict.strip() or not isinstance(note, str)):
+            raise ValueError("variant, verdict and note must be valid strings")
+        encoded.append((variant, encode_metrics(metrics), verdict))
+    path = _resolve_path(repo_root, registry_path)
+    with _locked_append(path) as handle:
+        empty = path.stat().st_size == 0
+        if not empty:
+            rows = _registry_rows(handle)
+            accepted = {registration.commit_hash} | _commit_aliases(
+                Path(repo_root).resolve(), experiment_id, registration.commit_hash)
+            if any(row["experiment_id"] == experiment_id and row["prereg_commit"] not in accepted for row in rows):
+                raise ValueError("registry prereg_commit differs for this experiment_id")
+            if any(row["experiment_id"] == experiment_id and row["variant"] in {v for v, _, _ in encoded}
+                   for row in rows):
+                raise ValueError("terminal trial batch variants are already recorded")
+        buffer = io.StringIO(newline="")
+        writer = csv.writer(buffer)
+        if empty:
+            writer.writerow(REGISTRY_COLUMNS)
+        stamp = datetime.now(timezone.utc).isoformat()
+        for variant, metrics_json, verdict in encoded:
+            writer.writerow((stamp, experiment_id, registration.commit_hash, variant, verdict, metrics_json, note))
+        handle.seek(0, os.SEEK_END)
+        handle.write(buffer.getvalue())
 
 
 def verify_captured_preregistration(experiment_id: str, preregistration: Preregistration,

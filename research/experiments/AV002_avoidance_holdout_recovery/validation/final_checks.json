@@ -1,0 +1,33 @@
+{
+  "passed": true,
+  "code_sources_unchanged": 28,
+  "head_unchanged": "2f65ab346da5aef67eaedaa7b6e26c60b87b6c3c",
+  "prereg_commit": "5545e9a53479c68b4f5e10c59c316bf018111429",
+  "sealed_parent_files_verified": {
+    "research/experiments/AV001_avoidance_portfolio/results/20261017T115416329783Z.json.gz": "6c5e6e54779c305cee1dbb312e20a659d43db764f42541b68d5ac822dada16f9",
+    "research/experiments/AV001_avoidance_portfolio/results/20261017T125256426846Z.json": "2c6202d9f85f83e3df397ec01f38d5b3425d4c85c2bbc5c5e71d5ef631ad26ca",
+    "research/experiments/AV001_avoidance_portfolio/results/holdout_aborted_20261017.log": "b7f8cb8a9a095c59b242208ba1da470943141bc8ffbf6cebafda746c8d739437"
+  },
+  "registry_ledger_preregistrations_parent_files_legacy_data_unchanged": true,
+  "legacy_tracked_data_files": 24,
+  "reproduction_state_matches": true,
+  "state_sha256": "b8daf99f7f8e27d06ecd5425be4952f6b6ecd6ff8d8949cb538ab5e9b27577da",
+  "rehearsal_valid_months": {
+    "S": {
+      "av_all": 6,
+      "av_phase": 6,
+      "av_conc": 6
+    },
+    "O": {
+      "av_all": 6,
+      "av_phase": 6,
+      "av_conc": 6
+    }
+  },
+  "rehearsal_result_hashes_verified": {
+    "research/experiments/AV002_avoidance_holdout_recovery/rehearsal/20261017T160500126481Z.json": "f20060d329b408d4848d89744f186ee692402e3bfbc9e9d546b4a825c9076270",
+    "research/experiments/AV002_avoidance_holdout_recovery/rehearsal/20261017T160500126481Z.md": "0a633827d11508c97b72c1a0cdef481d445161f68a7844be47ee657c2c37a0bd"
+  },
+  "rehearsal_hash_manifest_verified": "research/experiments/AV002_avoidance_holdout_recovery/rehearsal/20261017T160500126481Z.sha256.json",
+  "real_holdout_session_opened": false
+}

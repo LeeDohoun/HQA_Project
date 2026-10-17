@@ -104,6 +104,7 @@ def test_holdout_mismatch_stops_before_hashing_claim_and_publication(tmp_path, m
 
 @pytest.mark.parametrize("module", [av001, ev001])
 def test_design_preflight_precedes_prices_and_computation(tmp_path, monkeypatch, module):
+    monkeypatch.setattr(module.experiment_registry, "verify_preregistration", lambda *a: SimpleNamespace())
     monkeypatch.setattr(module, "_registration", lambda *a: SimpleNamespace())
     monkeypatch.setattr(module, "source_hashes", lambda *a, **k: pytest.fail("prices hashed before preflight"))
     monkeypatch.setattr(module, "prepare", lambda *a, **k: pytest.fail("prepared before preflight"))

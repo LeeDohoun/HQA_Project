@@ -126,7 +126,7 @@ def random_target(universe, previous, size, retained, rng):
 
 
 def coverage_plan(data_dir, planned, sessions):
-    status = dart_listing.listing_status(data_dir)
+    status = dart_listing.listing_status(data_dir, experiment_id=EXPERIMENT_ID)
     files = dart_listing.listing_paths(data_dir)
     months = [{**{key: row[key] for key in ("month", "decision_date", "trade_date", "end_date", "end_kind")},
                "listing": hf001.listing_coverage(row["decision_date"], sessions, files,
