@@ -579,6 +579,19 @@ Claude Pro 요금제에는 월 API 크레딧이 없어서(Max·Team 전용), API
   - 삼성전기 1주: 평균 1,520,000원, 종가 1,487,000원.
 - **10/13에 확인할 점:** 사이클 실패율, 시간 초과 재발 여부, 재시도 로그 수, Claude 사용량(RiskManager 호출이 늘어남).
 
+### 7.16 동시호가 청산 주문과 호가 단위 (`cda0e6c`, `2671f2a`, 2026-10-17)
+
+- **동시호가 청산 (`cda0e6c`):** 장 마감 동시호가(15:20~15:30)는 주문을 모아 15:30에 한 번 체결합니다. 그런데 청산 매도 주문은 2분 뒤 취소되고 모니터가 약 160초마다 다시 보내서, 15:30에 살아 있는 주문이 없을 수 있었습니다.
+  - 10/15 시간 청산에서는 15:20·15:22·15:25 주문이 체결 없이 취소되고 15:28 주문만 체결됐습니다.
+  - 이제 동시호가 시간에 낸 매도 주문은 15:32까지 유지되어, 신호 하나당 주문 하나가 15:30 체결에 들어갑니다.
+  - 동시호가 시작 시각은 세션 달력(특별 개장일 포함)에서 계산합니다.
+- **호가 단위 (`2671f2a`):** 백엔드는 KIS 현재가를 그대로 주문가로 썼습니다. 10/16 KIS 모의투자가 호가 단위에서 벗어난 현재가(406,250원)를 주자, 그 주문이 '호가단위 오류'(40030000)로 거부됐습니다.
+  - 이제 `KrxTickSize`(2023년 개편 KRX 단위표)로 주문가를 맞춥니다.
+  - 매수는 한 단계 올리되 진입 상한을 넘지 않고, 매도는 한 단계 내립니다.
+  - 시뮬레이션 증권사도 어긋난 가격을 KIS처럼 거부합니다.
+- **검증:** 백엔드 테스트 149개(실패 0, 건너뜀 0)와 시뮬레이션 205개 검사를 통과했습니다. 10/17(토) 19:49에 백엔드만 재시작해 반영했습니다. 모델·프롬프트·설정은 그대로입니다.
+- **운영:** 10/14부터 서비스를 Claude 앱의 터미널 탭이 아니라 독립 세션(자동 재시작)으로 돌립니다. 그날은 앱 재시작으로 서비스가 멈춰 관찰일에서 뺐고, 관찰은 11/9에 끝납니다.
+
 ## 부록: 커밋 목록
 
 | 커밋 | 날짜 | 구분 | 제목 |
@@ -666,3 +679,5 @@ Claude Pro 요금제에는 월 API 크레딧이 없어서(Max·Team 전용), API
 | `186638c` | 2026-10-10 | Claude | feat(llm): run the analysis on the user's Claude subscription through the Claude CLI |
 | `e765196` | 2026-10-12 | PAPER | fix(paper): read KIS paper's cncl_cfrm_qty when reconciling orders |
 | `999e478` | 2026-10-12 | PAPER | fix(paper): let analysis reads wait out the paced KIS queue and retry transient KIS errors |
+| `cda0e6c` | 2026-10-17 | PAPER | fix(paper): keep sells placed in the closing call auction working until the match |
+| `2671f2a` | 2026-10-17 | PAPER | fix(paper): send PAPER orders only at prices on the KRX price grid |
