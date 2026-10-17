@@ -9,6 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from src.config.settings import load_project_env
 from src.ingestion import dart_buyback
 
 
@@ -29,6 +30,8 @@ def main(argv=None):
         result = dart_buyback.plan(args.data_dir)
     else:
         # Read credentials only on an explicit fetch; never load .env in a plan.
+        if args.execute:
+            load_project_env()
         result = dart_buyback.fetch(data_dir=args.data_dir, execute=args.execute,
             api_key=os.getenv("DART_API_KEY") if args.execute else None, max_requests=args.max_requests,
             skip_documents=args.skip_documents)

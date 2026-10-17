@@ -1,0 +1,17 @@
+{
+  "changed_at": "2026-10-17T15:25:30.455336+00:00",
+  "changes": {
+    "src/forward/fw001.py": {
+      "after": "0841af12304c930dd3e379d41cb6ed77a803756158f73ed98d0c7dfc42b2b58d",
+      "before": "5008a2f8cd732ca7ced0e8bdeafc1015b8d1f351d14e9b96914c4f5beabb00da"
+    }
+  },
+  "implementation_changes": {
+    "tests/test_forward_fw001.py": {
+      "after": "2b206cd0171d49bf2bd0468a822789ec33b6ae9e45ac9e9e2cd8ee8af945dbbf",
+      "before": "9c41ac1b23dd59a203e145a7b9d109e0949850821fac65225c3170a55075b2d7"
+    }
+  },
+  "previous_manifest_sha256": "0255a19b5dbdcd0b45b179978cbcccf526ebce6682c65ed23a75d221d9a00064",
+  "reason": "FW001 P1-2 final guard: reject unverified historical sessions and row calendar statuses in both mutable and frozen price-window readers; verify November 18/19/20 lookbacks"
+}
