@@ -31,6 +31,8 @@ class Preregistration:
     commit_hash: str
     commit_time: datetime
     fields: dict[str, Any]
+    blob_hash: str
+    path: str
 
 
 def _validate_experiment_id(experiment_id: str) -> None:
@@ -101,7 +103,8 @@ def verify_preregistration(experiment_id: str, repo_root: str | Path = PROJECT_R
     if type(fields["variants_planned"]) is not int or fields["variants_planned"] < 1:
         raise ValueError("variants_planned must be a positive integer")
     commit_hash, commit_time = commits[0].split("|", 1)
-    return Preregistration(commit_hash, datetime.fromisoformat(commit_time), fields)
+    blob_hash = _git(root, "rev-parse", f"{commit_hash}:{relative.as_posix()}")
+    return Preregistration(commit_hash, datetime.fromisoformat(commit_time), fields, blob_hash, relative.as_posix())
 
 
 def _resolve_path(repo_root: str | Path, path: str | Path) -> Path:
@@ -209,6 +212,46 @@ def record_trial(
     registry_path: str | Path = REGISTRY_PATH,
 ) -> None:
     preregistration = verify_preregistration(experiment_id, repo_root)
+    _record_trial(experiment_id, preregistration.commit_hash, variant, metrics, verdict,
+                  note=note, repo_root=repo_root, registry_path=registry_path)
+
+
+def record_aborted_trial(
+    experiment_id: str,
+    variant: str,
+    metrics: dict[str, Any],
+    verdict: str,
+    *,
+    preregistration: Preregistration,
+    note: str = "",
+    repo_root: str | Path = PROJECT_ROOT,
+    registry_path: str | Path = REGISTRY_PATH,
+) -> None:
+    """Account for an interrupted run using its verified starting plan, even if dirty."""
+    _validate_experiment_id(experiment_id)
+    if verdict not in {"design_aborted", "holdout_aborted", "insufficient", "insufficient_clean_window", "probe_insensitive"}:
+        raise ValueError("abort recording requires an interruption verdict")
+    verify_captured_preregistration(experiment_id, preregistration, repo_root)
+    _record_trial(experiment_id, preregistration.commit_hash, variant, metrics, verdict,
+                  note=note, repo_root=repo_root, registry_path=registry_path)
+
+
+def verify_captured_preregistration(experiment_id: str, preregistration: Preregistration,
+                                    repo_root: str | Path = PROJECT_ROOT) -> None:
+    """Validate a run's captured plan against Git objects, independent of the working tree."""
+    _validate_experiment_id(experiment_id)
+    relative = f"research/experiments/{experiment_id}/preregistration.md"
+    if (preregistration.path != relative or preregistration.fields["experiment_id"] != experiment_id
+            or not _is_sha(preregistration.commit_hash) or not _is_sha(preregistration.blob_hash)):
+        raise ValueError("captured preregistration must identify this experiment's committed path and blob")
+    root = Path(repo_root).resolve()
+    if (_git(root, "cat-file", "-t", preregistration.commit_hash) != "commit"
+            or _git(root, "rev-parse", f"{preregistration.commit_hash}:{relative}") != preregistration.blob_hash
+            or _git(root, "cat-file", "-t", preregistration.blob_hash) != "blob"):
+        raise ValueError("captured preregistration commit/blob does not match git history for its path")
+
+
+def _record_trial(experiment_id, prereg_commit, variant, metrics, verdict, *, note, repo_root, registry_path):
     if not isinstance(variant, str) or not variant.strip() or not isinstance(verdict, str) or not verdict.strip():
         raise ValueError("variant and verdict must be nonempty strings")
     if not isinstance(metrics, dict) or not isinstance(note, str):
@@ -219,15 +262,15 @@ def record_trial(
         empty = path.stat().st_size == 0
         if not empty:
             rows = _registry_rows(handle)
-            accepted = {preregistration.commit_hash} | _commit_aliases(
-                Path(repo_root).resolve(), experiment_id, preregistration.commit_hash)
+            accepted = {prereg_commit} | _commit_aliases(
+                Path(repo_root).resolve(), experiment_id, prereg_commit)
             if any(row["experiment_id"] == experiment_id
                    and row["prereg_commit"] not in accepted for row in rows):
                 raise ValueError("registry prereg_commit differs for this experiment_id; a changed plan requires a new experiment_id")
         writer = csv.writer(handle)
         if empty:
             writer.writerow(REGISTRY_COLUMNS)
-        writer.writerow((datetime.now(timezone.utc).isoformat(), experiment_id, preregistration.commit_hash,
+        writer.writerow((datetime.now(timezone.utc).isoformat(), experiment_id, prereg_commit,
                          variant, verdict, metrics_json, note))
 
 

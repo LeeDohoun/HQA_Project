@@ -714,7 +714,7 @@ def registry_metrics(payload, *, design_result_file=None):
     return metrics
 
 
-def publish(payload, *, repo_root, design_result_file=None):
+def publish(payload, *, repo_root, design_result_file=None, aborted_registration=None):
     names = set(payload["variants"])
     if (payload["stage"] not in ("design_validation", "holdout") or not names or not names.issubset(VARIANTS)
             or payload["stage"] == "design_validation" and names != set(VARIANTS)
@@ -729,15 +729,21 @@ def publish(payload, *, repo_root, design_result_file=None):
     for name, result in payload["variants"].items():
         lines.append(f"| {name} | {result['rule_verdicts']['S']} | {result['rule_verdicts']['O']} | {result['verdict']} |")
     lines += ["", *INTERPRETATIONS]
-    paths = common.write_results(EXPERIMENT_ID, payload, repo_root=repo_root, summary_lines=lines)
+    paths = common.write_results(EXPERIMENT_ID, payload, repo_root=repo_root, summary_lines=lines,
+                                 aborted_registration=aborted_registration)
     result_file, checksum = str(paths[0].relative_to(repo_root)), hc003._digest(paths[0])
     for row in metrics.values():
         row.update(result_file=result_file, result_sha256=checksum)
     for row in metrics.values():
         experiment_registry.encode_metrics(row)
     for name, row in metrics.items():
-        experiment_registry.record_trial(EXPERIMENT_ID, name, row, row["combined_verdict"], repo_root=repo_root,
-                                         note=f"AV001 {payload['stage']}; S/O, calendar NW(3), Holm(3); compact summary")
+        if aborted_registration is not None:
+            experiment_registry.record_aborted_trial(EXPERIMENT_ID, name, row, row["combined_verdict"],
+                preregistration=aborted_registration, repo_root=repo_root,
+                note=f"AV001 {payload['stage']}; aborted attempt; compact summary")
+        else:
+            experiment_registry.record_trial(EXPERIMENT_ID, name, row, row["combined_verdict"], repo_root=repo_root,
+                                             note=f"AV001 {payload['stage']}; S/O, calendar NW(3), Holm(3); compact summary")
     return payload
 
 
@@ -910,7 +916,7 @@ def run_holdout(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT):
                                        design=design, registration=registration)
             payload.update(source_hashes=hashes, input_hash_verification="aborted; inputs not verified")
             payload["abort"] = ordering.abort_details(hashes, exc)
-            publish(payload, repo_root=repo_root, design_result_file=run["result_file"])
+            publish(payload, repo_root=repo_root, design_result_file=run["result_file"], aborted_registration=registration)
             raise
 
 
