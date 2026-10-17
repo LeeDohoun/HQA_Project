@@ -7,10 +7,12 @@ It checks price hashes, three months with a full book and all 103 months through
 AV001's quarterly streaming PriceBook.from_windows path. Only 2017-2025 is read.
 """
 import copy
+import hashlib
 import json
 import math
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -377,6 +379,55 @@ def test_publish_validates_every_row_before_registry_append(repo, monkeypatch):
     assert not (repo / experiment_registry.REGISTRY_PATH).exists()
 
 
+@pytest.mark.parametrize("failure", ["prepare", "evaluate", "interrupt"])
+def test_design_abort_records_each_variant_hashes_run_location_and_blocks_release(repo, monkeypatch, failure):
+    av001.publish(terminal_design(repo, passed=()), repo_root=repo)
+    hashes = {"prices": {str(i): "a" * 64 for i in range(2000)}, "financials": {"q": "b" * 64}}
+    monkeypatch.setattr(av001, "source_hashes", lambda *a, **k: hashes)
+    planned = [av_selection("2025-11-28", "2025-12-01", "2025-12-30", {}, month="2025-11", kind="close")]
+    monkeypatch.setattr(hc003, "rebalance_calendar", lambda *a, **k: (planned, []))
+    monkeypatch.setattr(hc003, "price_files", lambda *a, **k: [])
+    def fail(*a, **kwargs):
+        raise KeyboardInterrupt("fixture interrupt") if failure == "interrupt" else ValueError("fixture evaluation failed")
+    prepared = {"versions": {"S": SimpleNamespace(sensitivity_available=True)}, "book": None,
+                "selections": {r: [] for r in av001.RULES}, "raise_complete": True}
+    monkeypatch.setattr(av001, "prepare", fail if failure == "prepare" else lambda **k: prepared)
+    monkeypatch.setattr(av001, "variant_metrics", fail)
+    for attempt in range(2):
+        with pytest.raises(KeyboardInterrupt if failure == "interrupt" else ValueError):
+            av001.run_experiment(data_dir=repo, repo_root=repo, sessions=hc003.session_calendar())
+        rows = hc003.registry_rows(repo)
+        assert experiment_registry.trial_count(av001.EXPERIMENT_ID, repo_root=repo) == 6 + 3 * attempt
+        aborted = rows[-3:]
+        assert [r["variant"] for r in aborted] == list(av001.VARIANTS)
+        assert all(r["verdict"] == "design_aborted" for r in aborted)
+        details = [json.loads(r["metrics_json"]) for r in aborted]
+        assert len({r["run_id"] for r in details}) == 1
+        assert details[0]["failure_location"]["function"] == "fail"
+        assert details[0]["failure_location"]["line"] > 0
+        assert set(details[0]["input_hashes"]) == set(hashes)
+        assert details[0]["input_hashes"] == {key: hashlib.sha256(
+            json.dumps(value, sort_keys=True, allow_nan=False).encode()).hexdigest() for key, value in hashes.items()}
+        assert max(len(r["metrics_json"].encode()) for r in aborted) < 4096
+        with pytest.raises(ValueError, match="all three"):
+            ordering.release_state(rows, av001.EXPERIMENT_ID, av001.VARIANTS)
+    assert len({json.loads(r["metrics_json"])["run_id"] for r in rows[3:]}) == 2
+    assert not (repo / holdout.LEDGER_PATH).exists()
+
+
+@pytest.mark.parametrize("preflight", ["_registration", "source_hashes"])
+def test_design_preflight_failure_does_not_record_evaluation(repo, monkeypatch, preflight):
+    planned = [av_selection("2025-11-28", "2025-12-01", "2025-12-30", {}, month="2025-11", kind="close")]
+    monkeypatch.setattr(hc003, "rebalance_calendar", lambda *a, **k: (planned, []))
+    monkeypatch.setattr(hc003, "price_files", lambda *a, **k: [])
+    def fail(*a, **k):
+        raise ValueError("fixture preflight failed")
+    monkeypatch.setattr(av001, preflight, fail)
+    with pytest.raises(ValueError, match="preflight"):
+        av001.run_experiment(data_dir=repo, repo_root=repo, sessions=hc003.session_calendar())
+    assert not (repo / experiment_registry.REGISTRY_PATH).exists()
+
+
 def test_publish_refuses_partial_design_before_result_or_registry_writes(repo, monkeypatch):
     result = terminal_design(repo)
     del result["variants"]["av_conc"]
@@ -450,6 +501,46 @@ def test_LH002_contamination_terminal_for_each_passing_variant_without_open_or_r
         av001.run_holdout(repo_root=repo, data_dir=repo / "data")
 
 
+@pytest.mark.parametrize("failure", ["reproduction", "freeze", "enter_before_claim", "enter_after_claim"])
+def test_holdout_failure_uses_durable_claim_for_terminal_rows_and_retry(repo, monkeypatch, failure):
+    av001.publish(terminal_design(repo, passed=("av_all",)), repo_root=repo)
+    design_rows = hc003.registry_rows(repo)
+    monkeypatch.setattr(av001, "verify_non_holdout", lambda *a, **k: None)
+    monkeypatch.setattr(av001, "coverage_plan", lambda data, planned, sessions: (
+        {}, [{"listing": {"covered": True}} for _ in planned]))
+    monkeypatch.setattr(av001, "holdout_input_hashes", lambda *a, **k: {"frozen": "a"})
+    def computation_failed(**kwargs):
+        raise RuntimeError("post-claim computation failed")
+    monkeypatch.setattr(av001, "prepare", computation_failed)
+    ledger = repo / holdout.LEDGER_PATH
+    ledger.write_text(json.dumps(dict(experiment_id="unrelated", recorded_at="fixture",
+                                     from_date="2026-01-01", to_date="2026-06-30")) + "\n")
+    claim = holdout._claim
+    def fail(*args, **kwargs):
+        if failure == "enter_after_claim":
+            claim(*args, **kwargs)
+        raise RuntimeError("fixture failure: " + failure)
+    with monkeypatch.context() as patch:
+        if failure.startswith("enter_"):
+            patch.setattr(holdout, "_claim", fail)
+        else:
+            patch.setattr(av001, "verify_non_holdout" if failure == "reproduction" else "holdout_input_hashes", fail)
+        with pytest.raises(RuntimeError, match="fixture failure"):
+            av001.run_holdout(data_dir=repo / "data", repo_root=repo)
+    if failure != "enter_after_claim":
+        assert hc003.registry_rows(repo) == design_rows
+        assert hc003.ledger_experiments(repo) == {"unrelated"}
+        with pytest.raises(RuntimeError, match="post-claim computation failed"):
+            av001.run_holdout(data_dir=repo / "data", repo_root=repo)
+    rows = hc003.registry_rows(repo)
+    assert rows[:-1] == design_rows
+    assert rows[-1]["variant"] == "holdout_av_all" and rows[-1]["verdict"] == "holdout_aborted"
+    assert hc003.ledger_experiments(repo) == {"unrelated", av001.EXPERIMENT_ID}
+    assert ordering.release_state(rows, av001.EXPERIMENT_ID, av001.VARIANTS)["terminal_holdout_variants"] == ["av_all"]
+    with pytest.raises(ValueError, match="cannot reopen"):
+        av001.run_holdout(data_dir=repo / "data", repo_root=repo)
+
+
 @pytest.mark.parametrize("abort,sensitivity_available,change", [(False, True, None), (False, False, None), (True, True, None),
     (False, True, "entry_price"), (False, True, "price"), (False, True, "financial"),
     (False, True, "company"), (False, True, "listing"), (False, True, "added_price"), (False, True, "removed_price")])
@@ -513,6 +604,9 @@ def test_one_fixture_holdout_session_both_rules_close_start_gap_end_no_liquidati
         with pytest.raises(ValueError, match="computation failed" if abort else "holdout inputs changed"):
             av001.run_holdout(repo_root=repo, data_dir=repo / "data")
         assert all(r["verdict"] == "holdout_aborted" for r in hc003.registry_rows(repo)[-3:])
+        details = [json.loads(r["metrics_json"]) for r in hc003.registry_rows(repo)[-3:]]
+        assert len({r["run_id"] for r in details}) == 1
+        assert all(r["input_hashes"] and r["failure_location"]["line"] > 0 for r in details)
     else:
         result = av001.run_holdout(repo_root=repo, data_dir=repo / "data")
         assert result["input_hash_verification"] == "pre_open == session_before == session_after"
@@ -630,6 +724,12 @@ def test_replay_depends_on_content_and_results_but_not_HEAD(repo, monkeypatch):
     def compute():
         return av001.compute_design(data_dir=repo / "data", repo_root=repo, prices=prices_for(days), sessions=days)
     first = compute()
+    with ordering.design_attempt(av001.EXPERIMENT_ID, av001.VARIANTS, repo) as attempt:
+        protected = av001.compute_design(data_dir=repo / "data", repo_root=repo, sessions=days,
+                                         prices=prices_for(days), _attempt=attempt)
+    assert json.dumps({k: v for k, v in protected.items() if k != "performance"}, sort_keys=True).encode() == json.dumps(
+        {k: v for k, v in first.items() if k != "performance"}, sort_keys=True).encode()
+    assert not (repo / experiment_registry.REGISTRY_PATH).exists()
     monkeypatch.setattr(experiment_registry, "_git", lambda *a: "a-result-only-commit")
     second = compute()
     assert first["code_commit"] != second["code_commit"]
@@ -647,6 +747,38 @@ def test_replay_depends_on_content_and_results_but_not_HEAD(repo, monkeypatch):
     changed = copy.deepcopy(second)
     changed["design_effects"]["S"]["av_phase"] = 123
     assert av001.replay_hash(changed) != first["replay_sha256"]
+
+
+def test_new_design_trial_with_current_code_becomes_latest_reproduction_baseline(repo, monkeypatch):
+    data = repo / "data"
+    write_data(data)
+    days = hc003.session_calendar()
+    days = days[(days >= "2025-08-01") & (days <= "2025-12-30")]
+    planned = [av_selection("2025-11-28", "2025-12-01", "2025-12-30", {}, kind="close")]
+    monkeypatch.setattr(hc003, "rebalance_calendar", lambda *a, **k: (planned, []))
+    for day, frame in prices_for(days).reset_index().groupby("trade_date"):
+        frame = frame.assign(trade_date=day.strftime("%Y%m%d"), change_rate_pct=frame.ret_1d * 100).drop(columns="ret_1d")
+        write_rows(data / "market/krx_daily" / str(day.year) / (day.strftime("%Y%m%d") + ".jsonl"), frame.to_dict("records"))
+    hashes = av001.source_hashes
+    code_path = "backtesting/experiments/av001.py"
+    def old_code(*args, **kwargs):
+        result = hashes(*args, **kwargs)
+        result["code"][code_path] = "previous-code"
+        return result
+    with monkeypatch.context() as patch:
+        patch.setattr(av001, "source_hashes", old_code)
+        av001.run_experiment(data_dir=data, repo_root=repo, sessions=days)
+    old, old_run = av001.saved_design(hc003.registry_rows(repo), repo_root=repo, registration=av001._registration(repo))
+    with pytest.raises(ValueError, match="code hashes differ; run a new design/validation trial with this code first"):
+        av001.verify_non_holdout(old, data_dir=data, repo_root=repo, sessions=days)
+    assert len(hc003.registry_rows(repo)) == 3 and not (repo / holdout.LEDGER_PATH).exists()
+    current = av001.run_experiment(data_dir=data, repo_root=repo, sessions=days)
+    saved, run = av001.saved_design(hc003.registry_rows(repo), repo_root=repo, registration=av001._registration(repo))
+    assert saved == current and run["result_file"] != old_run["result_file"]
+    assert saved["source_hashes"]["code"][code_path] == hc003._digest(Path(av001.__file__))
+    assert saved["trial_count_after_run"] == experiment_registry.trial_count(av001.EXPERIMENT_ID, repo_root=repo) == 6
+    av001.verify_non_holdout(saved, data_dir=data, repo_root=repo, sessions=days)
+    assert len(hc003.registry_rows(repo)) == 6 and not (repo / holdout.LEDGER_PATH).exists()
 
 
 def test_holdout_preopen_freezes_protected_hashes_without_opening_prices(repo, monkeypatch):

@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
 import os
+import traceback
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -18,6 +21,33 @@ TERMINAL = {"pass", "fail", "holdout_insufficient", "version_sensitive", "delist
             "holdout_aborted", "holdout_contaminated"}
 DESIGN_FINAL = {"pass", "fail", "insufficient", "risk_only", "version_sensitive",
                 "delisting_sensitive", "sensitivity_unavailable", "data_incomplete"}
+
+
+def abort_details(hashes, exc):
+    """Category digests keep full-market inventories within the registry limit."""
+    frame = traceback.extract_tb(exc.__traceback__)[-1]
+    return {"run_id": uuid.uuid4().hex,
+            "input_hashes": {key: hashlib.sha256(json.dumps(value, sort_keys=True, allow_nan=False).encode()).hexdigest()
+                             for key, value in hashes.items()},
+            "failure_location": {"file": frame.filename, "line": frame.lineno, "function": frame.name},
+            "failure_type": type(exc).__name__, "failure_reason": str(exc)[:1024]}
+
+
+@contextmanager
+def design_attempt(experiment_id, variants, repo_root):
+    """Record failures after preflight hashes, without changing successful results."""
+    attempt = {}
+    try:
+        yield attempt
+    except BaseException as exc:
+        if "source_hashes" in attempt:
+            metrics = {"stage": "design_validation", "status": "aborted", "combined_verdict": "design_aborted",
+                       **abort_details(attempt["source_hashes"], exc)}
+            experiment_registry.encode_metrics(metrics)
+            for variant in variants:
+                experiment_registry.record_trial(experiment_id, variant, metrics, "design_aborted", repo_root=repo_root,
+                                                 note="Aborted design attempt; input hashes are category SHA256 digests")
+        raise
 
 
 @contextmanager
@@ -57,7 +87,8 @@ def design_run(rows, experiment_id, variants):
     same_run = [(row, metrics) for row, metrics in designs if metrics.get("result_file") == result_file]
     if (not isinstance(result_file, str) or not result_file or len(same_run) != len(variants)
             or {row["variant"] for row, _ in same_run} != set(variants)
-            or any(row["verdict"] not in DESIGN_FINAL for row, _ in same_run)
+            or any(row["verdict"] not in DESIGN_FINAL or metrics.get("status") == "aborted"
+                   for row, metrics in same_run)
             or len({row["prereg_commit"] for row, _ in same_run}) != 1):
         raise ValueError(f"{experiment_id}: requires all three final design rows from one result file; LH002 final blocked")
     passed = [name for name in variants if any(row["variant"] == name and row["verdict"] == "pass" for row, _ in same_run)]

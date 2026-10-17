@@ -391,7 +391,7 @@ def test_run_blocks_overlapping_research_and_status_reports_finished_exit_codes(
     assert not ops[6]("systemd-run")
 
 
-@pytest.mark.parametrize("module", ["hc002", "hc003", "av001", "hi001", "r001", "hf001", "bb001", "lh002"])
+@pytest.mark.parametrize("module", ["hc002", "hc003", "av001", "ev001", "hi001", "r001", "hf001", "bb001", "lh002"])
 def test_run_dispatches_supported_modules_and_preserves_arguments(ops, module):
     server_commands(ops)
     checkout(ops)
@@ -403,13 +403,14 @@ def test_run_dispatches_supported_modules_and_preserves_arguments(ops, module):
 
 
 @pytest.mark.parametrize("mode", ["--dry-run", "--holdout"])
-def test_av001_explicit_modes_do_not_receive_conflicting_execute_flag(ops, mode):
+@pytest.mark.parametrize("module", ["av001", "ev001"])
+def test_av001_ev001_explicit_modes_do_not_receive_conflicting_execute_flag(ops, mode, module):
     server_commands(ops)
     checkout(ops)
-    result = ops[5](SCRIPTS[1], "av001", mode)
+    result = ops[5](SCRIPTS[1], module, mode)
     assert result.returncode == 0, result.stderr
     command, = ops[6]("systemd-run")
-    assert command[-3:] == ["-m", "backtesting.experiments.av001", mode]
+    assert command[-3:] == ["-m", f"backtesting.experiments.{module}", mode]
 
 
 def remote_results(ops):

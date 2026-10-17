@@ -6,9 +6,7 @@
 TradeSignal 저장/조건 감시 파이프라인에 필요한 결과를 생성합니다.
 """
 
-from src.runner.analysis_scheduler import AnalysisScheduler, BackendAutoTradeTargetClient
-from src.runner.multi_theme_leader_trading_runner import MultiThemeLeaderTradingRunner
-from src.runner.theme_leader_trading_runner import ThemeLeaderTradingRunner
+from importlib import import_module
 
 __all__ = [
     "AnalysisScheduler",
@@ -16,3 +14,18 @@ __all__ = [
     "ThemeLeaderTradingRunner",
     "MultiThemeLeaderTradingRunner",
 ]
+
+
+def __getattr__(name):
+    # Offline calendar users must not initialize trading clients/configuration.
+    modules = {
+        "AnalysisScheduler": "analysis_scheduler",
+        "BackendAutoTradeTargetClient": "analysis_scheduler",
+        "ThemeLeaderTradingRunner": "theme_leader_trading_runner",
+        "MultiThemeLeaderTradingRunner": "multi_theme_leader_trading_runner",
+    }
+    if name not in modules:
+        raise AttributeError(name)
+    value = getattr(import_module(f"{__name__}.{modules[name]}"), name)
+    globals()[name] = value
+    return value
