@@ -133,6 +133,22 @@ public final class TradeConditions {
                 .map(p -> number(p.value())).max(Double::compareTo).orElse(null);
     }
 
+    /** The highest whole price a group's current_price predicates allow, or null when none caps it. */
+    public static Long highestPrice(Group group) {
+        Long highest = null;
+        for (Predicate p : group.all()) {
+            if (!"current_price".equals(p.field())) continue;
+            double bound = number(p.value());
+            Long allowed = switch (p.operator()) {
+                case "<=", "==" -> (long) Math.floor(bound);
+                case "<" -> (long) Math.ceil(bound) - 1;
+                default -> null;
+            };
+            if (allowed != null && (highest == null || allowed < highest)) highest = allowed;
+        }
+        return highest;
+    }
+
     public static double number(Object value) {
         if (!(value instanceof Number n) || !Double.isFinite(n.doubleValue())) {
             throw new IllegalArgumentException("A finite numeric value is required");

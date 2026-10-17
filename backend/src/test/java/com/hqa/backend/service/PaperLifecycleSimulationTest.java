@@ -48,8 +48,9 @@ import org.springframework.test.util.ReflectionTestUtils;
  * <pre>HQA_SIM_PYTHON=$PWD/../venv/bin/python mvn -q test -Dtest=PaperLifecycleSimulationTest</pre>
  *
  * The broker fills a limit order once the price reaches it, except in the closing call auction
- * (15:20-15:30), where it only collects orders and matches them once, after the close. The
- * scenario report is written to target/paper-lifecycle-sim.txt.
+ * (15:20-15:30), where it only collects orders and matches them once, after the close. Like KIS,
+ * it refuses an order priced off the KRX price grid. The scenario report is written to
+ * target/paper-lifecycle-sim.txt.
  */
 @EnabledIfEnvironmentVariable(named = "HQA_SIM_PYTHON", matches = ".+")
 class PaperLifecycleSimulationTest {
@@ -224,6 +225,11 @@ class PaperLifecycleSimulationTest {
                 event("rate_limited", "side", side, "qty", quantity);
                 return Map.of("success", false, "response", Map.of("rt_cd", "1", "msg_cd", "EGW00201", "msg1", "rate"));
             }
+            if (limit % krxUnit(limit) != 0) {
+                event("broker_refused", "side", side, "qty", quantity, "limit", limit, "reason", "off the price grid");
+                return Map.of("success", false, "response", Map.of("rt_cd", "1", "msg_cd", "40030000",
+                        "msg1", "모의투자 주문처리가 안되었습니다(호가단위 오류)"));
+            }
             if ("SELL".equals(side) && quantity > sellable()) {
                 event("broker_refused", "side", side, "qty", quantity, "sellable", sellable());
                 return Map.of("success", false, "response", Map.of("rt_cd", "1", "msg_cd", "APBK0400", "msg1", "sellable exceeded"));
@@ -271,6 +277,12 @@ class PaperLifecycleSimulationTest {
             order.cancelled += order.remaining();
             return Map.of("success", true, "response", Map.of("rt_cd", "0"));
         });
+    }
+
+    /** KRX price units, which KIS checks every order against; written out apart from KrxTickSize, as KIS is. */
+    static long krxUnit(long price) {
+        return price < 2_000 ? 1 : price < 5_000 ? 5 : price < 20_000 ? 10 : price < 50_000 ? 50
+                : price < 200_000 ? 100 : price < 500_000 ? 500 : 1_000;
     }
 
     long quote(String stockCode) {
@@ -399,6 +411,8 @@ class PaperLifecycleSimulationTest {
             row.put("status", e.getStatus());
             row.put("qty", e.getSubmittedQuantity());
             row.put("filled", e.getFilledQuantity());
+            row.put("quote", e.getCurrentPrice());
+            row.put("orderPrice", e.getOrderPrice());
             row.put("avgFill", e.getAverageFillPrice());
             row.put("expires", e.getOrderExpiresAt() == null ? null : e.getOrderExpiresAt().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
             row.put("reject", e.getRejectReason());

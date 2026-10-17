@@ -142,6 +142,7 @@ public class PaperTradeLifecycle {
                 if (type != TradeConditions.TriggerType.ENTRY) reconcileAccount(user.getUserId(), keepWorkingSell ? null : signalId);
                 throw new IllegalStateException("ORDER_RECONCILIATION_REQUIRED");
             }
+            long orderPrice = orderPrice(type, group, price);
             long powerCash = 0;
             long powerQuantity = 0;
             if (type == TradeConditions.TriggerType.ENTRY) {
@@ -149,16 +150,17 @@ public class PaperTradeLifecycle {
                 if (Math.abs((price - signal.getSignalPrice()) * 100.0 / signal.getSignalPrice()) > 3.0) {
                     throw new IllegalStateException("PRICE_DRIFT_EXCEEDED");
                 }
-                Map<String, Object> power = kis.paperPurchasingPower(user.getUserId(), user.getSecret(), token, signal.getStockCode(), price);
+                Map<String, Object> power = kis.paperPurchasingPower(user.getUserId(), user.getSecret(), token,
+                        signal.getStockCode(), orderPrice);
                 powerCash = PaperAccountSnapshotService.nonnegativeLong(power.get("cash"));
                 powerQuantity = PaperAccountSnapshotService.nonnegativeLong(power.get("quantity"));
             }
             TradeSignalExecution intent = store.claim(signalId, version, type, groupId, account,
-                    price, powerCash, powerQuantity, group == null ? null : group.reduceFraction(), now());
+                    price, orderPrice, powerCash, powerQuantity, group == null ? null : group.reduceFraction(), now());
             Map<String, Object> response;
             try {
                 response = kis.paperOrder(user.getUserId(), user.getSecret(), token, signal.getStockCode(),
-                        intent.getSubmittedQuantity(), price, intent.getOrderSide());
+                        intent.getSubmittedQuantity(), orderPrice, intent.getOrderSide());
             } catch (RuntimeException ex) {
                 response = Map.of("success", false, "unknown", true, "error", ex.getClass().getSimpleName());
             }
@@ -445,6 +447,17 @@ public class PaperTradeLifecycle {
     private Map<String, Object> payload(TradeSignal signal) {
         try { return mapper.readValue(signal.getConditionPayload(), new TypeReference<>() { }); }
         catch (java.io.IOException ex) { throw new IllegalArgumentException("INVALID_STORED_CONDITIONS", ex); }
+    }
+    /**
+     * The trigger's limit on the KRX price grid, which the quote may miss. A buy rounds up to the
+     * next valid price, but never past the highest price its entry group allows; a sell rounds
+     * down, so it stays marketable.
+     */
+    static long orderPrice(TradeConditions.TriggerType type, TradeConditions.Group group, long quote) {
+        if (type != TradeConditions.TriggerType.ENTRY) return KrxTickSize.roundDown(quote);
+        long price = KrxTickSize.roundUp(quote);
+        Long highest = group == null ? null : TradeConditions.highestPrice(group);
+        return highest != null && price > highest ? KrxTickSize.roundDown(highest) : price;
     }
     private OffsetDateTime now() { return OffsetDateTime.now(clock); }
     private boolean marketOpen() {

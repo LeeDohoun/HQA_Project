@@ -177,19 +177,38 @@ class PaperTradeStoreTest {
     void entryAtStopAndStaleAccountSnapshotDoNotCreateOrderIntents() {
         TradeSignal plan = store.save(request("BUY", 10, 1, "a", now), account(0), now);
         assertThatThrownBy(() -> store.claim(plan.getId(), 1, TradeConditions.TriggerType.ENTRY, "entry", account(0),
-                90, 10000, 100, null, now)).hasMessage("ENTRY_ALREADY_AT_OR_BELOW_STOP");
+                90, 90, 10000, 100, null, now)).hasMessage("ENTRY_ALREADY_AT_OR_BELOW_STOP");
         Map<String, Object> stale = account(0);
         stale.put("capturedAt", now.minusSeconds(21).toString());
         assertThatThrownBy(() -> store.claim(plan.getId(), 1, TradeConditions.TriggerType.ENTRY, "entry", stale,
-                100, 10000, 100, null, now)).hasMessage("ACCOUNT_SNAPSHOT_STALE");
+                100, 100, 10000, 100, null, now)).hasMessage("ACCOUNT_SNAPSHOT_STALE");
+        assertThatThrownBy(() -> store.claim(plan.getId(), 1, TradeConditions.TriggerType.ENTRY, "entry", account(0),
+                95, 90, 10000, 100, null, now)).hasMessage("ENTRY_ALREADY_AT_OR_BELOW_STOP");   // its limit is at the stop
         assertThat(savedExecutions).isEmpty();
+    }
+
+    @Test
+    void anOrderIsRecordedAtItsPriceOnTheKrxGridWithTheQuoteItCameFrom() {
+        TradeSignal plan = store.save(request("BUY", 10, 1, "a", now), account(0), now);
+        Map<String, Object> account = account(0);
+        account.put("equity", 10_000_000L);
+        account.put("orderableCash", 10_000_000L);
+        assertThatThrownBy(() -> store.claim(plan.getId(), 1, TradeConditions.TriggerType.ENTRY, "entry", account,
+                406_250, 406_250, 10_000_000, 24, null, now)).hasMessage("ORDER_PRICE_OFF_KRX_TICK");
+        assertThat(savedExecutions).isEmpty();
+        TradeSignalExecution entry = store.claim(plan.getId(), 1, TradeConditions.TriggerType.ENTRY, "entry", account,
+                406_250, 406_500, 10_000_000, 24, null, now);
+        assertThat(entry.getCurrentPrice()).isEqualTo(406_250L);
+        assertThat(entry.getOrderPrice()).isEqualTo(406_500L);
+        assertThat(entry.getSubmittedQuantity()).isEqualTo(2);              // 10% of 10,000,000 at 406,500
+        assertThat(entry.getReservedCash()).isEqualTo(813_000L);
     }
 
     @Test
     void delayedInquiryCannotResurrectTerminalOrder() {
         TradeSignal plan = store.save(request("BUY", 10, 1, "a", now), account(0), now);
         TradeSignalExecution intent = store.claim(plan.getId(), 1, TradeConditions.TriggerType.ENTRY, "entry", account(0),
-                100, 10000, 100, null, now);
+                100, 100, 10000, 100, null, now);
         store.observeFill(intent.getId(), 2, 100, 0, true, "org", now);
         store.observeFill(intent.getId(), 2, 100, 8, false, "org", now);
         assertThat(intent.getStatus()).isEqualTo("CANCELLED");
@@ -202,34 +221,34 @@ class PaperTradeStoreTest {
     void sizingUsesPowerCashAndReservationsInsteadOfOneShare() {
         TradeSignal signal = store.save(request("BUY", 20, 1, "a", now), account(0), now);
         when(executions.reservedCashForUser("u1")).thenReturn(1500L);
-        var intent = store.claim(signal.getId(), 1, TradeConditions.TriggerType.ENTRY, "entry", account(0), 100,
+        var intent = store.claim(signal.getId(), 1, TradeConditions.TriggerType.ENTRY, "entry", account(0), 100, 100,
                 3000, 30, null, now);
         assertThat(intent.getSubmittedQuantity()).isEqualTo(15);
         assertThat(intent.getReservedCash()).isEqualTo(1500);
         assertThat(intent.getStatus()).isEqualTo("INTENT");
         assertThatThrownBy(() -> store.claim(signal.getId(), 1, TradeConditions.TriggerType.ENTRY, "entry", account(0),
-                100, 3000, 30, null, now)).hasMessage("ORDER_RECONCILIATION_REQUIRED");
+                100, 100, 3000, 30, null, now)).hasMessage("ORDER_RECONCILIATION_REQUIRED");
     }
 
     @Test
     void reductionIsBoundedByHoldingAndSellableQuantity() {
         TradeSignal signal = store.save(request("HOLD", 10, 1, "a", now), account(11), now);
         var intent = store.claim(signal.getId(), 1, TradeConditions.TriggerType.REDUCE, "reduce", account(11),
-                100, 0, 0, 0.5, now);
+                100, 100, 0, 0, 0.5, now);
         assertThat(intent.getOrderSide()).isEqualTo("SELL");
         assertThat(intent.getSubmittedQuantity()).isEqualTo(5);
         store.observeFill(intent.getId(), 5, 100, 0, false, "org", now);
         assertThat(signal.getStatus()).isEqualTo("OPEN");
         assertThat(signal.getManagedQuantity()).isEqualTo(6);
         assertThatThrownBy(() -> store.claim(signal.getId(), 1, TradeConditions.TriggerType.REDUCE, "reduce", account(6),
-                100, 0, 0, 0.5, now)).hasMessage("TRIGGER_ALREADY_CONSUMED");
+                100, 100, 0, 0, 0.5, now)).hasMessage("TRIGGER_ALREADY_CONSUMED");
     }
 
     @Test
     void partialEntryIsProtectedAndCancelRequiresBrokerConfirmation() {
         TradeSignal signal = store.save(request("BUY", 20, 1, "a", now), account(0), now);
         var intent = store.claim(signal.getId(), 1, TradeConditions.TriggerType.ENTRY, "entry", account(0),
-                100, 10000, 100, null, now);
+                100, 100, 10000, 100, null, now);
         store.acknowledge(intent.getId(), Map.of("success", true, "response", Map.of("rt_cd", "0", "output", Map.of("ODNO", "order1"))));
         store.observeFill(intent.getId(), 2, 100, intent.getSubmittedQuantity() - 2, false, "org", now);
         assertThat(signal.getStatus()).isEqualTo("OPEN");
@@ -249,44 +268,44 @@ class PaperTradeStoreTest {
     void unknownOrderRetainsReservationAndNeverAdmitsAnotherEntry() {
         TradeSignal signal = store.save(request("BUY", 20, 1, "a", now), account(0), now);
         var intent = store.claim(signal.getId(), 1, TradeConditions.TriggerType.ENTRY, "entry", account(0),
-                100, 10000, 100, null, now);
+                100, 100, 10000, 100, null, now);
         store.acknowledge(intent.getId(), Map.of("success", false, "error", "timeout"));
         assertThat(intent.getStatus()).isEqualTo("UNKNOWN");
         assertThat(intent.getReservedCash()).isPositive();
         assertThat(signal.getRejectReason()).isEqualTo("ORDER_ACCEPTANCE_UNKNOWN");
         assertThatThrownBy(() -> store.claim(signal.getId(), 1, TradeConditions.TriggerType.ENTRY, "entry", account(0),
-                100, 10000, 100, null, now)).hasMessage("ORDER_RECONCILIATION_REQUIRED");
+                100, 100, 10000, 100, null, now)).hasMessage("ORDER_RECONCILIATION_REQUIRED");
     }
 
     @Test
     void changedAccountOrStaleVersionCannotClaimOldPlan() {
         TradeSignal signal = store.save(request("BUY", 10, 1, "a", now), account(0), now);
         assertThatThrownBy(() -> store.claim(signal.getId(), 2, TradeConditions.TriggerType.ENTRY, "entry", account(0),
-                100, 10000, 100, null, now)).hasMessage("STALE_PLAN_VERSION");
+                100, 100, 10000, 100, null, now)).hasMessage("STALE_PLAN_VERSION");
         user.getSecret().setKisAccountNo("changed-account");
         assertThatThrownBy(() -> store.claim(signal.getId(), 1, TradeConditions.TriggerType.ENTRY, "entry", account(0),
-                100, 10000, 100, null, now)).hasMessage("ACCOUNT_BINDING_CHANGED");
+                100, 100, 10000, 100, null, now)).hasMessage("ACCOUNT_BINDING_CHANGED");
     }
 
     @Test
     void transientRejectionsCanBeRetriedButBrokerRejectionsConsumeTheTrigger() {
         TradeSignal signal = store.save(request("HOLD", 10, 1, "a", now), account(10), now);
         var limited = store.claim(signal.getId(), 1, TradeConditions.TriggerType.REDUCE, "reduce", account(10),
-                100, 0, 0, 0.5, now);
+                100, 100, 0, 0, 0.5, now);
         store.acknowledge(limited.getId(), Map.of("success", false, "response",
                 Map.of("rt_cd", "1", "msg_cd", "EGW00201", "msg1", "too many requests")));
         assertThat(limited.getStatus()).isEqualTo("REJECTED");
         assertThat(limited.getRejectReason()).isEqualTo("KIS_RATE_LIMITED");
         var notSent = store.claim(signal.getId(), 1, TradeConditions.TriggerType.REDUCE, "reduce", account(10),
-                100, 0, 0, 0.5, now);
+                100, 100, 0, 0, 0.5, now);
         store.acknowledge(notSent.getId(), Map.of("success", false, "notSent", true, "error", "queue"));
         assertThat(notSent.getRejectReason()).isEqualTo("ORDER_NOT_SENT_RATE_QUEUE_FULL");
         var judged = store.claim(signal.getId(), 1, TradeConditions.TriggerType.REDUCE, "reduce", account(10),
-                100, 0, 0, 0.5, now);
+                100, 100, 0, 0, 0.5, now);
         store.acknowledge(judged.getId(), Map.of("success", false, "response", Map.of("rt_cd", "1", "msg_cd", "APBK0013")));
         assertThat(judged.getRejectReason()).isEqualTo("KIS_ORDER_REJECTED");
         assertThatThrownBy(() -> store.claim(signal.getId(), 1, TradeConditions.TriggerType.REDUCE, "reduce", account(10),
-                100, 0, 0, 0.5, now)).hasMessage("TRIGGER_ALREADY_CONSUMED");
+                100, 100, 0, 0, 0.5, now)).hasMessage("TRIGGER_ALREADY_CONSUMED");
     }
 
     private InternalTradeSignalRequest reduceHold(int version, double fraction, OffsetDateTime plannedExit) {
@@ -304,48 +323,48 @@ class PaperTradeStoreTest {
     void aReductionRunsOnceAcrossReissuedPlanVersionsUnlessItsContentChanges() {
         TradeSignal signal = store.save(reduceHold(1, 0.5, now.plusDays(3)), account(10), now);
         when(signals.findByUserIdAndStatusIn("u1", PaperTradeStore.ACTIVE)).thenReturn(List.of(signal));
-        var first = store.claim(signal.getId(), 1, TradeConditions.TriggerType.REDUCE, "trim", account(10), 100, 0, 0, 0.5, now);
+        var first = store.claim(signal.getId(), 1, TradeConditions.TriggerType.REDUCE, "trim", account(10), 100, 100, 0, 0, 0.5, now);
         store.acknowledge(first.getId(), Map.of("success", true, "response", Map.of("rt_cd", "0", "output", Map.of("ODNO", "o1"))));
         store.observeFill(first.getId(), 5, 100, 0, false, "org", now);
         store.save(reduceHold(2, 0.5, now.plusDays(3)), account(5), now.plusSeconds(2));
         assertThatThrownBy(() -> store.claim(signal.getId(), 2, TradeConditions.TriggerType.REDUCE, "trim", account(5),
-                100, 0, 0, 0.5, now.plusSeconds(2))).hasMessage("TRIGGER_ALREADY_CONSUMED");
+                100, 100, 0, 0, 0.5, now.plusSeconds(2))).hasMessage("TRIGGER_ALREADY_CONSUMED");
         store.save(reduceHold(3, 0.25, now.plusDays(3)), account(5), now.plusSeconds(3));  // a different reduction tier
         assertThat(store.claim(signal.getId(), 3, TradeConditions.TriggerType.REDUCE, "trim", account(5),
-                100, 0, 0, 0.25, now.plusSeconds(3)).getSubmittedQuantity()).isEqualTo(1);
+                100, 100, 0, 0, 0.25, now.plusSeconds(3)).getSubmittedQuantity()).isEqualTo(1);
     }
 
     @Test
     void aReductionThatSoldNothingMayRunAgainInTheSameAndLaterVersions() {
         TradeSignal signal = store.save(reduceHold(1, 0.5, now.plusDays(3)), account(10), now);
         when(signals.findByUserIdAndStatusIn("u1", PaperTradeStore.ACTIVE)).thenReturn(List.of(signal));
-        var expired = store.claim(signal.getId(), 1, TradeConditions.TriggerType.REDUCE, "trim", account(10), 105, 0, 0, 0.5, now);
+        var expired = store.claim(signal.getId(), 1, TradeConditions.TriggerType.REDUCE, "trim", account(10), 105, 105, 0, 0, 0.5, now);
         store.acknowledge(expired.getId(), Map.of("success", true, "response", Map.of("rt_cd", "0", "output", Map.of("ODNO", "o1"))));
         store.observeFill(expired.getId(), 0, 0, 0, true, "org", now);          // the limit order expired unfilled
         assertThat(expired.getStatus()).isEqualTo("CANCELLED");
-        var retry = store.claim(signal.getId(), 1, TradeConditions.TriggerType.REDUCE, "trim", account(10), 100, 0, 0, 0.5, now);
+        var retry = store.claim(signal.getId(), 1, TradeConditions.TriggerType.REDUCE, "trim", account(10), 100, 100, 0, 0, 0.5, now);
         assertThat(retry.getSubmittedQuantity()).isEqualTo(5);                   // the same version may try again
         store.acknowledge(retry.getId(), Map.of("success", false, "unknown", true, "error", "timeout"));
         store.confirmNotSubmitted(retry.getId(), "not in the KIS order history", now);   // it never reached KIS
         store.save(reduceHold(2, 0.5, now.plusDays(3)), account(10), now.plusSeconds(2));
         var next = store.claim(signal.getId(), 2, TradeConditions.TriggerType.REDUCE, "trim", account(10),
-                100, 0, 0, 0.5, now.plusSeconds(2));
+                100, 100, 0, 0, 0.5, now.plusSeconds(2));
         assertThat(next.getSubmittedQuantity()).isEqualTo(5);                    // and so may the next version
         store.acknowledge(next.getId(), Map.of("success", false, "response", Map.of("rt_cd", "1", "msg_cd", "APBK0013")));
         assertThatThrownBy(() -> store.claim(signal.getId(), 2, TradeConditions.TriggerType.REDUCE, "trim", account(10),
-                100, 0, 0, 0.5, now.plusSeconds(2))).hasMessage("TRIGGER_ALREADY_CONSUMED");   // a broker refusal is final
+                100, 100, 0, 0, 0.5, now.plusSeconds(2))).hasMessage("TRIGGER_ALREADY_CONSUMED");   // a broker refusal is final
     }
 
     @Test
     void aPartlyFilledReductionCountsAsDoneSoTheRemainderIsNotReducedTwice() {
         TradeSignal signal = store.save(reduceHold(1, 0.5, now.plusDays(3)), account(10), now);
         when(signals.findByUserIdAndStatusIn("u1", PaperTradeStore.ACTIVE)).thenReturn(List.of(signal));
-        var first = store.claim(signal.getId(), 1, TradeConditions.TriggerType.REDUCE, "trim", account(10), 100, 0, 0, 0.5, now);
+        var first = store.claim(signal.getId(), 1, TradeConditions.TriggerType.REDUCE, "trim", account(10), 100, 100, 0, 0, 0.5, now);
         store.acknowledge(first.getId(), Map.of("success", true, "response", Map.of("rt_cd", "0", "output", Map.of("ODNO", "o1"))));
         store.observeFill(first.getId(), 2, 100, 0, true, "org", now);          // 2 of 5 sold, then cancelled
         store.save(reduceHold(2, 0.5, now.plusDays(3)), account(8), now.plusSeconds(2));
         assertThatThrownBy(() -> store.claim(signal.getId(), 2, TradeConditions.TriggerType.REDUCE, "trim", account(8),
-                100, 0, 0, 0.5, now.plusSeconds(2))).hasMessage("TRIGGER_ALREADY_CONSUMED");
+                100, 100, 0, 0, 0.5, now.plusSeconds(2))).hasMessage("TRIGGER_ALREADY_CONSUMED");
     }
 
     @Test
@@ -364,7 +383,7 @@ class PaperTradeStoreTest {
             OffsetDateTime at) {
         Map<String, Object> account = account(10);
         account.put("capturedAt", at.toString());
-        TradeSignalExecution sell = store.claim(plan.getId(), 1, type, group, account, 100, 0, 0, fraction, at);
+        TradeSignalExecution sell = store.claim(plan.getId(), 1, type, group, account, 100, 100, 0, 0, fraction, at);
         assertThat(sell.getOrderSide()).isEqualTo("SELL");
         store.observeFill(sell.getId(), 0, 0, 0, true, "org", at);
         return sell.getOrderExpiresAt();
@@ -395,7 +414,7 @@ class PaperTradeStoreTest {
         Map<String, Object> account = account(0);
         account.put("capturedAt", at.toString());
         TradeSignalExecution entry = store.claim(plan.getId(), 1, TradeConditions.TriggerType.ENTRY, "entry", account,
-                100, 10000, 100, null, at);
+                100, 100, 10000, 100, null, at);
         assertThat(entry.getOrderSide()).isEqualTo("BUY");
         assertThat(entry.getOrderExpiresAt()).isEqualTo(at.plusMinutes(5));
     }
@@ -404,7 +423,7 @@ class PaperTradeStoreTest {
     void autoTradeOffBlocksNewEntriesButKeepsProtectiveSells() {
         TradeSignal held = store.save(reduceHold(1, 0.5, now.plusDays(3)), account(10), now);
         user.setAutoTradeEnabled(false);
-        assertThat(store.claim(held.getId(), 1, TradeConditions.TriggerType.EXIT, "stop", account(10), 90, 0, 0, null, now)
+        assertThat(store.claim(held.getId(), 1, TradeConditions.TriggerType.EXIT, "stop", account(10), 90, 90, 0, 0, null, now)
                 .getOrderSide()).isEqualTo("SELL");
         user.setAutoTradeEnabled(true);
     }
@@ -449,7 +468,7 @@ class PaperTradeStoreTest {
     void explicitCancelRejectionCanBeRetriedAfterFreshBrokerObservation() {
         TradeSignal signal = store.save(request("BUY", 20, 1, "a", now), account(0), now);
         var intent = store.claim(signal.getId(), 1, TradeConditions.TriggerType.ENTRY, "entry", account(0),
-                100, 10000, 100, null, now);
+                100, 100, 10000, 100, null, now);
         store.acknowledge(intent.getId(), Map.of("success", true, "response", Map.of("rt_cd", "0", "output", Map.of("ODNO", "order1"))));
         store.observeFill(intent.getId(), 2, 100, intent.getSubmittedQuantity() - 2, false, "org", now);
         long reserved = intent.getReservedCash();
@@ -465,7 +484,7 @@ class PaperTradeStoreTest {
     void unknownCancellationNeverAuthorizesBlindResubmission() {
         TradeSignal signal = store.save(request("BUY", 20, 1, "a", now), account(0), now);
         var intent = store.claim(signal.getId(), 1, TradeConditions.TriggerType.ENTRY, "entry", account(0),
-                100, 10000, 100, null, now);
+                100, 100, 10000, 100, null, now);
         store.acknowledge(intent.getId(), Map.of("success", true, "response", Map.of("rt_cd", "0", "output", Map.of("ODNO", "order1"))));
         store.markCancelRequested(intent.getId());
         store.acknowledgeCancellation(intent.getId(), Map.of("success", false, "unknown", true));

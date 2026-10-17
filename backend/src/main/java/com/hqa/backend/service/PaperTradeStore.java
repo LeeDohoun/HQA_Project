@@ -197,10 +197,15 @@ public class PaperTradeStore {
         return saved;
     }
 
+    /**
+     * Records the order a trigger is about to send: a limit at {@code orderPrice}, which must be on
+     * the KRX price grid, for a trigger seen at the {@code quote}.
+     */
     @Transactional
     public TradeSignalExecution claim(String signalId, int version, TradeConditions.TriggerType type,
-            String groupId, Map<String, Object> account, long price, long powerCash, long powerQuantity,
+            String groupId, Map<String, Object> account, long quote, long orderPrice, long powerCash, long powerQuantity,
             Double fraction, OffsetDateTime now) {
+        if (!KrxTickSize.isValid(orderPrice)) throw new IllegalArgumentException("ORDER_PRICE_OFF_KRX_TICK");
         User user = lock(signals.ownerOf(signalId).orElseThrow());
         boolean buy = type == TradeConditions.TriggerType.ENTRY;
         if (buy) requireEnabledPaper(user);
@@ -255,7 +260,7 @@ public class PaperTradeStore {
         if (buy) {
             if (signal.getEntryValidUntil() == null || !signal.getEntryValidUntil().isAfter(now)) throw new IllegalStateException("ENTRY_EXPIRED");
             Double hardStop = TradeConditions.hardStop(conditions(signal));
-            if (hardStop != null && price <= hardStop) throw new IllegalStateException("ENTRY_ALREADY_AT_OR_BELOW_STOP");
+            if (hardStop != null && Math.min(quote, orderPrice) <= hardStop) throw new IllegalStateException("ENTRY_ALREADY_AT_OR_BELOW_STOP");
             if (!Boolean.TRUE.equals(account.get("entryEligible"))) throw new IllegalStateException(String.valueOf(account.get("entryBlockReason")));
             if (actualHeld > 0) throw new IllegalStateException("HOLDING_ALREADY_EXISTS");
             if (executions.countByUserIdAndOrderSideAndSubmittedAtAfter(signal.getUserId(), "BUY",
@@ -268,7 +273,7 @@ public class PaperTradeStore {
             double target = Double.parseDouble(signal.getPositionSize().replace("%", ""));
             long allocation = (long) Math.floor(equity * Math.min(target, PaperAccountSnapshotService.MAX_POSITION_PCT) / 100);
             long spend = Math.max(0, Math.min(allocation, cash - reserved));
-            quantity = Math.toIntExact(Math.min(spend / price, powerQuantity));
+            quantity = Math.toIntExact(Math.min(spend / orderPrice, powerQuantity));
         } else {
             long managed = Math.min(signal.getManagedQuantity(), actualHeld);
             signal.setManagedQuantity(Math.toIntExact(managed));
@@ -290,11 +295,11 @@ public class PaperTradeStore {
         execution.setQuantity(quantity);
         execution.setSubmittedQuantity(quantity);
         execution.setFilledQuantity(0);
-        execution.setOrderPrice(price);
-        execution.setCurrentPrice(price);
+        execution.setOrderPrice(orderPrice);
+        execution.setCurrentPrice(quote);
         execution.setSubmittedAt(now);
         execution.setOrderExpiresAt(orderExpiry(buy, now));
-        execution.setReservedCash(buy ? Math.multiplyExact((long) quantity, price) : 0);
+        execution.setReservedCash(buy ? Math.multiplyExact((long) quantity, orderPrice) : 0);
         signal.setRejectReason(null);
         signals.save(signal);
         return executions.saveAndFlush(execution);

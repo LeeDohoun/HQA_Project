@@ -7,7 +7,8 @@ broker, and runs this script with HQA_SIM_BASE_URL set; run it from backend/ wit
 
 Each poll is 20 simulated seconds. Prices are set per simulated second, and a limit order fills
 once the price reaches it, except in the closing call auction (15:20-15:30), whose orders are
-matched once, after the close. Every scenario runs twice, with the backend's 20-second schedulers
+matched once, after the close. Like KIS, the broker refuses an order priced off the KRX price
+grid. Every scenario runs twice, with the backend's 20-second schedulers
 aligned with the monitor's polls and 10 seconds apart. Names of scenarios given as arguments run
 alone. Exits 1 when a check fails.
 """
@@ -450,6 +451,26 @@ def closing_auction_exit(name, due):
     return run
 
 
+def off_grid_quotes_trade_on_the_price_grid():
+    # KIS paper quoted 373220 at 406,250 on 2026-10-16, between two valid prices (the unit is 500
+    # there), and refused the entry sent at that price (40030000). This broker refuses it too.
+    run = Run("off_grid_quotes_trade_on_the_price_grid", price=412_000, held=0, cash=10_000_000)
+    published = run.publish([buy_plan("005930", 406_500, stop=396_000, target=430_000, invalidation=398_000)], "cycle-1")
+    check(run, "the plan was published", published.get("submitted") == 1 and not published.get("failed"), published)
+    run.run(lambda t: 412_000 if t < 40 else 406_250 if t < 120 else 395_250, until=220)
+    common(run, 0)
+    buys, stops = run.orders_for(":ENTRY:entry-band:"), run.orders_for(":EXIT:stop:")
+    check(run, "the entry bought at 406,500, the next valid price above the quote",
+          len(buys) == 1 and buys[0]["limit"] == 406_500 and buys[0]["filled"] == buys[0]["qty"] > 0, buys)
+    check(run, "the stop sold all of it at 395,000, the valid price below the quote",
+          len(stops) == 1 and stops[0]["limit"] == 395_000 and stops[0]["filled"] == run.bought() and run.final["held"] == 0,
+          (stops, run.final["held"]))
+    check(run, "each execution keeps its quote next to its order price",
+          [(e["quote"], e["orderPrice"]) for e in run.final["executions"]] == [(406_250, 406_500), (395_250, 395_000)],
+          run.final["executions"])
+    return run
+
+
 def planned_exit_at_closing_auction_start():
     return closing_auction_exit("planned_exit_at_closing_auction_start", 60)    # due 15:20:00
 
@@ -466,7 +487,8 @@ SCENARIOS = [stop_behind_working_reduction, planned_exit_during_working_reductio
              entry_fill_recorded_after_the_stop_crossed, entry_invalidated_before_it_triggers,
              entry_expires_untriggered, working_entry_cancelled_at_expiry, published_plans_trade_end_to_end,
              republished_cycles_replace_plans_in_place, publishing_while_an_order_works_keeps_the_plan,
-             planned_exit_at_closing_auction_start, planned_exit_late_in_closing_auction]
+             planned_exit_at_closing_auction_start, planned_exit_late_in_closing_auction,
+             off_grid_quotes_trade_on_the_price_grid]
 
 
 def main():

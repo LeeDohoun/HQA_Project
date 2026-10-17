@@ -76,7 +76,7 @@ class PaperTradeStorePostgresTest {
         OffsetDateTime now = OffsetDateTime.now();
         TradeSignal plan = store.save(hold(user, "005930", now), account(user, 10, 100_000, 0), now);
         Callable<Object> claim = () -> store.claim(plan.getId(), 1, TradeConditions.TriggerType.EXIT, "stop",
-                account(user, 10, 100_000, 0), 90, 0, 0, null, OffsetDateTime.now());
+                account(user, 10, 100_000, 0), 90, 90, 0, 0, null, OffsetDateTime.now());
         List<Object> outcomes = race(Collections.nCopies(8, claim));
         assertThat(outcomes).filteredOn(TradeSignalExecution.class::isInstance).hasSize(1);
         assertThat(outcomes).filteredOn(Throwable.class::isInstance).hasSize(7).allSatisfy(failure -> {
@@ -97,7 +97,7 @@ class PaperTradeStorePostgresTest {
             plans.add(store.save(buy(user, code, UUID.randomUUID().toString(), now), account(user, 0, 100_000, 25_000), now));
         }
         List<Callable<Object>> claims = plans.stream().<Callable<Object>>map(plan -> () -> store.claim(plan.getId(), 1,
-                TradeConditions.TriggerType.ENTRY, "entry", account(user, 0, 100_000, 25_000), 100, 25_000, 1_000,
+                TradeConditions.TriggerType.ENTRY, "entry", account(user, 0, 100_000, 25_000), 100, 100, 25_000, 1_000,
                 null, OffsetDateTime.now())).toList();
         List<Object> outcomes = race(claims);
         List<TradeSignalExecution> buys = outcomes.stream().filter(TradeSignalExecution.class::isInstance)

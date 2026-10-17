@@ -58,7 +58,7 @@ class PaperTradeLifecycleTest {
                 "pnlRate", 2.0, "sellableQuantity", 10)));
         when(accounts.snapshot("u1")).thenReturn(snapshot);
         TradeSignalExecution intent = execution();
-        when(store.claim(eq("s1"), eq(1), eq(TradeConditions.TriggerType.EXIT), eq("stop"), same(snapshot), eq(90L),
+        when(store.claim(eq("s1"), eq(1), eq(TradeConditions.TriggerType.EXIT), eq("stop"), same(snapshot), eq(90L), eq(90L),
                 eq(0L), eq(0L), isNull(), eq(now))).thenReturn(intent);
         when(kis.paperOrder(anyString(), any(), anyString(), anyString(), anyInt(), anyLong(), anyString()))
                 .thenReturn(Map.of("success", true));
@@ -107,7 +107,7 @@ class PaperTradeLifecycleTest {
         signal.setPlannedExitAt(now.minusSeconds(1));
         TradeSignalExecution intent = execution();
         when(store.claim(eq("s1"), eq(1), eq(TradeConditions.TriggerType.EXIT), eq("planned-exit"), anyMap(),
-                anyLong(), anyLong(), anyLong(), isNull(), eq(now))).thenReturn(intent);
+                anyLong(), anyLong(), anyLong(), anyLong(), isNull(), eq(now))).thenReturn(intent);
         when(kis.paperOrder(anyString(), any(), anyString(), anyString(), anyInt(), anyLong(), anyString()))
                 .thenReturn(Map.of("success", true));
         lifecycle.trigger("s1", request("EXIT", 1, "planned-exit"));
@@ -179,6 +179,69 @@ class PaperTradeLifecycleTest {
         verify(kis).cancelPaperOrder("u1", user.getSecret(), "token", "order1", "org", 10);
     }
 
+    private static TradeConditions.Group entry(TradeConditions.Predicate... all) {
+        return new TradeConditions.Group("entry-band", List.of(all), null);
+    }
+    private static TradeConditions.Predicate price(String operator, double value) {
+        return new TradeConditions.Predicate("current_price", operator, value);
+    }
+
+    @Test
+    void anOffGridQuoteBecomesALimitOnThePriceGridInTheTriggersDirection() {
+        TradeConditions.Group band = entry(price(">=", 400_000), price("<=", 410_000));
+        assertThat(PaperTradeLifecycle.orderPrice(TradeConditions.TriggerType.ENTRY, band, 406_250)).isEqualTo(406_500);
+        assertThat(PaperTradeLifecycle.orderPrice(TradeConditions.TriggerType.ENTRY,
+                entry(price(">=", 400_000), price("<=", 406_300)), 406_250)).isEqualTo(406_000);  // 406,500 is past the band
+        assertThat(PaperTradeLifecycle.orderPrice(TradeConditions.TriggerType.ENTRY,
+                entry(price("<", 406_500)), 406_250)).isEqualTo(406_000);
+        assertThat(PaperTradeLifecycle.orderPrice(TradeConditions.TriggerType.ENTRY,
+                entry(price(">=", 400_000)), 406_250)).isEqualTo(406_500);                       // no upper bound
+        for (TradeConditions.TriggerType sell : List.of(TradeConditions.TriggerType.EXIT, TradeConditions.TriggerType.REDUCE,
+                TradeConditions.TriggerType.INVALIDATION)) {
+            assertThat(PaperTradeLifecycle.orderPrice(sell, band, 406_250)).isEqualTo(406_000);
+        }
+        assertThat(PaperTradeLifecycle.orderPrice(TradeConditions.TriggerType.EXIT, null, 406_250)).isEqualTo(406_000);
+    }
+
+    @Test
+    void anOffGridQuoteSendsTheEntryAtTheNextValidPriceInsideItsBand() throws Exception {
+        signal.setStatus("WAITING_ENTRY");
+        signal.setSignalPrice(406_500L);
+        signal.setEntryValidUntil(now.plusMinutes(5));
+        signal.setConditionPayload(mapper.writeValueAsString(Map.of("schema_version", 2,
+                "entry_conditions", List.of(Map.of("id", "entry-band", "all", List.of(
+                        Map.of("field", "current_price", "operator", ">=", "value", 400_000),
+                        Map.of("field", "current_price", "operator", "<=", "value", 410_000)))),
+                "exit_conditions", List.of(Map.of("id", "stop", "all", List.of(
+                        Map.of("field", "current_price", "operator", "<=", "value", 396_000)))))));
+        when(kis.inquireCurrentPrice("u1", user.getSecret(), "token", "005930")).thenReturn(406_250L);
+        when(kis.paperPurchasingPower("u1", user.getSecret(), "token", "005930", 406_500L))
+                .thenReturn(Map.of("cash", 10_000_000L, "quantity", 24L));
+        TradeSignalExecution intent = execution();
+        intent.setOrderSide("BUY");
+        intent.setSubmittedQuantity(2);
+        when(store.claim(eq("s1"), eq(1), eq(TradeConditions.TriggerType.ENTRY), eq("entry-band"), anyMap(),
+                eq(406_250L), eq(406_500L), eq(10_000_000L), eq(24L), isNull(), eq(now))).thenReturn(intent);
+        when(kis.paperOrder(anyString(), any(), anyString(), anyString(), anyInt(), anyLong(), anyString()))
+                .thenReturn(Map.of("success", true));
+        lifecycle.trigger("s1", request("ENTRY", 1, "entry-band"));
+        verify(kis).paperOrder("u1", user.getSecret(), "token", "005930", 2, 406_500L, "BUY");
+        verify(store, never()).block(anyString(), anyString());
+    }
+
+    @Test
+    void anOffGridQuoteSendsAProtectiveSellAtTheValidPriceBelowIt() {
+        signal.setPlannedExitAt(now.minusSeconds(1));
+        when(kis.inquireCurrentPrice("u1", user.getSecret(), "token", "005930")).thenReturn(406_250L);
+        when(store.claim(eq("s1"), eq(1), eq(TradeConditions.TriggerType.EXIT), eq("planned-exit"), anyMap(),
+                eq(406_250L), eq(406_000L), eq(0L), eq(0L), isNull(), eq(now))).thenReturn(execution());
+        when(kis.paperOrder(anyString(), any(), anyString(), anyString(), anyInt(), anyLong(), anyString()))
+                .thenReturn(Map.of("success", true));
+        lifecycle.trigger("s1", request("EXIT", 1, "planned-exit"));
+        verify(kis).paperOrder("u1", user.getSecret(), "token", "005930", 10, 406_000L, "SELL");
+        verify(store, never()).block(anyString(), anyString());
+    }
+
     /** The lifecycle at this time of the test day, with an account snapshot taken then. */
     private PaperTradeLifecycle at(String time) {
         OffsetDateTime at = OffsetDateTime.parse("2026-09-04T" + time + "+09:00");
@@ -236,7 +299,7 @@ class PaperTradeLifecycleTest {
         filled.setStatus("FILLED");
         filled.setFilledQuantity(5);
         when(executions.findBySignalId("s1")).thenReturn(List.of(filled));
-        when(store.claim(eq("s1"), eq(1), eq(TradeConditions.TriggerType.REDUCE), eq("tp1"), anyMap(), anyLong(),
+        when(store.claim(eq("s1"), eq(1), eq(TradeConditions.TriggerType.REDUCE), eq("tp1"), anyMap(), anyLong(), anyLong(),
                 anyLong(), anyLong(), eq(0.5), eq(now))).thenThrow(new IllegalStateException("TRIGGER_ALREADY_CONSUMED"));
         assertThat(lifecycle.triggerResponse("s1", request("REDUCE", 1, "tp1"))).containsEntry("accepted", false)
                 .containsEntry("deduplicated", true).containsEntry("rejectReason", "TRIGGER_ALREADY_CONSUMED")
@@ -268,7 +331,7 @@ class PaperTradeLifecycleTest {
     void autoTradeOffRefusesEntriesButStillSendsProtectiveExits() {
         user.setAutoTradeEnabled(false);
         TradeSignalExecution intent = execution();
-        when(store.claim(eq("s1"), eq(1), eq(TradeConditions.TriggerType.EXIT), eq("stop"), anyMap(), eq(90L),
+        when(store.claim(eq("s1"), eq(1), eq(TradeConditions.TriggerType.EXIT), eq("stop"), anyMap(), eq(90L), eq(90L),
                 eq(0L), eq(0L), isNull(), eq(now))).thenReturn(intent);
         when(kis.paperOrder(anyString(), any(), anyString(), anyString(), anyInt(), anyLong(), anyString()))
                 .thenReturn(Map.of("success", true));
