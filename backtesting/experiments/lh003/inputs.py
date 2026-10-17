@@ -16,7 +16,7 @@ from src.ingestion.storage import read_rows
 from src.runner.event_evidence import _category
 
 from . import PROMPT_DIR, Refused
-from .calendar import exchange
+from .calendar import exchange, session_close
 from .snapshot import input_view
 from .storage import aware, digest, file_hash, read
 
@@ -30,7 +30,7 @@ def verify_day(data_dir, day, *, at, sync_manifest):
     path = price_path(data_dir, day)
     if not path.is_file():
         raise Refused(f"decision-day KRX data missing: {day}; data_dir={data_dir}")
-    if aware(at) < exchange().session_close(pd.Timestamp(day)).to_pydatetime():
+    if aware(at) < session_close(day):
         raise Refused("decision session has not closed on the pinned XKRX calendar")
     if sync_manifest is None:
         raise Refused("decision trigger requires a data-sync hash manifest")
@@ -38,7 +38,7 @@ def verify_day(data_dir, day, *, at, sync_manifest):
     relative = path.relative_to(data_dir).as_posix()
     checksum = file_hash(path)
     verified_at = aware(manifest["verified_at"])
-    if verified_at > aware(at) or verified_at < exchange().session_close(day).to_pydatetime():
+    if verified_at > aware(at) or verified_at < session_close(day):
         raise Refused("data-sync verification must follow the decision close and precede the trigger")
     if manifest["files"].get(relative) != checksum:
         raise Refused("data-sync hash mismatch for decision-day KRX data")
@@ -59,6 +59,7 @@ def prices_from_view(view, sessions):
     columns = ("open", "high", "low", "close", "volume", "trading_value", "market_cap", "base_price",
                "stock_name", "market", "calendar_status")
     for day in sessions:
+        session_close(day)
         path = price_path(view, day)
         records = {}
         if not path.is_file():
@@ -78,9 +79,10 @@ def prices_from_view(view, sessions):
 
 
 def financials(view, day):
+    conflicts = set()
     listings = (row for stamp in dart_listing.listing_paths(view, end=pd.Timestamp(day) - pd.Timedelta(days=1))
-                for row in dart_listing.listing_rows(view, stamp))
-    dates = FilingDates(listings)
+                for row in dart_listing.listing_rows(view, stamp, conflicts=conflicts))
+    dates = FilingDates(listings, conflicts=conflicts)
     records, annotations = [], []
     for path in sorted((Path(view) / "fundamentals/dart_quarterly").glob("*_110*.jsonl")):
         for row in read_rows(path):
@@ -115,7 +117,11 @@ def disclosures(view, sessions, codes, status):
     counts = {code: dict.fromkeys(shared.CATEGORIES, 0) if complete else None for code in codes}
     if complete:
         for stamp in sorted(covered):
-            for row in dart_listing.listing_rows(view, stamp):
+            conflicts = set()
+            merged = dart_listing.listing_rows(view, stamp, conflicts=conflicts)
+            for row in merged:
+                if row["rcept_no"] in conflicts:
+                    continue
                 if row.get("stock_code") in counts:
                     counts[row["stock_code"]][_category({"title": row["report_nm"], "source_type": "dart"})] += 1
     return {code: {"counts": counts[code], "titles": [], "coverage": {

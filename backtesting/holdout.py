@@ -1,13 +1,17 @@
 """Single-use holdout access with a durable ledger and scoped repeated reads."""
 from __future__ import annotations
 
+import io
 import json
 import os
 from contextvars import ContextVar, Token
+from contextlib import ExitStack
 from datetime import date, datetime, timezone
 from pathlib import Path
 from types import TracebackType
+from typing import TextIO
 
+from backtesting.append_only import TornTailError
 from backtesting.experiment_registry import PROJECT_ROOT, _locked_append, _resolve_path, verify_preregistration
 
 
@@ -26,23 +30,51 @@ def _parse_date(value: str | date) -> date:
 
 
 def _claim(experiment_id: str, root: Path, ledger: Path, start: date, end: date) -> None:
+    from backtesting.experiments import ordering
+
+    with ordering.protected_claim(experiment_id, root):
+        _claim_ordered(experiment_id, root, ledger, start, end)
+
+
+def _claim_ordered(experiment_id: str, root: Path, ledger: Path, start: date, end: date) -> None:
     preregistration = verify_preregistration(experiment_id, root)
     if preregistration.fields["uses_holdout"] is not True:
         raise ValueError("preregistration must declare uses_holdout: true")
     with _locked_append(ledger) as handle:
-        for number, line in enumerate(handle, 1):
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"invalid holdout ledger JSON on line {number}") from exc
-            if not isinstance(row, dict) or not all(key in row for key in
-                                                   ("experiment_id", "recorded_at", "from_date", "to_date")):
-                raise ValueError(f"invalid holdout ledger entry on line {number}")
+        for row in _ledger_rows(handle):
             if row["experiment_id"] == experiment_id:
                 raise ValueError(f"holdout already used by experiment: {experiment_id}")
         handle.write(json.dumps({"experiment_id": experiment_id, "recorded_at": datetime.now(timezone.utc).isoformat(),
                                  "from_date": start.isoformat(), "to_date": end.isoformat()},
                                 ensure_ascii=False, allow_nan=False) + "\n")
+
+
+def _ledger_rows(handle: TextIO) -> list[dict]:
+    text = handle.read()
+    path = Path(getattr(handle, "name", "holdout_ledger.jsonl"))
+    lines = list(io.StringIO(text, newline=""))
+    rows, start = [], 0
+    for number, line in enumerate(lines, 1):
+        final = number == len(lines)
+        reason = None
+        try:
+            line.encode("utf-8")
+            row = json.loads(line)
+        except (UnicodeEncodeError, json.JSONDecodeError):
+            reason = "invalid holdout ledger JSON or UTF-8"
+        else:
+            if not isinstance(row, dict) or not all(key in row for key in
+                                                   ("experiment_id", "recorded_at", "from_date", "to_date")):
+                reason = "invalid holdout ledger entry"
+        if final and not line.endswith("\n"):
+            reason = "append-only file must end with a newline"
+        if reason:
+            if final:
+                raise TornTailError(path, "holdout", text, start, number, reason)
+            raise ValueError(f"{reason} on line {number}")
+        rows.append(row)
+        start += len(line)
+    return rows
 
 
 def guard_period(
@@ -86,15 +118,21 @@ class HoldoutSession:
         self._used = False
         self._pid: int | None = None
         self._token: Token | None = None
+        self._ordering: ExitStack | None = None
 
     def __enter__(self) -> HoldoutSession:
+        from backtesting.experiments import ordering
+
         if self._used:
             raise ValueError("a HoldoutSession cannot be reopened")
-        _claim(self.experiment_id, self.repo_root, self.ledger_path, HOLDOUT_START, HOLDOUT_END)
-        self._used = True
-        self._open = True
-        self._pid = os.getpid()
-        self._token = _SESSIONS.set((*_SESSIONS.get(), self))
+        with ExitStack() as stack:
+            stack.enter_context(ordering.holdout_execution_lock(self.experiment_id, self.repo_root))
+            _claim(self.experiment_id, self.repo_root, self.ledger_path, HOLDOUT_START, HOLDOUT_END)
+            self._used = True
+            self._open = True
+            self._pid = os.getpid()
+            self._token = _SESSIONS.set((*_SESSIONS.get(), self))
+            self._ordering = stack.pop_all()
         return self
 
     def __exit__(
@@ -103,9 +141,13 @@ class HoldoutSession:
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        self._open = False
-        if self._token is not None:
-            _SESSIONS.reset(self._token)
+        try:
+            self._open = False
+            if self._token is not None:
+                _SESSIONS.reset(self._token)
+        finally:
+            if self._ordering is not None:
+                self._ordering.close()
 
     def guard_period(self, from_date: str | date, to_date: str | date) -> None:
         if not self._open or self._pid != os.getpid():

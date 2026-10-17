@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import json
 from collections import Counter
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from .calendar import WEEKS
 from .executions import MULTIPLIERS, portfolio, priced_quotes
 from .storage import attempts, aware, digest, file_hash, now, seal, verified
 from .workflow import load_week
+from .runner import mechanical_data_hashes, verify_pinned
 
 
 def statistics(values, positions=None):
@@ -36,7 +38,7 @@ def random_paths(decisions):
                 raise Refused("valid decision has fewer than 40 sealed candidates")
             paths[decision["index"]] = [rng.choice(candidates, 10, replace=False).tolist() for _ in range(200)]
         else:
-            paths[decision["index"]] = [list(decision["a_codes"]) for _ in range(200)]
+            paths[decision["index"]] = {"same_as": "a", "paths": 200}
     return paths
 
 
@@ -60,7 +62,7 @@ def verdict(result, *, trials):
     return ("fail", failures) if failures else ("pass", ["all LH003 preregistered criteria satisfied"])
 
 
-def _measure(decisions, scenarios, paths, *, loss, trials, retain_executions):
+def _measure(decisions, scenarios, paths, *, loss, trials, retain_executions, execution_sink=None):
     differences = {str(m): [] for m in MULTIPLIERS}
     rows, control_rows, sealed = [], [], {}
     events = 0
@@ -73,14 +75,19 @@ def _measure(decisions, scenarios, paths, *, loss, trials, retain_executions):
             policy = portfolio(quotes, decision["policy_codes"], loss=loss) if decision["valid"] else a
             difference = policy["net"] - a["net"] if decision["valid"] else 0.0
             differences[str(multiplier)].append(difference)
-            controls = [portfolio(quotes, codes, loss=loss) for codes in paths[index]] if retain_executions or multiplier == 1 else None
+            controls = ([portfolio(quotes, codes, loss=loss) for codes in paths[index]]
+                        if decision["valid"] and (retain_executions or multiplier == 1) else None)
             if retain_executions:
-                sealed.setdefault(str(multiplier), []).append({"index": index, "decision_sha256": digest(decision),
-                    "policy": policy, "a": a, "controls": controls, "delisting_loss": loss})
+                record = {"index": index, "decision_sha256": digest(decision),
+                    "policy": policy if decision["valid"] else {"same_as": "a"}, "a": a,
+                    "controls": controls if decision["valid"] else {"same_as": "a", "paths": 200}, "delisting_loss": loss}
+                if execution_sink is not None:
+                    record = execution_sink("delisting_loss" if loss else "main", str(multiplier), index, record)
+                sealed.setdefault(str(multiplier), []).append(record)
             if multiplier != 1:
                 continue
             gross = portfolio(quotes, decision["universe_codes"], loss=loss)["gross"]
-            control_rows.append([control["net"] - a["net"] for control in controls])
+            control_rows.append([control["net"] - a["net"] for control in controls] if decision["valid"] else [0.0] * 200)
             events += policy["count"] if decision["valid"] else 0
             avoid = portfolio(quotes, decision["avoid"], loss=loss) if decision["valid"] else None
             row.update(d=difference, policy_net=policy["net"], a_net=a["net"], universe_gross=gross,
@@ -121,7 +128,7 @@ def _measure(decisions, scenarios, paths, *, loss, trials, retain_executions):
     return result, sealed
 
 
-def evaluate(decisions, raw, *, trials=1, cost_fn=None, retain_executions=False):
+def evaluate(decisions, raw, *, trials=1, cost_fn=None, retain_executions=False, execution_sink=None):
     reasons = []
     if len(decisions) != 52 or any(d is None for d in decisions):
         reasons.append("all 52 fixed decisions and reproducible A records are required")
@@ -147,8 +154,10 @@ def evaluate(decisions, raw, *, trials=1, cost_fn=None, retain_executions=False)
         if not needed.issubset(record["quotes"]):
             return {"verdict": "insufficient", "reasons": ["mandatory quote universe incomplete"], "primary": statistics([])}, {}
         scenarios[decision["index"]] = {str(m): priced_quotes(record, m, cost_fn=cost_fn) for m in MULTIPLIERS}
-    main, executions = _measure(decisions, scenarios, paths, loss=False, trials=trials, retain_executions=retain_executions)
-    sensitivity, loss_executions = _measure(decisions, scenarios, paths, loss=True, trials=trials, retain_executions=retain_executions)
+    main, executions = _measure(decisions, scenarios, paths, loss=False, trials=trials,
+                                retain_executions=retain_executions, execution_sink=execution_sink)
+    sensitivity, loss_executions = _measure(decisions, scenarios, paths, loss=True, trials=trials,
+                                           retain_executions=retain_executions, execution_sink=execution_sink)
     main["delisting_sensitivity"] = sensitivity
     if main["verdict"] != "insufficient" and main["verdict"] != sensitivity["verdict"]:
         main["base_verdict"] = main["verdict"]
@@ -225,13 +234,23 @@ def evaluate_saved(*, root, repo_root=PROJECT_ROOT, clock=now):
         experiment_registry.verify_preregistration(EXPERIMENT_ID, repo_root)
         if aware(clock()) < aware(EVALUATION_AT):
             raise Refused("one final verdict is allowed only after 2027-12-17 00:00 KST")
+        completed = completed_evaluation(repo_root)
+        result_path = root / "evaluation.json"
+        if completed is not None:
+            if not result_path.exists():
+                raise Refused("evaluation already completed in canonical registry; restore only sealed result hash "
+                              + completed["result_sha256"])
+            result = verified(result_path)
+            if digest(result) != completed["result_sha256"]:
+                raise Refused("existing evaluation differs from canonical completed result hash")
+            return result
         start = verified(root / "start.json")
         if start["synthetic"] or (root / "not_started.json").exists():
             raise Refused("synthetic/not_started run cannot be evaluated as LH003")
-        result_path = root / "evaluation.json"
         if result_path.exists():
-            publish_evaluation(root=root, repo_root=repo_root)
+            _publish_evaluation(root=root, repo_root=repo_root)
             return verified(result_path)
+        pins = verify_pinned(root, repo_root)
         decisions = [load_week(root, i) for i in range(52)]
         if any(d and d.get("synthetic") for d in decisions):
             raise Refused("synthetic decision cannot enter the official evaluation")
@@ -242,28 +261,31 @@ def evaluate_saved(*, root, repo_root=PROJECT_ROOT, clock=now):
             preflight_costs(raw)
         trials = experiment_registry.trial_count(EXPERIMENT_ID, repo_root=repo_root) + 1
         try:
-            result, execution_scenarios = evaluate(decisions, raw, trials=trials, retain_executions=True)
-            audit = call_audit(root)
             cost_hash = file_hash(cost_model.__file__)
             raw_hash = digest(raw)
+            execution_hashes = {}
+            def save_week(sensitivity, scenario, index, record):
+                value = {"model_version": "v2", "multiplier": float(scenario), "sensitivity": sensitivity,
+                         "cost_model_source_sha256": cost_hash, "raw_executions_sha256": raw_hash, "record": record}
+                name = f"{sensitivity}/v2_{scenario}/{index:02d}.json"
+                seal(root / "executions" / name, value)
+                execution_hashes[name] = digest(value)
+                return {"file": name, "sha256": digest(value)}
+            result, execution_scenarios = evaluate(decisions, raw, trials=trials, retain_executions=True,
+                                                   execution_sink=save_week)
+            audit = call_audit(root)
             result.update(experiment_id=EXPERIMENT_ID, data_asof=EVALUATION_AT, at=aware(clock()).isoformat(),
                           trial_count=trials, call_audit=audit, reasks=audit["reasks"],
                           decisions_sha256=digest(decisions), raw_executions_sha256=raw_hash, calls_used=audit["used"],
-                          cost_model_source_sha256=cost_hash, execution_record_hashes={})
-            for sensitivity in ("main", "delisting_loss"):
-                for scenario, rows in execution_scenarios.get(sensitivity, {}).items():
-                    value = {"model_version": "v2", "multiplier": float(scenario), "sensitivity": sensitivity,
-                             "cost_model_source_sha256": cost_hash, "raw_executions_sha256": raw_hash, "records": rows}
-                    name = f"{sensitivity}/v2_{scenario}.json"
-                    seal(root / "executions" / name, value)
-                    result["execution_record_hashes"][name] = digest(value)
+                          cost_model_source_sha256=cost_hash, execution_record_hashes=execution_hashes,
+                          implementation_hashes=pins, mechanical_data_hashes=mechanical_data_hashes(repo_root))
             if execution_scenarios:
                 seal(root / "executions/random_draws.json", execution_scenarios["random_draws"])
             metrics = compact(result, path=result_path, trials=trials)
             experiment_registry.encode_metrics(metrics)
             seal(result_path, result)
             # A result-to-registry crash recovers without another statistical trial.
-            publish_evaluation(root=root, repo_root=repo_root)
+            _publish_evaluation(root=root, repo_root=repo_root)
             return result
         except BaseException as exc:
             if not result_path.exists():
@@ -274,17 +296,36 @@ def evaluate_saved(*, root, repo_root=PROJECT_ROOT, clock=now):
             raise
 
 
-def publish_evaluation(*, root, repo_root=PROJECT_ROOT):
-    """Recover a result-to-registry crash without evaluating a second time."""
+def completed_evaluation(repo_root):
     from backtesting.experiments.hc003 import registry_rows
+    completed = [json.loads(r["metrics_json"]) for r in registry_rows(repo_root)
+                 if r["experiment_id"] == EXPERIMENT_ID and r["variant"] == "policy"
+                 and json.loads(r["metrics_json"]).get("stage") == "forward_evaluation"
+                 and r["verdict"] != "evaluation_aborted"
+                 and json.loads(r["metrics_json"]).get("status") != "aborted"]
+    if not completed:
+        return None
+    if len(completed) != 1 or not isinstance(completed[0].get("result_sha256"), str) or len(completed[0]["result_sha256"]) != 64:
+        raise Refused("canonical registry has ambiguous/missing completed evaluation hash; no reevaluation allowed")
+    return completed[0]
+
+
+def publish_evaluation(*, root, repo_root=PROJECT_ROOT):
+    """Recover a result-to-registry crash under the shared execution lock."""
+    with ordering.execution_lock(repo_root):
+        return _publish_evaluation(root=root, repo_root=repo_root)
+
+
+def _publish_evaluation(*, root, repo_root):
     path = Path(root) / "evaluation.json"
     result = verified(path)
     checksum = digest(result)
-    rows = [r for r in registry_rows(repo_root) if r["experiment_id"] == EXPERIMENT_ID]
-    import json
-    if any(json.loads(r["metrics_json"]).get("result_sha256") == checksum for r in rows):
+    completed = completed_evaluation(repo_root)
+    if completed is not None:
+        if completed["result_sha256"] != checksum:
+            raise Refused("canonical evaluation already completed with a different result hash")
         return
-    metrics = {**compact(result, path=path, trials=result["trial_count"] if "trial_count" in result else len(rows) + 1),
+    metrics = {**compact(result, path=path, trials=result["trial_count"]),
                "result_sha256": checksum}
     experiment_registry.record_trial(EXPERIMENT_ID, "policy", metrics, result["verdict"], repo_root=repo_root,
                                      note="LH003 fixed 52-week policy; NW calendar lag 4; no LH002 half-effect condition")

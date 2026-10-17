@@ -46,7 +46,8 @@ def synthetic_archive(root, *, day="2026-10-16", stocks=60):
     calendar = exchange()
     day = pd.Timestamp(day)
     pos = calendar.sessions.get_loc(day)
-    sessions = calendar.sessions[pos - 251:pos + 1]
+    # Include the preceding completed week's 252-day pre-start cycle as well.
+    sessions = calendar.sessions[pos - 271:pos + 1]
     codes = [f"{10 * (index + 1):06d}" for index in range(stocks)]
     for number, session in enumerate(sessions):
         rows = []

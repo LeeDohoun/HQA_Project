@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import math
 from types import SimpleNamespace
+import shutil
 
 import numpy as np
 import pandas as pd
@@ -14,7 +15,17 @@ from backtesting.experiments import hc003
 from backtesting.experiments.lh003 import EVALUATION_AT, EXPERIMENT_ID, Refused
 from backtesting.experiments.lh003 import calendar, evaluate, executions
 from backtesting.experiments.lh003.storage import digest, file_hash, seal, verified
-from test_experiments_lh003_runner import Clock, forbid_real_calls_and_holdout
+from test_experiments_lh003_runner import Clock, forbid_real_calls_and_holdout, verified_calendar
+
+
+def pinned_start(root, repo):
+    from backtesting.experiments.lh003.runner import implementation_files, implementation_hashes, mechanical_data_hashes
+    for path in [*implementation_files(experiment_registry.PROJECT_ROOT),
+                 *(experiment_registry.PROJECT_ROOT / p for p in mechanical_data_hashes(experiment_registry.PROJECT_ROOT))]:
+        target = repo / path.relative_to(experiment_registry.PROJECT_ROOT)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, target)
+    seal(root / "start.json", {"synthetic": False, "implementation_hashes": implementation_hashes(repo)})
 
 
 def fake_cost(price, market, day, adv, side, *, multiplier, model_version):
@@ -184,7 +195,7 @@ def test_random_controls_draw_before_execution_filtering_no_refill_and_invalid_A
     assert executions.portfolio(quoted, paths[0][0])["count"] == 9
     assert evaluate.random_paths(decisions) == paths
     decisions[0].update(valid=False, policy_codes=decisions[0]["a_codes"])
-    assert evaluate.random_paths(decisions)[0] == [decisions[0]["a_codes"]] * 200
+    assert evaluate.random_paths(decisions)[0] == {"same_as": "a", "paths": 200}
 
 
 def test_all52_denominator_invalid_weeks_zero_and_30_valid_300_observations():
@@ -243,7 +254,7 @@ def test_missing_or_reconstructed_A_never_becomes_an_invalid_zero_week():
 
 def test_one_offline_final_verdict_compact_registry_and_idempotent_publication(tmp_path, monkeypatch):
     root = tmp_path / "state"
-    seal(root / "start.json", {"synthetic": False})
+    pinned_start(root, tmp_path)
     monkeypatch.setattr(experiment_registry, "verify_preregistration",
                         lambda *a, **k: SimpleNamespace(commit_hash="fixture", fields={}))
     with pytest.raises(Refused, match="only after"):
@@ -297,7 +308,7 @@ def test_call_audit_counts_first_cause_reasks_and_unfinished_reservations(tmp_pa
 
 def test_aborted_statistical_trial_is_recorded_without_a_final_verdict(tmp_path, monkeypatch):
     root = tmp_path / "state"
-    seal(root / "start.json", {"synthetic": False})
+    pinned_start(root, tmp_path)
     monkeypatch.setattr(experiment_registry, "verify_preregistration",
                         lambda *a, **k: SimpleNamespace(commit_hash="fixture", fields={}))
     def failed(*args, **kwargs): raise ArithmeticError("fake inference failure")
@@ -312,7 +323,7 @@ def test_aborted_statistical_trial_is_recorded_without_a_final_verdict(tmp_path,
 
 def test_2027_cost_preflight_does_not_consume_the_final_evaluation_trial(tmp_path, monkeypatch):
     root = tmp_path / "state"
-    seal(root / "start.json", {"synthetic": False})
+    pinned_start(root, tmp_path)
     decisions, records = experiment()
     for index, record in records.items():
         seal(root / "executions/raw" / f"{index:02d}.json", record)

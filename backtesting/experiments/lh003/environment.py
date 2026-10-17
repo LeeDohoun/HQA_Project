@@ -1,7 +1,6 @@
-"""Section 8 reports: measured fake cycles and explicit unverified operations."""
+"""Section 8 gates, with real synthetic-format calls only on explicit opt-in."""
 from __future__ import annotations
 
-import resource
 import tempfile
 import time
 from pathlib import Path
@@ -10,13 +9,14 @@ import pandas as pd
 
 from backtesting.experiment_registry import PROJECT_ROOT
 
-from . import EXPERIMENT_ID
-from .calendar import description, exchange, latest_completed_week
-from .inputs import price_path, verify_day
-from .runner import implementation_hashes
+from . import EXPERIMENT_ID, Refused
+from .calendar import description, exchange, latest_completed_week, session_close
+from .inputs import price_path, verify_day, prepare, render
+from .runner import LlmRunner, implementation_hashes
+from .resources import ProcessTreeMemory
 from .simulation import fake_cycle, synthetic_archive
 from .snapshot import Snapshot, publish_snapshot
-from .storage import aware, digest, file_hash, now, read, seal
+from .storage import attempts, aware, digest, file_hash, now, read, seal, verified
 from .workflow import machine_id
 
 
@@ -46,20 +46,106 @@ def restart_check(evidence):
             "evidence_sha256": file_hash(evidence), "plan": plan}
 
 
+def synthetic_format_trial(*, root, day, timeout, clock=now, subprocess_call=None):
+    """Six real-path attempts, synthetic inputs only, sharing the durable 320 cap."""
+    root = Path(root)
+    path = root / "synthetic_format_trial.json"
+    identity = {"machine_id": machine_id(), "implementation_hashes": implementation_hashes(PROJECT_ROOT),
+                "call_timeout_seconds": timeout, "fake": subprocess_call is not None}
+    if path.exists():
+        result = verified(path)
+        if result["identity"] != identity:
+            raise Refused("synthetic-format measurement identity changed")
+        return result
+    if any(a.get("synthetic_format") for a in attempts(root)):
+        raise Refused("incomplete synthetic-format measurement; cannot reset or reuse unmeasured calls")
+    started = time.perf_counter()
+    with ProcessTreeMemory() as memory, tempfile.TemporaryDirectory(prefix="lh003-format-", dir="/tmp") as directory:
+        scratch = Path(directory)
+        archive = synthetic_archive(scratch / "source", day=day, stocks=40)
+        manifest = publish_snapshot(archive, scratch / "snapshot", at=clock(), synthetic=True)
+        snapshot = Snapshot(scratch / "snapshot", expected_hash=digest(manifest), allow_synthetic=True)
+        payload = render(prepare(archive, snapshot, day)["bundle"])
+        runner = LlmRunner(root, timeout=timeout, clock=clock, subprocess_call=subprocess_call, format_trial=True)
+        deadline = aware(clock()) + pd.Timedelta(seconds=6 * (timeout + 20) + 60)
+        calls_started = time.perf_counter()
+        calls = [runner.call(payload, repeat, week="synthetic_format_trial", deadline=deadline.isoformat()) for repeat in range(6)]
+        six_call_seconds = time.perf_counter() - calls_started
+    reservations = [a for a in attempts(root) if a.get("synthetic_format")]
+    results = [verified(root / "attempts" / f"{a['number']:06d}.result.json") for a in reservations]
+    result = {"identity": identity, "at": aware(clock()).isoformat(), "synthetic_inputs": True,
+              "real_call_path": not runner.fake, "completed": len(results) == 6 and all(c["valid"] for c in calls),
+              "attempts": len(results), "six_call_seconds": six_call_seconds,
+              "total_seconds": time.perf_counter() - started, "memory": memory.report(),
+              "attempt_numbers": [a["number"] for a in reservations], "payload_sha256": digest(payload)}
+    seal(path, result)
+    return result
+
+
 def verify_environment(*, data_dir, report_path=None, snapshot_path=None, synthetic=False,
-                       sync_manifest=None, restart_evidence=None, timeout=300, clock=now):
+                       sync_manifest=None, restart_evidence=None, timeout=300, clock=now,
+                       real_format_trial=False, state_root=None, subprocess_call=None):
+    with ProcessTreeMemory() as memory:
+        result = _verify_environment(data_dir=data_dir, snapshot_path=snapshot_path, synthetic=synthetic,
+            sync_manifest=sync_manifest, restart_evidence=restart_evidence, timeout=timeout, clock=clock,
+            real_format_trial=real_format_trial, state_root=state_root, subprocess_call=subprocess_call)
+    performance = result["performance"]
+    trial = result["synthetic_format_trial"]
+    performance.update(memory.report())
+    # When the real-input cycle reuses the pre-claim format measurement, this
+    # bound also covers its real parent footprint plus measured CLI descendants.
+    performance["required_capacity_mib"] = max(memory.peak_mib,
+        memory.parent_peak_mib + trial.get("memory", {}).get("children_peak_rss_mib", 0))
+    performance["limit_mib"] = 1536
+    performance["fits"] = (performance["verified"] and trial.get("memory", {}).get("verified") is True
+        and performance["required_capacity_mib"] < performance["limit_mib"]
+        and trial["memory"]["peak_rss_mib"] < performance["limit_mib"])
+    result["passed"] = bool(result["passed"] and performance["fits"])
+    if report_path is not None:
+        seal(report_path, result)
+    return result
+
+
+def _verify_environment(*, data_dir, snapshot_path, synthetic, sync_manifest, restart_evidence, timeout, clock,
+                        real_format_trial, state_root, subprocess_call):
     started, at = time.perf_counter(), aware(clock())
     day = latest_completed_week(at)
     files = sorted(p for p in (Path(data_dir) / "market/krx_daily").glob("*/*.jsonl") if p.stem.isdigit())
+    try:
+        calendar = {"verified": True, **description()}
+    except ValueError as exc:
+        calendar = {"verified": False, "reason": str(exc), "decisions": []}
     result = {"experiment_id": EXPERIMENT_ID, "at": at.isoformat(), "machine_id": machine_id(),
               "synthetic": synthetic, "latest_completed_week": day, "data_dir": str(Path(data_dir).resolve()),
               "implementation_hashes": implementation_hashes(PROJECT_ROOT),
               "archive_latest_day": pd.Timestamp(files[-1].stem).date().isoformat() if files else None,
-              "calendar": description(), "sync": sync_check(data_dir, sync_manifest, at=at, day=day),
+              "calendar": calendar, "sync": sync_check(data_dir, sync_manifest, at=at, day=day),
               "restart_resume": restart_check(restart_evidence), "real_model_calls": 0,
               "sync_manifest_path": str(Path(sync_manifest).resolve()) if sync_manifest is not None else None,
               "restart_evidence_path": str(Path(restart_evidence).resolve()) if restart_evidence is not None else None,
               "synthetic_format_budget_spent": 0, "holdout_opened": False}
+    trial_path = Path(state_root) / "synthetic_format_trial.json" if state_root is not None else None
+    if real_format_trial:
+        if state_root is None:
+            raise Refused("explicit real synthetic-format trial requires a durable --state-dir")
+        before_calls = len(attempts(state_root))
+        trial = synthetic_format_trial(root=state_root, day=day, timeout=timeout, clock=clock,
+                                       subprocess_call=subprocess_call)
+        result["real_model_calls"] = len(attempts(state_root)) - before_calls if trial["real_call_path"] else 0
+    elif trial_path is not None and trial_path.exists():
+        trial = verified(trial_path)
+    else:
+        trial = {"completed": False, "real_call_path": False, "reason": "explicit --real-format-trial not performed"}
+    result["synthetic_format_trial"] = trial
+    result["synthetic_format_budget_spent"] = trial.get("attempts", 0)
+    result["state_root"] = str(Path(state_root).resolve()) if state_root is not None else None
+    identity = trial.get("identity", {})
+    trial_verified = (trial.get("completed") is True and trial.get("real_call_path") is True
+        and trial.get("attempts") == 6 and trial.get("synthetic_inputs") is True
+        and identity.get("machine_id") == result["machine_id"]
+        and identity.get("implementation_hashes") == result["implementation_hashes"]
+        and identity.get("call_timeout_seconds") == timeout and identity.get("fake") is False
+        and aware(trial["at"]) <= aware(clock()) and trial.get("memory", {}).get("verified") is True)
     cycle_started = time.perf_counter()
     with tempfile.TemporaryDirectory(prefix="lh003-synthetic-" if synthetic else "lh003-dry-", dir="/tmp") as temporary:
         scratch = Path(temporary)
@@ -68,7 +154,7 @@ def verify_environment(*, data_dir, report_path=None, snapshot_path=None, synthe
             manifest = publish_snapshot(archive, scratch / "synthetic_snapshot", at=at, synthetic=True)
             snapshot = Snapshot(scratch / "synthetic_snapshot", expected_hash=digest(manifest), allow_synthetic=True)
             # A fake historical clock exercises the deadline logic; it is not an observation.
-            fake_at = exchange().session_close(day) + pd.Timedelta(minutes=1)
+            fake_at = session_close(day) + pd.Timedelta(minutes=1)
             cycle = fake_cycle(data_dir=archive, snapshot=snapshot, day=day, scratch=scratch / "cycle",
                                at=fake_at.to_pydatetime(), timeout=timeout)
             result["cycle"] = {**cycle, "real_data": False, "label": "SYNTHETIC archive + SYNTHETIC H1 snapshot + fake process"}
@@ -84,11 +170,10 @@ def verify_environment(*, data_dir, report_path=None, snapshot_path=None, synthe
         elif not result["sync"]["verified"]:
             result["cycle"] = {"completed": False, "real_data": False, "reason": result["sync"]["reason"]}
         else:
-            from .storage import verified
             manifest = verified(Path(snapshot_path) / "manifest.json")
             snapshot = Snapshot(snapshot_path, expected_hash=digest(manifest))
             # Model calls are faked; the input generation and source checks are real.
-            fake_at = exchange().session_close(day) + pd.Timedelta(minutes=1)
+            fake_at = session_close(day) + pd.Timedelta(minutes=1)
             cycle = fake_cycle(data_dir=data_dir, snapshot=snapshot, day=day, scratch=scratch / "cycle",
                                at=fake_at.to_pydatetime(), timeout=timeout)
             result["cycle"] = {**cycle, "real_data": True, "label": "read-only real archives, fake process"}
@@ -96,24 +181,23 @@ def verify_environment(*, data_dir, report_path=None, snapshot_path=None, synthe
     deadline = pd.Timestamp(day)
     next_day = exchange().sessions[exchange().sessions.get_loc(deadline) + 1]
     finalisation = next_day.tz_localize("Asia/Seoul") + pd.Timedelta(hours=8, minutes=59)
-    trigger = aware(result["sync"]["verified_at"]) if result["sync"]["verified"] else exchange().session_close(day).to_pydatetime()
+    trigger = aware(result["sync"]["verified_at"]) if result["sync"]["verified"] else session_close(day)
     # Two identity checks per attempted call are each capped at ten seconds.
-    worst = cycle_seconds + 6 * (timeout + 2 * min(timeout, 10))
+    worst = cycle_seconds + max(trial.get("six_call_seconds", 0), 6 * (timeout + 2 * min(timeout, 10)))
     available = (finalisation.to_pydatetime() - trigger).total_seconds()
-    scheduled_windows = [(aware(row["deadline"]) - exchange().session_close(row["decision_date"]).to_pydatetime()).total_seconds()
+    scheduled_windows = [(aware(row["deadline"]) - session_close(row["decision_date"])).total_seconds()
                          for row in result["calendar"]["decisions"]]
     result["timing"] = {"call_timeout_seconds": timeout, "attempts": 6, "identity_checks_per_attempt": 2,
                         "worst_case_seconds": worst, "available_seconds": available,
                         "trigger_at": trigger.isoformat(), "deadline": finalisation.isoformat(),
                         "trigger_measured": result["sync"]["verified"],
-                        "minimum_scheduled_window_seconds": min(scheduled_windows),
-                        "fits": worst < min(available, *scheduled_windows)}
+                        "six_call_seconds": trial.get("six_call_seconds"), "real_path_verified": trial_verified,
+                        "minimum_scheduled_window_seconds": min(scheduled_windows) if scheduled_windows else None,
+                        "fits": trial_verified and calendar["verified"] and worst < min(available, *scheduled_windows)}
     result["performance"] = {"runtime_seconds": time.perf_counter() - started, "cycle_seconds": cycle_seconds,
-        "peak_rss_mib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024,
         "cycle_measured": result["cycle"]["completed"], "includes_synthetic_fixture_generation": synthetic}
     result["passed"] = bool(not synthetic and result["cycle"]["completed"] and result["cycle"]["real_data"]
                             and result["timing"]["fits"] and result["sync"]["verified"]
                             and result["restart_resume"]["verified"] and result["sync"]["transfer_route"])
-    if report_path is not None:
-        seal(report_path, result)
+    result["at"] = aware(clock()).isoformat()
     return result

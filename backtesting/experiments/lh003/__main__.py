@@ -11,7 +11,7 @@ from backtesting.experiments import ordering
 from . import EXPERIMENT_DIR
 from .calendar import plan
 from .environment import verify_environment
-from .evaluate import evaluate_saved, publish_evaluation
+from .evaluate import evaluate_saved
 from .executions import record_executions
 from .runner import LlmRunner
 from .storage import aware, now
@@ -34,12 +34,16 @@ def main(argv=None):
     parser.add_argument("--call-timeout", type=float, default=300)
     parser.add_argument("--operator-note")
     parser.add_argument("--synthetic", action="store_true", help="dry checks only: generated fixture outside data/")
+    parser.add_argument("--real-format-trial", action="store_true",
+                        help="explicitly spend six of the eight synthetic-format calls through the real Codex path")
     parser.add_argument("--audit-price-corrections", action="store_true", help="record-executions audit only; never affects verdict")
     args = parser.parse_args(argv)
     if args.call_timeout <= 0:
         parser.error("--call-timeout must be positive")
     if args.audit_price_corrections and not args.record_executions:
         parser.error("--audit-price-corrections requires --record-executions")
+    if args.real_format_trial and (not args.verify_environment or args.state_dir is None):
+        parser.error("--real-format-trial requires --verify-environment and a durable --state-dir")
     if args.synthetic and any((args.seal_holdout, args.run_week, args.record_executions, args.evaluate)):
         parser.error("--synthetic is restricted to dry/environment checks")
     root = args.state_dir if args.state_dir is not None else args.data_dir / "research/lh003"
@@ -70,15 +74,14 @@ def main(argv=None):
                           "audit_only": args.audit_price_corrections}
         elif args.evaluate:
             result = evaluate_saved(root=root)
-            with ordering.execution_lock(PROJECT_ROOT):
-                publish_evaluation(root=root)
         else:
             report = args.report
             if args.verify_environment and report is None:
                 report = EXPERIMENT_DIR / "reports" / ("environment_" + now().strftime("%Y%m%dT%H%M%S%f") + ".json")
             result = verify_environment(data_dir=args.data_dir, report_path=report, snapshot_path=args.snapshot_dir,
                                         synthetic=args.synthetic, sync_manifest=args.sync_manifest,
-                                        restart_evidence=args.restart_evidence, timeout=args.call_timeout)
+                                        restart_evidence=args.restart_evidence, timeout=args.call_timeout,
+                                        real_format_trial=args.real_format_trial, state_root=root)
             if report:
                 result = {**result, "report_file": str(report)}
         print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))

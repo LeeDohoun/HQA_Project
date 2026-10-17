@@ -21,6 +21,20 @@ from test_experiments_lh001 import synthetic, bundle_for
 
 
 @pytest.fixture(autouse=True)
+def verified_calendar(monkeypatch):
+    """Synthetic future notice coverage; never changes production notice data."""
+    from src.runner import trading_calendar as shared
+    monkeypatch.setattr(shared, "CALENDAR_VERIFIED_THROUGH", "2027-12-31")
+    monkeypatch.setattr(shared, "SPECIAL_CLOSES", {**shared.SPECIAL_CLOSES, "2026-11-19": {
+        "close": "2026-11-19T16:30:00+09:00", "source_urls": {"fixture": "synthetic-only"}}})
+    for cached in (shared._calendar, shared.daily_session_close, shared.session_calendar):
+        cached.cache_clear()
+    yield
+    for cached in (shared._calendar, shared.daily_session_close, shared.session_calendar):
+        cached.cache_clear()
+
+
+@pytest.fixture(autouse=True)
 def forbid_real_calls_and_holdout(monkeypatch):
     original = subprocess.run
     def process(command, *args, **kwargs):

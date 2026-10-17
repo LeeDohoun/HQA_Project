@@ -3,25 +3,45 @@ from __future__ import annotations
 
 from datetime import datetime, time
 from pathlib import Path
+from functools import lru_cache
 
 import exchange_calendars as calendars
 import pandas as pd
 
-from . import CALENDAR_VERSION, Refused
+from src.runner import trading_calendar as shared
+
+from . import CALENDAR_VERSION, EVALUATION_AT, Refused
 from .storage import KST, aware, digest, seal, verified
 
 WEEKS = pd.period_range("2026-11-13", "2027-11-05", freq="W-FRI")
 
 
-def exchange():
+def exchange(*, end=None):
     if calendars.__version__ != CALENDAR_VERSION:
         raise Refused(f"LH003 requires exchange-calendars=={CALENDAR_VERSION}, found {calendars.__version__}")
-    return calendars.get_calendar("XKRX", start="2025-01-01", end="2027-12-31")
+    end = shared.CALENDAR_VERIFIED_THROUGH if end is None else end
+    shared.require_verified_calendar(end)
+    return _exchange(end, shared.CALENDAR_VERSION, digest(shared.KRX_ADDITIONAL_CLOSED_DAYS))
+
+
+@lru_cache(maxsize=8)
+def _exchange(end, version, notices_sha256):
+    return shared._ProjectXKRX(start="2025-01-01", end=end)
+
+
+def session_close(day):
+    return shared.daily_session_close(pd.Timestamp(day).date().isoformat())
 
 
 def plan(sessions=None):
-    days = exchange().sessions if sessions is None else pd.DatetimeIndex(sessions)
+    # Verify the entire fixed horizon before producing even the first week.
+    days = exchange(end="2027-12-17").sessions if sessions is None else pd.DatetimeIndex(sessions)
     days = days.tz_localize(None).normalize().sort_values().unique()
+    days = days[days < pd.Timestamp(EVALUATION_AT).tz_localize(None)]
+    horizon = days[(days >= WEEKS[0].start_time) & (days <= pd.Timestamp("2027-12-17"))]
+    for day in horizon:
+        shared.require_verified_calendar(day)
+        shared._check_special_session_coverage(day.date().isoformat())
     rows = []
     for index, week in enumerate(WEEKS):
         weekly = days[days.to_period("W-FRI") == week]
@@ -39,11 +59,11 @@ def plan(sessions=None):
 
 
 def description(sessions=None):
-    days = exchange().sessions if sessions is None else pd.DatetimeIndex(sessions)
+    days = exchange(end="2027-12-17").sessions if sessions is None else pd.DatetimeIndex(sessions)
     days = days.tz_localize(None).normalize().sort_values().unique()
     window = days[(days >= WEEKS[0].start_time) & (days <= WEEKS[-1].end_time)]
     horizon = days[(days >= WEEKS[0].start_time) & (days <= pd.Timestamp("2027-12-17"))]
-    return {"version": f"exchange-calendars:{CALENDAR_VERSION}:XKRX", "decisions": plan(days),
+    return {"version": shared.CALENDAR_VERSION, "decisions": plan(days),
             "sessions": [x.date().isoformat() for x in window],
             "sessions_sha256": digest([x.date().isoformat() for x in window]),
             "execution_sessions_sha256": digest([x.date().isoformat() for x in horizon])}
@@ -67,8 +87,9 @@ def check(root, *, at, operator_note=None, sessions=None):
 
 def latest_completed_week(at):
     at = pd.Timestamp(aware(at))
+    shared.require_verified_calendar(at.date())
     calendar = exchange()
     days = calendar.sessions
     weekly = pd.Series(days, index=days.to_period("W-FRI")).groupby(level=0).max()
-    eligible = [day for day in weekly if calendar.session_close(day) <= at]
+    eligible = [day for day in weekly if day <= at.tz_localize(None).normalize() and session_close(day) <= at]
     return eligible[-1].date().isoformat()

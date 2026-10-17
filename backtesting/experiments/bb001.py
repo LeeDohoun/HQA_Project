@@ -791,7 +791,7 @@ def run_experiment(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT, pr
     payload = {"experiment_id": EXPERIMENT_ID, "selected_variant": "d21", "verdict": primary["verdict"], "reasons": primary["reasons"],
         "prereg_commit": registration.commit_hash, "variants": variants, "delisting_sensitivity": sensitivity,
         "counts": {"listings": listing_counts, "construction": construction, "variants": filtering},
-        "coverage": {"listings": dart.plan(data_dir)["listing_coverage"], "calendar_version": f"exchange-calendars:{hc001.calendars.__version__}:XKRX"},
+        "coverage": {"listings": dart.plan(data_dir)["listing_coverage"], "calendar_version": hc001.trading_calendar.CALENDAR_VERSION},
         "source_hashes": all_hashes, "listing_version": version,
         "supplied_price_frame_sha256": supplied,
         "interpretations": INTERPRETATIONS, "assumptions": ASSUMPTIONS,

@@ -1,0 +1,21 @@
+{
+  "changed_at": "2026-10-17T15:35:04.639877+00:00",
+  "changes": {
+    "src/forward/fw001.py": {
+      "after": "93a1320d3b7dede99b5953614b5a0d19f9b8d005b3c445806bc9022f676bb2c1",
+      "before": "0841af12304c930dd3e379d41cb6ed77a803756158f73ed98d0c7dfc42b2b58d"
+    }
+  },
+  "implementation_changes": {
+    "tests/test_experiments_fw001.py": {
+      "after": "f9d6dd7b7e6a6c08457c7a8fb64a8f866e47bdae0c12bf7970a60487707d8982",
+      "before": "af32e0204bf7f524b3c40d4b83339ed5a678430c7966ea9da466f68bbc4cd3a1"
+    },
+    "tests/test_forward_fw001.py": {
+      "after": "e7e7fd93aee40be0c8a2b4f69f8d9bfee901a28db33bfc5025b96d2506a553be",
+      "before": "878510378d9c68cc72e1199493ec0c17067e106b5efbf4a358559b61220ba9c3"
+    }
+  },
+  "previous_manifest_sha256": "fcc79d783063e6ee1d63cba27864cdaea1814bd8bced4b12d5a0d6f0656f4172",
+  "reason": "FW001 third narrow fix: preserve late and precision-boundary completion evidence as rejected observations; record section 6 missing/no-trade transitions, resume following months and final evaluation, and keep corrupt proof failures loud"
+}

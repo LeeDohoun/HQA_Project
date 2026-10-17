@@ -341,7 +341,7 @@ def _publish(directory: Path, year: int, report: str, records: list[dict]) -> in
 def backfill(from_year: int, to_year: int, *, execute=False, max_requests=DEFAULT_MAX_REQUESTS,
              data_dir=DEFAULT_DATA_DIR, api_key=None, session=None, clock=None,
              corp_codes_path=DEFAULT_CORP_CODES, listing_dir=None, universe_source=None,
-             retry_batches=None, batch_offset=0) -> dict:
+             retry_batches=None, batch_offset=0, record_clock=None) -> dict:
     """Print a read-only plan by default; execution reserves each KST-day attempt.
 
     Completed batches, including 013, are skipped. Batch identity hashes its
@@ -393,11 +393,19 @@ def backfill(from_year: int, to_year: int, *, execute=False, max_requests=DEFAUL
     if not isinstance(api_key, str) or not api_key.strip():
         raise ValueError("DART API key is required for execution")
     now = clock if clock is not None else lambda: datetime.now(KST)
+    status_clock = now if record_clock is None else record_clock
     owned_session = session is None
     summary = {**plan, "status": "ok", "dry_run": False, "requests_made": 0, "records_saved": 0,
                "conflicting_metrics": 0, "skipped_rows": {}, "skipped_row_samples": {}}
     with file_lock(directory / ".backfill.lock"):
         completed, all_skipped = _state(directory)
+        batch_status = _read_json(directory / "_batch_status.json", {})
+        for year, report, batch, key in jobs:
+            if key not in batch_status:
+                batch_status[key] = {"last_success_at": None, "last_attempt_at": None,
+                    "pending_targets": 0 if key in completed else len(batch),
+                    "corp_codes": batch, "year": year, "report": report}
+        _write_json(directory / "_batch_status.json", batch_status)
         quota = _quota(directory)
         if retry_batches in ([], ["all"]):
             retry = completed & job_keys
@@ -405,7 +413,8 @@ def backfill(from_year: int, to_year: int, *, execute=False, max_requests=DEFAUL
             for year, report, batch, key in jobs:
                 if key in completed and key not in retry:
                     continue
-                day = _kst(now()).date().isoformat()
+                attempted_at = _kst(now())
+                day = attempted_at.date().isoformat()
                 counter = quota["days"].setdefault(day, {"requests": 0, "provider_limited": False})
                 if counter["provider_limited"]:
                     raise _QuotaReached("provider_status_020")
@@ -413,6 +422,11 @@ def backfill(from_year: int, to_year: int, *, execute=False, max_requests=DEFAUL
                     raise _QuotaReached("daily_request_budget")
                 counter["requests"] += 1
                 _write_json(directory / "_quota.json", quota)
+                previous_success = batch_status.get(key, {}).get("last_success_at")
+                batch_status[key] = {"last_success_at": previous_success,
+                    "last_attempt_at": attempted_at.isoformat(), "pending_targets": len(batch),
+                    "corp_codes": batch, "year": year, "report": report}
+                _write_json(directory / "_batch_status.json", batch_status)
                 summary["requests_made"] += 1
                 try:
                     if session is None:
@@ -442,6 +456,8 @@ def backfill(from_year: int, to_year: int, *, execute=False, max_requests=DEFAUL
                     all_skipped.discard(key)
                 _write_json(directory / "_state.json", {"completed_batches": sorted(completed),
                     "batches_with_all_rows_skipped": sorted(all_skipped)})
+                batch_status[key].update(last_success_at=_kst(status_clock()).isoformat(), pending_targets=0)
+                _write_json(directory / "_batch_status.json", batch_status)
         except _QuotaReached as error:
             summary.update(status="quota_reached", reason=str(error))
         except DartAPIError as error:

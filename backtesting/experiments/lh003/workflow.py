@@ -37,24 +37,42 @@ def claimed(repo_root):
 def not_started(root, reason, *, repo_root, at):
     path = Path(root) / "not_started.json"
     if path.exists():
-        return verified(path)
-    value = {"experiment_id": EXPERIMENT_ID, "verdict": "not_started", "reason": reason,
-             "at": aware(at).isoformat(), "holdout_claimed": claimed(repo_root)}
-    seal(path, value)
-    experiment_registry.record_trial(EXPERIMENT_ID, "policy", {"stage": "start", **value}, "not_started",
-                                     repo_root=repo_root, note="Fixed LH003 schedule; cannot restart under this ID")
+        value = verified(path)
+    else:
+        value = {"experiment_id": EXPERIMENT_ID, "verdict": "not_started", "reason": reason,
+                 "at": aware(at).isoformat(), "holdout_claimed": claimed(repo_root)}
+        seal(path, value)
+    import json
+    rows = [r for r in hc003.registry_rows(repo_root)
+            if r["experiment_id"] == EXPERIMENT_ID and r["verdict"] == "not_started"]
+    checksum = digest(value)
+    if rows:
+        if len(rows) != 1 or json.loads(rows[0]["metrics_json"]).get("result_sha256") != checksum:
+            raise Refused("not_started registry row differs from the existing sealed hash")
+    else:
+        experiment_registry.record_trial(EXPERIMENT_ID, "policy", {"stage": "start", **value, "result_sha256": checksum},
+                                         "not_started", repo_root=repo_root,
+                                         note="Fixed LH003 schedule; cannot restart under this ID")
     return value
 
 
 def validate_environment(path, *, at, identity, require_cycle=True):
+    from .runner import implementation_hashes
     report = verified(path)
     cycle_missing = require_cycle and (report.get("passed") is not True or report.get("synthetic") is not False
             or report.get("cycle", {}).get("real_data") is not True or report.get("cycle", {}).get("completed") is not True)
     if (report.get("experiment_id") != EXPERIMENT_ID or cycle_missing
+            or report.get("implementation_hashes") != implementation_hashes(PROJECT_ROOT)
             or report.get("machine_id") != identity
             or report.get("timing", {}).get("fits") is not True
+            or report.get("timing", {}).get("real_path_verified") is not True
+            or report.get("performance", {}).get("includes_children") is not True
+            or report.get("performance", {}).get("fits") is not True
+            or report.get("synthetic_format_trial", {}).get("real_call_path") is not True
+            or report.get("synthetic_format_trial", {}).get("completed") is not True
             or report.get("restart_resume", {}).get("verified") is not True
             or report.get("sync", {}).get("verified") is not True
+            or not report.get("sync", {}).get("transfer_route")
             or aware(report["at"]) > aware(at)):
         raise Refused("section 8 environment verification is incomplete, synthetic, stale in identity, or from the future")
     return report
@@ -69,25 +87,41 @@ def seal_holdout(*, data_dir, root, environment_report, snapshot_path=None, repo
         at = aware(clock())
         registration = experiment_registry.verify_preregistration(EXPERIMENT_ID, repo_root)
         if (root / "not_started.json").exists():
+            not_started(root, "recover sealed not_started", repo_root=repo_root, at=at)
             raise Refused("LH003 is not_started and cannot be restarted")
         if (root / "start.json").exists():
             raise Refused("LH003 was already sealed; never reopen its HoldoutSession")
         if claimed(repo_root):
             not_started(root, "claim exists without a completed start seal", repo_root=repo_root, at=at)
             raise Refused("LH003 claim was consumed; never reopen")
-        first_close = calendar.exchange().session_close(calendar.plan()[0]["decision_date"]).to_pydatetime()
+        # This first deadline is known even while the full 2027 calendar is blocked.
+        first_close = calendar.session_close("2026-11-13")
         try:
             if at >= first_close:
                 raise Refused("fixed start was missed; new dates require a new experiment ID")
+            calendar.description()
             releases = ordering.lh003_releases(hc003.registry_rows(repo_root), repo_root)
             report = validate_environment(environment_report, at=at, identity=machine_id(), require_cycle=False)
             if verify_cycle is None and (not report.get("sync_manifest_path") or not report.get("restart_evidence_path")):
                 raise Refused("environment preflight must name its sync manifest and restart evidence")
+            if verify_cycle is None and report.get("state_root") != str(root.resolve()):
+                raise Refused("environment format-trial calls must share the LH003 state directory and budget")
             if snapshot_path.exists():
                 raise Refused("snapshot path already exists before claim")
             # Inventory is metadata only. No protected bytes are read pre-claim.
             from .snapshot import inventory
             inventory(data_dir)
+            from src.runner.trading_calendar import preflight_price_sessions
+            preflight_price_sessions(data_dir, "2026-01-01", "2026-06-30")
+            # The post-seal measurement also needs its complete 252-session
+            # window, including non-H1 history. Check those files before claim.
+            cycle_day = pd.Timestamp(calendar.latest_completed_week(at))
+            days = calendar.exchange().sessions
+            position = days.get_loc(cycle_day)
+            window = days[position - 251:position + 1]
+            if len(window) != 252:
+                raise Refused("environment cycle requires 252 price sessions before claim")
+            preflight_price_sessions(data_dir, window[0], window[-1])
         except (ValueError, OSError) as exc:
             if at >= first_close:
                 not_started(root, str(exc), repo_root=repo_root, at=at)
@@ -116,7 +150,7 @@ def seal_holdout(*, data_dir, root, environment_report, snapshot_path=None, repo
                 report_path = root / "environment_at_start.json"
                 final_report = verify_cycle(data_dir=data_dir, snapshot_path=snapshot_path,
                     sync_manifest=report.get("sync_manifest_path"), restart_evidence=report.get("restart_evidence_path"),
-                    timeout=report["timing"]["call_timeout_seconds"], clock=clock)
+                    timeout=report["timing"]["call_timeout_seconds"], clock=clock, state_root=root)
                 seal(report_path, final_report)
                 report = validate_environment(report_path, at=clock(), identity=machine_id())
             frozen_calendar = calendar.check(root, at=at)
@@ -127,6 +161,9 @@ def seal_holdout(*, data_dir, root, environment_report, snapshot_path=None, repo
                      "calendar_sha256": digest(frozen_calendar), "environment_sha256": digest(report),
                      "call_timeout_seconds": report["timing"]["call_timeout_seconds"],
                      "research_ordering": releases, "prereg_commit": registration.commit_hash, "synthetic": False}
+            from .runner import implementation_hashes, mechanical_data_hashes
+            value.update(implementation_hashes=implementation_hashes(repo_root),
+                         mechanical_data_hashes=mechanical_data_hashes(repo_root))
             seal(root / "start.json", value)
             return value
         except BaseException as exc:
@@ -197,9 +234,10 @@ def run_week(*, data_dir, root, decision_day, sync_manifest, runner, repo_root=P
         raise Refused("fake calls are restricted to scratch simulations, never official observations")
     with ordering.execution_lock(repo_root):
         if (root / "not_started.json").exists():
+            not_started(root, "recover sealed not_started", repo_root=repo_root, at=clock())
             raise Refused("LH003 is not_started")
         if not (root / "start.json").exists():
-            if aware(clock()) >= calendar.exchange().session_close(calendar.plan()[0]["decision_date"]).to_pydatetime() and not simulation:
+            if aware(clock()) >= calendar.session_close("2026-11-13") and not simulation:
                 not_started(root, "no successful pre-start seal/environment gates", repo_root=repo_root, at=clock())
             raise Refused("LH003 has no successful start seal")
         start = verified(root / "start.json")

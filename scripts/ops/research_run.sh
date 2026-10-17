@@ -5,9 +5,10 @@ fail() { printf '%s\n' "$*" >&2; exit 1; }
 checkout=/srv/hqa-research
 [[ $(id -u) == 0 ]] || fail 'Run as root (sudo).'
 if [[ "$#" -eq 0 || "$1" == --help || "$1" == -h ]]; then
-    printf '%s\n' 'Usage: research_run.sh <hc002|hc003|av001|ev001|hi001|r001|hf001|bb001|lh001|lh002|lh003> [args...]' \
+    printf '%s\n' 'Usage: research_run.sh <hc002|hc003|av001|av002|ev001|hi001|r001|hf001|bb001|lh001|lh002|lh003> [args...]' \
         '       research_run.sh status' \
-        'Runs with --execute except LH003, which preserves explicit flags and defaults to a dry run.' \
+        'Runs with --execute except AV002 and LH003, which preserve explicit flags and default to a dry run.' \
+        'For AV002 use --holdout for its recovery attempt.' \
         'For LH002 use: lh001 screening --experiment LH002'
     exit 0
 fi
@@ -27,9 +28,9 @@ if [[ "$1" == status ]]; then
 fi
 module=$1
 shift
-case "$module" in hc002|hc003|av001|ev001|hi001|r001|hf001|bb001|lh001|lh002|lh003) ;; *) fail 'Unknown experiment module.' ;; esac
+case "$module" in hc002|hc003|av001|av002|ev001|hi001|r001|hf001|bb001|lh001|lh002|lh003) ;; *) fail 'Unknown experiment module.' ;; esac
 mode_args=(--execute)
-if [[ "$module" == lh003 ]]; then mode_args=(); fi
+if [[ "$module" == av002 || "$module" == lh003 ]]; then mode_args=(); fi
 if [[ "$module" == av001 || "$module" == ev001 ]]; then
     for argument in "$@"; do
         if [[ "$argument" == --holdout || "$argument" == --dry-run ]]; then mode_args=(); fi
@@ -50,6 +51,8 @@ dirty=$(runuser -u hqares -- env -i HOME="$checkout" PATH=/usr/bin:/bin \
     ':(exclude)data' \
     ':(glob,exclude)research/experiments/*/results/**' \
     ':(glob,exclude)research/experiments/*/diagnostics/**' \
+    ':(glob,exclude)research/experiments/AV002_avoidance_holdout_recovery/rehearsal/**' \
+    ':(glob,exclude)research/experiments/AV002_avoidance_holdout_recovery/code_manifests/**' \
     ':(exclude)research/experiments/registry.csv' \
     ':(exclude)research/experiments/holdout_ledger.jsonl')
 [[ -z "$dirty" ]] || fail "Research checkout is dirty outside result/registry/ledger/data paths: $dirty"

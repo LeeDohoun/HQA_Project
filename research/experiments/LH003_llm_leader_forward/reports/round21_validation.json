@@ -1,0 +1,452 @@
+{
+  "scope": "LH003 astra round 21; offline synthetic/fake validation only",
+  "worktree": "/home/are01/src/HQA_Project/HQA_lh003",
+  "source_head": "9b657ad5303baa55c920151a2d57725f8cf06420",
+  "fixture_merge_parent": "ea3583936d39b07a4daa64abecf7a27eb9fb8295",
+  "preregistration_sha256": "dc1ee3b669e515dc92b504eaf5d88061281b079f3c7f4fc5d7194dd5c37d190f",
+  "algorithm_hashes": {
+    "backtesting/__init__.py": "e51bcc748c0d6464f399236cf5c794144776f8981bdbedde74ebe18c2ce9e2af",
+    "backtesting/append_only.py": "30be0fee09d89dc5e6b21f8871b54ffddbe51a991bc9a035e34d8290ad73a662",
+    "backtesting/capacity.py": "c27482cc766fc6bb09889dd4d8ea9b319458ff97ffce86f3774ee615338bc4d1",
+    "backtesting/cost_model.py": "afed5ab3af5e892f36d8f0255de54979150f688db6ad3af8e28c147e74841ca9",
+    "backtesting/experiment_registry.py": "875d20735698091060653294e5a182552cef78d98b6d6b4e6ca13299bfa9be9b",
+    "backtesting/experiments/__init__.py": "b5b4d25e9438441f360a63f342ed319c2251e7f116e2070f4d91dfe49230bb79",
+    "backtesting/experiments/av001.py": "be99accfc4016f0bcca57da51b4b4f4e6dc4fe42bc77c7cb598a5ed89f32509a",
+    "backtesting/experiments/av002.py": "270b5b74aeba9bfca73b2e78c130cc586ad6355d29101bf1626b8d56e2671530",
+    "backtesting/experiments/common.py": "e016a29278d3f2d0d79ff66c04e2940496beb440c0005d27a86b7a64b8acbdcf",
+    "backtesting/experiments/d001.py": "7d08203e2906061bd28600f73b058cc4b15ddea7dad12c9fb2eb2002fdae8d59",
+    "backtesting/experiments/hc001.py": "90df5fc2e8efd868f6466467c1603d1db6361351d383e2d91aed49b97c161f90",
+    "backtesting/experiments/hc002.py": "e368edd21f0021713f29793f28233087f322064e06a570a6dd74a264db521069",
+    "backtesting/experiments/hc003.py": "102a1cc2fb9711e91fa3f7ad30ccf0daea6b40ce6d62738018fe85238ed720cb",
+    "backtesting/experiments/hf001.py": "3d2a11e1e2236e539ae37da816e8229960bcf08eacf3af2ae1388cdc36a5cb84",
+    "backtesting/experiments/lh001/__init__.py": "c283313e5ef7a9db5e6caf9f300b389e1118c524e9e039cc2d884a7b30a69125",
+    "backtesting/experiments/lh001/__main__.py": "0647893c4e81e891481b8f3337b673160f4c084165c100a845a2513e884204a8",
+    "backtesting/experiments/lh001/arms.py": "6b76c846700cf2f0ad50511d04e193ae4711a745de67e58634288c65890995a7",
+    "backtesting/experiments/lh001/config.py": "5951ceefc4523c031015824ba3584591016dd5d5eeadf85b92964af38d9f71ff",
+    "backtesting/experiments/lh001/evaluate.py": "63fba23f6bef7f4234b56721cdd46e0fbaf5414ceb1ba636e6b5359d8b711ea1",
+    "backtesting/experiments/lh001/inputs.py": "46722ca880d56e26158dc9e9b1df20a991d31667b55f6e18e82e54d834d2f3a0",
+    "backtesting/experiments/lh001/probe.py": "6ec478453a7954b0e44bf21a5ac08d9a840d40fc26339b7dbaf32785f1ee1fbc",
+    "backtesting/experiments/lh001/probe_v2.py": "1caf92fff771d18cbd500f60d66c2fbfe9aac151f3c3110545127a38dcc565d6",
+    "backtesting/experiments/lh001/runner.py": "ec6e2c6900f215b9d362b5674c986689f1c323d6ff9caf727cc184d2857dbc7a",
+    "backtesting/experiments/lh003/__init__.py": "70218414156d077a97779322b4f00281bb28b21a6c444c378b5484c3768d604e",
+    "backtesting/experiments/lh003/__main__.py": "a033c07dadee6acca8f65eabab2c6113771077f28bc549a402b81fda82729ee7",
+    "backtesting/experiments/lh003/calendar.py": "d1089aba9bb06d82f9e398b0afe6408525816078e4e32e34375e4556a8f42243",
+    "backtesting/experiments/lh003/environment.py": "4cc633dca510c870eca86fa10c5744c5a6ddbe6796a3328326c0d0dcdc891b93",
+    "backtesting/experiments/lh003/evaluate.py": "b2e11f6a8c60415ec09effeda462fd851547a6eb58d73f3de14aeb37ecc34b65",
+    "backtesting/experiments/lh003/executions.py": "12d9d62a5d807e6db8b2853cdb32304c0be8107cdb4ac4542bdea45ad8360db1",
+    "backtesting/experiments/lh003/inputs.py": "aed12cfc612e5ec578fff965b1b3c995c73f7562ea258c380df70a3639903947",
+    "backtesting/experiments/lh003/resources.py": "19c7af45e1be76b5a393d6cdbcea2d65e0a34b7516aef088c021043e07ba73fd",
+    "backtesting/experiments/lh003/runner.py": "98da3ad359dbf577b7689e9b6019bafa32c2324a3fd0a38c1905a8ffee4465f2",
+    "backtesting/experiments/lh003/simulation.py": "0c449c17acf12d83df5af28878b6df3d8c16d0f419c10f2e4a43a2880885e4cd",
+    "backtesting/experiments/lh003/snapshot.py": "3dece743baae19aa3d16641f168017e1ea59171cbc951f8983887ae636b03bb9",
+    "backtesting/experiments/lh003/storage.py": "89f71811f954dbd73e654e7a2508bd9cc85d908f0785c511d3fc69c566c70c47",
+    "backtesting/experiments/lh003/workflow.py": "c72a54b2c731d9e70e4e0616fb1b70e5bb4330996a2a3160c2fe08efba71ea87",
+    "backtesting/experiments/ordering.py": "c06b94fd40703fa48b2b3532ec8a58d30414c276bf0ccacc07a500dbc1161e5d",
+    "backtesting/holdout.py": "5943eb45c2967b8a42fb3966342b9fec31c482bde03caa446a1c90f49931ac1d",
+    "backtesting/signal_eval.py": "493dfe34b20f6e35a3e1f00d432e3d716eea841f7f8846c40f2565f14c97fbd8",
+    "research/experiments/LH003_llm_leader_forward/prompts/v3_c_num.schema.json": "36286e92c595447b5b01ec7ad705a89c7db2c53013425953fef44e727d995b4e",
+    "research/experiments/LH003_llm_leader_forward/prompts/v3_c_num.txt": "9d8d02d267b13eec7ea859a03b02bacda32d54804d9a0e79a384f41912d6b35b",
+    "research/experiments/LH003_llm_leader_forward/prompts/v3_common.txt": "ec61709943721f68936557de630b185fb60456a59f55a5f65ea011dbce7f5417",
+    "research/experiments/LH003_llm_leader_forward/prompts/v3_reask.txt": "2e24e184c38e8c647c690f7d04ddada13e966492abee30f90e235571c309abb0",
+    "scripts/__init__.py": "0fbb8bbfb6f9446af145f95496d59544b41033dd2925a028f4c096d2cea371cc",
+    "scripts/ops/research_run.sh": "e4e754266198293625682e631038a1bda5d8d735d59c310393688ed3b6de2e5d",
+    "src/__init__.py": "e799333dc816c273ba63b8d1289855b4622bb83c19a33096da3b5360907ac30e",
+    "src/ingestion/__init__.py": "bc31ef315393ef375e134ede43181f6e2ab92af39fec973b0ea634b28cf7efd0",
+    "src/ingestion/dart_filing_dates.py": "41ae526cdac47e1f694f4ca905d46cb00e980109d48202818540f91775bfca6a",
+    "src/ingestion/dart_financial_date_rules.py": "d0fce8a2f1872f4594e49212b0a13ef7c3989ed5317ddf06638e04eb6326ae03",
+    "src/ingestion/dart_financials.py": "d7166256edea400aae205da943361de90a5930b18c659366fb3a426da7492288",
+    "src/ingestion/dart_listing.py": "cc194ad29bceb0be8a3beb29f2624544a6f30de310c1eaf3b39cf3b771fe4a31",
+    "src/ingestion/dart_quarterly.py": "f973765d8998a5acc25634baf207dbd813e4d653e661f188ff9b645d52d7c1b8",
+    "src/ingestion/incremental_versions.py": "9d8b0cc9a253b060997c406dedcc050324da583e35f30b30f8d9fa37dc77061f",
+    "src/ingestion/krx_benchmarks.py": "cbfebd4112265ef9c88f8d66806cd28739da1c1e051bfc5d8a144d918416e5e6",
+    "src/ingestion/storage.py": "ea2301b9f6d0b1f1fcc5c61ec2670684c02534f384b53e156b6e0657e98b261f",
+    "src/research/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "src/research/industry_index.py": "2e71754df23970a271460aab9eb6baf43e8d9316d5057638c1b95f80f33e3b09",
+    "src/research/industry_map.py": "77d9792739609e87ee663a8e8dca2d49ef5e1798e71ba895d8a7d69b4995864b",
+    "src/research/market_regimes.py": "443aa55ab5b60e1e90013f16afb6d68b584a6efb162a2c9d5ea9132cae2bc650",
+    "src/runner/__init__.py": "f460a34a643483a5e0ae051775a0c02a42140c201a8b79ca9f2191b760690d0b",
+    "src/runner/event_evidence.py": "9a515a5aa057630d61da90a21302e680445b6d42f13c60461da598d4f1800304",
+    "src/runner/trading_calendar.py": "6237032c7fc72ffe715a518f465059070a37f6abf89e31b73062666de607e8fd",
+    "src/utils/__init__.py": "f6efc390a2b6b4a6ce05cae7a14d703e137150daad989bd2126e0a420ff88f25",
+    "src/utils/stock_codes.py": "fa037cc9495763beecb268462936bd581483c48b90b319ea738657d409962b8f"
+  },
+  "mechanical_data_hashes": {
+    "backtesting/statutory_rates.py": "f380293e05c14b43a8ae277d6ff842ba08ec967feecb7c29b5699a20d6f29cf5",
+    "src/krx_calendar_data.py": "e595db4118c8c8972b7674f81698d89a093ed005b4bc738fe0ec8edcd60e7395"
+  },
+  "changed_paths": [
+    "backtesting/cost_model.py",
+    "backtesting/experiments/lh003/__main__.py",
+    "backtesting/experiments/lh003/calendar.py",
+    "backtesting/experiments/lh003/environment.py",
+    "backtesting/experiments/lh003/evaluate.py",
+    "backtesting/experiments/lh003/executions.py",
+    "backtesting/experiments/lh003/inputs.py",
+    "backtesting/experiments/lh003/resources.py",
+    "backtesting/experiments/lh003/runner.py",
+    "backtesting/experiments/lh003/simulation.py",
+    "backtesting/experiments/lh003/snapshot.py",
+    "backtesting/experiments/lh003/workflow.py",
+    "backtesting/experiments/ordering.py",
+    "backtesting/statutory_rates.py",
+    "research/experiments/FW001_forward_replication/deployment_manifest.json",
+    "research/experiments/FW001_forward_replication/manifest_changes/ca1f9c3a6dd85a9814113947487f6b614bc6e8cfc6a4522ac872156685204cc1.json",
+    "research/experiments/FW001_forward_replication/manifest_history/2d9b62fa23a651716b9738e43fd8a174656696dcb10b4d5e5ab6c9b7634ae8aa.json",
+    "research/experiments/LH003_llm_leader_forward/IMPLEMENTATION_BLOCKERS.md",
+    "research/experiments/LH003_llm_leader_forward/implementation_notes.md",
+    "research/experiments/LH003_llm_leader_forward/validation_report.md",
+    "scripts/ops/collector_manifest.py",
+    "scripts/ops/push_collector_code.sh",
+    "scripts/ops/research_run.sh",
+    "src/ingestion/dart_quarterly.py",
+    "src/ingestion/incremental_versions.py",
+    "src/ingestion/krx_benchmarks.py",
+    "src/krx_calendar_data.py",
+    "src/runner/trading_calendar.py",
+    "tests/test_dart_quarterly.py",
+    "tests/test_experiments_av002.py",
+    "tests/test_experiments_lh003_evaluate.py",
+    "tests/test_experiments_lh003_round21.py",
+    "tests/test_experiments_lh003_runner.py",
+    "tests/test_experiments_lh003_snapshot.py"
+  ],
+  "checks": {
+    "conflict_markers_absent": true,
+    "main_ordering_functions_preserved": 11,
+    "extracted_notice_and_tax_data_unchanged": true,
+    "git_diff_check": true,
+    "ops_shell_syntax": true,
+    "collector_manifest_implementation": true,
+    "final_algorithm_and_data_hashes_match": true,
+    "validation_harness_matches_executed_files": true,
+    "generated_empty_read_side_registry_lock_removed": true
+  },
+  "real_model_calls": 0,
+  "network_calls": 0,
+  "production_data_or_ledger_writes": 0,
+  "main_checkout_writes": 0,
+  "source_worktree_git_mutations": 0,
+  "related_run": {
+    "command": [
+      "/home/are01/src/HQA_Project/HQA_lh003/venv/bin/python",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "-p",
+      "merge_parent_fixtures",
+      "tests/test_experiments_lh003_runner.py",
+      "tests/test_experiments_lh003_snapshot.py",
+      "tests/test_experiments_lh003_evaluate.py",
+      "tests/test_experiments_lh003_round21.py",
+      "tests/test_experiments_av002.py",
+      "tests/test_dart_quarterly.py",
+      "tests/test_ops_fw001.py",
+      "tests/test_experiments_fw001.py",
+      "tests/test_forward_fw001.py",
+      "tests/test_strategies_base_data.py",
+      "tests/test_strategies_filters.py",
+      "tests/test_forward_hegemony_shadow.py::test_fresh_process_module_inspection_has_no_trading_or_backend_imports",
+      "tests/test_shadow_ops.py::test_deployed_transfer_manifest_can_record_without_repo_or_research",
+      "-o",
+      "faulthandler_timeout=60",
+      "--tb=short",
+      "--junitxml=/tmp/lh003-round21/affected-verified.junit.xml"
+    ],
+    "exit_code": 0,
+    "seconds": 475.16,
+    "max_process_rss_mib": 1277.477,
+    "process_tree_peak_rss_mib": 1277.477,
+    "process_tree_peak_pss_mib": 1258.162,
+    "violation": null,
+    "log": "/tmp/lh003-round21/affected-verified.log",
+    "sandbox_poll": true
+  },
+  "full_run": {
+    "command": [
+      "/home/are01/src/HQA_Project/HQA_lh003/venv/bin/python",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "-p",
+      "merge_parent_fixtures",
+      "-o",
+      "faulthandler_timeout=60",
+      "--tb=short",
+      "--junitxml=/tmp/lh003-round21/full-final-frozen.junit.xml"
+    ],
+    "exit_code": 1,
+    "seconds": 1195.682,
+    "max_process_rss_mib": 1374.703,
+    "process_tree_peak_rss_mib": 1832.113,
+    "process_tree_peak_pss_mib": 1368.566,
+    "violation": null,
+    "log": "/tmp/lh003-round21/full-final-frozen.log",
+    "sandbox_poll": true,
+    "counts": {
+      "passed": 5084,
+      "skipped": 6,
+      "failed": 41
+    },
+    "lh003_passed": 108,
+    "pytest_seconds": 1131.1,
+    "failures": [
+      {
+        "test": "tests.test_experiments_ch004::test_registration_pins_all_three_documents_and_EV001_source",
+        "message": "ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_source_invalid_returns_respect_EV001_base_and_chart_boundary[inf-stops-preparation]",
+        "message": "AssertionError: Regex pattern did not match.\n  Expected regex: 'invalid adjusted return'\n  Actual message: 'CH004 EV001 source differs from its approved 08079e2/f8c6845 versions'"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_source_invalid_returns_respect_EV001_base_and_chart_boundary[minus-one-stops-baseline]",
+        "message": "AssertionError: Regex pattern did not match.\n  Expected regex: 'undefined adjusted open-to-close return'\n  Actual message: 'CH004 EV001 source differs from its approved 08079e2/f8c6845 versions'"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_source_invalid_returns_respect_EV001_base_and_chart_boundary[nan-keeps-event]",
+        "message": "ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_source_invalid_returns_respect_EV001_base_and_chart_boundary[minus-one-keeps-event]",
+        "message": "ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_holm_two_and_strict_cumulative_trial_threshold[20-pass]",
+        "message": "ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_holm_two_and_strict_cumulative_trial_threshold[21-fail]",
+        "message": "ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_insufficient_supplies_p_one_but_keeps_Holm_two[events]",
+        "message": "ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_insufficient_supplies_p_one_but_keeps_Holm_two[months]",
+        "message": "ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_insufficient_supplies_p_one_but_keeps_Holm_two[removal_months]",
+        "message": "ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_insufficient_supplies_p_one_but_keeps_Holm_two[se]",
+        "message": "ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_insufficient_supplies_p_one_but_keeps_Holm_two[t]",
+        "message": "ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_insufficient_supplies_p_one_but_keeps_Holm_two[p]",
+        "message": "ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_insufficient_supplies_p_one_but_keeps_Holm_two[mean]",
+        "message": "ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_insufficient_supplies_p_one_but_keeps_Holm_two[cost]",
+        "message": "ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_insufficient_supplies_p_one_but_keeps_Holm_two[control]",
+        "message": "ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_delisting_loss_reprices_x_and_reruns_controls_Holm_to_change_verdict",
+        "message": "ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_incomplete_and_original_sensitivity_statuses[False-True-data_incomplete]",
+        "message": "ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_incomplete_and_original_sensitivity_statuses[True-False-sensitivity_unavailable]",
+        "message": "ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_incomplete_listing_stops_before_EV001_preparation_and_records_two_final_rows",
+        "message": "ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_complete_fixture_replay_all_secondary_metrics_and_no_protected_price_opens",
+        "message": "ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_dry_path_on_complete_fixture_never_evaluates_outcomes_or_publishes",
+        "message": "ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_failures_before_after_freeze_record_zero_or_two_attempts[pre_hash]",
+        "message": "ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_failures_before_after_freeze_record_zero_or_two_attempts[prepare]",
+        "message": "ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_failures_before_after_freeze_record_zero_or_two_attempts[evaluate]",
+        "message": "ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_failures_before_after_freeze_record_zero_or_two_attempts[publish]",
+        "message": "ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_input_mutation_after_hash_freeze_aborts_before_publication[financial]",
+        "message": "AssertionError: Regex pattern did not match.\n  Expected regex: 'inputs or code changed'\n  Actual message: 'CH004 EV001 source differs from its approved 08079e2/f8c6845 versions'"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_input_mutation_after_hash_freeze_aborts_before_publication[documentation]",
+        "message": "AssertionError: Regex pattern did not match.\n  Expected regex: 'inputs or code changed'\n  Actual message: 'CH004 EV001 source differs from its approved 08079e2/f8c6845 versions'"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_input_mutation_after_hash_freeze_aborts_before_publication[in_memory_prices]",
+        "message": "AssertionError: Regex pattern did not match.\n  Expected regex: 'inputs or code changed'\n  Actual message: 'CH004 EV001 source differs from its approved 08079e2/f8c6845 versions'"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_input_mutation_after_hash_freeze_aborts_before_publication[preregistration]",
+        "message": "AssertionError: Regex pattern did not match.\n  Expected regex: 'inputs or code changed'\n  Actual message: 'CH004 EV001 source differs from its approved 08079e2/f8c6845 versions'"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_file_backed_complete_pipeline_and_dry_run_under_protected_open_trap",
+        "message": "ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_all_EV001_replays_finish_before_first_chart_and_mismatch_stops",
+        "message": "ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_count_judgement_publication_under_one_lock_two_finite_rows",
+        "message": "ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions"
+      },
+      {
+        "test": "tests.test_experiments_ch004::test_validate_both_rows_before_any_publication",
+        "message": "ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions"
+      },
+      {
+        "test": "tests.test_market_context_ingestion::test_cli_uses_shared_archive_and_selected_series",
+        "message": "ValueError: benchmark collection requires 08:00 KST or later"
+      },
+      {
+        "test": "tests.test_market_context_ingestion::test_cli_missing_credentials_fails_without_creating_data",
+        "message": "AssertionError: Regex pattern did not match.\n  Expected regex: 'required'\n  Actual message: 'benchmark collection requires 08:00 KST or later'"
+      },
+      {
+        "test": "tests.test_offline_test_safety::test_outbound_sockets_are_rejected[connect]",
+        "message": "PermissionError: [Errno 1] Operation not permitted"
+      },
+      {
+        "test": "tests.test_offline_test_safety::test_outbound_sockets_are_rejected[connect_ex]",
+        "message": "PermissionError: [Errno 1] Operation not permitted"
+      },
+      {
+        "test": "tests.test_offline_test_safety::test_kis_opt_in_does_not_enable_network_in_other_test_modules",
+        "message": "PermissionError: [Errno 1] Operation not permitted"
+      },
+      {
+        "test": "tests.test_offline_test_safety::test_local_socketpair_and_in_process_api_client_still_work",
+        "message": "PermissionError: [Errno 1] Operation not permitted"
+      },
+      {
+        "test": "tests.test_shadow_ops::test_shadow_full_market_peak_rss_under_600_mib",
+        "message": "AssertionError: {'financial_years': 12, 'peak_rss_mib': 1374.703125, 'price_sessions': 80, 'stocks': 3000}\nassert 1374.703125 < 600"
+      }
+    ],
+    "lh003_500_stock_memory": {
+      "data": {
+        "children_peak_rss_mib": 0.0,
+        "error": null,
+        "includes_children": true,
+        "increment_mib": 66.75390625,
+        "invalid_weeks": 22,
+        "parent_peak_rss_mib": 483.16796875,
+        "peak_rss_mib": 483.16796875,
+        "sample_interval_seconds": 0.01,
+        "samples": 839,
+        "stocks": 500,
+        "verified": true,
+        "weekly_scenario_records": 312
+      },
+      "sha256": "48f88ef9a885827043ded643c4402bf2127604eecd189e1ae7f6c1e388dd3078"
+    }
+  },
+  "focused_run": {
+    "command": [
+      "/home/are01/src/HQA_Project/HQA_lh003/venv/bin/python",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/test_experiments_lh003_runner.py",
+      "tests/test_experiments_lh003_snapshot.py",
+      "tests/test_experiments_lh003_evaluate.py",
+      "tests/test_experiments_lh003_round21.py",
+      "-p",
+      "merge_parent_fixtures",
+      "-o",
+      "faulthandler_timeout=60",
+      "--tb=short",
+      "--junitxml=/tmp/lh003-round21/lh003-frozen.junit.xml"
+    ],
+    "exit_code": 0,
+    "seconds": 150.384,
+    "max_process_rss_mib": 233.863,
+    "process_tree_peak_rss_mib": 244.566,
+    "process_tree_peak_pss_mib": 227.632,
+    "violation": null,
+    "log": "/tmp/lh003-round21/lh003-frozen.log",
+    "sandbox_poll": true,
+    "counts": {
+      "passed": 108,
+      "failed": 0,
+      "skipped": 0
+    },
+    "pytest_seconds": 122.49,
+    "lh003_500_stock_memory": {
+      "data": {
+        "children_peak_rss_mib": 0.0,
+        "error": null,
+        "includes_children": true,
+        "increment_mib": 76.046875,
+        "invalid_weeks": 22,
+        "parent_peak_rss_mib": 233.86328125,
+        "peak_rss_mib": 233.86328125,
+        "sample_interval_seconds": 0.01,
+        "samples": 915,
+        "stocks": 500,
+        "verified": true,
+        "weekly_scenario_records": 312
+      },
+      "sha256": "b4f20868f307eb6576210e92b7afeee3f7ac083000f5adcc875f696771bfe36c"
+    }
+  },
+  "unchanged_incoming_files": {
+    "backtesting/experiments/ch004.py": "88fd995362211a6d578fc026e8fdef577115c6d6bc86916ba3b6cb685813904b",
+    "backtesting/experiments/ev001.py": "0fba79242c3a6e70bacb57789096381aa0d35b8c5efa95e9a97546a6952cea83",
+    "research/experiments/registry.csv": "630a4fee3db4e2b89a8a66447589faef04dfaab3734096b26cb96f2ea9e4dd5d",
+    "research/experiments/holdout_ledger.jsonl": "1fc2160cb5302543d8b0e1a579045d886c760278782104a60e28845da7075a7f"
+  },
+  "validation_artifacts": [
+    "research/experiments/LH003_llm_leader_forward/reports/round21_changed_paths.json",
+    "research/experiments/LH003_llm_leader_forward/reports/round21_focused_500_stock_memory.json",
+    "research/experiments/LH003_llm_leader_forward/reports/round21_full_500_stock_memory.json",
+    "research/experiments/LH003_llm_leader_forward/reports/round21_full_suite.junit.xml",
+    "research/experiments/LH003_llm_leader_forward/reports/round21_full_suite.txt",
+    "research/experiments/LH003_llm_leader_forward/reports/round21_lh003_tests.junit.xml",
+    "research/experiments/LH003_llm_leader_forward/reports/round21_lh003_tests.txt",
+    "research/experiments/LH003_llm_leader_forward/reports/round21_original_timeout.txt",
+    "research/experiments/LH003_llm_leader_forward/reports/round21_related_tests.txt",
+    "research/experiments/LH003_llm_leader_forward/reports/round21_test_harness/merge_parent_fixtures.py",
+    "research/experiments/LH003_llm_leader_forward/reports/round21_test_harness/run_tests.py",
+    "research/experiments/LH003_llm_leader_forward/reports/round21_test_harness/sitecustomize.py",
+    "research/experiments/LH003_llm_leader_forward/reports/round21_validation.json"
+  ]
+}

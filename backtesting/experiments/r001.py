@@ -598,7 +598,7 @@ def run_experiment(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT, pr
                "coverage": {"planned_months": len(MONTHS), "first_session": days.min().date().isoformat(), "last_session": days.max().date().isoformat(),
                             "sessions": len(days), "stocks": int(prices.index.get_level_values("stock_code").nunique()), "price_rows": len(prices),
                             "quarterly_directory_exists": (data_dir / "fundamentals/dart_quarterly").is_dir(), "quarterly_archives": len(sources["quarterly_archives"]),
-                            "industry_profiles": len(profiles), "calendar_version": f"exchange-calendars:{hc001.calendars.__version__}:XKRX"},
+                            "industry_profiles": len(profiles), "calendar_version": hc001.trading_calendar.CALENDAR_VERSION},
                "source_hashes": sources, "interpretations": INTERPRETATIONS, "assumptions": ASSUMPTIONS,
                "performance": {"runtime_seconds": time.perf_counter() - started, "peak_memory_mib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024}}
     for group in ("krx_daily", "quarterly_archives", "company_profiles", "dart_listing_files"):

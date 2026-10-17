@@ -363,6 +363,8 @@ def test_run_refuses_insufficient_resources_or_unmounted_data(ops, settings, mes
     ("research/experiments/LH002/prompts/v2_probe.txt", False),
     (REGISTRY, True), (LEDGER, True), (RESULT, True),
     ("research/experiments/HC003/diagnostics/costs.csv", True),
+    ("research/experiments/AV002_avoidance_holdout_recovery/rehearsal/fixture.json", True),
+    ("research/experiments/AV002_avoidance_holdout_recovery/code_manifests/fixture.json", True),
     ("data/research/lh002/calls/cache.json", True),
 ])
 def test_run_dirty_tree_exempts_only_generated_paths(ops, dirty, allowed):
@@ -411,6 +413,18 @@ def test_av001_ev001_explicit_modes_do_not_receive_conflicting_execute_flag(ops,
     assert result.returncode == 0, result.stderr
     command, = ops[6]("systemd-run")
     assert command[-3:] == ["-m", f"backtesting.experiments.{module}", mode]
+
+
+@pytest.mark.parametrize("mode", [None, "--dry-run", "--preflight", "--reproduce", "--rehearse", "--holdout"])
+def test_AV002_dispatch_never_injects_execute_and_preserves_every_mode(ops, mode):
+    server_commands(ops)
+    checkout(ops)
+    args = [] if mode is None else [mode]
+    result = ops[5](SCRIPTS[1], "av002", *args)
+    assert result.returncode == 0, result.stderr
+    command, = ops[6]("systemd-run")
+    assert command[-(2 + len(args)):] == ["-m", "backtesting.experiments.av002", *args]
+    assert "--execute" not in command
 
 
 def remote_results(ops):

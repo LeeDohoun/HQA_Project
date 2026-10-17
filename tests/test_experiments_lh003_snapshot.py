@@ -18,7 +18,7 @@ from backtesting.experiments.lh003.snapshot import Snapshot, input_view, publish
 from backtesting.experiments.lh003.simulation import synthetic_archive
 from backtesting.experiments.lh003.storage import aware, digest, file_hash, read, seal, verified
 from src.ingestion.storage import atomic_write
-from test_experiments_lh003_runner import Clock, forbid_real_calls_and_holdout
+from test_experiments_lh003_runner import Clock, forbid_real_calls_and_holdout, verified_calendar
 from test_experiments_ordering import row
 
 
@@ -121,53 +121,47 @@ def test_snapshot_hash_and_read_only_mode_are_verified(source, tmp_path):
         Snapshot(snapshot.root, expected_hash=digest(snapshot.manifest), allow_synthetic=True)
 
 
-def test_streams_seek_only_to_new_tail_and_refuse_protected_tail_or_truncation(source, tmp_path, monkeypatch):
+def test_immutable_versions_survive_full_rewrites_without_original_reads(source, tmp_path, monkeypatch):
+    from src.ingestion.incremental_versions import publish_versions, version_directory
     snapshot = snapshot_for(source, tmp_path)
     relative = next(p for p in snapshot.manifest["streams"] if "fundamentals" in p)
     path = source / relative
-    baseline = snapshot.path(relative).read_bytes()
-    tail = json.dumps({"available_date": "2026-11-16", "new_version": True}).encode() + b"\n"
-    with path.open("ab") as handle:
-        handle.write(tail)
-    original = Path.open
-    original_stat = Path.stat
-    suffix_read = []
-    mutate_on_read = []
-    class SuffixOnly:
-        def __init__(self, handle): self.handle = handle
-        def __enter__(self): return self
-        def __exit__(self, *args): self.handle.close()
-        def seek(self, offset): return self.handle.seek(offset)
-        def read(self):
-            assert self.handle.tell() >= len(baseline)
-            suffix_read.append(True)
-            content = self.handle.read()
-            if mutate_on_read:
-                with original(path, "ab") as writer:
-                    writer.write(b"\n")
-            return content
-    def guarded(p, *args, **kwargs):
-        handle = original(p, *args, **kwargs)
-        return SuffixOnly(handle) if p == path and args and args[0] == "rb" else handle
-    monkeypatch.setattr(Path, "open", guarded)
-    def changing_atime(p, *args, **kwargs):
-        stat = original_stat(p, *args, **kwargs)
-        if p != path:
-            return stat
-        values = {key: getattr(stat, key) for key in dir(stat) if key.startswith("st_")}
-        values["st_atime_ns"] += len(suffix_read)
-        return SimpleNamespace(**values)
-    monkeypatch.setattr(Path, "stat", changing_atime)
-    assert snapshot.stream(source, relative) == baseline + tail
-    mutate_on_read.append(True)
-    with pytest.raises(Refused, match="changed during suffix"):
+    baseline = [json.loads(line) for line in snapshot.path(relative).read_text().splitlines()]
+    added = {**baseline[0], "rcept_no": "20261116000001", "available_date": "2026-11-16"}
+    publish_versions(path, [added], date_field="available_date")
+    # Includes same-size, growth with reordering, and truncation of the mutable original.
+    for content in (path.read_bytes()[::-1], b"rewritten full archive\n" * 1000, b"\n"):
+        path.write_bytes(content)
+        original = Path.open
+        def guarded(p, *args, **kwargs):
+            if p.resolve() == path.resolve():
+                pytest.fail("mixed protected original opened after seal")
+            return original(p, *args, **kwargs)
+        with monkeypatch.context() as context:
+            context.setattr(Path, "open", guarded)
+            result = [json.loads(line) for line in snapshot.stream(source, relative).splitlines()]
+        assert len(result) == len(baseline) + 1 and added["rcept_no"] in {r["rcept_no"] for r in result}
+    version = next(version_directory(path).glob("*.json"))
+    version.chmod(0o644)
+    with pytest.raises(ValueError, match="hash/mode"):
         snapshot.stream(source, relative)
-    mutate_on_read.clear()
-    path.write_bytes(baseline + b'{"available_date":"2026-06-01"}\n')
-    with pytest.raises(Refused, match="protected"):
-        snapshot.stream(source, relative)
-    path.write_bytes(b"\n")
-    with pytest.raises(Refused, match="truncated"):
+
+
+def test_incremental_protected_versions_are_never_published_and_injection_refuses(source, tmp_path):
+    from src.ingestion.incremental_versions import publish_versions, version_directory
+    snapshot = snapshot_for(source, tmp_path)
+    relative = next(p for p in snapshot.manifest["streams"] if "fundamentals" in p)
+    path = source / relative
+    protected = {"available_date": "2026-06-01"}
+    publish_versions(path, [protected], date_field="available_date")
+    assert not version_directory(path).exists()
+    content = json.dumps(protected).encode() + b"\n"
+    import hashlib
+    target = version_directory(path) / (hashlib.sha256(content).hexdigest() + ".json")
+    target.parent.mkdir()
+    target.write_bytes(content)
+    target.chmod(0o444)
+    with pytest.raises(ValueError, match="protected"):
         snapshot.stream(source, relative)
 
 
@@ -205,7 +199,8 @@ def test_LH003_requires_both_releases_and_all_passing_holdouts(tmp_path, monkeyp
     with pytest.raises(ValueError, match="holdout unfinished.*LH003"):
         ordering.lh003_releases(rows, tmp_path)
     rows += [row(ev, "holdout_" + ordering.RELEASE_SPECS[ev][0], "holdout_aborted", stage="holdout")]
-    assert set(ordering.lh003_releases(rows, tmp_path)) == {av, ev}
+    monkeypatch.setattr(ordering, "av002_release", lambda *a: {"linked": True})
+    assert set(ordering.lh003_releases(rows, tmp_path)) == {av, ev, ordering.AV002_ID}
 
 
 @pytest.fixture
@@ -216,8 +211,15 @@ def lifecycle(tmp_path, source, monkeypatch):
     monkeypatch.setattr(ordering, "lh003_releases", lambda *a: {k: {"passing_variants": []} for k in ordering.RELEASE_SPECS})
     report = tmp_path / "environment.json"
     seal(report, {"experiment_id": EXPERIMENT_ID, "passed": True, "synthetic": False,
+        "implementation_hashes": {"fixture": "algorithm"},
         "machine_id": workflow.machine_id(), "at": clock().isoformat(), "cycle": {"real_data": True, "completed": True},
-        "timing": {"fits": True, "call_timeout_seconds": 300}, "restart_resume": {"verified": True}, "sync": {"verified": True}})
+        "timing": {"fits": True, "call_timeout_seconds": 300, "real_path_verified": True},
+        "performance": {"fits": True, "includes_children": True},
+        "synthetic_format_trial": {"real_call_path": True, "completed": True},
+        "restart_resume": {"verified": True}, "sync": {"verified": True, "transfer_route": "synthetic fixture"}})
+    from backtesting.experiments.lh003 import runner
+    monkeypatch.setattr(runner, "implementation_hashes", lambda root: {"fixture": "algorithm"})
+    monkeypatch.setattr(runner, "mechanical_data_hashes", lambda root: {"fixture": "data"})
     class FakeSession:
         def __init__(self, experiment_id, *, repo_root):
             self.experiment_id, self.repo_root = experiment_id, Path(repo_root)

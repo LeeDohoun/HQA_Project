@@ -1,0 +1,64 @@
+....Timeout (0:01:00)!
+Thread 0x000077f3d5afe6c0 (most recent call first):
+  File "/usr/lib/python3.12/selectors.py", line 468 in select
+  File "/usr/lib/python3.12/asyncio/base_events.py", line 1949 in _run_once
+  File "/usr/lib/python3.12/asyncio/base_events.py", line 641 in run_forever
+  File "/usr/lib/python3.12/asyncio/base_events.py", line 674 in run_until_complete
+  File "/usr/lib/python3.12/asyncio/runners.py", line 118 in run
+  File "/home/are01/src/HQA_Project/HQA_Project/venv/lib/python3.12/site-packages/anyio/_backends/_asyncio.py", line 2358 in run
+  File "/home/are01/src/HQA_Project/HQA_Project/venv/lib/python3.12/site-packages/anyio/_core/_eventloop.py", line 77 in run
+  File "/home/are01/src/HQA_Project/HQA_Project/venv/lib/python3.12/site-packages/anyio/from_thread.py", line 532 in run_blocking_portal
+  File "/usr/lib/python3.12/threading.py", line 1010 in run
+  File "/usr/lib/python3.12/threading.py", line 1073 in _bootstrap_inner
+  File "/usr/lib/python3.12/threading.py", line 1030 in _bootstrap
+
+Thread 0x000077f3ecaa6080 (most recent call first):
+  File "/usr/lib/python3.12/threading.py", line 355 in wait
+  File "/usr/lib/python3.12/concurrent/futures/_base.py", line 451 in result
+  File "/home/are01/src/HQA_Project/HQA_Project/venv/lib/python3.12/site-packages/anyio/_backends/_asyncio.py", line 2592 in run_sync_from_thread
+  File "/home/are01/src/HQA_Project/HQA_Project/venv/lib/python3.12/site-packages/anyio/from_thread.py", line 118 in run_sync
+  File "/home/are01/src/HQA_Project/HQA_Project/venv/lib/python3.12/site-packages/anyio/from_thread.py", line 297 in _spawn_task_from_thread
+  File "/home/are01/src/HQA_Project/HQA_Project/venv/lib/python3.12/site-packages/anyio/from_thread.py", line 378 in start_task_soon
+  File "/home/are01/src/HQA_Project/HQA_Project/venv/lib/python3.12/site-packages/anyio/from_thread.py", line 334 in call
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/starlette/testclient.py", line 344 in handle_request
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/httpx/_client.py", line 1014 in _send_single_request
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/httpx/_client.py", line 979 in _send_handling_redirects
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/httpx/_client.py", line 942 in _send_handling_auth
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/httpx/_client.py", line 914 in send
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/httpx/_client.py", line 825 in request
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/starlette/testclient.py", line 445 in request
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/httpx/_client.py", line 1144 in post
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/starlette/testclient.py", line 546 in post
+  File "/home/are01/src/HQA_Project/HQA_lh003/tests/test_ai_server_analysis_modes.py", line 21 in test_legacy_single_stock_analysis_endpoints_are_removed
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/_pytest/python.py", line 166 in pytest_pyfunc_call
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/pluggy/_callers.py", line 121 in _multicall
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/pluggy/_manager.py", line 120 in _hookexec
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/pluggy/_hooks.py", line 512 in __call__
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/_pytest/python.py", line 1720 in runtest
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/_pytest/runner.py", line 179 in pytest_runtest_call
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/pluggy/_callers.py", line 121 in _multicall
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/pluggy/_manager.py", line 120 in _hookexec
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/pluggy/_hooks.py", line 512 in __call__
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/_pytest/runner.py", line 245 in <lambda>
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/_pytest/runner.py", line 353 in from_call
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/_pytest/runner.py", line 244 in call_and_report
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/_pytest/runner.py", line 137 in runtestprotocol
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/_pytest/runner.py", line 118 in pytest_runtest_protocol
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/pluggy/_callers.py", line 121 in _multicall
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/pluggy/_manager.py", line 120 in _hookexec
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/pluggy/_hooks.py", line 512 in __call__
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/_pytest/main.py", line 396 in pytest_runtestloop
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/pluggy/_callers.py", line 121 in _multicall
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/pluggy/_manager.py", line 120 in _hookexec
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/pluggy/_hooks.py", line 512 in __call__
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/_pytest/main.py", line 372 in _main
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/_pytest/main.py", line 318 in wrap_session
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/_pytest/main.py", line 365 in pytest_cmdline_main
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/pluggy/_callers.py", line 121 in _multicall
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/pluggy/_manager.py", line 120 in _hookexec
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/pluggy/_hooks.py", line 512 in __call__
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/_pytest/config/__init__.py", line 199 in main
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/_pytest/config/__init__.py", line 223 in console_main
+  File "/home/are01/src/HQA_Project/HQA_lh003/venv/lib/python3.12/site-packages/pytest/__main__.py", line 9 in <module>
+  File "<frozen runpy>", line 88 in _run_code
+  File "<frozen runpy>", line 198 in _run_module_as_main

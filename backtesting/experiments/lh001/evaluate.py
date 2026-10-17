@@ -308,7 +308,7 @@ def registry_metrics(payload, result_file, trial_count_after_run):
     return rows
 
 
-def publish(payload, *, repo_root=PROJECT_ROOT, smoke=False, record=True, config=LH001):
+def publish(payload, *, repo_root=PROJECT_ROOT, smoke=False, record=True, config=LH001, aborted_registration=None):
     """Use shared publication/registry, replacing its legacy IC prose afterwards."""
     if payload["experiment_id"] != config.experiment_id:
         raise ValueError("result experiment ID differs from its configuration")
@@ -327,7 +327,8 @@ def publish(payload, *, repo_root=PROJECT_ROOT, smoke=False, record=True, config
         result.setdefault("skipped_month_count", 0)
         result.setdefault("unadjusted_fallback", 0)
         result.setdefault("delisting_exclusions", 0)
-    paths = common.write_results(config.experiment_id, payload, repo_root=repo_root)
+    paths = common.write_results(config.experiment_id, payload, repo_root=repo_root,
+                                 aborted_registration=aborted_registration)
     pending = registry_metrics(payload, paths[0], trials) if record and not smoke else {}
     lines = [f"# {config.experiment_id}: {payload['stage']}", "", f"Smoke: {smoke}; aggregate status: {payload['verdict']}", "",
              "No winning variant is selected. Returns are decimal. LLM t: NW lag 4; HC002: its monthly statistics.", "",
@@ -346,6 +347,11 @@ def publish(payload, *, repo_root=PROJECT_ROOT, smoke=False, record=True, config
     if record and not smoke:
         for arm in VARIANTS:
             result = payload["variants"][arm]
-            experiment_registry.record_trial(config.experiment_id, arm, pending[arm], result["verdict"], repo_root=repo_root,
-                                             note=f"{config.name} {payload['stage']}; fixed variant; no selection of winner")
+            if aborted_registration is not None:
+                experiment_registry.record_aborted_trial(config.experiment_id, arm, pending[arm], result["verdict"],
+                    preregistration=aborted_registration, repo_root=repo_root,
+                    note=f"{config.name} {payload['stage']}; interrupted fixed variant")
+            else:
+                experiment_registry.record_trial(config.experiment_id, arm, pending[arm], result["verdict"], repo_root=repo_root,
+                                                 note=f"{config.name} {payload['stage']}; fixed variant; no selection of winner")
     return payload, paths

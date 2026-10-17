@@ -1,0 +1,559 @@
+........................................................................ [  1%]
+........................................................................ [  2%]
+........................................................................ [  4%]
+........................................................................ [  5%]
+........................................................................ [  7%]
+........................................................................ [  8%]
+........................................................................ [  9%]
+........................................................................ [ 11%]
+........................................................................ [ 12%]
+........................................................................ [ 14%]
+........................................................................ [ 15%]
+........................................................................ [ 16%]
+........................................................................ [ 18%]
+........................................................................ [ 19%]
+........................................................................ [ 21%]
+........................................................................ [ 22%]
+........................................................................ [ 23%]
+........................................................................ [ 25%]
+........................................................................ [ 26%]
+........................................................................ [ 28%]
+........................................................................ [ 29%]
+........................................................................ [ 30%]
+........................................................................ [ 32%]
+........................................................................ [ 33%]
+.......................s................................................ [ 35%]
+........................................................................ [ 36%]
+........................................................................ [ 37%]
+........................................................................ [ 39%]
+........................................................................ [ 40%]
+........................................................................ [ 42%]
+........................................................................ [ 43%]
+........................................................................ [ 44%]
+.....F.................FFFF..............FFFFFFFFFFF.......FFFFFF.FFFFFF [ 46%]
+FF.FF.FF................................................................ [ 47%]
+........................................................................ [ 49%]
+........................................................................ [ 50%]
+........................................................................ [ 51%]
+........................................................................ [ 53%]
+........................................................................ [ 54%]
+........................................................................ [ 56%]
+........................................................................ [ 57%]
+........................................................................ [ 58%]
+........................................................................ [ 60%]
+........................................................................ [ 61%]
+........................................................................ [ 63%]
+........................................................................ [ 64%]
+........................................................................ [ 65%]
+........................................................................ [ 67%]
+........................................................................ [ 68%]
+........................................................................ [ 70%]
+........................................................................ [ 71%]
+......sss............................................................... [ 72%]
+........................................................................ [ 74%]
+........................................................................ [ 75%]
+........................................................................ [ 77%]
+........................................................................ [ 78%]
+.................................FF............ss....................... [ 79%]
+........................................................................ [ 81%]
+..............................FF.FF..................................... [ 82%]
+........................................................................ [ 84%]
+........................................................................ [ 85%]
+........................................................................ [ 87%]
+........................................................................ [ 88%]
+........................................................................ [ 89%]
+........................................................................ [ 91%]
+..............................................F......................... [ 92%]
+........................................................................ [ 94%]
+........................................................................ [ 95%]
+........................................................................ [ 96%]
+........................................................................ [ 98%]
+........................................................................ [ 99%]
+...................                                                      [100%]
+=================================== FAILURES ===================================
+_________ test_registration_pins_all_three_documents_and_EV001_source __________
+tests/test_experiments_ch004.py:104: in test_registration_pins_all_three_documents_and_EV001_source
+    registered = ch004._registration(ch004.PROJECT_ROOT)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+_ test_source_invalid_returns_respect_EV001_base_and_chart_boundary[inf-stops-preparation] _
+tests/test_experiments_ch004.py:246: in test_source_invalid_returns_respect_EV001_base_and_chart_boundary
+    ch004.run_experiment(**complete_inputs)
+backtesting/experiments/ch004.py:475: in run_experiment
+    payload = compute_design(data_dir=data_dir, repo_root=repo_root, prices=prices, sessions=sessions, _attempt=attempt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+
+During handling of the above exception, another exception occurred:
+tests/test_experiments_ch004.py:245: in test_source_invalid_returns_respect_EV001_base_and_chart_boundary
+    with np.errstate(invalid="ignore"), pytest.raises(ValueError, match=failure):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'invalid adjusted return'
+E     Actual message: 'CH004 EV001 source differs from its approved 08079e2/f8c6845 versions'
+_ test_source_invalid_returns_respect_EV001_base_and_chart_boundary[minus-one-stops-baseline] _
+tests/test_experiments_ch004.py:246: in test_source_invalid_returns_respect_EV001_base_and_chart_boundary
+    ch004.run_experiment(**complete_inputs)
+backtesting/experiments/ch004.py:475: in run_experiment
+    payload = compute_design(data_dir=data_dir, repo_root=repo_root, prices=prices, sessions=sessions, _attempt=attempt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+
+During handling of the above exception, another exception occurred:
+tests/test_experiments_ch004.py:245: in test_source_invalid_returns_respect_EV001_base_and_chart_boundary
+    with np.errstate(invalid="ignore"), pytest.raises(ValueError, match=failure):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'undefined adjusted open-to-close return'
+E     Actual message: 'CH004 EV001 source differs from its approved 08079e2/f8c6845 versions'
+_ test_source_invalid_returns_respect_EV001_base_and_chart_boundary[nan-keeps-event] _
+tests/test_experiments_ch004.py:254: in test_source_invalid_returns_respect_EV001_base_and_chart_boundary
+    result = ch004.run_experiment(**complete_inputs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:475: in run_experiment
+    payload = compute_design(data_dir=data_dir, repo_root=repo_root, prices=prices, sessions=sessions, _attempt=attempt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+_ test_source_invalid_returns_respect_EV001_base_and_chart_boundary[minus-one-keeps-event] _
+tests/test_experiments_ch004.py:254: in test_source_invalid_returns_respect_EV001_base_and_chart_boundary
+    result = ch004.run_experiment(**complete_inputs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:475: in run_experiment
+    payload = compute_design(data_dir=data_dir, repo_root=repo_root, prices=prices, sessions=sessions, _attempt=attempt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+_________ test_holm_two_and_strict_cumulative_trial_threshold[20-pass] _________
+tests/test_experiments_ch004.py:422: in test_holm_two_and_strict_cumulative_trial_threshold
+    actual = ch004.judge_variants(results, ch004._registration(repo).fields, trials)
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+_________ test_holm_two_and_strict_cumulative_trial_threshold[21-fail] _________
+tests/test_experiments_ch004.py:422: in test_holm_two_and_strict_cumulative_trial_threshold
+    actual = ch004.judge_variants(results, ch004._registration(repo).fields, trials)
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+_________ test_insufficient_supplies_p_one_but_keeps_Holm_two[events] __________
+tests/test_experiments_ch004.py:439: in test_insufficient_supplies_p_one_but_keeps_Holm_two
+    result = ch004.judge_variants(results, ch004._registration(repo).fields, 2)
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+_________ test_insufficient_supplies_p_one_but_keeps_Holm_two[months] __________
+tests/test_experiments_ch004.py:439: in test_insufficient_supplies_p_one_but_keeps_Holm_two
+    result = ch004.judge_variants(results, ch004._registration(repo).fields, 2)
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+_____ test_insufficient_supplies_p_one_but_keeps_Holm_two[removal_months] ______
+tests/test_experiments_ch004.py:439: in test_insufficient_supplies_p_one_but_keeps_Holm_two
+    result = ch004.judge_variants(results, ch004._registration(repo).fields, 2)
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+___________ test_insufficient_supplies_p_one_but_keeps_Holm_two[se] ____________
+tests/test_experiments_ch004.py:439: in test_insufficient_supplies_p_one_but_keeps_Holm_two
+    result = ch004.judge_variants(results, ch004._registration(repo).fields, 2)
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+____________ test_insufficient_supplies_p_one_but_keeps_Holm_two[t] ____________
+tests/test_experiments_ch004.py:439: in test_insufficient_supplies_p_one_but_keeps_Holm_two
+    result = ch004.judge_variants(results, ch004._registration(repo).fields, 2)
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+____________ test_insufficient_supplies_p_one_but_keeps_Holm_two[p] ____________
+tests/test_experiments_ch004.py:439: in test_insufficient_supplies_p_one_but_keeps_Holm_two
+    result = ch004.judge_variants(results, ch004._registration(repo).fields, 2)
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+__________ test_insufficient_supplies_p_one_but_keeps_Holm_two[mean] ___________
+tests/test_experiments_ch004.py:439: in test_insufficient_supplies_p_one_but_keeps_Holm_two
+    result = ch004.judge_variants(results, ch004._registration(repo).fields, 2)
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+__________ test_insufficient_supplies_p_one_but_keeps_Holm_two[cost] ___________
+tests/test_experiments_ch004.py:439: in test_insufficient_supplies_p_one_but_keeps_Holm_two
+    result = ch004.judge_variants(results, ch004._registration(repo).fields, 2)
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+_________ test_insufficient_supplies_p_one_but_keeps_Holm_two[control] _________
+tests/test_experiments_ch004.py:439: in test_insufficient_supplies_p_one_but_keeps_Holm_two
+    result = ch004.judge_variants(results, ch004._registration(repo).fields, 2)
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+__ test_delisting_loss_reprices_x_and_reruns_controls_Holm_to_change_verdict ___
+tests/test_experiments_ch004.py:464: in test_delisting_loss_reprices_x_and_reruns_controls_Holm_to_change_verdict
+    rules = ch004.judge_variants({v: ch004.variant_metrics(rows, v, diagnostics=False) for v in ch004.VARIANTS}, ch004._registration(repo).fields, 2)
+                                                                                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+_ test_incomplete_and_original_sensitivity_statuses[False-True-data_incomplete] _
+tests/test_experiments_ch004.py:479: in test_incomplete_and_original_sensitivity_statuses
+    result = ch004.evaluate(prepared, ch004._registration(repo).fields, 2)
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+_ test_incomplete_and_original_sensitivity_statuses[True-False-sensitivity_unavailable] _
+tests/test_experiments_ch004.py:479: in test_incomplete_and_original_sensitivity_statuses
+    result = ch004.evaluate(prepared, ch004._registration(repo).fields, 2)
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+_ test_incomplete_listing_stops_before_EV001_preparation_and_records_two_final_rows _
+tests/test_experiments_ch004.py:494: in test_incomplete_listing_stops_before_EV001_preparation_and_records_two_final_rows
+    result = ch004.run_experiment(**complete_inputs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:475: in run_experiment
+    payload = compute_design(data_dir=data_dir, repo_root=repo_root, prices=prices, sessions=sessions, _attempt=attempt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+_ test_complete_fixture_replay_all_secondary_metrics_and_no_protected_price_opens _
+tests/test_experiments_ch004.py:509: in test_complete_fixture_replay_all_secondary_metrics_and_no_protected_price_opens
+    result = ch004.compute_design(**kwargs, _attempt=attempt)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+___ test_dry_path_on_complete_fixture_never_evaluates_outcomes_or_publishes ____
+tests/test_experiments_ch004.py:545: in test_dry_path_on_complete_fixture_never_evaluates_outcomes_or_publishes
+    plan = ch004.dry_run(**complete_inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:518: in dry_run
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+___ test_failures_before_after_freeze_record_zero_or_two_attempts[pre_hash] ____
+tests/test_experiments_ch004.py:573: in test_failures_before_after_freeze_record_zero_or_two_attempts
+    ch004.run_experiment(**complete_inputs)
+backtesting/experiments/ch004.py:475: in run_experiment
+    payload = compute_design(data_dir=data_dir, repo_root=repo_root, prices=prices, sessions=sessions, _attempt=attempt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+____ test_failures_before_after_freeze_record_zero_or_two_attempts[prepare] ____
+tests/test_experiments_ch004.py:573: in test_failures_before_after_freeze_record_zero_or_two_attempts
+    ch004.run_experiment(**complete_inputs)
+backtesting/experiments/ch004.py:475: in run_experiment
+    payload = compute_design(data_dir=data_dir, repo_root=repo_root, prices=prices, sessions=sessions, _attempt=attempt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+___ test_failures_before_after_freeze_record_zero_or_two_attempts[evaluate] ____
+tests/test_experiments_ch004.py:573: in test_failures_before_after_freeze_record_zero_or_two_attempts
+    ch004.run_experiment(**complete_inputs)
+backtesting/experiments/ch004.py:475: in run_experiment
+    payload = compute_design(data_dir=data_dir, repo_root=repo_root, prices=prices, sessions=sessions, _attempt=attempt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+____ test_failures_before_after_freeze_record_zero_or_two_attempts[publish] ____
+tests/test_experiments_ch004.py:573: in test_failures_before_after_freeze_record_zero_or_two_attempts
+    ch004.run_experiment(**complete_inputs)
+backtesting/experiments/ch004.py:475: in run_experiment
+    payload = compute_design(data_dir=data_dir, repo_root=repo_root, prices=prices, sessions=sessions, _attempt=attempt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+__ test_input_mutation_after_hash_freeze_aborts_before_publication[financial] __
+tests/test_experiments_ch004.py:604: in test_input_mutation_after_hash_freeze_aborts_before_publication
+    ch004.run_experiment(**complete_inputs)
+backtesting/experiments/ch004.py:475: in run_experiment
+    payload = compute_design(data_dir=data_dir, repo_root=repo_root, prices=prices, sessions=sessions, _attempt=attempt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+
+During handling of the above exception, another exception occurred:
+tests/test_experiments_ch004.py:603: in test_input_mutation_after_hash_freeze_aborts_before_publication
+    with pytest.raises(ValueError, match="inputs or code changed"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'inputs or code changed'
+E     Actual message: 'CH004 EV001 source differs from its approved 08079e2/f8c6845 versions'
+_ test_input_mutation_after_hash_freeze_aborts_before_publication[documentation] _
+tests/test_experiments_ch004.py:604: in test_input_mutation_after_hash_freeze_aborts_before_publication
+    ch004.run_experiment(**complete_inputs)
+backtesting/experiments/ch004.py:475: in run_experiment
+    payload = compute_design(data_dir=data_dir, repo_root=repo_root, prices=prices, sessions=sessions, _attempt=attempt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+
+During handling of the above exception, another exception occurred:
+tests/test_experiments_ch004.py:603: in test_input_mutation_after_hash_freeze_aborts_before_publication
+    with pytest.raises(ValueError, match="inputs or code changed"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'inputs or code changed'
+E     Actual message: 'CH004 EV001 source differs from its approved 08079e2/f8c6845 versions'
+_ test_input_mutation_after_hash_freeze_aborts_before_publication[in_memory_prices] _
+tests/test_experiments_ch004.py:604: in test_input_mutation_after_hash_freeze_aborts_before_publication
+    ch004.run_experiment(**complete_inputs)
+backtesting/experiments/ch004.py:475: in run_experiment
+    payload = compute_design(data_dir=data_dir, repo_root=repo_root, prices=prices, sessions=sessions, _attempt=attempt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+
+During handling of the above exception, another exception occurred:
+tests/test_experiments_ch004.py:603: in test_input_mutation_after_hash_freeze_aborts_before_publication
+    with pytest.raises(ValueError, match="inputs or code changed"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'inputs or code changed'
+E     Actual message: 'CH004 EV001 source differs from its approved 08079e2/f8c6845 versions'
+_ test_input_mutation_after_hash_freeze_aborts_before_publication[preregistration] _
+tests/test_experiments_ch004.py:604: in test_input_mutation_after_hash_freeze_aborts_before_publication
+    ch004.run_experiment(**complete_inputs)
+backtesting/experiments/ch004.py:475: in run_experiment
+    payload = compute_design(data_dir=data_dir, repo_root=repo_root, prices=prices, sessions=sessions, _attempt=attempt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+
+During handling of the above exception, another exception occurred:
+tests/test_experiments_ch004.py:603: in test_input_mutation_after_hash_freeze_aborts_before_publication
+    with pytest.raises(ValueError, match="inputs or code changed"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'inputs or code changed'
+E     Actual message: 'CH004 EV001 source differs from its approved 08079e2/f8c6845 versions'
+___ test_file_backed_complete_pipeline_and_dry_run_under_protected_open_trap ___
+tests/test_experiments_ch004.py:637: in test_file_backed_complete_pipeline_and_dry_run_under_protected_open_trap
+    result = ch004.compute_design(**kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+_____ test_all_EV001_replays_finish_before_first_chart_and_mismatch_stops ______
+tests/test_experiments_ch004.py:661: in test_all_EV001_replays_finish_before_first_chart_and_mismatch_stops
+    ch004.evaluate(prepared, ch004._registration(repo).fields, 2)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+_______ test_count_judgement_publication_under_one_lock_two_finite_rows ________
+tests/test_experiments_ch004.py:716: in test_count_judgement_publication_under_one_lock_two_finite_rows
+    result = ch004.run_experiment(**complete_inputs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:475: in run_experiment
+    payload = compute_design(data_dir=data_dir, repo_root=repo_root, prices=prices, sessions=sessions, _attempt=attempt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+________________ test_validate_both_rows_before_any_publication ________________
+tests/test_experiments_ch004.py:733: in test_validate_both_rows_before_any_publication
+    payload = ch004.compute_design(**complete_inputs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+_______________ test_cli_uses_shared_archive_and_selected_series _______________
+tests/test_market_context_ingestion.py:82: in test_cli_uses_shared_archive_and_selected_series
+    collect_market_context.main()
+scripts/data/market_context.py:27: in main
+    start, end = validate_benchmark_range(args.from_date, args.to_date)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ingestion/krx_benchmarks.py:57: in validate_benchmark_range
+    raise ValueError("benchmark collection requires 08:00 KST or later")
+E   ValueError: benchmark collection requires 08:00 KST or later
+___________ test_cli_missing_credentials_fails_without_creating_data ___________
+tests/test_market_context_ingestion.py:95: in test_cli_missing_credentials_fails_without_creating_data
+    collect_market_context.main()
+scripts/data/market_context.py:27: in main
+    start, end = validate_benchmark_range(args.from_date, args.to_date)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ingestion/krx_benchmarks.py:57: in validate_benchmark_range
+    raise ValueError("benchmark collection requires 08:00 KST or later")
+E   ValueError: benchmark collection requires 08:00 KST or later
+
+During handling of the above exception, another exception occurred:
+tests/test_market_context_ingestion.py:94: in test_cli_missing_credentials_fails_without_creating_data
+    with pytest.raises(ValueError, match="required"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'required'
+E     Actual message: 'benchmark collection requires 08:00 KST or later'
+_________________ test_outbound_sockets_are_rejected[connect] __________________
+tests/test_offline_test_safety.py:13: in test_outbound_sockets_are_rejected
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as connection:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/socket.py:233: in __init__
+    _socket.socket.__init__(self, family, type, proto, fileno)
+E   PermissionError: [Errno 1] Operation not permitted
+________________ test_outbound_sockets_are_rejected[connect_ex] ________________
+tests/test_offline_test_safety.py:13: in test_outbound_sockets_are_rejected
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as connection:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/socket.py:233: in __init__
+    _socket.socket.__init__(self, family, type, proto, fileno)
+E   PermissionError: [Errno 1] Operation not permitted
+________ test_kis_opt_in_does_not_enable_network_in_other_test_modules _________
+tests/test_offline_test_safety.py:25: in test_kis_opt_in_does_not_enable_network_in_other_test_modules
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as connection:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/socket.py:233: in __init__
+    _socket.socket.__init__(self, family, type, proto, fileno)
+E   PermissionError: [Errno 1] Operation not permitted
+__________ test_local_socketpair_and_in_process_api_client_still_work __________
+tests/test_offline_test_safety.py:33: in test_local_socketpair_and_in_process_api_client_still_work
+    first.sendall(b"offline")
+E   PermissionError: [Errno 1] Operation not permitted
+________________ test_shadow_full_market_peak_rss_under_600_mib ________________
+tests/test_shadow_ops.py:478: in test_shadow_full_market_peak_rss_under_600_mib
+    assert report["peak_rss_mib"] < 600, report
+E   AssertionError: {'financial_years': 12, 'peak_rss_mib': 1374.703125, 'price_sessions': 80, 'stocks': 3000}
+E   assert 1374.703125 < 600
+----------------------------- Captured stdout call -----------------------------
+HC002 memory: {"stocks": 3000, "price_sessions": 80, "financial_years": 12, "peak_rss_mib": 1374.703125}
+=============================== warnings summary ===============================
+tests/test_analysis_generations.py: 24 warnings
+tests/test_event_pipeline.py: 11 warnings
+tests/test_evidence_structured_dart.py: 4 warnings
+  /home/are01/src/HQA_Project/HQA_lh003/src/evidence/index_builder.py:44: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    ref = reference_date or datetime.utcnow()
+
+tests/test_backtesting_append_only.py: 20 warnings
+  /usr/lib/python3.12/multiprocessing/popen_fork.py:66: DeprecationWarning: This process (pid=3) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    self.pid = os.fork()
+
+tests/test_runtime_load.py::test_synthetic_cold_and_warm_p95_report_is_not_a_real_llm_sla
+  tests/test_runtime_load.py:266: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    def test_synthetic_cold_and_warm_p95_report_is_not_a_real_llm_sla(record_property):
+
+tests/test_shadow_ops.py::test_shadow_full_market_peak_rss_under_600_mib
+  tests/test_shadow_ops.py:469: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    def test_shadow_full_market_peak_rss_under_600_mib(tmp_path, record_property):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_experiments_ch004.py::test_registration_pins_all_three_documents_and_EV001_source
+FAILED tests/test_experiments_ch004.py::test_source_invalid_returns_respect_EV001_base_and_chart_boundary[inf-stops-preparation]
+FAILED tests/test_experiments_ch004.py::test_source_invalid_returns_respect_EV001_base_and_chart_boundary[minus-one-stops-baseline]
+FAILED tests/test_experiments_ch004.py::test_source_invalid_returns_respect_EV001_base_and_chart_boundary[nan-keeps-event]
+FAILED tests/test_experiments_ch004.py::test_source_invalid_returns_respect_EV001_base_and_chart_boundary[minus-one-keeps-event]
+FAILED tests/test_experiments_ch004.py::test_holm_two_and_strict_cumulative_trial_threshold[20-pass]
+FAILED tests/test_experiments_ch004.py::test_holm_two_and_strict_cumulative_trial_threshold[21-fail]
+FAILED tests/test_experiments_ch004.py::test_insufficient_supplies_p_one_but_keeps_Holm_two[events]
+FAILED tests/test_experiments_ch004.py::test_insufficient_supplies_p_one_but_keeps_Holm_two[months]
+FAILED tests/test_experiments_ch004.py::test_insufficient_supplies_p_one_but_keeps_Holm_two[removal_months]
+FAILED tests/test_experiments_ch004.py::test_insufficient_supplies_p_one_but_keeps_Holm_two[se]
+FAILED tests/test_experiments_ch004.py::test_insufficient_supplies_p_one_but_keeps_Holm_two[t]
+FAILED tests/test_experiments_ch004.py::test_insufficient_supplies_p_one_but_keeps_Holm_two[p]
+FAILED tests/test_experiments_ch004.py::test_insufficient_supplies_p_one_but_keeps_Holm_two[mean]
+FAILED tests/test_experiments_ch004.py::test_insufficient_supplies_p_one_but_keeps_Holm_two[cost]
+FAILED tests/test_experiments_ch004.py::test_insufficient_supplies_p_one_but_keeps_Holm_two[control]
+FAILED tests/test_experiments_ch004.py::test_delisting_loss_reprices_x_and_reruns_controls_Holm_to_change_verdict
+FAILED tests/test_experiments_ch004.py::test_incomplete_and_original_sensitivity_statuses[False-True-data_incomplete]
+FAILED tests/test_experiments_ch004.py::test_incomplete_and_original_sensitivity_statuses[True-False-sensitivity_unavailable]
+FAILED tests/test_experiments_ch004.py::test_incomplete_listing_stops_before_EV001_preparation_and_records_two_final_rows
+FAILED tests/test_experiments_ch004.py::test_complete_fixture_replay_all_secondary_metrics_and_no_protected_price_opens
+FAILED tests/test_experiments_ch004.py::test_dry_path_on_complete_fixture_never_evaluates_outcomes_or_publishes
+FAILED tests/test_experiments_ch004.py::test_failures_before_after_freeze_record_zero_or_two_attempts[pre_hash]
+FAILED tests/test_experiments_ch004.py::test_failures_before_after_freeze_record_zero_or_two_attempts[prepare]
+FAILED tests/test_experiments_ch004.py::test_failures_before_after_freeze_record_zero_or_two_attempts[evaluate]
+FAILED tests/test_experiments_ch004.py::test_failures_before_after_freeze_record_zero_or_two_attempts[publish]
+FAILED tests/test_experiments_ch004.py::test_input_mutation_after_hash_freeze_aborts_before_publication[financial]
+FAILED tests/test_experiments_ch004.py::test_input_mutation_after_hash_freeze_aborts_before_publication[documentation]
+FAILED tests/test_experiments_ch004.py::test_input_mutation_after_hash_freeze_aborts_before_publication[in_memory_prices]
+FAILED tests/test_experiments_ch004.py::test_input_mutation_after_hash_freeze_aborts_before_publication[preregistration]
+FAILED tests/test_experiments_ch004.py::test_file_backed_complete_pipeline_and_dry_run_under_protected_open_trap
+FAILED tests/test_experiments_ch004.py::test_all_EV001_replays_finish_before_first_chart_and_mismatch_stops
+FAILED tests/test_experiments_ch004.py::test_count_judgement_publication_under_one_lock_two_finite_rows
+FAILED tests/test_experiments_ch004.py::test_validate_both_rows_before_any_publication
+FAILED tests/test_market_context_ingestion.py::test_cli_uses_shared_archive_and_selected_series
+FAILED tests/test_market_context_ingestion.py::test_cli_missing_credentials_fails_without_creating_data
+FAILED tests/test_offline_test_safety.py::test_outbound_sockets_are_rejected[connect]
+FAILED tests/test_offline_test_safety.py::test_outbound_sockets_are_rejected[connect_ex]
+FAILED tests/test_offline_test_safety.py::test_kis_opt_in_does_not_enable_network_in_other_test_modules
+FAILED tests/test_offline_test_safety.py::test_local_socketpair_and_in_process_api_client_still_work
+FAILED tests/test_shadow_ops.py::test_shadow_full_market_peak_rss_under_600_mib
+41 failed, 5084 passed, 6 skipped, 61 warnings in 1131.10s (0:18:51)

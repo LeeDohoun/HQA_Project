@@ -3,12 +3,109 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from functools import lru_cache
+from pathlib import Path
 
 import exchange_calendars as calendars
 import pandas as pd
+from exchange_calendars.exchange_calendar_xkrx import XKRXExchangeCalendar
 
-CALENDAR_VERSION = "exchange-calendars:" + calendars.__version__ + ":XKRX:krx-notices-2021-2025-v2"
-SPECIAL_SESSION_REVIEW_REQUIRED_FROM = "2026-11-01"
+CALENDAR_VERSION = "exchange-calendars:" + calendars.__version__ + ":XKRX:krx-notices-through-2026-v3"
+# KRX announcement dated 2026-05-20, supplied and verified for this project.
+# One project override shared by research, forward and price validation.
+KRX_ADDITIONAL_CLOSED_DAYS = {
+    "2026-06-03": {
+        "reason": "Local election day; KRX all-market closure",
+        "source": "https://news.bizwatch.co.kr/article/market/2026/05/20/0023",
+    },
+    "2026-07-17": {
+        "reason": "Constitution Day restored as a statutory holiday in 2026; KRX all-market closure",
+        "source": "https://news.bizwatch.co.kr/article/market/2026/05/20/0023",
+    },
+}
+CALENDAR_VERIFIED_THROUGH = "2026-12-31"
+
+
+def require_verified_calendar(day) -> None:
+    if pd.Timestamp(day) > pd.Timestamp(CALENDAR_VERIFIED_THROUGH):
+        raise ValueError(f"calendar_unverified:{pd.Timestamp(day).date()}:official_KRX_2027_holiday_notice_required")
+
+
+class _ProjectXKRX(XKRXExchangeCalendar):
+    @property
+    def adhoc_holidays(self):
+        return list(pd.DatetimeIndex(super().adhoc_holidays).union(pd.DatetimeIndex(KRX_ADDITIONAL_CLOSED_DAYS)))
+
+    def _date_oob(self, day):
+        require_verified_calendar(day)
+        return super()._date_oob(day)
+
+    def session_offset(self, session, count, _parse=True):
+        require_verified_calendar(session)
+        position = self.sessions.searchsorted(pd.Timestamp(session)) + count
+        if position >= len(self.sessions) and self.last_session.year == 2026:
+            raise ValueError("calendar_unverified:session_offset:official_KRX_2027_holiday_notice_required")
+        return super().session_offset(session, count, _parse=_parse)
+
+    def date_to_session(self, date, direction="none", _parse=True):
+        require_verified_calendar(date)
+        if (direction == "next" and pd.Timestamp(date) > self.last_session
+                and self.last_session.year == 2026):
+            raise ValueError("calendar_unverified:next_session:official_KRX_2027_holiday_notice_required")
+        return super().date_to_session(date, direction, _parse=_parse)
+
+    def next_session(self, session, _parse=True):
+        return self.session_offset(session, 1, _parse=_parse)
+
+    def sessions_window(self, session, count, _parse=True):
+        if count:
+            self.session_offset(session, count - (1 if count > 0 else -1), _parse=_parse)
+        return super().sessions_window(session, count, _parse=_parse)
+
+
+@lru_cache(maxsize=16)
+def session_calendar(start, end) -> pd.DatetimeIndex:
+    """Inclusive date range; never expose dependency guesses for 2027 onwards."""
+    start, end = pd.Timestamp(start), pd.Timestamp(end)
+    require_verified_calendar(end)
+    if start > end:
+        raise ValueError("calendar start must not exceed end")
+    return _ProjectXKRX(start=start, end=end).sessions
+
+
+def preflight_price_sessions(data_dir, start, end, *, price_days=None):
+    """Compare sessions to nonempty daily-file inventory, without opening prices.
+
+    Metadata-only checks are safe before a protected ledger claim. Supplied
+    price days support the same check for in-memory experiment fixtures.
+    """
+    start, end = pd.Timestamp(start), pd.Timestamp(end)
+    expected = session_calendar(start, end)
+    if price_days is None:
+        directory = Path(data_dir) / "market/krx_daily"
+        price_days = [pd.Timestamp(p.stem) for p in directory.glob("*/*.jsonl")
+                      if len(p.stem) == 8 and p.stem.isdigit() and p.stat().st_size]
+    actual = pd.DatetimeIndex(price_days).sort_values().unique()
+    actual = actual[(actual >= start) & (actual <= end)]
+    missing, unexpected = expected.difference(actual), actual.difference(expected)
+    report = {"start": start.date().isoformat(), "end": end.date().isoformat(),
+              "calendar_version": CALENDAR_VERSION, "sessions": len(expected),
+              "price_sessions": len(actual),
+              "missing": missing.strftime("%Y-%m-%d").tolist(),
+              "unexpected": unexpected.strftime("%Y-%m-%d").tolist()}
+    if len(missing) or len(unexpected):
+        raise ValueError(f"calendar_price_session_mismatch:missing={report['missing']}:unexpected={report['unexpected']}")
+    return report
+
+
+# Days that may have special KRX hours but whose official notice is not yet
+# recorded in SPECIAL_CLOSES. Only these fail closed; other verified-year days
+# use the dependency's regular schedule. 2026-11-19 is the 2027 CSAT
+# (Ministry of Education, announced 2024-08-16); KRX usually publishes the
+# changed hours about two weeks before. Move it to SPECIAL_CLOSES with the
+# official notice when published.
+PENDING_SPECIAL_SESSIONS = {
+    "2026-11-19": "2027학년도 대학수학능력시험; KRX special-hours notice pending",
+}
 SPECIAL_CLOSES = {
     "2021-11-18": {
         "close": "2021-11-18T16:30:00+09:00", "published_at": "2021-11-04T10:00:00+09:00",
@@ -49,19 +146,21 @@ SPECIAL_CLOSES = {
 
 
 def _check_special_session_coverage(day: str) -> None:
-    # The dependency's CSAT table ends in 2020. These are review boundaries,
-    # not inferred exam dates or invented market hours.
-    if day >= SPECIAL_SESSION_REVIEW_REQUIRED_FROM:
+    # The dependency's CSAT table ends in 2020. Pending days fail closed rather
+    # than guessing regular hours; years after the verified range fail in
+    # require_verified_calendar.
+    if day in PENDING_SPECIAL_SESSIONS and day not in SPECIAL_CLOSES:
         raise ValueError(f"calendar_special_session_coverage_unverified:{day}:official_KRX_notice_required")
 
 
 @lru_cache(maxsize=8)
 def _calendar(year: int):
-    # XKRX's bundled precomputed calendar explicitly covers 1956 through 2050.
+    require_verified_calendar(f"{year}-01-01")
+    # Keep the dependency schedule bounded by the officially verified year.
     if not 1956 <= year <= 2050:
         raise ValueError("XKRX_calendar_year_out_of_supported_range")
-    return calendars.get_calendar("XKRX", start=f"{max(1956, year - 2)}-01-01",
-                                  end=f"{min(2050, year + 1)}-12-31")
+    return _ProjectXKRX(start=f"{max(1956, year - 2)}-01-01",
+                        end=f"{min(2026, year + 1)}-12-31")
 
 
 @lru_cache(maxsize=2048)
@@ -85,7 +184,7 @@ def completed_daily_sessions(as_of: datetime, count: int = 300) -> list[tuple[st
         raise ValueError("completed session count must be between 1 and 300")
     cutoff = pd.Timestamp(as_of)
     korean_day = cutoff.tz_convert("Asia/Seoul")
-    _check_special_session_coverage(korean_day.date().isoformat())
+    require_verified_calendar(korean_day.date().isoformat())
     calendar = _calendar(korean_day.year)
     schedule = calendar.schedule.copy()
     for day, notice in SPECIAL_CLOSES.items():

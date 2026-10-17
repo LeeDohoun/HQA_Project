@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import os
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
@@ -13,6 +14,7 @@ import numpy as np
 import pandas as pd
 
 from backtesting import cost_model, experiment_registry, holdout
+from backtesting.append_only import fsync_directory
 from backtesting.experiment_registry import PROJECT_ROOT, REGISTRY_PATH
 
 
@@ -222,12 +224,21 @@ def write_result_files(directory, stamp, encoded, lines) -> tuple[Path, Path]:
             else:
                 json_file.write(content)
             summary_file.write("\n".join(lines) + f"\n\nResult JSON: `{json_path.name}`\n")
+            json_file.flush()
+            os.fsync(json_file.fileno())
+            summary_file.flush()
+            os.fsync(summary_file.fileno())
+    fsync_directory(directory)
     return json_path, summary_path
 
 
-def write_results(experiment_id, payload, *, repo_root=PROJECT_ROOT, summary_lines=None) -> tuple[Path, Path]:
+def write_results(experiment_id, payload, *, repo_root=PROJECT_ROOT, summary_lines=None,
+                  aborted_registration=None) -> tuple[Path, Path]:
     """Publish finite JSON and a Korean summary with exclusive UTC filenames."""
-    load_preregistration(experiment_id, repo_root=repo_root)
+    if aborted_registration is not None:
+        experiment_registry.verify_captured_preregistration(experiment_id, aborted_registration, repo_root)
+    else:
+        load_preregistration(experiment_id, repo_root=repo_root)
     encoded = json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
     if summary_lines is not None:
         directory = Path(repo_root) / "research/experiments" / experiment_id / "results"

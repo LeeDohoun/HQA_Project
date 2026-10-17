@@ -304,7 +304,7 @@ def test_concurrent_identical_saves_do_not_duplicate_or_lose_stocks(tmp_path):
 
 
 @pytest.mark.parametrize("day,status", [
-    ("20261102", "unverified_special_session"),
+    ("20261119", "unverified_special_session"),
     ("20260906", "exchange_calendar_mismatch"),
 ])
 def test_historical_calendar_issues_keep_rows_without_inventing_close(day, status, monkeypatch):

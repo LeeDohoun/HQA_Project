@@ -1,14 +1,12 @@
 """Single-claim protected snapshot and an overlay that never rereads its sources.
 
-Mixed financial/index JSONL archives are frozen in full. Subsequent reads use
-that prefix from the snapshot, and seek directly to newly appended source bytes.
-Destructive archive rewrites fail closed; the collector must preserve episodes.
+Mixed financial/index JSONL archives are frozen in full. Later reads merge
+independently published immutable non-H1 versions, never the original archive.
 """
 from __future__ import annotations
 
 import json
 import os
-import re
 import shutil
 import tempfile
 from contextlib import contextmanager
@@ -17,6 +15,7 @@ from pathlib import Path
 import pandas as pd
 
 from backtesting import holdout
+from src.ingestion.incremental_versions import read_versions, version_directory
 
 from . import EXPERIMENT_ID, Refused
 from .storage import aware, file_hash, safe_path, seal, verified
@@ -79,8 +78,10 @@ def publish_snapshot(data_dir, destination, *, at, synthetic=False):
                 stream_info[relative] = {"bytes": stat.st_size, "mtime_ns": stat.st_mtime_ns}
         if [p.relative_to(source).as_posix() for p in inventory(source)[0]] != list(files):
             raise Refused("protected input inventory changed while sealing")
+        increments = {p.relative_to(source).as_posix(): file_hash(p) for relative in streams
+                      for p in sorted(version_directory(source / relative).glob("*.json"))}
         manifest = {"experiment_id": EXPERIMENT_ID, "synthetic": synthetic, "created_at": aware(at).isoformat(),
-                    "files": files, "streams": stream_info}
+                    "files": files, "streams": stream_info, "incremental_files": increments}
         seal(temporary / "manifest.json", manifest)
         # Read-only contents; parent publication is atomic and never replaces a seal.
         for folder in sorted((p for p in temporary.rglob("*") if p.is_dir()), reverse=True):
@@ -125,41 +126,35 @@ class Snapshot:
         return path
 
     def stream(self, data_dir, relative):
-        """Protected prefixes are read exclusively from the verified snapshot."""
-        metadata = self.manifest["streams"].get(relative)
+        """No size, byte offsets, hashes or content reads of mixed originals."""
         source = safe_path(data_dir, relative)
-        if metadata is None:
-            # New business-year files with no possible H1 publication. Earlier
-            # new files need an operator export, rather than a protected reread.
-            match = re.fullmatch(r"fundamentals/dart_quarterly/(\d{4})_(110\d{2})\.jsonl", relative)
-            if not match or int(match[1]) < 2026 or int(match[1]) == 2026 and match[2] not in {"11011", "11014"}:
-                raise Refused("new mixed archive could contain unsealed protected versions: " + relative)
-            return source.read_bytes()
-        baseline = self.path(relative).read_bytes()
-        stat = source.stat()
-        if stat.st_size < metadata["bytes"]:
-            raise Refused("mixed archive was truncated; preserve its sealed prefix: " + relative)
-        if stat.st_size == metadata["bytes"]:
-            if stat.st_mtime_ns != metadata["mtime_ns"]:
-                raise Refused("mixed archive rewritten without an appended version: " + relative)
-            return baseline
-        with source.open("rb") as handle:
-            handle.seek(metadata["bytes"])
-            tail = handle.read()
-        if not tail.endswith(b"\n"):
-            raise Refused("mixed archive has an incomplete appended episode: " + relative)
-        for line in tail.splitlines():
-            if not line.strip():
-                continue
-            row = json.loads(line)
-            day = row.get("trade_date", row.get("available_date"))
-            if day is None or protected(day):
-                raise Refused("new tail contains a protected or undated version; snapshot cannot be reopened")
-        after = source.stat()
-        fields = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
-        if tuple(getattr(after, field) for field in fields) != tuple(getattr(stat, field) for field in fields):
-            raise Refused("mixed archive changed during suffix acquisition")
-        return baseline + tail
+        financial = relative.startswith("fundamentals/dart_quarterly/")
+        field = "available_date" if financial else "trade_date"
+        for name, checksum in self.manifest["incremental_files"].items():
+            if name.startswith(version_directory(Path(relative)).as_posix() + "/"):
+                path = safe_path(data_dir, name)
+                if path.is_symlink() or file_hash(path) != checksum:
+                    raise Refused("sealed incremental version is missing or changed: " + name)
+        increments = read_versions(source, date_field=field)
+        baseline = self.path(relative).read_bytes() if relative in self.manifest["streams"] else b""
+        if not baseline and not increments:
+            raise Refused("new mixed archive requires immutable non-H1 versions: " + relative)
+        rows = [json.loads(line) for line in baseline.splitlines() if line.strip()]
+        if financial:
+            merged = {}
+            for row in [*rows, *increments]:
+                key = row["corp_code"], row["fs_div"], row["rcept_no"]
+                prior = merged.get(key)
+                if prior is not None:
+                    if (prior["raw_accounts"] != row["raw_accounts"]
+                            or prior.get("conflicting_accounts", {}) != row.get("conflicting_accounts", {})):
+                        raise Refused("conflicting immutable financial version")
+                    row = {**row, "stock_codes": sorted(set(prior["stock_codes"]) | set(row["stock_codes"]))}
+                merged[key] = row
+            rows = list(merged.values())
+        else:
+            rows = sorted([*rows, *increments], key=lambda row: (row["trade_date"], row.get("available_at", ""), row.get("version", "")))
+        return b"".join((json.dumps(row, sort_keys=True, ensure_ascii=False, allow_nan=False) + "\n").encode() for row in rows)
 
 
 @contextmanager
@@ -189,6 +184,9 @@ def input_view(data_dir, snapshot, *, end):
         streams = set(snapshot.manifest["streams"]) | {
             p.relative_to(source).as_posix() for p in (source / "fundamentals/dart_quarterly").glob("*_110*.jsonl")
             if int(p.name[:4]) <= pd.Timestamp(end).year}
+        streams |= {p.with_suffix(".jsonl").relative_to(source).as_posix()
+                    for p in (source / "fundamentals/dart_quarterly").glob("*_110*.versions")
+                    if int(p.name[:4]) <= pd.Timestamp(end).year}
         for relative in sorted(streams):
             path = view / relative
             path.parent.mkdir(parents=True, exist_ok=True)

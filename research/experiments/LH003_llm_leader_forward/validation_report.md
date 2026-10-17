@@ -1,146 +1,181 @@
-# LH003 implementation validation
+# LH003 round 21 implementation validation
 
-Worktree: `/home/are01/src/HQA_Project/HQA_lh003`.
-Branch: `claude/lh003-runner`. HEAD remains `5db038c0acb203c8caf69d51171ae48dd26c36d9`; no worktree commit.
-Preregistration is unchanged from `5db038c`; SHA-256:
+Worktree: `/home/are01/src/HQA_Project/HQA_lh003`, branch
+`claude/lh003-runner`, starting HEAD `9b657ad5303baa55c920151a2d57725f8cf06420`.
+No staging, commits, merges, stashes or other Git metadata changes were performed
+in this worktree or the main checkout. Existing tests use isolated temporary Git
+fixtures for preregistration/locking checks.
+The two conflict files have no markers; their index entries remain unmerged until
+the operator stages them. All 11 functions from main's `ordering.py` match main's
+stage-3 AST exactly. The LH003 release function is additional.
+
+Preregistration SHA-256 remains
 `dc1ee3b669e515dc92b504eaf5d88061281b079f3c7f4fc5d7194dd5c37d190f`.
+No actual `.env*` file was opened, no network or real model call was made, no
+production registry/holdout/data was written, and the main checkout was never
+written or used to run an experiment. Its existing venv was used read-only.
+Existing read-side registry tests created an empty advisory `.lock` beside the
+research registry; this generated file was removed after all tests exited.
+Registry and ledger bytes still match the incoming main index exactly.
 
-## Implemented
+## Review findings
 
-V3 prompts and decision-specific schemas; identifier leak checks; frozen A/common
-inputs; fixed 52-week XKRX schedule and reviewed calendar hashes; three repeats
-with one re-ask each; durable attempt cap and drift stop; single-claim protected
-snapshot routing; crash/deadline recovery; cost-independent raw executions;
-sealed v2 accounting and 200 random paths; NW(4) final policy inference; registry
-publication/recovery; environment reports and CLI; ops allowlist.
+| Finding | Change | Regression evidence |
+| --- | --- | --- |
+| P1-1 calendar | Shared corrected sessions and special closes; verify the entire fixed horizon and nonempty required H1 and full 252-session measurement price files before session construction/claim. Missing coverage refuses the complete plan. | Election/Constitution holidays, pending special hours, 2027 refusal, missing H1/non-H1 files without content reads, and rejection of a missing whole week. |
+| P1-2 ordering | LH003's mandatory gate calls main's AV002 release verifier inside the shared lock, requiring both variants and their sealed AV001 parent/result. | LH003 lock/claim regression and three AV002 missing/partial/wrong-parent cases; main's existing lock/release/append tests retained. |
+| P1-3 rewrites | Quarterly and benchmark publishers emit immutable, content-addressed non-H1 versions before modifying aggregate files. Snapshot views merge these with the frozen baseline without opening mixed originals. | Actual quarterly publisher integration; original-open guard; growth/reordering/same-size/truncated aggregates; new version-only archive after publication crash; protected incremental rejection. |
+| P1-4 rule S | Share the merged-listing conflict set with FilingDates; exclude conflicts in financial values and disclosure counts, retaining the strict prior-day boundary. | Main/supplement conflict exclusion and same-day scope regression. |
+| P1-5 environment | Explicit `--real-format-trial` runs six synthetic calls through LlmRunner, sharing durable 320/eight-format budgets. Measure six-call wall time, whole process tree and a conservative real-parent/CLI-child capacity bound. Timing and memory gate start. | Fake injected into the actual flag path; no flag/no call; fake cannot pass readiness; eight-attempt cap; measured grandchild memory; start gate failures. No actual real trial was executed. |
+| P1-6 once | Query canonical completed evaluation rows before inputs/computation. A completed row permits only its existing sealed result hash. Publication remains locked and idempotent. | Rollback with missing result, different hash rejection, existing-hash recovery, seal-to-registry crash recovery without recomputation. |
+| P2-1 pins | Pin all LH001 modules, package initializers, cost/calendar algorithms and incremental publishers. Verify pins before final computation. Statutory/calendar notice data live in separate files and have separately recorded hashes. | Evaluation blocks changed LH001 evaluation, cost algorithm, LH001/LH003 initializers and shared calendar; mechanical-data changes preserve algorithm pins. |
+| P2-2 memory | Each invalid policy/control scenario references its single A portfolio; official evaluation writes one week/scenario at a time. Invalid random paths also reference A. | Full `evaluate_saved` path on 500 stocks, 22 invalid weeks and all 52 decisions; 312 sealed weekly scenario files, real registry publication against a temporary fixture, bounded RSS. |
+| P2-3 not_started | Recover a missing canonical row from the existing `not_started` seal and hash under the same execution lock. | Injected append failure followed by repeated recovery produces exactly one row without a new claim. |
 
-The shared LH002 numerical table builder was extracted as a pure function so
-LH003 can use verified snapshot sources. Existing LH001/LH002 source guards and
-numerical definitions remain in place. The supplied preflight blocker document
-is now a short operator/data open-items list.
+## Validation results
 
-## Tests
+Related-area verification: **514 passed**, 458.45 s pytest runtime, with the
+committed merge-parent fixture source described below. This run included 103
+LH003 cases and AV002, quarterly publishing, FW001 deployment/replay and isolated
+strategy/calendar import tests. The last two calendar-boundary and three additional
+dependency-pin cases are included in the final full-suite run.
 
-Broad offline regression: **663 passed, 1 skipped**, 114.39 s.
-The existing skip is `tests/test_experiments_av001.py:850`, the optional
-historical HC003 accounting comparison (no holdout).
+Final focused LH003 run on the frozen implementation: **108 passed**, 122.49 s
+pytest runtime (150.384 s with startup/teardown), exit status 0. Maximum individual
+RSS was **233.863 MiB**, summed process-tree RSS **244.566 MiB**, and tree PSS
+**227.632 MiB**, with no guard violation. The 500-stock / 22-invalid-week case
+recorded 233.863 MiB peak and 76.047 MiB growth, with all 312 weekly scenario
+records verified. Its sealed envelope and log are preserved in
+[reports/round21_focused_500_stock_memory.json](reports/round21_focused_500_stock_memory.json)
+and [reports/round21_lh003_tests.txt](reports/round21_lh003_tests.txt).
+These runs overlap and are not independent additional tests.
 
-```bash
-OPENAI_API_KEY=offline-disabled OPENAI_BASE_URL=http://127.0.0.1:9/v1 \
-LANGCHAIN_TRACING_V2=false LANGSMITH_TRACING=false \
-PYTHON_DOTENV_DISABLED=1 PYTHONDONTWRITEBYTECODE=1 \
-venv/bin/python -m pytest -q -rs \
-  tests/test_experiments_lh003_runner.py \
-  tests/test_experiments_lh003_snapshot.py \
-  tests/test_experiments_lh003_evaluate.py \
-  tests/test_experiments_lh001.py tests/test_experiments_lh002.py \
-  tests/test_experiments_ordering.py tests/test_experiments_av001.py \
-  tests/test_backtesting_cost_model.py tests/test_backtesting_holdout.py
-```
+Final frozen-code full suite: **5084 passed, 41 failed, 6 skipped**, 1131.10 s
+pytest runtime (1195.682 s including process startup/teardown), exit status 1.
+All **108 LH003 cases passed**. There were no collection/setup errors. The full
+suite is not green; the remaining failures are listed below without changing
+their research gates or enabling network access.
 
-The final affected LH003 suites were rerun after the last snapshot/identity
-checks: **71 passed**, 70.96 s. This includes an additional missing-machine-ID
-check, a deterministic atime-change check and an actual suffix-change refusal.
-A read changing only atime must not be mistaken for changed source content.
-The content guard checks device/inode, size, mtime and ctime instead.
+| Remaining failure | Count | Evidence / limitation |
+| --- | --- | --- |
+| `tests/test_experiments_ch004.py` | 34 | `backtesting/experiments/ch004.py:63` rejects merged EV001 source because it differs from CH004's approved `08079e2` / `f8c6845` hashes. These source files and the approved hashes were not edited for LH003. |
+| `tests/test_market_context_ingestion.py` | 2 | The existing benchmark CLI refuses collection before 08:00 KST. The suite ran before that time; these tests do not freeze that clock. The time gate remains unchanged. |
+| `tests/test_offline_test_safety.py` | 4 | The managed sandbox denies socket creation or AF_UNIX send before the tests can exercise their own guards. No socket permission was enabled. |
+| `tests/test_shadow_ops.py::test_shadow_full_market_peak_rss_under_600_mib` | 1 | The existing 3000-stock shadow benchmark reports 1374.703 MiB against its separate 600 MiB assertion. This remains unresolved; the user-requested approximately 1.5 GB per-process limit was respected. |
 
-```bash
-venv/bin/python -m pytest -q \
-  tests/test_experiments_lh003_runner.py \
-  tests/test_experiments_lh003_snapshot.py \
-  tests/test_experiments_lh003_evaluate.py
-```
+The supervisor measured a maximum individual RSS of **1374.703 MiB**, aggregate
+tree PSS of **1368.566 MiB**, and no limit violation. The largest summed tree RSS
+was 1832.113 MiB during forked tests; shared pages appear in each child's RSS and
+are counted proportionally by PSS. No process exceeded the 1450 MiB guard.
 
-`git diff --check` and `bash -n scripts/ops/research_run.sh` also passed.
-These are fixture/fake tests, not strategy profitability or live-provider checks.
-Regression tests use temporary fixture repositories and ledgers; no production
-holdout session or LH003 claim was opened.
+In the full-suite 500-stock / 22-invalid-week evaluation, the 10 ms process-tree
+sampler recorded **483.168 MiB** peak and **66.754 MiB** growth during evaluation,
+with **312** sealed weekly scenario records. The standalone final LH003 run is
+recorded separately above. The fixture data and registry are under `/tmp/`.
+No real-data capacity or live-model readiness is inferred from this synthetic
+memory regression.
 
-## Read-only dry checks
+Exact counts, failure identities, frozen hashes and supervisor measurements:
+[reports/round21_validation.json](reports/round21_validation.json).
+Logs: [full suite](reports/round21_full_suite.txt),
+[JUnit cases](reports/round21_full_suite.junit.xml),
+[related tests](reports/round21_related_tests.txt), and
+[original sandbox timeout](reports/round21_original_timeout.txt).
+The full-suite memory envelope is preserved in
+[reports/round21_full_500_stock_memory.json](reports/round21_full_500_stock_memory.json).
 
-Source: `/home/are01/src/HQA_Project/HQA_Project/data`, strictly read-only.
-Latest completed week: **2026-10-16**. Latest archived daily
-filename: **2026-10-08**. The requested real-data input/model-fake
-cycle was **skipped** because its decision-day KRX file is missing; no verified
-LH003 protected snapshot was supplied. Real full-cycle runtime/peak RSS are
-**not measured**. The metadata-only process metrics in its JSON report must not
-be interpreted as a real input-cycle measurement.
+All pytest invocations use `venv/bin/python -m pytest -q -p no:cacheprovider`, one
+pytest process at a time, one BLAS/OpenMP thread, disabled dotenv/live KIS/model
+endpoints/tracing and `PYTHONDONTWRITEBYTECODE=1`. The final run also limits libc allocator arenas
+and its trim threshold (`MALLOC_ARENA_MAX=2`, `MALLOC_TRIM_THRESHOLD_=131072`). An external supervisor samples
+the tree every 50 ms and kills only its own test group if any individual RSS or
+aggregate PSS exceeds 1450 MiB. RSS sums of forked workers count shared pages
+repeatedly; PSS avoids that double-counting for the aggregate guard. A temporary
+Python audit guard blocks actual environment-file reads, network/Codex execution,
+and writes to the main checkout, production data/registry/ledger and Git metadata.
+Only temporary fixture repositories and data are writable during tests.
 
-- [Real-data availability report](reports/environment_real_data_20261017.json)
-- [Synthetic full-cycle report](reports/environment_synthetic_20261017.json)
+The first full-suite attempt stopped in existing
+`tests/test_ai_server_analysis_modes.py:21`: AnyIO's TestClient thread waited for
+an event-loop wakeup. The same hang reproduced in a minimal FastAPI app without
+the audit guard. A temporary `sitecustomize.py` bounded epoll waits to 50 ms;
+the identical in-process ASGI probe then returned HTTP 200. The full suite was
+rerun with this sandbox compatibility setting. This changes no repository or
+venv file and does not permit network traffic. The original timeout stack and
+the final run are preserved separately; an unmodified full-suite pass is not
+claimed. For the still-uncommitted merge, the original preregistration fixture
+helper could not find AV002/CH004 documents in the WIP HEAD. A temporary pytest
+plugin verified all 22 current preregistrations byte-for-byte against committed
+merge parent `ea3583936d39b07a4daa64abecf7a27eb9fb8295`, then selected that commit
+only in newly cloned `/tmp/` fixture repositories. It never changes a source
+checkout's refs or index, creates no commit/merge and checks out no environment
+files. The branch tip moved during this work, so the plugin pins the commit
+object rather than following the moving branch. The same plugin memoizes the
+original pure lunar/solar conversion functions (immutable tuple results) to avoid
+repeated identical dependency arithmetic; calendar dates, notices and verification
+rules remain unchanged.
 
-The synthetic stand-in used 252 sessions, 60 candidates, a labelled synthetic H1
-snapshot and three injected Python fake calls. All sources/snapshots were under
-`/tmp/`, never under `data/`, and the scratch tree was removed afterwards.
+The exact supervisor, audit guard and pytest plugin used for the final run are in
+[reports/round21_test_harness](reports/round21_test_harness). They are validation
+artifacts, not production runner changes. An earlier compatibility rerun was stopped by an overly strict sum-RSS
+supervisor threshold during existing concurrent-append fork tests (individual
+peak 274.555 MiB, summed RSS 1614.719 MiB). The final supervisor retains the
+individual RSS cap and uses aggregate PSS for physical-memory accounting.
 
-| Measured synthetic check | Value |
-| --- | ---: |
-| Whole command runtime | 8.639 s |
-| Cycle including fixture/snapshot setup | 6.011 s |
-| Peak process RSS including imports/setup | 119.207 MiB |
-| Fake repeats | 3 |
-| Real model calls / synthetic-format budget spent | 0 / 0 |
-| Six-timeout timing bound including identity checks/setup | 1926.011 s |
+## Remaining operator prerequisites
 
-The timing bound uses the pinned session-close assumption: an actual data-sync
-trigger was not measured. Both environment reports have `passed=false` because
-real-cycle/operational deployment evidence is incomplete. Synthetic memory and
-runtime do not establish real-data resource requirements.
+The implementation does not certify deployment or profitability. Before an
+actual start: verify both AV002 terminal rows and AV001/EV001 releases; supply
+2026-11-19 official hours and 2027 official calendar coverage; deploy the immutable
+version publishers; explicitly run the permitted real synthetic-format trial;
+provide real sync and reboot/suspend/logout evidence; commit reviewed code.
+Without verified calendar coverage the whole fixed plan refuses, before a claim.
+The start date and 52-week/evaluation windows are unchanged. Unknown 2027 trade
+or T+2 tax dates still refuse evaluation until a legally sourced mechanical rate
+update; no rate or calendar notice was invented here.
 
-Both commands also ran behind an audit guard that rejected actual Codex process
-creation, network access, `.env` opens, production HoldoutSession construction,
-and any original source-file content open. Observed counts for all five were
-zero. Source access here was directory/file metadata only. No main-checkout file
-was written, no collector/service was started and no real-data prompt was sent.
-The reports seal hashes of the current implementation; those hashes were checked
-again when producing this validation report.
-
-## Interpretations and remaining operator items
-
-All implementation interpretations, the acquisition/verification bootstrap,
-CLI examples, transfer-manifest fields, restart evidence, execution accounting,
-calendar notes and trial-count rules are in
-[implementation_notes.md](implementation_notes.md).
-
-[IMPLEMENTATION_BLOCKERS.md](IMPLEMENTATION_BLOCKERS.md) lists only deployment,
-data sync, the legally sourced 2027 tax update and the first-real-call commit gate.
-2027 raw execution recording is tested without cost evaluation. Unknown 2027
-trade/settlement tax dates fail closed before a statistical trial is consumed.
-No rate was invented or carried forward from 2026.
+See [implementation_notes.md](implementation_notes.md) for the commands, artifact
+contracts, budgets and startup sequence, and
+[IMPLEMENTATION_BLOCKERS.md](IMPLEMENTATION_BLOCKERS.md) for deployment items.
 
 ## Files changed
 
-The pre-existing untracked `venv` symlink is preserved and excluded below.
-An ignored legacy `data/` tree was also already present at checkout creation
-(21:32 KST, before LH003 implementation files at 21:37). It was preserved;
-the requested archive checks explicitly used the main checkout's data directory.
-No worktree `data/research/lh003/` state or canonical holdout ledger was created.
+The following 34 paths are this task's implementation, tests, documentation and
+derived collector manifest changes. Existing staged merge changes and the user's
+review/venv files are preserved. Validation logs, JSON summaries and the temporary
+test harness are additional artifacts under `reports/`.
 
-- `backtesting/experiments/lh001/inputs.py`
-- `backtesting/experiments/lh003/__init__.py`
+- `backtesting/cost_model.py`
 - `backtesting/experiments/lh003/__main__.py`
 - `backtesting/experiments/lh003/calendar.py`
 - `backtesting/experiments/lh003/environment.py`
 - `backtesting/experiments/lh003/evaluate.py`
 - `backtesting/experiments/lh003/executions.py`
 - `backtesting/experiments/lh003/inputs.py`
+- `backtesting/experiments/lh003/resources.py`
 - `backtesting/experiments/lh003/runner.py`
 - `backtesting/experiments/lh003/simulation.py`
 - `backtesting/experiments/lh003/snapshot.py`
-- `backtesting/experiments/lh003/storage.py`
 - `backtesting/experiments/lh003/workflow.py`
 - `backtesting/experiments/ordering.py`
+- `backtesting/statutory_rates.py`
+- `research/experiments/FW001_forward_replication/deployment_manifest.json`
+- `research/experiments/FW001_forward_replication/manifest_changes/ca1f9c3a6dd85a9814113947487f6b614bc6e8cfc6a4522ac872156685204cc1.json`
+- `research/experiments/FW001_forward_replication/manifest_history/2d9b62fa23a651716b9738e43fd8a174656696dcb10b4d5e5ab6c9b7634ae8aa.json`
 - `research/experiments/LH003_llm_leader_forward/IMPLEMENTATION_BLOCKERS.md`
 - `research/experiments/LH003_llm_leader_forward/implementation_notes.md`
-- `research/experiments/LH003_llm_leader_forward/prompts/README.md`
-- `research/experiments/LH003_llm_leader_forward/prompts/v3_c_num.schema.json`
-- `research/experiments/LH003_llm_leader_forward/prompts/v3_c_num.txt`
-- `research/experiments/LH003_llm_leader_forward/prompts/v3_common.txt`
-- `research/experiments/LH003_llm_leader_forward/prompts/v3_reask.txt`
-- `research/experiments/LH003_llm_leader_forward/reports/environment_real_data_20261017.json`
-- `research/experiments/LH003_llm_leader_forward/reports/environment_synthetic_20261017.json`
 - `research/experiments/LH003_llm_leader_forward/validation_report.md`
+- `scripts/ops/collector_manifest.py`
+- `scripts/ops/push_collector_code.sh`
 - `scripts/ops/research_run.sh`
+- `src/ingestion/dart_quarterly.py`
+- `src/ingestion/incremental_versions.py`
+- `src/ingestion/krx_benchmarks.py`
+- `src/krx_calendar_data.py`
+- `src/runner/trading_calendar.py`
+- `tests/test_dart_quarterly.py`
+- `tests/test_experiments_av002.py`
 - `tests/test_experiments_lh003_evaluate.py`
+- `tests/test_experiments_lh003_round21.py`
 - `tests/test_experiments_lh003_runner.py`
 - `tests/test_experiments_lh003_snapshot.py`

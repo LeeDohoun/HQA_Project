@@ -207,7 +207,7 @@ def freeze_target_scan(data_dir, end_de):
             "reference_version": references}
 
 
-def verified_target_scan(data_dir, state, *, price_end=None):
+def verified_target_scan(data_dir, state, *, price_end=None, experiment_id=None):
     """Verify the inventory; bound price hashes for a preregistered stage.
 
     Coverage never opens protected prices, even inside an experiment session.
@@ -236,7 +236,7 @@ def verified_target_scan(data_dir, state, *, price_end=None):
             continue
         if holdout.HOLDOUT_START <= day <= holdout.HOLDOUT_END:
             continue
-        holdout.guard_period(day, day)
+        holdout.guard_period(day, day, experiment_id=experiment_id)
         if file_hash(path) != scan["price_files"][path.relative_to(data_dir).as_posix()]:
             raise ValueError("DART frozen target scan non-protected KRX file changed")
     return scan
@@ -322,7 +322,7 @@ def _required_supplement_targets(data_dir, end_de, included_targets, source_vers
     return tuple(sorted(corp for corp, values in candidates.items() if values & traded))
 
 
-def listing_status(data_dir, *, price_end=None):
+def listing_status(data_dir, *, price_end=None, experiment_id=None):
     root = directory(data_dir)
     main = _state(root / "_state.json") or {}
     days = main.get("completed_listing_days", [])
@@ -355,7 +355,7 @@ def listing_status(data_dir, *, price_end=None):
                 reason = "supplement_manifest_row_count_mismatch"
             else:
                 try:
-                    scan = verified_target_scan(Path(data_dir), state, price_end=price_end)
+                    scan = verified_target_scan(Path(data_dir), state, price_end=price_end, experiment_id=experiment_id)
                     required = required_supplement_targets(data_dir, state["end_de"],
                         included_targets=state["target_corps"], frozen_scan=scan)
                 except ValueError as exc:

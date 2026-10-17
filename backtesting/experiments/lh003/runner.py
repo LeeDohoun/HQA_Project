@@ -21,22 +21,47 @@ from .storage import attempts, aware, digest, file_hash, now, seal, verified
 
 def implementation_files(repo_root):
     root = Path(repo_root)
-    return [*sorted((root / "backtesting/experiments/lh003").glob("*.py")),
+    files = [*sorted((root / "backtesting/experiments/lh003").glob("*.py")),
+             *sorted((root / "backtesting/experiments/lh001").glob("*.py")),
              *sorted((root / "research/experiments/LH003_llm_leader_forward/prompts").glob("v3*")),
-             root / "backtesting/experiments/ordering.py", root / "backtesting/experiments/lh001/inputs.py",
+             root / "backtesting/experiments/ordering.py", root / "backtesting/cost_model.py",
+             *[root / ("backtesting/" + name + ".py") for name in
+               ("append_only", "capacity", "experiment_registry", "holdout", "signal_eval")],
+             root / "src/runner/trading_calendar.py", root / "src/runner/event_evidence.py",
+             root / "src/utils/stock_codes.py",
              *[root / ("backtesting/experiments/" + name + ".py") for name in
-               ("hc001", "hc002", "hf001", "av001", "lh001/arms", "lh001/runner")],
+               ("common", "d001", "hc001", "hc002", "hc003", "hf001", "av001", "av002")],
              *[root / ("src/ingestion/" + name + ".py") for name in
-               ("dart_listing", "dart_financial_date_rules", "dart_quarterly")],
+               ("dart_listing", "dart_financial_date_rules", "dart_filing_dates", "dart_financials",
+                "dart_quarterly", "storage", "incremental_versions", "krx_benchmarks")],
+             *[root / ("src/research/" + name + ".py") for name in
+               ("industry_map", "industry_index", "market_regimes")],
              root / "scripts/ops/research_run.sh"]
+    packages = {parent / "__init__.py" for p in files for parent in p.parents
+                if parent != root and parent.is_relative_to(root)}
+    return sorted(set(files) | {p for p in packages if p.is_file()})
 
 
 def implementation_hashes(repo_root):
     root = Path(repo_root)
-    # Statutory cost tables and the explicit calendar update path remain mechanical
-    # updates. Selection/input/runner code is frozen before the first real call.
-    return {p.relative_to(root).as_posix(): file_hash(p) for p in implementation_files(root)
-            if p.name not in {"calendar.py", "__init__.py"}}
+    return {p.relative_to(root).as_posix(): file_hash(p) for p in implementation_files(root)}
+
+
+def mechanical_data_hashes(repo_root):
+    root = Path(repo_root)
+    return {name: file_hash(root / name) for name in
+            ("backtesting/statutory_rates.py", "src/krx_calendar_data.py")}
+
+
+def verify_pinned(root, repo_root):
+    start = verified(Path(root) / "start.json")
+    expected = start.get("implementation_hashes")
+    if not expected or implementation_hashes(repo_root) != expected:
+        raise Refused("pinned implementation hashes differ or are missing at evaluation")
+    manifest = Path(root) / "model_manifest.json"
+    if manifest.exists() and verified(manifest)["implementation_hashes"] != expected:
+        raise Refused("model manifest differs from pinned start implementation")
+    return expected
 
 
 def check_committed(repo_root=PROJECT_ROOT):
@@ -60,13 +85,14 @@ def _text(value):
 
 class LlmRunner:
     def __init__(self, root, *, repo_root=PROJECT_ROOT, prompt_dir=PROMPT_DIR, subprocess_call=None,
-                 timeout=300, clock=now):
+                 timeout=300, clock=now, format_trial=False):
         if timeout <= 0:
             raise Refused("call timeout must be positive")
         self.root, self.repo_root, self.prompt_dir = Path(root), Path(repo_root), Path(prompt_dir)
         self.process = subprocess.run if subprocess_call is None else subprocess_call
         self.fake = subprocess_call is not None
         self.timeout, self.clock, self.model = timeout, clock, MODEL
+        self.format_trial = format_trial
 
     def stop(self, reason):
         path = self.root / "model_stopped.json"
@@ -123,15 +149,19 @@ class LlmRunner:
                 return {"valid": False, "reason": self.stop(str(exc)), "attempts": history, "output": None}
             if output is not None:
                 return {"valid": True, "reason": None, "attempts": history, "output": output}
-            while len(history) < 2:
+            while len(history) < (1 if self.format_trial else 2):
                 if aware(self.clock()) >= deadline:
                     return {"valid": False, "reason": "finalisation_deadline", "attempts": history, "output": None}
-                used = len(attempts(self.root))
+                all_attempts = attempts(self.root)
+                used = len(all_attempts)
+                if self.format_trial and sum(a.get("synthetic_format") is True for a in all_attempts) >= 8:
+                    return {"valid": False, "reason": "synthetic_format_cap_8", "attempts": history, "output": None}
                 if used >= CALL_CAP:
                     return {"valid": False, "reason": "call_cap_320", "attempts": history, "output": None}
                 index, number = len(history), used + 1
                 prompt = payload["prompt"] + ("\n" + payload["reask"] if index else "")
                 reservation = {"number": number, "key": key, "week": week, "repeat": repeat, "try": index,
+                               "synthetic_format": self.format_trial,
                                "started_at": aware(self.clock()).isoformat(), "deadline": deadline.isoformat(),
                                "prompt_sha256": digest(prompt), "schema_sha256": digest(payload["schema"])}
                 # This is the budget claim. No process starts before it is durable.
@@ -190,7 +220,8 @@ class LlmRunner:
                     return {"valid": False, "reason": "model_version_drift", "attempts": history, "output": None}
                 if record["state"] == "valid":
                     return {"valid": True, "reason": None, "attempts": history, "output": record["output"]}
-            return {"valid": False, "reason": "repeat_invalid_after_reask", "attempts": history, "output": None}
+            return {"valid": False, "reason": "synthetic_format_invalid" if self.format_trial else "repeat_invalid_after_reask",
+                    "attempts": history, "output": None}
 
     def decide(self, payload, *, week, deadline):
         if len(payload["id_mapping"]) < 40:

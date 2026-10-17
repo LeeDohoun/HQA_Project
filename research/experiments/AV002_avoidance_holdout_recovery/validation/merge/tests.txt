@@ -1,0 +1,81 @@
+........................................................................ [ 17%]
+........................................................................ [ 34%]
+........................................................................ [ 51%]
+....s................................................................... [ 68%]
+......................................................................FF [ 85%]
+.............................................................            [100%]
+=================================== FAILURES ===================================
+_________ test_concurrent_process_appends_preserve_all_rows[registry] __________
+tests/test_backtesting_append_only.py:135: in test_concurrent_process_appends_preserve_all_rows
+    barrier = context.Barrier(8)
+              ^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/multiprocessing/context.py:98: in Barrier
+    return Barrier(parties, action, timeout, ctx=self.get_context())
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/multiprocessing/synchronize.py:375: in __init__
+    wrapper = BufferWrapper(struct.calcsize('i') * 2)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/multiprocessing/heap.py:331: in __init__
+    block = BufferWrapper._heap.malloc(size)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/multiprocessing/heap.py:309: in malloc
+    (arena, start, stop) = self._malloc(size)
+                           ^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/multiprocessing/heap.py:192: in _malloc
+    return self._new_arena(size)
+           ^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/multiprocessing/heap.py:166: in _new_arena
+    arena = Arena(length)
+            ^^^^^^^^^^^^^
+/usr/lib/python3.12/multiprocessing/heap.py:83: in __init__
+    self.fd, name = tempfile.mkstemp(
+/usr/lib/python3.12/tempfile.py:496: in mkstemp
+    return _mkstemp_inner(dir, prefix, suffix, flags, output_type)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/tempfile.py:395: in _mkstemp_inner
+    fd = _os.open(file, flags, 0o600)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+research/experiments/AV002_avoidance_holdout_recovery/validation/merge/guard.py:43: in guard
+    deny_write(target)
+research/experiments/AV002_avoidance_holdout_recovery/validation/merge/guard.py:28: in deny_write
+    raise RuntimeError('validation forbids mutation: ' + str(target))
+E   RuntimeError: validation forbids mutation: /dev/shm/pym-5-0jyjv70m
+__________ test_concurrent_process_appends_preserve_all_rows[holdout] __________
+tests/test_backtesting_append_only.py:135: in test_concurrent_process_appends_preserve_all_rows
+    barrier = context.Barrier(8)
+              ^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/multiprocessing/context.py:98: in Barrier
+    return Barrier(parties, action, timeout, ctx=self.get_context())
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/multiprocessing/synchronize.py:375: in __init__
+    wrapper = BufferWrapper(struct.calcsize('i') * 2)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/multiprocessing/heap.py:331: in __init__
+    block = BufferWrapper._heap.malloc(size)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/multiprocessing/heap.py:309: in malloc
+    (arena, start, stop) = self._malloc(size)
+                           ^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/multiprocessing/heap.py:192: in _malloc
+    return self._new_arena(size)
+           ^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/multiprocessing/heap.py:166: in _new_arena
+    arena = Arena(length)
+            ^^^^^^^^^^^^^
+/usr/lib/python3.12/multiprocessing/heap.py:83: in __init__
+    self.fd, name = tempfile.mkstemp(
+/usr/lib/python3.12/tempfile.py:496: in mkstemp
+    return _mkstemp_inner(dir, prefix, suffix, flags, output_type)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/tempfile.py:395: in _mkstemp_inner
+    fd = _os.open(file, flags, 0o600)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+research/experiments/AV002_avoidance_holdout_recovery/validation/merge/guard.py:43: in guard
+    deny_write(target)
+research/experiments/AV002_avoidance_holdout_recovery/validation/merge/guard.py:28: in deny_write
+    raise RuntimeError('validation forbids mutation: ' + str(target))
+E   RuntimeError: validation forbids mutation: /dev/shm/pym-5-7hoxgrnu
+=========================== short test summary info ============================
+FAILED tests/test_backtesting_append_only.py::test_concurrent_process_appends_preserve_all_rows[registry]
+FAILED tests/test_backtesting_append_only.py::test_concurrent_process_appends_preserve_all_rows[holdout]
+2 failed, 418 passed, 1 skipped in 310.06s (0:05:10)

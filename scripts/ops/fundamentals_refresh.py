@@ -108,7 +108,7 @@ def refresh_fundamentals(data_dir, *, execute=False, max_requests=DEFAULT_MAX_RE
                 quarterly = dart_quarterly.backfill(now.year - 1, now.year, data_dir=data_dir,
                     corp_codes_path=corp_codes, execute=execute and cap > 0, api_key=api_key,
                     max_requests=max(1, before["quarterly"]["used_today"] + cap),
-                    retry_batches=["all"], batch_offset=offset, clock=request_clock, session=session)
+                    retry_batches=["all"], batch_offset=offset, clock=request_clock, record_clock=clock, session=session)
             quarterly["planned_requests"] = min(quarterly["pending_requests"], cap)
             summary["quarterly"] = quarterly
             if execute and quarterly["requests"]:

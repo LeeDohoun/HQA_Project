@@ -222,9 +222,10 @@ def build_selections(prices, *, data_dir, repo_root, sessions, listing_files, ev
     return universe, counts, reports, excluded, financials
 
 
-def forward_observations(prices, universe, sessions, *, repo_root=PROJECT_ROOT):
+def forward_observations(prices, universe, sessions, *, repo_root=PROJECT_ROOT,
+                         experiment_id=None, evaluation_end=None, executions=None):
     """Value every decision-selected slot; never delete an entered position."""
-    common.guard_prices(prices, repo_root=repo_root)
+    common.guard_prices(prices, experiment_id=experiment_id, repo_root=repo_root)
     columns = [*universe.columns, "gross", "gross_delisting_loss", "filled", "reason", "exit_date",
                "scheduled_exit_date", "delisted", "halted_exit", "stale_exit", "limit_down_exit",
                "unadjusted_fallback", "bucket", *(f"cost_{m}" for m in MULTIPLIERS)]
@@ -242,8 +243,10 @@ def forward_observations(prices, universe, sessions, *, repo_root=PROJECT_ROOT):
         frame = by_stock[selected["stock_code"]]
         entry = sessions.get_loc(pd.Timestamp(selected["trade_date"]))
         target = entry + hc002.HORIZON - 1
-        if target >= len(sessions) or sessions[target] >= hc001.CUTOFF:
+        if target >= len(sessions) or (evaluation_end is None and sessions[target] >= hc001.CUTOFF):
             raise ValueError("HF001 holding horizon must be complete and precede 2026")
+        if evaluation_end is not None and sessions[target] > pd.Timestamp(evaluation_end):
+            raise ValueError("HF001 holding horizon exceeds the fixed evaluation end")
         code = selected["stock_code"]
         if code not in cached:
             opening, closing, volume = (frame[name].to_numpy(dtype=float) for name in ("open", "close", "volume"))
@@ -257,8 +260,12 @@ def forward_observations(prices, universe, sessions, *, repo_root=PROJECT_ROOT):
             last_trade = np.maximum.accumulate(np.where(permissible & trades, positions, -1))
             cached[code] = (opening, closing, volume, bases, has_base, down, trades, last_close, last_trade)
         opening, closing, volume, bases, has_base, down, trades, last_close, last_trade = cached[code]
+        sealed = None if executions is None else executions[(sessions[entry].date().isoformat(), code)]
+        entry_open = float(opening[entry]) if sealed is None else sealed["raw_open"]
         reason = None
-        if not np.isfinite(opening[entry]):
+        if sealed is not None:
+            reason = sealed["reason"]
+        elif not np.isfinite(opening[entry]):
             reason = "missing_entry_price"
         elif opening[entry] <= 0 or not np.isfinite(volume[entry]) or volume[entry] <= 0:
             reason = "untradable_entry"
@@ -282,14 +289,15 @@ def forward_observations(prices, universe, sessions, *, repo_root=PROJECT_ROOT):
                 raise ValueError(f"entered stock has no permissible exit close: {selected['stock_code']}")
             chain = frame.ret_1d.iloc[entry + 1:actual + 1].to_numpy(dtype=float)
             adjusted = np.isfinite(closing[entry]) and closing[entry] > 0 and np.isfinite(chain).all() and (chain >= -1).all()
-            gross = closing[entry] / opening[entry] * np.prod(1 + chain) - 1 if adjusted else closing[actual] / opening[entry] - 1
+            gross = closing[entry] / entry_open * np.prod(1 + chain) - 1 if adjusted else closing[actual] / entry_open - 1
             row.update(gross=float(gross), gross_delisting_loss=-1.0 if delisted else float(gross),
                        delisted=bool(delisted), halted_exit=bool(not trades[target] and resumed),
                        stale_exit=bool(not trades[target] or down[target]), limit_down_exit=bool(down[target]),
                        unadjusted_fallback=not bool(adjusted), exit_date=sessions[actual])
             for m in MULTIPLIERS:
-                row[f"cost_{m}"] = cost_model.round_trip_cost(float(opening[entry]), frame.market.iloc[entry],
+                row[f"cost_{m}"] = (cost_model.round_trip_cost(entry_open, frame.market.iloc[entry],
                     sessions[entry].date(), float(selected["avg_trading_value_20d"]), multiplier=m)
+                    if sealed is None else sealed["costs"][str(m)])
         rows.append(row)
     return pd.DataFrame(rows, columns=columns)
 
@@ -605,7 +613,7 @@ def run_experiment(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT, pr
                "coverage": {"financials": financials, "planned_months": len(hc002.MONTHS), "listings_by_month": listing_months,
                             "first_session": days.min().date().isoformat(), "last_session": days.max().date().isoformat(),
                             "sessions": len(days), "stocks": int(prices.index.get_level_values("stock_code").nunique()),
-                            "calendar_version": f"exchange-calendars:{hc001.calendars.__version__}:XKRX"},
+                            "calendar_version": hc001.trading_calendar.CALENDAR_VERSION},
                "performance": {"runtime_seconds": time.perf_counter() - started,
                                "peak_memory_mib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024}}
     # Judgement inputs must be finite; other non-finite report values are stored as

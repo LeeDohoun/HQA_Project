@@ -151,21 +151,26 @@ def test_conflicting_same_observation_is_rejected_not_last_writer_wins():
 
 
 def test_calendar_range_and_naive_as_of_fail_clearly():
-    with pytest.raises(ValueError, match="supported_range"):
+    with pytest.raises(ValueError, match="calendar_unverified"):
         daily_session_close("2051-01-03")
     with pytest.raises(ValueError, match="aware"):
         completed_daily_sessions(datetime(2026, 9, 4))
 
 
-@pytest.mark.parametrize("day", ["2026-11-02", "2026-11-19", "2027-01-04"])
-def test_unverified_special_session_periods_fail_instead_of_guessing_normal_close(day):
+def test_pending_special_session_fails_instead_of_guessing_normal_close():
     with pytest.raises(ValueError, match="calendar_special_session_coverage_unverified"):
-        daily_session_close(day)
+        daily_session_close("2026-11-19")
 
 
-def test_calendar_expiry_blocks_future_analysis_until_official_notice_is_added():
+def test_regular_november_2026_sessions_use_the_regular_close():
+    close = daily_session_close("2026-11-02")
+    assert close.astimezone(timezone.utc).isoformat() == "2026-11-02T06:30:00+00:00"
+
+
+def test_pending_special_session_blocks_windows_that_include_it():
     with pytest.raises(ValueError, match="official_KRX_notice_required"):
-        completed_daily_sessions(datetime(2026, 11, 1, tzinfo=timezone.utc))
+        completed_daily_sessions(datetime(2026, 11, 20, 8, tzinfo=timezone.utc))
+    assert completed_daily_sessions(datetime(2026, 11, 3, 8, tzinfo=timezone.utc), count=2)
 
 
 def test_future_observation_is_excluded_before_its_bad_bar_is_validated():

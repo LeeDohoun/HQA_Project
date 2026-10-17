@@ -136,7 +136,7 @@ def priced_quotes(raw, multiplier, *, cost_fn=None):
         except ValueError as exc:
             if "unknown tax year" in str(exc):
                 raise Refused("LH003 cost evaluation refused: " + str(exc)
-                              + "; add a legally sourced statutory rate to backtesting.cost_model before evaluation. "
+                              + "; add a legally sourced statutory rate to backtesting.statutory_rates before evaluation. "
                                 "Decisions and raw executions remain usable without 2027 costs.") from exc
             raise
         if not np.isfinite([buy, sell]).all() or buy < 0 or not 0 <= sell < 1:

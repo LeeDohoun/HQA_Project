@@ -1,0 +1,215 @@
+{
+  "experiment_id": "FW001_forward_replication",
+  "branch": "claude/fw001-recorder",
+  "base_commit": "6de503f",
+  "measured_at": "2026-10-17T15:06:16.987829+00:00",
+  "mode": "read_only_rehearsal",
+  "data_dir": "/home/are01/src/HQA_Project/HQA_Project/data",
+  "decision_date": "2026-09-30",
+  "entry_date": "2026-10-01",
+  "cost_scenarios": [
+    1.0,
+    1.5,
+    2.0
+  ],
+  "command": "PYTHONDONTWRITEBYTECODE=1 PYTHON_DOTENV_DISABLED=1 /usr/bin/time -v venv/bin/python research/experiments/FW001_forward_replication/resource_replay_guard.py --data-dir /home/are01/src/HQA_Project/HQA_Project/data --decision-date 2026-09-30 --rehearsal --with-execution",
+  "instrumentation": "GNU /usr/bin/time -v; Python resource.ru_maxrss; checked-in Python audit guard rejects original-data mutations, .env reads, protected-price contents and network operations",
+  "deployment_manifest_sha256": "fe75e1460a55ce97a7fe77494532e436f244f4029fcd6b35266e50b338c06ca4",
+  "source_sha256": {
+    "src/forward/fw001.py": "c1a939fd2cf51eb3d1fded3f6c7a341314208ed00887c96310d296cef5ccaa36",
+    "backtesting/experiments/fw001.py": "5f3810d1dd07fcd04c39bf7e345a6bf0e585a420acd444006252b921d4ec0d74",
+    "research/experiments/FW001_forward_replication/resource_replay_guard.py": "51493c0e6f2c3511dd563320b60c80be9ac6bcb70fbd487bb93183a6bdfca991"
+  },
+  "final_source_run": {
+    "runtime_seconds": 161.63858649399845,
+    "elapsed_including_startup_seconds": 162.58,
+    "peak_rss_mib": 565.46875,
+    "recorder_reported_peak_rss_mib": 565.46875,
+    "maximum_rss_kib": 579040,
+    "user_cpu_seconds": 148.81,
+    "system_cpu_seconds": 9.39,
+    "cpu_percent": 97.0,
+    "filesystem_outputs": 0,
+    "socket_messages_sent": 0,
+    "socket_messages_received": 0,
+    "swaps": 0,
+    "exit_code": 0,
+    "concurrency": "Requested pytest processes completed before this replay; other host activity was not controlled. This is not a server collector co-load measurement.",
+    "recording_io_included": false,
+    "audit": {
+      "data_read_opens": 28533,
+      "data_write_attempts": 0,
+      "env_read_attempts": 0,
+      "network_attempts": 0,
+      "protected_price_read_attempts": 0
+    }
+  },
+  "data_qualifications": {
+    "universe_counts": {
+      "f_both": 1492,
+      "av_all": 1492
+    },
+    "target_counts": {
+      "f_both": 464,
+      "av_all": 465
+    },
+    "volatility_uncomputable": {
+      "f_both": 0,
+      "av_all": 0
+    },
+    "missing_price_sessions": [],
+    "global_listing_lag_L": 17,
+    "input_files": 6444,
+    "executions": [
+      {
+        "multiplier": 1.0,
+        "av_all": "executed",
+        "f_both_costs_defined": true
+      },
+      {
+        "multiplier": 1.5,
+        "av_all": "executed",
+        "f_both_costs_defined": true
+      },
+      {
+        "multiplier": 2.0,
+        "av_all": "executed",
+        "f_both_costs_defined": true
+      }
+    ],
+    "observation": false,
+    "reason": "Resource rehearsal using currently stored archives, not an historical as-of performance estimate or an FW001 observation. The shared July 17 closure is applied; no bar or value is invented."
+  },
+  "previous_source_runs": {
+    "before_this_review": {
+      "runtime_seconds": 298.743631157,
+      "elapsed_including_startup_seconds": 302.79,
+      "peak_rss_mib": 557.1640625,
+      "maximum_rss_kib": 570536,
+      "user_cpu_seconds": 166.12,
+      "system_cpu_seconds": 10.77,
+      "cpu_percent": 58,
+      "filesystem_outputs": 0,
+      "socket_messages_sent": 0,
+      "socket_messages_received": 0,
+      "swaps": 0,
+      "exit_code": 0,
+      "concurrency": "Local requested pytest suites were running concurrently; this is not a collector-server co-load measurement",
+      "subsequent_refinement": "Batch-refresh request/status clock separation; the measured decision/execution algorithms are unchanged"
+    },
+    "earlier_pre_refinement": {
+      "runtime_seconds": 148.60894196400113,
+      "elapsed_including_startup_seconds": 149.7,
+      "peak_rss_mib": 564.32421875,
+      "cpu_percent": 99,
+      "filesystem_outputs": 0,
+      "socket_messages_sent": 0,
+      "socket_messages_received": 0,
+      "exit_code": 0,
+      "note": "Before final recording/recovery and snapshot refinements"
+    },
+    "comparison_limit": "The previous 298.744-second calculation ran alongside pytest and used the old calendar. Differences do not establish a same-condition speed improvement."
+  },
+  "validation": [
+    {
+      "selection": [
+        "test_forward_fw001",
+        "test_ops_fw001",
+        "test_experiments_fw001",
+        "test_forward_hegemony_shadow",
+        "test_shadow_ops",
+        "test_trading_calendar_overrides",
+        "test_price_calendar_cleansing",
+        "test_backtesting_experiment_registry"
+      ],
+      "passed": 281,
+      "seconds": 568.47,
+      "stage": "Requested suites before final recovery hardening"
+    },
+    {
+      "selection": [
+        "test_forward_fw001",
+        "test_ops_fw001",
+        "test_experiments_fw001"
+      ],
+      "passed": 67,
+      "seconds": 134.26,
+      "stage": "After sealed-input proof validation, no-state recovery and linked PC manifest changes"
+    },
+    {
+      "selection": [
+        "test_forward_fw001",
+        "test_ops_fw001"
+      ],
+      "passed": 49,
+      "seconds": 81.77,
+      "stage": "Final tree: stale-chain and unverified-entry refusal, isolated manifest deployment and amendment validation"
+    }
+  ],
+  "deployment_files_verified": 193,
+  "pc_implementation_files_verified": 6,
+  "server_memory_max": "800M; FW001 has its own 15-minute timeout",
+  "server_validation": "Pending operator validation on the real server with collector workloads and owned-position interruption/restart. The activation file remains an operator prerequisite; no server connection, deployment or activation occurred.",
+  "real_post_hoc_evaluation_run": false,
+  "raw_reports": {
+    "recorder_stdout": [
+      {
+        "status": "dry_run",
+        "decision_date": "2026-09-30",
+        "label": "reconstructed",
+        "financial_dates": {
+          "rule": "S",
+          "L": 17,
+          "date_reasons": {
+            "unlinked_pre_listing_plus_L": 6040,
+            "linked": 166314,
+            "unlinked_since_listing_start": 1197
+          }
+        },
+        "universe_counts": {
+          "f_both": 1492,
+          "av_all": 1492
+        },
+        "target_counts": {
+          "f_both": 464,
+          "av_all": 465
+        },
+        "vol_uncomputable": {
+          "f_both": 0,
+          "av_all": 0
+        },
+        "missing_price_sessions": [],
+        "input_files": 6444,
+        "executions": [
+          {
+            "multiplier": 1.0,
+            "av_all": "executed",
+            "f_both_costs_defined": true
+          },
+          {
+            "multiplier": 1.5,
+            "av_all": "executed",
+            "f_both_costs_defined": true
+          },
+          {
+            "multiplier": 2.0,
+            "av_all": "executed",
+            "f_both_costs_defined": true
+          }
+        ],
+        "runtime_seconds": 161.63858649399845,
+        "peak_rss_mib": 565.46875
+      },
+      {
+        "audit": {
+          "data_read_opens": 28533,
+          "data_write_attempts": 0,
+          "env_read_attempts": 0,
+          "network_attempts": 0,
+          "protected_price_read_attempts": 0
+        }
+      }
+    ],
+    "gnu_time_v": "\tCommand being timed: \"venv/bin/python research/experiments/FW001_forward_replication/resource_replay_guard.py --data-dir /home/are01/src/HQA_Project/HQA_Project/data --decision-date 2026-09-30 --rehearsal --with-execution\"\n\tUser time (seconds): 148.81\n\tSystem time (seconds): 9.39\n\tPercent of CPU this job got: 97%\n\tElapsed (wall clock) time (h:mm:ss or m:ss): 2:42.58\n\tAverage shared text size (kbytes): 0\n\tAverage unshared data size (kbytes): 0\n\tAverage stack size (kbytes): 0\n\tAverage total size (kbytes): 0\n\tMaximum resident set size (kbytes): 579040\n\tAverage resident set size (kbytes): 0\n\tMajor (requiring I/O) page faults: 12\n\tMinor (reclaiming a frame) page faults: 1040814\n\tVoluntary context switches: 14500\n\tInvoluntary context switches: 4358\n\tSwaps: 0\n\tFile system inputs: 9331672\n\tFile system outputs: 0\n\tSocket messages sent: 0\n\tSocket messages received: 0\n\tSignals delivered: 0\n\tPage size (bytes): 4096\n\tExit status: 0\n"
+  }
+}
