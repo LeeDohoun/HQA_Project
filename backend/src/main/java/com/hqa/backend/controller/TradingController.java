@@ -8,6 +8,7 @@ import com.hqa.backend.dto.TradeDecisionRequest;
 import com.hqa.backend.entity.User;
 import com.hqa.backend.entity.UserSecret;
 import com.hqa.backend.exception.ApiException;
+import com.hqa.backend.repository.StrategyAccountRepository;
 import com.hqa.backend.service.AiServerClient;
 import com.hqa.backend.service.AuthService;
 import com.hqa.backend.service.AutoTradeService;
@@ -20,6 +21,7 @@ import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 import java.util.HashMap;
 import java.util.Map;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -38,11 +40,22 @@ public class TradingController {
     private final KisClient kisClient;
     private final TradeSignalService tradeSignalService;
     private final HistoricalTradingSnapshotService historicalTradingSnapshotService;
+    private final StrategyAccountRepository strategyAccounts;
 
     public TradingController(AiServerClient aiServerClient, AutoTradeService autoTradeService,
                              AuthService authService, KisClient kisClient,
                              TradeSignalService tradeSignalService,
                              HistoricalTradingSnapshotService historicalTradingSnapshotService) {
+        this(aiServerClient, autoTradeService, authService, kisClient, tradeSignalService, historicalTradingSnapshotService, null);
+    }
+
+    @Autowired
+    public TradingController(AiServerClient aiServerClient, AutoTradeService autoTradeService,
+                             AuthService authService, KisClient kisClient,
+                             TradeSignalService tradeSignalService,
+                             HistoricalTradingSnapshotService historicalTradingSnapshotService,
+                             StrategyAccountRepository strategyAccounts) {
+        this.strategyAccounts = strategyAccounts;
         this.aiServerClient = aiServerClient;
         this.autoTradeService = autoTradeService;
         this.authService = authService;
@@ -159,6 +172,10 @@ public class TradingController {
 
     private Map<String, Object> executeDirectOrder(DirectBuyRequest request, HttpSession session, boolean isBuy) {
         User user = authService.requireUser(session);
+        // A strategy account's ledger must contain only its strategy's batch orders.
+        if (strategyAccounts != null && strategyAccounts.existsById(user.getUserId())) {
+            throw new ApiException(ErrorCode.INVALID_REQUEST, 409, "STRATEGY_ACCOUNT_REJECTS_MANUAL_ORDERS", null);
+        }
         UserSecret secret = user.getSecret();
         if (secret == null || isBlank(secret.getKisAppKey()) || isBlank(secret.getKisAppSecret())
                 || isBlank(secret.getKisAccountNo())) {

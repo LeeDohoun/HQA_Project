@@ -5,7 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { createContext, Suspense, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { authApi, tradingApi } from "@/lib/api";
-import { readWorkspaceTab, WORKSPACE_TABS, workspaceTabUrl } from "@/lib/workspace-navigation";
+import { activeWorkspaceTab, WORKSPACE_TABS, workspaceTabUrl } from "@/lib/workspace-navigation";
 import type { AuthUser, Balance } from "@/types/api";
 import { BoardMenu } from "./board-menu";
 import styles from "./workspace-frame.module.css";
@@ -195,7 +195,7 @@ type HeaderProps = { role: AuthUser["role"] | null; accountActions: ReactNode; a
 function ActiveWorkspaceHeader(props: HeaderProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  return <WorkspaceHeader {...props} activeTab={pathname === "/mypage" ? "assets" : pathname === "/dashboard" ? readWorkspaceTab(searchParams.get("tab")) : undefined} />;
+  return <WorkspaceHeader {...props} activeTab={activeWorkspaceTab(pathname, searchParams.get("tab"))} />;
 }
 
 function WorkspaceHeader({ role, accountActions, activeTab }: HeaderProps) {

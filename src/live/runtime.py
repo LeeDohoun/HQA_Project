@@ -1,0 +1,464 @@
+"""One day's strategy-runtime work: status, plan, shadow-fill, publish-status and submit.
+
+Every command is read-only unless execute=True. Submitting needs the effective stage
+``paper`` and a bound account; the backend re-validates everything independently.
+"""
+from __future__ import annotations
+
+import json
+import os
+from dataclasses import dataclass
+from datetime import date
+from pathlib import Path
+
+from src.runner import trading_calendar
+
+from . import book, decisions, gates, rebalance, shadow
+
+HISTORY_LIMIT = 120
+
+
+def default_repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def default_data_dir(repo_root=None) -> Path:
+    configured = os.environ.get("HQA_DATA_DIR")
+    return Path(configured) if configured else Path(repo_root or default_repo_root()) / "data"
+
+
+@dataclass(frozen=True)
+class Context:
+    repo_root: Path
+    data_dir: Path
+    entries: tuple
+    approvals: tuple | None
+    approvals_error: str | None
+
+
+def load_context(repo_root=None, data_dir=None) -> Context:
+    repo_root = Path(repo_root or default_repo_root())
+    data_dir = Path(data_dir) if data_dir else default_data_dir(repo_root)
+    entries = book.load_book(repo_root / book.BOOK_PATH)
+    try:
+        approvals, error = book.load_approvals(repo_root / book.APPROVALS_PATH), None
+    except (OSError, ValueError) as exc:
+        approvals, error = None, str(exc)
+    return Context(repo_root, data_dir, entries, approvals, error)
+
+
+def find_entry(ctx: Context, strategy_id: str):
+    for entry in ctx.entries:
+        if entry.strategy_id == strategy_id:
+            return entry
+    raise ValueError(f"unknown strategy: {strategy_id}")
+
+
+def stage_for(ctx: Context, entry) -> gates.StageDecision:
+    return gates.evaluate_stage(entry, repo_root=ctx.repo_root, data_dir=ctx.data_dir,
+                                approvals=ctx.approvals, approvals_error=ctx.approvals_error)
+
+
+def mode_for(stage: gates.StageDecision) -> str:
+    return "shadow" if book.stage_rank(stage.effective) >= book.stage_rank("shadow") else "observe"
+
+
+def _iso(day) -> str:
+    return date.fromisoformat(str(day)[:10]).isoformat()
+
+
+# ---------------------------------------------------------------- shadow state and planning
+
+
+@dataclass(frozen=True)
+class BookState:
+    cash: float
+    holdings: dict
+    marks: dict
+    state: dict
+    source: str
+
+
+def shadow_state(ctx: Context, entry, session) -> BookState:
+    """State at the start of a session: the latest ledger entry strictly before it."""
+    prior = None
+    for item in shadow.read_ledger(ctx.data_dir, entry.strategy_id):
+        if item["date"] < session:
+            prior = item
+    if prior is None:
+        initial = {"baskets": []} if entry.execution == "basket_20" else {"last_decision_hash": None, "markets": {}}
+        return BookState(float(entry.shadow_nav_krw), {}, {}, initial, "shadow_initial")
+    return BookState(float(prior["cash_after"]), {c: int(q) for c, q in prior["holdings_after"].items()},
+                     dict(prior.get("marks_close") or {}), prior["state_after"], f"shadow_ledger:{prior['date']}")
+
+
+def _forward(ctx, entry):
+    return [d for d in decisions.list_decisions(ctx.data_dir, entry.decision_rule, execution=entry.execution)
+            if d.forward]
+
+
+def due_phases(ctx: Context, entry, session) -> list[str]:
+    session = _iso(session)
+    phases = []
+    if any(d.trade_date == session for d in _forward(ctx, entry)):
+        phases.append("OPEN")
+    if entry.execution == "basket_20":
+        state = shadow_state(ctx, entry, session).state
+        if any(b["exit_date"] <= session for b in state.get("baskets", [])):
+            phases.append("CLOSE")
+    return phases
+
+
+def _previous_closes(ctx, session, codes, fallback):
+    quotes = shadow.load_quotes(ctx.data_dir, shadow.previous_session(session)) or {}
+    ref = {}
+    for code in codes:
+        q = quotes.get(code)
+        if q is not None and q.verified and q.close is not None and q.close > 0:
+            ref[code] = q.close
+        elif fallback.get(code):
+            ref[code] = fallback[code]
+    return ref
+
+
+def build_plan(ctx: Context, entry, session, phase, *, account=None) -> rebalance.RebalancePlan:
+    """Plan for one session/phase from the shadow ledger state, or from an account snapshot."""
+    session = _iso(session)
+    if phase not in rebalance.PHASES:
+        raise rebalance.PlanError(f"unknown phase: {phase}")
+    book_state = shadow_state(ctx, entry, session)
+    cash = account.cash if account is not None else book_state.cash
+    holdings = dict(account.holdings) if account is not None else dict(book_state.holdings)
+    version = entry.cost_model_version
+    forward = _forward(ctx, entry)
+    if phase == "OPEN":
+        decision = next((d for d in forward if d.trade_date == session), None)
+        if decision is None:
+            raise rebalance.PlanError(f"no_forward_decision_for_session:{session}")
+        if entry.execution == "basket_20":
+            ref, markets, adv = shadow.plan_inputs(ctx.data_dir, decision)
+            return rebalance.plan_basket_entry(entry.strategy_id, decision, cash=cash, ref_prices=ref,
+                                               markets=markets, adv20=adv, model_version=version)
+        ref, markets, adv = shadow.plan_inputs(ctx.data_dir, decision, extra_codes=holdings,
+                                               fallback_marks=book_state.marks)
+        for code in holdings:
+            known = book_state.state.get("markets", {}).get(code)
+            if code not in markets and known:
+                markets[code] = known
+        return rebalance.plan_continuous(entry.strategy_id, decision, holdings=holdings, cash=cash,
+                                         ref_prices=ref, markets=markets, adv20=adv, model_version=version,
+                                         band=entry.band)
+    if entry.execution != "basket_20":
+        raise rebalance.PlanError("continuous execution trades only at the OPEN")
+    if account is None:
+        due = [b for b in book_state.state.get("baskets", []) if b["exit_date"] <= session]
+        if not due:
+            raise rebalance.PlanError(f"no_basket_exit_due:{session}")
+        if len(due) > 1:
+            raise rebalance.PlanError("multiple_baskets_due_requires_manual_review")
+        basket = due[0]
+        ref = _previous_closes(ctx, session, basket["holdings"], book_state.marks)
+        return rebalance.plan_basket_exit(
+            entry.strategy_id, decision_hash=basket["decision_hash"], decision_date=basket["decision_date"],
+            session_date=session, holdings=basket["holdings"], cash=cash, ref_prices=ref,
+            markets=basket["markets"], adv20=basket["adv20"], model_version=version)
+    decision, basket_holdings = account_exit(forward, holdings, session)
+    ref = _previous_closes(ctx, session, basket_holdings, {})
+    _, markets, adv = shadow.plan_inputs(ctx.data_dir, decision)
+    return rebalance.plan_basket_exit(
+        entry.strategy_id, decision_hash=decision.record_hash, decision_date=decision.decision_date,
+        session_date=session, holdings=basket_holdings, cash=cash, ref_prices=ref, markets=markets,
+        adv20=adv, model_version=version, targets=decision.targets)
+
+
+def account_exit(forward, holdings, session):
+    """Which forward basket the account's holdings belong to at a CLOSE on/after its exit date.
+
+    Each held code belongs to the most recently entered forward decision containing it.
+    A code whose owner is past its exit date (exit_date <= session, the shadow's
+    exit_retry rule) is sold. A code held by an active basket that was entered before an
+    earlier containing basket's exit is ambiguous and refused for manual review, as is a
+    session where codes of more than one due basket are still held.
+    """
+    entered = [d for d in forward if d.trade_date <= session]
+    owners = {}
+    for code in sorted(holdings):
+        containing = [d for d in entered if code in d.weights]
+        if not containing:
+            continue
+        latest = max(containing, key=lambda d: d.trade_date)
+        if any(d is not latest and d.exit_date <= session and latest.trade_date <= d.exit_date
+               for d in containing):
+            raise rebalance.PlanError(f"basket_overlap_requires_manual_review:{code}")
+        if latest.exit_date <= session:
+            owners[code] = latest
+    due = {d.record_hash: d for d in owners.values()}
+    if not due:
+        raise rebalance.PlanError(f"no_forward_basket_exit_due:{session}")
+    if len(due) > 1:
+        raise rebalance.PlanError("multiple_baskets_due_requires_manual_review")
+    (decision,) = due.values()
+    return decision, {code: holdings[code] for code in owners}
+
+
+def plan_path(data_dir, strategy_id, session, phase) -> Path:
+    return Path(data_dir) / shadow.LIVE_DIR / strategy_id / "plans" / f"{_iso(session).replace('-', '')}_{phase}.json"
+
+
+def plan_command(ctx: Context, strategy_id, session, phase=None, *, execute=False) -> dict:
+    entry = find_entry(ctx, strategy_id)
+    session = _iso(session)
+    phases = [phase] if phase else due_phases(ctx, entry, session)
+    result = {"strategyId": strategy_id, "sessionDate": session, "dryRun": not execute, "plans": [],
+              "errors": []}
+    if not phases:
+        result["status"] = "no_action_due"
+        return result
+    for item in phases:
+        try:
+            plan = build_plan(ctx, entry, session, item)
+        except (rebalance.PlanError, ValueError) as error:
+            result["errors"].append({"phase": item, "error": str(error)})
+            continue
+        record = {"strategy_id": strategy_id, "source": "shadow_ledger", **plan.to_dict()}
+        if execute:
+            record, written = shadow.write_immutable(plan_path(ctx.data_dir, strategy_id, session, item), record,
+                                                     ignore=())
+            record = {**record, "_written": written}
+        result["plans"].append(record)
+    result["status"] = "error" if result["errors"] else "ok"
+    return result
+
+
+# ---------------------------------------------------------------- shadow fill
+
+
+def shadow_fill_command(ctx: Context, session, strategy_id=None, *, execute=False) -> dict:
+    session = _iso(session)
+    entries = [find_entry(ctx, strategy_id)] if strategy_id else list(ctx.entries)
+    results = []
+    for entry in entries:
+        stage = stage_for(ctx, entry)
+        mode = mode_for(stage)
+        try:
+            record = shadow.shadow_fill(entry, session, ctx.data_dir, mode=mode, execute=execute)
+        except shadow.ShadowRefused as error:
+            if execute and error.kind in ("price_file_missing", "price_file_unreadable"):
+                shadow.record_incident(ctx.data_dir, entry.strategy_id, session, error.kind, error.detail)
+            results.append({"strategyId": entry.strategy_id, "status": "refused", "reason": error.kind,
+                            "error": str(error)})
+            continue
+        except shadow.LedgerConflict as error:
+            if execute:
+                shadow.record_incident(ctx.data_dir, entry.strategy_id, session, "ledger_conflict", error)
+            results.append({"strategyId": entry.strategy_id, "status": "conflict", "error": str(error)})
+            continue
+        except (ValueError, OSError) as error:
+            results.append({"strategyId": entry.strategy_id, "status": "error", "error": str(error)})
+            continue
+        written = record.pop("_written", False)
+        filled = [o for o in record["orders"] if o.get("filled")]
+        results.append({"strategyId": entry.strategy_id, "status": "ok", "mode": mode, "date": session,
+                        "written": written, "navCloseKrw": record["nav_close_krw"],
+                        "cashAfter": record["cash_after"], "holdingCount": len(record["holdings_after"]),
+                        "orderCount": sum(1 for o in record["orders"] if not o.get("skipped")),
+                        "filledCount": len(filled), "incidents": record["incidents"],
+                        "warnings": record["warnings"], "match": record["match"],
+                        **({} if execute else {"record": record})})
+    status = "ok" if all(r["status"] == "ok" for r in results) else "error"
+    return {"status": status, "dryRun": not execute, "sessionDate": session, "results": results}
+
+
+# ---------------------------------------------------------------- status
+
+
+def _latest_plan_summary(ctx, entry):
+    directory = Path(ctx.data_dir) / shadow.LIVE_DIR / entry.strategy_id / "plans"
+    if not directory.is_dir():
+        return None
+    files = sorted((p for p in directory.glob("*_*.json") if not p.name.startswith(".")),
+                   key=lambda p: (p.stem.split("_")[0], rebalance.PHASES.index(p.stem.split("_")[1])
+                                  if p.stem.split("_")[1] in rebalance.PHASES else -1))
+    if not files:
+        return None
+    record = json.loads(files[-1].read_text(encoding="utf-8"))
+    return rebalance.summary(rebalance.RebalancePlan(
+        record["strategy_id"], record["execution"], record["decision_hash"], record["decision_date"],
+        record["session_date"], record["phase"],
+        tuple(rebalance.Order(**o) for o in record["orders"]), tuple(record["skipped"]), tuple(record["targets"]),
+        record["cash_before"], record["cash_after_estimate"], record["value_estimate"], record.get("meta") or {}))
+
+
+def status_payload(ctx: Context, entry, *, generated_at: str, errors: list | None = None) -> dict:
+    errors = [] if errors is None else errors
+    stage = stage_for(ctx, entry)
+    design = stage.evidence.get("design") or {}
+    holdout = stage.evidence.get("holdout") or {}
+    decision = None
+    try:
+        found = decisions.list_decisions(ctx.data_dir, entry.decision_rule, execution=entry.execution)
+    except (OSError, ValueError) as error:
+        errors.append(f"{entry.strategy_id}:decision_unreadable:{error}")
+        found = []
+    decision_reasons = []
+    latest = found[-1] if found else None
+    if latest is not None and latest.label == "forward" and not latest.sealed:
+        # Not finalised: never shown or traded as a decision; the reason is surfaced instead.
+        decision_reasons.append(f"{latest.seal_reason}:{latest.month}")
+        latest = None
+    if latest is not None:
+        decision = {"month": latest.month, "decisionDate": latest.decision_date, "tradeDate": latest.trade_date,
+                    "exitDate": latest.exit_date, "targetCount": len(latest.targets),
+                    "recordHash": latest.record_hash, "label": latest.label}
+    try:
+        ledger = shadow.read_ledger(ctx.data_dir, entry.strategy_id)
+        extra = shadow.read_incidents(ctx.data_dir, entry.strategy_id)
+    except (OSError, ValueError) as error:
+        errors.append(f"{entry.strategy_id}:shadow_ledger_unreadable:{error}")
+        ledger, extra = [], []
+    run = [e for e in ledger if e["mode"] == "shadow"]
+    nav = float(ledger[-1]["nav_close_krw"]) if ledger else float(entry.shadow_nav_krw)
+    initial = entry.shadow_nav_krw
+    shadow_view = {
+        "mode": mode_for(stage), "sessions": len(run),
+        "firstDate": run[0]["date"] if run else None, "lastDate": run[-1]["date"] if run else None,
+        "initialNavKrw": initial, "navKrw": round(nav), "returnPct": round((nav / initial - 1) * 100, 4),
+        "incidents": sum(len(e.get("incidents") or []) for e in ledger) + len(extra),
+        "history": [{"date": e["date"], "navKrw": round(float(e["nav_close_krw"]))} for e in ledger[-HISTORY_LIMIT:]],
+    }
+    try:
+        plan = _latest_plan_summary(ctx, entry)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        errors.append(f"{entry.strategy_id}:plan_unreadable:{error}")
+        plan = None
+    return {
+        "strategyId": entry.strategy_id, "title": entry.title, "description": entry.description,
+        "generatedAt": generated_at,
+        "stage": {"requested": stage.requested, "effective": stage.effective,
+                  "reasons": list(stage.reasons) + decision_reasons},
+        "research": {
+            "experimentId": entry.experiment_id, "variant": entry.variant,
+            "design": {"verdict": design.get("verdict"), "recordedAt": design.get("recorded_at")},
+            "holdout": {"experimentId": holdout.get("experiment_id"), "variant": holdout.get("variant"),
+                        "verdict": holdout.get("verdict"), "recordedAt": holdout.get("recorded_at")},
+        },
+        "decision": decision,
+        "shadow": shadow_view,
+        "plan": plan,
+        "account": {"userId": entry.account_user_id, "bound": entry.account_user_id is not None},
+    }
+
+
+def status_command(ctx: Context, *, generated_at=None) -> dict:
+    generated_at = generated_at or shadow.now_kst().isoformat()
+    errors: list = []
+    payloads = [status_payload(ctx, entry, generated_at=generated_at, errors=errors) for entry in ctx.entries]
+    return {"generatedAt": generated_at, "strategies": payloads, "errors": errors}
+
+
+def publish_status_command(ctx: Context, *, execute=False, client_factory=None) -> dict:
+    status = status_command(ctx)
+    requests_ = [{"strategyId": p["strategyId"], "generatedAt": status["generatedAt"], "payload": p}
+                 for p in status["strategies"]]
+    if not execute:
+        return {"status": "dry_run", "dryRun": True, "requests": requests_, "errors": status["errors"]}
+    from .backend_client import StrategyBackendClient
+
+    client = (client_factory or StrategyBackendClient)()
+    results = []
+    for body in requests_:
+        try:
+            client.publish_status(body["strategyId"], body["generatedAt"], body["payload"])
+            results.append({"strategyId": body["strategyId"], "stored": True})
+        except Exception as error:  # noqa: BLE001 - report every strategy's outcome
+            results.append({"strategyId": body["strategyId"], "stored": False, "error": str(error)})
+    ok = all(r["stored"] for r in results)
+    return {"status": "ok" if ok else "error", "dryRun": False, "results": results, "errors": status["errors"]}
+
+
+# ---------------------------------------------------------------- submit (PAPER only)
+
+
+BACKEND_REFUSALS = ("BATCH_ALREADY_EXISTS_FOR_PHASE", "CALENDAR_UNVERIFIED")
+
+
+def live_calendar_check(session) -> str | None:
+    """Live session hours must be known (pending special sessions, review horizon fail closed)."""
+    try:
+        trading_calendar.daily_session_open(session)
+        trading_calendar.daily_session_close(session)
+    except ValueError as error:
+        return f"live_calendar_refused:{error}"
+    return None
+
+
+def _funding_refusal(plan, max_buy_to_deposit):
+    funding = rebalance.funding(plan)
+    if max_buy_to_deposit and funding["requires_same_auction_sell_proceeds"]:
+        return funding, "buys_exceed_deposit_cash"
+    return funding, None
+
+
+def submit_command(ctx: Context, strategy_id, session, phase, *, execute=False, validate=False,
+                   max_buy_to_deposit=False, client_factory=None) -> dict:
+    """Without execute: no network, payload preview from the shadow ledger state.
+
+    With execute: account snapshot -> plan -> POST batch (dryRun = validate).
+    max_buy_to_deposit refuses (never resizes) a plan whose buys exceed deposit cash.
+    """
+    entry = find_entry(ctx, strategy_id)
+    session = _iso(session)
+    stage = stage_for(ctx, entry)
+    refusals = []
+    if stage.effective != "paper":
+        refusals.append(f"stage_not_paper:{stage.effective}")
+        refusals.extend(stage.reasons)
+    if not entry.account_user_id:
+        refusals.append("account_user_id_missing")
+    calendar_refusal = live_calendar_check(session)
+    if calendar_refusal:
+        refusals.append(calendar_refusal)
+    if refusals:
+        return {"status": "refused", "strategyId": strategy_id, "reasons": refusals}
+    if not execute:
+        try:
+            plan = build_plan(ctx, entry, session, phase)
+            payload = rebalance.batch_payload(plan, user_id=entry.account_user_id,
+                                              expected_nav_krw=plan.value_estimate, dry_run=True)
+        except (rebalance.PlanError, ValueError) as error:
+            return {"status": "error", "strategyId": strategy_id, "error": str(error)}
+        funding, refusal = _funding_refusal(plan, max_buy_to_deposit)
+        if refusal:
+            return {"status": "refused", "strategyId": strategy_id, "reasons": [refusal], "funding": funding}
+        return {"status": "preview", "source": "shadow_ledger", "dryRun": True, "funding": funding,
+                "payload": payload}
+    from .backend_client import StrategyBackendClient
+
+    client = (client_factory or StrategyBackendClient)()
+    account = client.fetch_account(entry.account_user_id)
+    unsellable = sorted(code for code, qty in account.holdings.items() if account.sellable.get(code, 0) < qty)
+    if unsellable:
+        return {"status": "refused", "strategyId": strategy_id,
+                "reasons": ["unsellable_holdings:" + ",".join(unsellable)]}
+    try:
+        plan = build_plan(ctx, entry, session, phase, account=account)
+        payload = rebalance.batch_payload(plan, user_id=entry.account_user_id, expected_nav_krw=account.equity,
+                                          dry_run=validate)
+    except (rebalance.PlanError, ValueError) as error:
+        return {"status": "error", "strategyId": strategy_id, "error": str(error)}
+    funding, refusal = _funding_refusal(plan, max_buy_to_deposit)
+    if refusal:
+        return {"status": "refused", "strategyId": strategy_id, "reasons": [refusal], "funding": funding}
+    response = client.submit_batch(payload)
+    reasons = list(response.get("reasons") or [])
+    if any(reason in BACKEND_REFUSALS for reason in reasons):
+        status = "refused"
+    elif response.get("status") == "REJECTED":
+        status = "rejected"
+    elif response.get("deduplicated"):
+        status = "deduplicated"
+    else:
+        status = "submitted"
+    return {"status": status, "strategyId": strategy_id, "dryRun": bool(validate), "batchStatus":
+            response.get("status"), "reasons": reasons, "funding": funding, "payload": payload,
+            "response": response}

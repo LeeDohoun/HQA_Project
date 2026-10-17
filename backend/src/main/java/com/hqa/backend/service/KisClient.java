@@ -177,6 +177,20 @@ public class KisClient {
         return order(userId, secret, token, stockCode, quantity, limitPrice, side.equals("BUY"));
     }
 
+    /**
+     * PAPER market order for a strategy batch in an auction phase: ORD_DVSN "01", ORD_UNPR "0".
+     * Whether KIS PAPER accepts it during the pre-open or closing auction must be confirmed by an
+     * approved live call (docs/strategy-runtime.md) before hqa.strategy.orders-enabled is turned on.
+     */
+    public Map<String, Object> paperAuctionOrder(String userId, UserSecret secret, String token,
+            String stockCode, int quantity, String side) {
+        requirePaper(secret);
+        if (!Set.of("BUY", "SELL").contains(side) || quantity <= 0 || !com.hqa.backend.util.StockCodes.isValid(stockCode)) {
+            throw new IllegalArgumentException("Invalid PAPER auction order");
+        }
+        return order(userId, secret, token, stockCode, quantity, 0L, side.equals("BUY"));
+    }
+
     public Map<String, Object> paperPurchasingPower(String userId, UserSecret secret, String token,
             String stockCode, long price) {
         requirePaper(secret);

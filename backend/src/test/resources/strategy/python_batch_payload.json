@@ -1,0 +1,109 @@
+{
+  "decisionDate": "2026-10-30",
+  "decisionHash": "1ac87319b7963254a11d3b8e090523c24217310db312e511f427a92455aa2c63",
+  "dryRun": true,
+  "expectedNavKrw": 100000000,
+  "idempotencyKey": "6385f83fd8e26beefc73ab0a9937b45cbdcef679f27cea799d2d92b541c33dc0",
+  "orders": [
+    {
+      "adv20Krw": 5000000000.0,
+      "quantity": 831,
+      "refPrice": 10000,
+      "seq": 1,
+      "side": "BUY",
+      "stockCode": "000020"
+    },
+    {
+      "adv20Krw": 5000000000.0,
+      "quantity": 739,
+      "refPrice": 11250,
+      "seq": 2,
+      "side": "BUY",
+      "stockCode": "000040"
+    },
+    {
+      "adv20Krw": 5000000000.0,
+      "quantity": 665,
+      "refPrice": 12500,
+      "seq": 3,
+      "side": "BUY",
+      "stockCode": "000050"
+    },
+    {
+      "adv20Krw": 5000000000.0,
+      "quantity": 605,
+      "refPrice": 13750,
+      "seq": 4,
+      "side": "BUY",
+      "stockCode": "000070"
+    },
+    {
+      "adv20Krw": 5000000000.0,
+      "quantity": 554,
+      "refPrice": 15000,
+      "seq": 5,
+      "side": "BUY",
+      "stockCode": "000080"
+    },
+    {
+      "adv20Krw": 5000000000.0,
+      "quantity": 512,
+      "refPrice": 16250,
+      "seq": 6,
+      "side": "BUY",
+      "stockCode": "000100"
+    },
+    {
+      "adv20Krw": 5000000000.0,
+      "quantity": 475,
+      "refPrice": 17500,
+      "seq": 7,
+      "side": "BUY",
+      "stockCode": "000120"
+    },
+    {
+      "adv20Krw": 5000000000.0,
+      "quantity": 443,
+      "refPrice": 18750,
+      "seq": 8,
+      "side": "BUY",
+      "stockCode": "000140"
+    },
+    {
+      "adv20Krw": 5000000000.0,
+      "quantity": 415,
+      "refPrice": 20000,
+      "seq": 9,
+      "side": "BUY",
+      "stockCode": "000150"
+    },
+    {
+      "adv20Krw": 5000000000.0,
+      "quantity": 390,
+      "refPrice": 21250,
+      "seq": 10,
+      "side": "BUY",
+      "stockCode": "000180"
+    },
+    {
+      "adv20Krw": 5000000000.0,
+      "quantity": 369,
+      "refPrice": 22500,
+      "seq": 11,
+      "side": "BUY",
+      "stockCode": "000210"
+    },
+    {
+      "adv20Krw": 5000000000.0,
+      "quantity": 349,
+      "refPrice": 23750,
+      "seq": 12,
+      "side": "BUY",
+      "stockCode": "0126Z0"
+    }
+  ],
+  "phase": "OPEN",
+  "sessionDate": "2026-11-02",
+  "strategyId": "hf001_f_both",
+  "userId": "u1"
+}

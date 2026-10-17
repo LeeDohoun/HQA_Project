@@ -7,6 +7,7 @@ import com.hqa.backend.entity.TradeSignal;
 import com.hqa.backend.entity.TradeSignalExecution;
 import com.hqa.backend.entity.TradePlanReceipt;
 import com.hqa.backend.entity.User;
+import com.hqa.backend.repository.StrategyAccountRepository;
 import com.hqa.backend.repository.TradePlanReceiptRepository;
 import com.hqa.backend.repository.TradeSignalExecutionRepository;
 import com.hqa.backend.repository.TradeSignalRepository;
@@ -17,6 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,9 +36,18 @@ public class PaperTradeStore {
     private final ObjectMapper mapper;
     private final double quoteCapacity;
     private final TradePlanReceiptRepository receipts;
+    private final StrategyAccountRepository strategyAccounts;
 
     public PaperTradeStore(TradeSignalRepository signals, TradeSignalExecutionRepository executions,
             PaperAccountGuard accountGuard, ObjectMapper mapper, TradePlanReceiptRepository receipts,
+            double requestsPerSecond, double reservedRequests) {
+        this(signals, executions, accountGuard, mapper, receipts, null, requestsPerSecond, reservedRequests);
+    }
+
+    @Autowired
+    public PaperTradeStore(TradeSignalRepository signals, TradeSignalExecutionRepository executions,
+            PaperAccountGuard accountGuard, ObjectMapper mapper, TradePlanReceiptRepository receipts,
+            StrategyAccountRepository strategyAccounts,
             @Value("${hqa.kis-paper-requests-per-second:1}") double requestsPerSecond,
             @Value("${hqa.paper-account-reserved-requests-per-second:0.5}") double reservedRequests) {
         if (!Double.isFinite(requestsPerSecond) || !Double.isFinite(reservedRequests)
@@ -48,12 +59,21 @@ public class PaperTradeStore {
         this.accountGuard = accountGuard;
         this.mapper = mapper;
         this.receipts = receipts;
+        this.strategyAccounts = strategyAccounts;
         this.quoteCapacity = Math.floor((requestsPerSecond - reservedRequests) * 20);
     }
 
     @Transactional
     public TradeSignal save(InternalTradeSignalRequest request, Map<String, Object> account, OffsetDateTime now) {
+        // Strategy accounts trade only their strategy's batches; no LLM v1/v2 plan is stored for them.
+        if (strategyAccounts != null && request.userId() != null && strategyAccounts.existsById(request.userId())) {
+            throw new IllegalStateException("STRATEGY_ACCOUNT_REJECTS_LLM_PLANS");
+        }
         User user = lock(request.userId());
+        // Again under the account lock: a strategy binding taken concurrently (it holds the same lock) is seen.
+        if (strategyAccounts != null && strategyAccounts.existsById(request.userId())) {
+            throw new IllegalStateException("STRATEGY_ACCOUNT_REJECTS_LLM_PLANS");
+        }
         requireEnabledPaper(user);
         if (request.idempotencyKey() == null || request.idempotencyKey().isBlank()) {
             throw new IllegalArgumentException("idempotencyKey is required");

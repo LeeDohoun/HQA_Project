@@ -1,13 +1,18 @@
 package com.hqa.backend.service;
 
+import com.hqa.backend.entity.StrategyAccount;
 import com.hqa.backend.entity.User;
 import com.hqa.backend.entity.UserPreference;
 import com.hqa.backend.entity.WatchlistItem;
+import com.hqa.backend.repository.StrategyAccountRepository;
 import com.hqa.backend.repository.UserRepository;
 import com.hqa.backend.repository.WatchlistItemRepository;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,16 +21,28 @@ public class AutoTradeTargetService {
 
     private final UserRepository userRepository;
     private final WatchlistItemRepository watchlistRepository;
+    private final StrategyAccountRepository strategyAccounts;
 
     public AutoTradeTargetService(UserRepository userRepository, WatchlistItemRepository watchlistRepository) {
+        this(userRepository, watchlistRepository, null);
+    }
+
+    @Autowired
+    public AutoTradeTargetService(UserRepository userRepository, WatchlistItemRepository watchlistRepository,
+            StrategyAccountRepository strategyAccounts) {
         this.userRepository = userRepository;
         this.watchlistRepository = watchlistRepository;
+        this.strategyAccounts = strategyAccounts;
     }
 
     @Transactional(readOnly = true)
     public Map<String, Object> activeTargets() {
+        // Strategy accounts are dedicated to their strategy and are never LLM targets.
+        Set<String> strategyUsers = strategyAccounts == null ? Set.of()
+                : strategyAccounts.findAll().stream().map(StrategyAccount::getUserId).collect(Collectors.toSet());
         List<Map<String, Object>> targets = userRepository.findAllActiveWithSecretAndPreference().stream()
                 .filter(User::isAutoTradeEnabled)
+                .filter(user -> !strategyUsers.contains(user.getUserId()))
                 .map(this::targetFor)
                 .toList();
         return Map.of("targets", targets);

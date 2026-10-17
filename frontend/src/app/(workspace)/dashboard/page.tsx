@@ -123,7 +123,8 @@ export default function DashboardPage() {
 
 function DashboardRoute() {
   const params = useSearchParams();
-  if (params.get("tab") === "assets") redirect("/mypage");
+  const pageTab = params.get("tab");
+  if (pageTab === "assets" || pageTab === "strategies") redirect(workspaceTabUrl(pageTab));
   return <DashboardPageContent />;
 }
 

@@ -68,6 +68,22 @@ public class KrxSessionCalendar {
         return !time.isBefore(hours[0]) && time.isBefore(hours[1]);
     }
 
+    /** True when the KST date is a KRX session (weekday, not a configured closure). */
+    public boolean isSessionDay(LocalDate day) {
+        return day.getDayOfWeek() != DayOfWeek.SATURDAY && day.getDayOfWeek() != DayOfWeek.SUNDAY && !closed.contains(day);
+    }
+
+    /** The session's [open, close) hours in KST, special sessions included, or null when closed. */
+    public LocalTime[] sessionHours(LocalDate day) {
+        if (!isSessionDay(day)) return null;
+        return special.getOrDefault(day, new LocalTime[] {OPEN, CLOSE}).clone();
+    }
+
+    /** True when an official special session is configured for the date. */
+    public boolean hasSpecialSession(LocalDate day) {
+        return special.containsKey(day);
+    }
+
     private static String[] split(String value) {
         return value == null || value.isBlank() ? new String[0] : value.trim().split("\\s*,\\s*");
     }

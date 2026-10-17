@@ -27,6 +27,7 @@ import type {
   StockSearchResponse,
   UserPreference
 } from "@/types/api";
+import type { StrategiesResponse } from "@/types/strategies";
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "").replace(/\/$/, "");
 const isLocalApiBase = API_BASE.startsWith("http://localhost") || API_BASE.startsWith("http://127.0.0.1");
@@ -1010,4 +1011,14 @@ export const profileApi = {
   updateNickname: async (nickname: string) => mapProfile(await api<MyProfileWire>("/api/v1/profile/nickname", {
     method: "PUT", body: JSON.stringify({ nickname })
   }))
+};
+
+export const strategyApi = {
+  list: async (signal?: AbortSignal): Promise<StrategiesResponse> => {
+    const response = await api<Partial<StrategiesResponse> | null>("/api/v1/strategies", { signal });
+    return {
+      strategies: Array.isArray(response?.strategies) ? response.strategies : [],
+      halts: Array.isArray(response?.halts) ? response.halts : []
+    };
+  }
 };

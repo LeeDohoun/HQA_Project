@@ -1,0 +1,40 @@
+# 운용 대상 전략 목록 (M8 전략 실행 경로, docs/strategy-runtime.md).
+# src/live/book.py가 엄격하게 검증합니다. 알 수 없는 키·단계·실행 방식은 오류입니다.
+# requested_stage는 요청 단계일 뿐이며, 실제 단계는 src/live/gates.py가
+# 실험 대장·섀도 장부·승인 기록으로 계산합니다 (observe < shadow < paper).
+strategies:
+  hf001_f_both:
+    title: "HF001 f_both"
+    description: "HC002 2국면 동일가중에서 고변동성·최근 유상증자 종목 제외, 월말 결정, 다음 날 시가 진입, 20거래일 보유"
+    experiment_id: HF001_hegemony_filters
+    variant: f_both
+    holdout:
+      experiment_ids: [HF001_hegemony_filters]
+      variants: [holdout_f_both]
+    decision_source:
+      kind: fw001
+      rule: f_both
+    execution: basket_20
+    cost_model_version: v1
+    requested_stage: shadow
+    shadow_nav_krw: 100000000
+    account_user_id: null
+    preregistration: research/experiments/HF001_hegemony_filters/preregistration.md
+  av001_av_all:
+    title: "AV001 av_all"
+    description: "HC002 적격 유니버스에서 3·4국면·고변동성·최근 유상증자 종목만 빼고 동일가중 보유, 월말 결정, 바뀐 종목만 다음 날 시가 거래"
+    experiment_id: AV001_avoidance_portfolio
+    variant: av_all
+    holdout:
+      experiment_ids: [AV002_avoidance_holdout_recovery, AV001_avoidance_portfolio]
+      variants: [holdout_av_all]
+    decision_source:
+      kind: fw001
+      rule: av_all
+    execution: continuous
+    cost_model_version: v2
+    band: 0.001
+    requested_stage: shadow
+    shadow_nav_krw: 100000000
+    account_user_id: null
+    preregistration: research/experiments/AV001_avoidance_portfolio/preregistration.md

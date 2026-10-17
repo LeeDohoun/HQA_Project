@@ -76,3 +76,27 @@ hqa:
   # closures from 2026-10 through its review horizon); a nonblank value replaces it.
   krx-closed-dates: ${HQA_KRX_CLOSED_DATES:}
   krx-special-sessions: ${HQA_KRX_SPECIAL_SESSIONS:}
+  # M8 strategy runtime (docs/strategy-runtime.md). orders-enabled is the master switch: while false
+  # the batch executor sends nothing and accepted batches stay QUEUED. Windows are regular-session
+  # KST times with an exclusive end; on a special session they shift with its open/close.
+  strategy:
+    orders-enabled: ${HQA_STRATEGY_ORDERS_ENABLED:false}
+    order-type: ${HQA_STRATEGY_ORDER_TYPE:MARKET}
+    open-window: ${HQA_STRATEGY_OPEN_WINDOW:08:30-08:59}
+    close-window: ${HQA_STRATEGY_CLOSE_WINDOW:15:20-15:29}
+    open-cancel-after: ${HQA_STRATEGY_OPEN_CANCEL_AFTER:09:05}
+    executor-poll-ms: ${HQA_STRATEGY_EXECUTOR_POLL_MS:2000}
+    reconcile-poll-ms: ${HQA_STRATEGY_RECONCILE_POLL_MS:20000}
+    daily-loss-limit-pct: ${HQA_STRATEGY_DAILY_LOSS_LIMIT_PCT:2.0}
+    drawdown-stop-pct: ${HQA_STRATEGY_DRAWDOWN_STOP_PCT:10.0}
+    full-review-pct: ${HQA_STRATEGY_FULL_REVIEW_PCT:15.0}
+    max-orders-per-day: ${HQA_STRATEGY_MAX_ORDERS_PER_DAY:1500}
+    max-cancel-ratio: ${HQA_STRATEGY_MAX_CANCEL_RATIO:0.5}
+    max-order-pct-of-equity: ${HQA_STRATEGY_MAX_ORDER_PCT_OF_EQUITY:10.0}
+    max-orders-per-batch: ${HQA_STRATEGY_MAX_ORDERS_PER_BATCH:1000}
+    risk-recheck-seconds: ${HQA_STRATEGY_RISK_RECHECK_SECONDS:300}
+    executor-tick-budget-ms: ${HQA_STRATEGY_EXECUTOR_TICK_BUDGET_MS:10000}
+    # Strategy batches fail closed (CALENDAR_UNVERIFIED) after the reviewed calendar horizon and on
+    # announced special-session dates until HQA_KRX_SPECIAL_SESSIONS configures them.
+    calendar-reviewed-through: ${HQA_STRATEGY_CALENDAR_REVIEWED_THROUGH:2027-09-30}
+    pending-special-sessions: ${HQA_STRATEGY_PENDING_SPECIAL_SESSIONS:2026-11-19}
