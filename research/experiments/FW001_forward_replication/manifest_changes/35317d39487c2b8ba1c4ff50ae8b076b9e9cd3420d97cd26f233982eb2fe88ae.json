@@ -1,0 +1,17 @@
+{
+  "changed_at": "2026-10-17T14:59:07.405907+00:00",
+  "changes": {
+    "src/forward/fw001.py": {
+      "after": "c1a939fd2cf51eb3d1fded3f6c7a341314208ed00887c96310d296cef5ccaa36",
+      "before": "1477ee4a9e5a84c72e018f645d14f8e19c230c8037228c3a10dab4657e972fb5"
+    }
+  },
+  "implementation_changes": {
+    "tests/test_forward_fw001.py": {
+      "after": "3ed4df29dbd5804528c5d290e613267dd3393265b8b0ea1ec111727f6133eaca",
+      "before": "e28325889b134f9d73eee1ca5c4768ed400d6b17f9f95cbca0380943c761bd33"
+    }
+  },
+  "previous_manifest_sha256": "ddedb75f7128dde7681a707e2c3e6c556b94bb6774e5eeb86879608e216a5822",
+  "reason": "FW001 recovery validation: retain known holdings when monthly prices are absent, but refuse execution with an old unvalued chain or unverified entry date"
+}

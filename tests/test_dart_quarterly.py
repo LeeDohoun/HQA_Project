@@ -159,6 +159,20 @@ def test_multi_company_batches_are_at_most_100_and_013_is_completed(tmp_path):
     assert before == {path.name: path.read_bytes() for path in root(tmp_path).iterdir()}
 
 
+def test_batch_refresh_status_keeps_success_times_and_pending_targets_on_failure(tmp_path):
+    summary, _ = run(tmp_path, {"status": "013"}, RuntimeError("fixture failure"))
+    assert summary["status"] == "error"
+    status = json.loads((root(tmp_path) / "_batch_status.json").read_text())
+    assert len(status) == 4  # Includes the not-yet-attempted report batches.
+    first = next(v for k, v in status.items() if "_11013_" in k)
+    failed = next(v for k, v in status.items() if "_11012_" in k)
+    untouched = next(v for k, v in status.items() if "_11014_" in k)
+    assert first["last_success_at"] == START.isoformat() and first["pending_targets"] == 0
+    assert failed["last_success_at"] is None and failed["last_attempt_at"] == START.isoformat()
+    assert failed["pending_targets"] == 1 and failed["corp_codes"] == [CORP]
+    assert untouched["last_attempt_at"] is None and untouched["pending_targets"] == 1
+
+
 def test_cfs_preference_ofs_fallback_and_missing_cfs_accounts_are_not_mixed(tmp_path):
     universe = [*UNIVERSE, {"corp_code": CORP, "stock_code": "005935"},
                 {"corp_code": "00000002", "stock_code": "00088K"}]

@@ -1,0 +1,1 @@
+{"passed": true, "synthetic_months": 6, "protected_data_read": false, "book_snapshots_counts_equal": true, "simulation_equal": true, "old_code": "0b978a9", "scope": "PriceBook.from_windows, rebalance, simulate defaults"}

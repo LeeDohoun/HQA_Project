@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import os
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
@@ -13,6 +14,7 @@ import numpy as np
 import pandas as pd
 
 from backtesting import cost_model, experiment_registry, holdout
+from backtesting.append_only import fsync_directory
 from backtesting.experiment_registry import PROJECT_ROOT, REGISTRY_PATH
 
 
@@ -222,6 +224,11 @@ def write_result_files(directory, stamp, encoded, lines) -> tuple[Path, Path]:
             else:
                 json_file.write(content)
             summary_file.write("\n".join(lines) + f"\n\nResult JSON: `{json_path.name}`\n")
+            json_file.flush()
+            os.fsync(json_file.fileno())
+            summary_file.flush()
+            os.fsync(summary_file.fileno())
+    fsync_directory(directory)
     return json_path, summary_path
 
 

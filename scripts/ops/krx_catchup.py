@@ -1,4 +1,4 @@
-"""Plan missing KRX weekdays through yesterday; API calls require --execute."""
+"""Plan KRX catch-up through yesterday KST, including weekends and holidays."""
 from __future__ import annotations
 
 import argparse
@@ -35,7 +35,8 @@ def catchup_range(data_dir: str | Path, today: date) -> tuple[str, str]:
     recent_empty = [day for day in _unresolved_empty_dates(data_dir)
                     if today - timedelta(days=30) <= day < today and day.weekday() < 5]
     start = min([start, *recent_empty])
-    return start.strftime("%Y%m%d"), (today - timedelta(days=1)).strftime("%Y%m%d")
+    end = today - timedelta(days=1)
+    return start.strftime("%Y%m%d"), end.strftime("%Y%m%d")
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -46,7 +47,8 @@ def main(argv: list[str] | None = None) -> None:
     data_dir = Path(args.data_dir or os.getenv("HQA_DATA_DIR", "./data")).expanduser()
     if not data_dir.is_absolute():
         data_dir = get_project_root() / data_dir
-    today = datetime.now(KST).date()
+    stamp = datetime.now(KST)
+    today = stamp.date()
     start, end = catchup_range(data_dir, today)
     stale_empty_dates = [day for day in _unresolved_empty_dates(data_dir) if day < today - timedelta(days=30)]
     # An old latest file can put stale empty dates inside the ordinary catch-up range.

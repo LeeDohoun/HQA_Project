@@ -6,6 +6,7 @@ import hashlib
 import importlib.metadata
 import importlib.util
 import json
+import os
 import platform
 import resource
 import time
@@ -16,6 +17,7 @@ from pathlib import Path
 import pandas as pd
 
 from backtesting import experiment_registry, holdout
+from backtesting.append_only import fsync_directory
 from backtesting.experiment_registry import PROJECT_ROOT
 from backtesting.experiments import av001, common, hc003, ordering
 from src.runner import trading_calendar
@@ -38,6 +40,14 @@ DESIGN_EFFECTS = {
 }
 INPUT_GROUPS = {"financials", "companies", "main_listing", "supplement", "coverage_metadata", "prices"}
 RUNNER_SOURCE = "backtesting/experiments/av002.py"
+# Section 3 implementation scope, added to the parent's execution dependencies.
+# Unrelated changed/untracked checkout files are never part of the seal.
+ALLOWED_CODE_CHANGES = (
+    RUNNER_SOURCE, "backtesting/experiments/av001.py", "backtesting/experiments/ev001.py",
+    "backtesting/experiments/common.py", "backtesting/experiments/ordering.py",
+    "backtesting/experiment_registry.py", "backtesting/holdout.py", "backtesting/append_only.py",
+    "src/ingestion/dart_listing.py", "src/runner/trading_calendar.py", "scripts/ops/research_run.sh",
+)
 INTERPRETATIONS = [
     "Technical recovery, second access to the same AV001 holdout; not a new independent validation.",
     "AV001's Holm(3) passing set, design-only effects and all-three-variant November states are inherited unchanged. No AV002 design trials or reselection.",
@@ -203,7 +213,11 @@ def _save(payload, directory):
                                      [f"# {EXPERIMENT_ID}: {payload['stage']}", "", *INTERPRETATIONS])
     hashes = {p.name: hc003._digest(p) for p in paths}
     manifest = directory / (stamp + ".sha256.json")
-    manifest.write_text(json.dumps(hashes, indent=2) + "\n")
+    with manifest.open("x", encoding="utf-8") as handle:
+        handle.write(json.dumps(hashes, indent=2) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    fsync_directory(directory)
     return {"files": {str(p): sha for p, sha in ((directory / name, sha) for name, sha in hashes.items())},
             "hash_manifest": str(manifest), "hash_manifest_sha256": hc003._digest(manifest)}
 
@@ -244,10 +258,10 @@ def frozen_inputs(aborted, *, data_dir, repo_root, before_open):
 
 def code_manifest(*, repo_root, parent, run_id):
     root = Path(repo_root).resolve()
-    changed = set(experiment_registry._git(root, "diff", "--name-only", parent["code_commit"], "--").splitlines())
-    changed.update(experiment_registry._git(root, "ls-files", "--others", "--exclude-standard").splitlines())
-    changed = sorted(p for p in changed if Path(p).suffix in (".py", ".sh") and not p.startswith("data/"))
-    sources = sorted(set(parent["source_hashes"]["code"]) | set(changed) | {"backtesting/experiments/av002.py"})
+    sources = sorted(set(parent["source_hashes"]["code"]) | set(ALLOWED_CODE_CHANGES))
+    changed = set(experiment_registry._git(root, "diff", "--name-only", parent["code_commit"], "--", *sources).splitlines())
+    changed.update(experiment_registry._git(root, "ls-files", "--others", "--exclude-standard", "--", *sources).splitlines())
+    changed = sorted(changed)
     files = {}
     for relative in sources:
         path = root / relative
@@ -358,6 +372,10 @@ def run_holdout(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT):
             return publish(payload, repo_root=repo_root, registration=registration)
         if used & {"EV001_earnings_filing_entry", "LH003_llm_leader_forward"}:
             raise ValueError("AV002 ordering violation: EV001/LH003 used the holdout first; no session opened")
+        available = available_memory_bytes()
+        if available < 5_000_000_000:
+            raise MemoryError(f"AV002 claim requires >= 5 GB MemAvailable; available={available}; holdout unopened")
+        checks["claim_memory_bytes"] = available
         started = time.perf_counter()
         try:
             with holdout.HoldoutSession(EXPERIMENT_ID, repo_root=repo_root):

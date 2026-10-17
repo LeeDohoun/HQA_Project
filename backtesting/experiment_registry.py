@@ -2,19 +2,18 @@
 from __future__ import annotations
 
 import csv
-import fcntl
 import io
 import json
-import os
 import subprocess
 import sys
-from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator, TextIO
+from typing import Any, TextIO
 
 import yaml
+
+from backtesting.append_only import TornTailError, file_lock, locked_append as _locked_append, text_buffer
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -112,27 +111,7 @@ def _resolve_path(repo_root: str | Path, path: str | Path) -> Path:
     return (Path(repo_root) / path).resolve()
 
 
-@contextmanager
-def _locked_append(path: Path) -> Iterator[TextIO]:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a+", encoding="utf-8", newline="") as handle:
-        fcntl.flock(handle, fcntl.LOCK_EX)
-        try:
-            handle.seek(0, os.SEEK_END)
-            size = handle.tell()
-            if size:
-                handle.seek(size - 1)
-                if handle.read(1) != "\n":
-                    raise ValueError(f"append-only file must end with a newline: {path}")
-            handle.seek(0)
-            yield handle
-            handle.flush()
-            os.fsync(handle.fileno())
-        finally:
-            fcntl.flock(handle, fcntl.LOCK_UN)
-
-
-def _csv_reader(handle: TextIO) -> csv.DictReader:
+def _csv_reader(handle: TextIO, *, strict: bool = False) -> csv.DictReader:
     # Preserve historical large fields; platforms may use a smaller C long.
     limit = sys.maxsize
     while True:
@@ -141,16 +120,58 @@ def _csv_reader(handle: TextIO) -> csv.DictReader:
             break
         except OverflowError:
             limit //= 10
-    return csv.DictReader(handle)
+    return csv.DictReader(handle, strict=strict)
 
 
 def _registry_rows(handle: TextIO) -> list[dict[str, str]]:
-    reader = _csv_reader(handle)
-    if reader.fieldnames != list(REGISTRY_COLUMNS):
-        raise ValueError("registry.csv has an invalid header")
-    rows = list(reader)
-    if any(None in row or any(value is None for value in row.values()) for row in rows):
-        raise ValueError("registry.csv has an invalid row")
+    text = handle.read()
+    if not text:
+        return []
+    source = io.StringIO(text, newline="")
+    path = Path(getattr(handle, "name", "registry.csv"))
+    header = _csv_reader(source, strict=True)
+    reader = header.reader
+    try:
+        fieldnames = header.fieldnames
+    except csv.Error as exc:
+        if source.tell() == len(text):
+            raise TornTailError(path, "registry", text, 0, 1, "invalid registry.csv header") from exc
+        raise ValueError(f"invalid registry.csv header on line 1: {exc}") from exc
+    if fieldnames != list(REGISTRY_COLUMNS):
+        if text and source.tell() == len(text) and not text.endswith("\n"):
+            raise TornTailError(path, "registry", text, 0, 1, "invalid registry.csv header")
+        raise ValueError("registry.csv has an invalid header on line 1")
+    if source.tell() == len(text) and not text.endswith("\n"):
+        raise TornTailError(path, "registry", text, 0, 1, "append-only file must end with a newline")
+    rows = []
+    while True:
+        start, line = source.tell(), reader.line_num + 1
+        try:
+            row = next(reader)
+        except StopIteration:
+            if not text.endswith("\n"):
+                raise TornTailError(path, "registry", text, start, line, "append-only file must end with a newline")
+            break
+        except csv.Error as exc:
+            if source.tell() == len(text):
+                raise TornTailError(path, "registry", text, start, line, "invalid registry.csv row") from exc
+            raise ValueError(f"invalid registry.csv row on line {line}: {exc}") from exc
+        final = source.tell() == len(text)
+        if final and not text.endswith("\n"):
+            raise TornTailError(path, "registry", text, start, line, "append-only file must end with a newline")
+        try:
+            text[start:source.tell()].encode("utf-8")
+        except UnicodeEncodeError as exc:
+            if final:
+                raise TornTailError(path, "registry", text, start, line, "invalid registry.csv UTF-8") from exc
+            raise ValueError(f"invalid registry.csv UTF-8 on line {line}") from exc
+        if not row:  # Match DictReader's handling of historical blank lines.
+            continue
+        if len(row) != len(REGISTRY_COLUMNS):
+            if final:
+                raise TornTailError(path, "registry", text, start, line, "registry.csv has an invalid row")
+            raise ValueError(f"registry.csv has an invalid row on line {line}")
+        rows.append(dict(zip(REGISTRY_COLUMNS, row)))
     return rows
 
 
@@ -257,7 +278,7 @@ def record_trials(experiment_id, trials, *, note="", repo_root=PROJECT_ROOT,
         encoded.append((variant, encode_metrics(metrics), verdict))
     path = _resolve_path(repo_root, registry_path)
     with _locked_append(path) as handle:
-        empty = path.stat().st_size == 0
+        empty = not handle.getvalue()
         if not empty:
             rows = _registry_rows(handle)
             accepted = {registration.commit_hash} | _commit_aliases(
@@ -274,7 +295,7 @@ def record_trials(experiment_id, trials, *, note="", repo_root=PROJECT_ROOT,
         stamp = datetime.now(timezone.utc).isoformat()
         for variant, metrics_json, verdict in encoded:
             writer.writerow((stamp, experiment_id, registration.commit_hash, variant, verdict, metrics_json, note))
-        handle.seek(0, os.SEEK_END)
+        handle.seek(0, io.SEEK_END)
         handle.write(buffer.getvalue())
 
 
@@ -301,7 +322,7 @@ def _record_trial(experiment_id, prereg_commit, variant, metrics, verdict, *, no
     metrics_json = encode_metrics(metrics)
     path = _resolve_path(repo_root, registry_path)
     with _locked_append(path) as handle:
-        empty = path.stat().st_size == 0
+        empty = not handle.getvalue()
         if not empty:
             rows = _registry_rows(handle)
             accepted = {prereg_commit} | _commit_aliases(
@@ -326,12 +347,9 @@ def trial_count(
     path = _resolve_path(repo_root, registry_path)
     if not path.exists():
         return 0
-    with path.open(encoding="utf-8", newline="") as handle:
-        fcntl.flock(handle, fcntl.LOCK_SH)
-        try:
+    with file_lock(path, shared=True):
+        with text_buffer(path.read_bytes(), path) as handle:
             return sum(row["experiment_id"] == experiment_id for row in _registry_rows(handle))
-        finally:
-            fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 def required_t_stat(

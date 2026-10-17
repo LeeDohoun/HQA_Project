@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from backtesting import experiment_registry, holdout
+from backtesting import append_only, experiment_registry, holdout
 from backtesting.experiments import av001, av002, common, ev001, hc003, ordering
 from backtesting.experiments.lh001 import __main__ as lh_cli
 from backtesting.experiments.lh001.config import LH002
@@ -309,6 +309,8 @@ def runner(registered, monkeypatch):
     design = {"L": 17, "state_sha256": av002.STATE_SHA256, "design_effects": copy.deepcopy(av002.DESIGN_EFFECTS),
               "library_versions": {"numpy": "fixture"}, "code_commit": "parent-code"}
     events, used = [], set()
+    real_session, real_ledger_experiments = holdout.HoldoutSession, hc003.ledger_experiments
+    monkeypatch.setattr(av002, "available_memory_bytes", lambda: 5_000_000_000)
     monkeypatch.setattr(av002, "load_parent", lambda *a: (design, {"source_hashes": {}}))
     monkeypatch.setattr(hc003, "ledger_experiments", lambda *a: set(used))
     def step(name, value):
@@ -354,7 +356,8 @@ def runner(registered, monkeypatch):
             events.append("exit")
     monkeypatch.setattr(holdout, "HoldoutSession", FakeSession)
     return SimpleNamespace(root=root, design=design, events=events, used=used, step=step,
-                           manifest=manifest, coverage=coverage, evaluated=evaluated)
+                           manifest=manifest, coverage=coverage, evaluated=evaluated,
+                           real_session=real_session, real_ledger_experiments=real_ledger_experiments)
 
 
 def test_all_preopen_steps_are_mandatory_ordered_and_same_lock_then_one_row_per_variant(runner):
@@ -745,7 +748,7 @@ def test_rehearsal_must_complete_and_preserve_input_hashes_before_saving(registe
     assert not (registered / "research/experiments" / av002.EXPERIMENT_ID / "rehearsal").exists()
 
 
-def test_manifest_lists_changed_and_new_sources_with_hashes_before_opening_in_real_git(tmp_path):
+def test_manifest_seals_dependencies_and_allowed_changes_ignoring_unrelated_work(tmp_path, monkeypatch):
     def git(*args):
         return subprocess.run(["git", "-C", str(tmp_path), *args], check=True, capture_output=True, text=True).stdout.strip()
     git("init", "--quiet")
@@ -753,16 +756,24 @@ def test_manifest_lists_changed_and_new_sources_with_hashes_before_opening_in_re
     runner_path = tmp_path / "backtesting/experiments/av002.py"
     runner_path.parent.mkdir(parents=True)
     runner_path.write_text("fixture runner\n")
+    (tmp_path / "parallel.py").write_text("unrelated original\n")
     git("add", ".")
     git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "-m", "fixture code")
     parent = {"code_commit": git("rev-parse", "HEAD"), "source_hashes": {"code": {"code.py": hc003._digest(tmp_path / "code.py")}}}
     (tmp_path / "code.py").write_text("changed\n")
     (tmp_path / "new.py").write_text("new\n")
+    unrelated = tmp_path / "parallel.py"
+    unrelated.write_text("unrelated changed\n")
+    (tmp_path / "parallel.sh").write_text("untracked unrelated\n")
+    monkeypatch.setattr(av002, "ALLOWED_CODE_CHANGES", (av002.RUNNER_SOURCE, "new.py"))
     manifest = av002.code_manifest(repo_root=tmp_path, parent=parent, run_id="fixture-run")
     assert not manifest["committed"]
     payload = common.read_result_json(tmp_path / manifest["file"])
     assert set(payload["changed_code_files"]) == {"code.py", "new.py"}
     assert payload["run_id"] == "fixture-run"
+    assert set(manifest["source_hashes"]) == {"code.py", "new.py", av002.RUNNER_SOURCE}
+    assert set(payload["uncommitted_code_files"]) == {"code.py", "new.py"}
+    unrelated.write_text("changed by parallel work\n")
     av002._verify_code(manifest, tmp_path)
     (tmp_path / "code.py").write_text("changed after seal\n")
     with pytest.raises(ValueError, match="code changed"):
@@ -825,3 +836,141 @@ def test_captured_batch_rejects_nonabort_and_foreign_registry_commit(registered)
     with pytest.raises(ValueError, match="prereg_commit differs"):
         experiment_registry.record_trials(av002.EXPERIMENT_ID, [("other", {}, "fail")], repo_root=registered)
     assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("available", [4_999_999_999, 5_000_000_000])
+def test_memory_is_rechecked_after_preopen_work_immediately_before_claim(runner, monkeypatch, available):
+    def memory():
+        assert runner.events[-1] == "verify_code"
+        assert ordering._lock_target(runner.root)[1] in ordering._LOCKS.get()
+        runner.events.append("claim_memory")
+        return available
+    monkeypatch.setattr(av002, "available_memory_bytes", memory)
+    if available < 5_000_000_000:
+        with pytest.raises(MemoryError, match="claim requires >= 5 GB"):
+            av002.run_holdout(data_dir=runner.root, repo_root=runner.root)
+        assert not runner.used and hc003.registry_rows(runner.root) == []
+    else:
+        av002.run_holdout(data_dir=runner.root, repo_root=runner.root)
+        assert runner.events.index("claim_memory") + 1 == runner.events.index("claim")
+
+
+@pytest.mark.parametrize("registry_state", ["absent", "empty", "header", "existing"])
+@pytest.mark.parametrize("aborted", [False, True])
+def test_terminal_batch_is_durable_atomic_and_releases_for_normal_and_aborted_runs(
+        runner, monkeypatch, registry_state, aborted):
+    # Exercise the merged durable ledger claim too, using only the temporary repo.
+    monkeypatch.setattr(holdout, "HoldoutSession", runner.real_session)
+    monkeypatch.setattr(hc003, "ledger_experiments", runner.real_ledger_experiments)
+    path = runner.root / experiment_registry.REGISTRY_PATH
+    if registry_state == "empty":
+        path.write_bytes(b"")
+    elif registry_state == "header":
+        path.write_text(",".join(experiment_registry.REGISTRY_COLUMNS) + "\n")
+    elif registry_state == "existing":
+        experiment_registry.record_trial(av001.EXPERIMENT_ID, "fixture", {}, "fail", repo_root=runner.root)
+    before = path.read_bytes() if path.exists() else None
+    if aborted:
+        def fail(*a, **k):
+            raise RuntimeError("injected post-claim failure")
+        monkeypatch.setattr(av002.computation, "evaluate_holdout", fail)
+    synced, appended = set(), []
+    original_sync, original_replace = os.fsync, os.replace
+    def sync(fd):
+        synced.add(Path(os.readlink(f"/proc/self/fd/{fd}")))
+        original_sync(fd)
+    def replace(source, destination):
+        assert ordering._lock_target(runner.root)[1] in ordering._LOCKS.get()
+        if destination == runner.root / holdout.LEDGER_PATH:
+            return original_replace(source, destination)
+        assert destination == path
+        assert (path.read_bytes() if path.exists() else None) == before
+        with append_only.text_buffer(Path(source).read_bytes(), path) as handle:
+            rows = experiment_registry._registry_rows(handle)
+        terminal = [r for r in rows if r["experiment_id"] == av002.EXPERIMENT_ID]
+        assert len(terminal) == 2
+        metrics = json.loads(terminal[0]["metrics_json"])
+        result = runner.root / metrics["result_file"]
+        assert {result, result.with_suffix(".md"), result.parent} <= synced
+        assert Path(source) in synced  # Registry temp file is durable before replacement.
+        appended.append(terminal)
+        original_replace(source, destination)
+    monkeypatch.setattr(append_only.os, "fsync", sync)
+    monkeypatch.setattr(append_only.os, "replace", replace)
+    if aborted:
+        with pytest.raises(RuntimeError, match="injected post-claim"):
+            av002.run_holdout(data_dir=runner.root, repo_root=runner.root)
+    else:
+        av002.run_holdout(data_dir=runner.root, repo_root=runner.root)
+    assert len(appended) == 1 and path.parent in synced
+    ledger = runner.root / holdout.LEDGER_PATH
+    assert [json.loads(line)["experiment_id"] for line in ledger.read_text().splitlines()] == [av002.EXPERIMENT_ID]
+    assert holdout._SESSIONS.get() == ()
+    rows = hc003.registry_rows(runner.root)
+    assert len(rows) == (3 if registry_state == "existing" else 2)
+    assert all(r["verdict"] == ("holdout_aborted" if aborted else "pass") for r in appended[0])
+    assert ordering.av002_release(rows, runner.root)["terminal_holdout_variants"] == list(av002.VARIANTS)
+    with ordering.execution_lock(runner.root):
+        pass
+
+
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize("aborted", [False, True])
+def test_terminal_batch_replace_failure_preserves_all_prior_bytes(registered, monkeypatch, existing, aborted):
+    path = registered / experiment_registry.REGISTRY_PATH
+    if existing:
+        experiment_registry.record_trial(av001.EXPERIMENT_ID, "fixture", {}, "fail", repo_root=registered)
+    before = path.read_bytes() if existing else None
+    registration = av002._registration(registered)
+    trials = [("holdout_" + v, {}, "holdout_aborted" if aborted else "pass") for v in av002.VARIANTS]
+    kwargs = {"aborted_registration": registration} if aborted else {}
+    def fail(*a):
+        raise OSError("injected batch replacement failure")
+    with monkeypatch.context() as patch:
+        patch.setattr(append_only.os, "replace", fail)
+        with pytest.raises(OSError, match="batch replacement"):
+            experiment_registry.record_trials(av002.EXPERIMENT_ID, trials, repo_root=registered, **kwargs)
+    assert (path.read_bytes() if path.exists() else None) == before
+    assert not list(path.parent.glob(".registry.csv.*.tmp"))
+    experiment_registry.record_trials(av002.EXPERIMENT_ID, trials, repo_root=registered, **kwargs)
+    assert experiment_registry.trial_count(av002.EXPERIMENT_ID, repo_root=registered) == 2
+
+
+def test_sealed_manifest_syncs_every_file_and_directory_before_return(tmp_path, monkeypatch):
+    synced = []
+    original = os.fsync
+    def sync(fd):
+        synced.append(Path(os.readlink(f"/proc/self/fd/{fd}")))
+        original(fd)
+    monkeypatch.setattr(append_only.os, "fsync", sync)
+    directory = tmp_path / "code_manifests"
+    outputs = av002._save({"stage": "code_change_manifest"}, directory)
+    files = {Path(p) for p in outputs["files"]} | {Path(outputs["hash_manifest"])}
+    assert files | {directory} <= set(synced)
+    assert synced[-1] == directory
+
+
+
+def test_manifest_fsync_failure_refuses_before_claim(runner, monkeypatch):
+    def fail(fd):
+        raise OSError("injected artifact fsync failure")
+    def manifest(**kwargs):
+        return av002._save({"stage": "code_change_manifest"}, runner.root / "code_manifests")
+    monkeypatch.setattr(av002, "code_manifest", manifest)
+    monkeypatch.setattr(append_only.os, "fsync", fail)
+    with pytest.raises(OSError, match="artifact fsync"):
+        av002.run_holdout(data_dir=runner.root, repo_root=runner.root)
+    assert not runner.used and hc003.registry_rows(runner.root) == []
+
+
+def test_result_fsync_failure_refuses_before_registry_append(runner, monkeypatch):
+    payload = av002.computation.terminal_payload("holdout_aborted", "fixture", av002.VARIANTS,
+        design=runner.design, registration=av002._registration(runner.root))
+    payload.update(parent=av002.parent_link(), run_id="fixture", code_manifest=None)
+    def fail(fd):
+        raise OSError("injected result fsync failure")
+    monkeypatch.setattr(append_only.os, "fsync", fail)
+    monkeypatch.setattr(experiment_registry, "record_trials", no_claim)
+    with pytest.raises(OSError, match="result fsync"):
+        av002.publish(payload, repo_root=runner.root, registration=av002._registration(runner.root), aborted=True)
+    assert hc003.registry_rows(runner.root) == []

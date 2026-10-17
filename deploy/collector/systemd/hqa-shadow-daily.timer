@@ -1,5 +1,5 @@
 [Unit]
-Description=HQA shadow recorder at 08:55 and 12:30 KST daily
+Description=HQA shadow recovery checks; primary trigger is successful KRX completion
 
 [Timer]
 OnCalendar=*-*-* 08:55 Asia/Seoul

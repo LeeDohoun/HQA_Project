@@ -97,7 +97,15 @@ def preflight_price_sessions(data_dir, start, end, *, price_days=None):
     return report
 
 
-SPECIAL_SESSION_REVIEW_REQUIRED_FROM = "2026-11-01"
+# Days that may have special KRX hours but whose official notice is not yet
+# recorded in SPECIAL_CLOSES. Only these fail closed; other verified-year days
+# use the dependency's regular schedule. 2026-11-19 is the 2027 CSAT
+# (Ministry of Education, announced 2024-08-16); KRX usually publishes the
+# changed hours about two weeks before. Move it to SPECIAL_CLOSES with the
+# official notice when published.
+PENDING_SPECIAL_SESSIONS = {
+    "2026-11-19": "2027학년도 대학수학능력시험; KRX special-hours notice pending",
+}
 SPECIAL_CLOSES = {
     "2021-11-18": {
         "close": "2021-11-18T16:30:00+09:00", "published_at": "2021-11-04T10:00:00+09:00",
@@ -138,9 +146,10 @@ SPECIAL_CLOSES = {
 
 
 def _check_special_session_coverage(day: str) -> None:
-    # The dependency's CSAT table ends in 2020. These are review boundaries,
-    # not inferred exam dates or invented market hours.
-    if day >= SPECIAL_SESSION_REVIEW_REQUIRED_FROM:
+    # The dependency's CSAT table ends in 2020. Pending days fail closed rather
+    # than guessing regular hours; years after the verified range fail in
+    # require_verified_calendar.
+    if day in PENDING_SPECIAL_SESSIONS and day not in SPECIAL_CLOSES:
         raise ValueError(f"calendar_special_session_coverage_unverified:{day}:official_KRX_notice_required")
 
 
@@ -176,7 +185,6 @@ def completed_daily_sessions(as_of: datetime, count: int = 300) -> list[tuple[st
     cutoff = pd.Timestamp(as_of)
     korean_day = cutoff.tz_convert("Asia/Seoul")
     require_verified_calendar(korean_day.date().isoformat())
-    _check_special_session_coverage(korean_day.date().isoformat())
     calendar = _calendar(korean_day.year)
     schedule = calendar.schedule.copy()
     for day, notice in SPECIAL_CLOSES.items():
