@@ -21,7 +21,7 @@ from .dart_backfill import (DEFAULT_DATA_DIR, DEFAULT_MAX_REQUESTS, DartBackfill
                             _QuotaReached, _date, _read_json, _write_json)
 from .dart_listing import (START, CURRENT_FIELDS, digest, directory, reference_version,
                            validate_supplement_state, supplement_manifest, overlap_differences,
-                           required_supplement_targets)
+                           required_supplement_targets, freeze_target_scan)
 from .dart_poller import KST, _validate_page
 from .storage import file_lock, read_rows, write_rows
 
@@ -294,6 +294,8 @@ def supplement(*, data_dir=DEFAULT_DATA_DIR, execute=False, api_key=None, sessio
                 _publish(root, state, pending, main_receipts)
                 journal.unlink()
             state["file_manifest"] = supplement_manifest(data_dir)
+            if "target_scan" not in state:
+                state["target_scan"] = freeze_target_scan(data_dir, end)
             _write_json(state_path, state)
             status = "complete"
         except _QuotaReached:

@@ -1,5 +1,5 @@
 """Explicit completed listing checkpoints for offline experiment fixtures."""
-from src.ingestion.dart_listing import digest, directory, reference_version, supplement_manifest
+from src.ingestion.dart_listing import digest, directory, reference_version, supplement_manifest, freeze_target_scan
 from src.ingestion.dart_backfill import _write_json
 from src.ingestion.storage import read_rows, write_rows
 
@@ -21,7 +21,8 @@ def checkpoint(data_dir, *, end="20261009", days=None, corps=()):
              "target_set_hash": digest(corps), "completed_corps": corps,
              "reference_version": reference_version(data_dir),
              "rows_per_corp": counts, "skipped_per_corp": dict.fromkeys(corps, 0),
-             "duplicates_per_corp": dict.fromkeys(corps, 0), "file_manifest": supplement_manifest(data_dir)}
+             "duplicates_per_corp": dict.fromkeys(corps, 0), "file_manifest": supplement_manifest(data_dir),
+             "target_scan": freeze_target_scan(data_dir, end)}
     _write_json(root / "list_supplement/_state.json", state)
     if days is None and not (root / "_state.json").exists():
         days = [p.stem for p in (root / "list").glob("*/*.jsonl")]

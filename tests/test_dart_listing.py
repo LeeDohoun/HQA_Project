@@ -201,6 +201,7 @@ def test_current_required_targets_exclude_main_corps_and_post_end_trading(tmp_pa
                [{"stock_code": "000030", "trade_date": "20240103"}])
     save(tmp_path, [row(corp_code="00000002", stock_code="000020")])
     save(tmp_path, [row("20240103", corp_code="00000005", stock_code="000050")])
+    checkpoint(tmp_path, end="20240102", corps=["00000001"])
     status = listing.listing_status(tmp_path)
     assert status["reason"] == "supplement_targets_missing"
     assert status["missing_target_corps"] == ["00000005"]  # Unknown classification also requires repair.
@@ -217,6 +218,7 @@ def test_main_appearance_before_start_also_excludes_required_target(tmp_path):
     write_rows(tmp_path / "reference/dart_company/companies.jsonl", [{"corp_code": "00000001", "corp_cls": "E"}])
     write_rows(tmp_path / "market/krx_daily/2016/20160601.jsonl", [{"stock_code": "000010", "trade_date": "20160601"}])
     save(tmp_path, [row("20150515")])
+    checkpoint(tmp_path)
     assert listing.listing_status(tmp_path)["supplement_complete"]
 
 
@@ -299,3 +301,63 @@ def test_lh002_counts_through_october_30_extend_past_supplement_end(tmp_path):
     state = listing.listing_status(tmp_path)
     assert state["end_de"] == "20261009" and "Y/K" in state["post_end_de_assumption"]
     listing.require_supplement(tmp_path, days)
+
+
+def test_offline_frozen_scan_backfill_only_adds_state_field_and_is_idempotent(tmp_path, monkeypatch):
+    from pathlib import Path
+    from scripts.data.backfill_listing_target_scan import backfill
+
+    protected = tmp_path / "market/krx_daily/2026/20260102.jsonl"
+    write_rows(protected, [{"trade_date": "20260102", "stock_code": "000010"}])
+    (tmp_path / "reference").mkdir()
+    (tmp_path / "reference/corp_codes.csv").write_text("corp_code,stock_code\n00000001,000010\n")
+    save(tmp_path, [row()], True)
+    state = checkpoint(tmp_path, corps=["00000001"])
+    del state["target_scan"]
+    state_path = listing.directory(tmp_path) / "list_supplement/_state.json"
+    state_path.write_text(json.dumps(state))
+    before_version = listing.listing_version(tmp_path)
+    before = {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+    assert not listing.listing_status(tmp_path)["supplement_complete"]
+    original_open = Path.open
+    def checked_open(path, *a, **k):
+        assert path != protected, "dry-run opened protected contents"
+        return original_open(path, *a, **k)
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "open", checked_open)
+        plan = backfill(tmp_path)
+        assert plan["protected_files"] == 1 and plan["protected_price_contents_opened"] is False
+    assert before == {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+    assert backfill(tmp_path, write=True)["status"] == "frozen"
+    updated = json.loads(state_path.read_text())
+    scan = updated.pop("target_scan")
+    assert updated == state  # Including the original manifest and counters.
+    assert scan["traded_codes_per_corp"] == {"00000001": ["000010"]}
+    assert scan["price_files"] == {"market/krx_daily/2026/20260102.jsonl": listing.file_hash(protected)}
+    assert listing.listing_version(tmp_path) != before_version
+    written = state_path.read_bytes()
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "open", checked_open)
+        assert listing.listing_status(tmp_path)["supplement_complete"]
+        assert backfill(tmp_path, write=True) == {"status": "already_frozen", "state_changed": False}
+    assert written == state_path.read_bytes()
+    for path, content in before.items():
+        if path != state_path:
+            assert path.read_bytes() == content
+
+
+@pytest.mark.parametrize("change", ["file_added", "file_removed", "nonprotected_changed"])
+def test_frozen_scan_rejects_price_inventory_and_nonprotected_content_changes(tmp_path, change):
+    path = tmp_path / "market/krx_daily/2025/20250102.jsonl"
+    write_rows(path, [{"trade_date": "20250102", "stock_code": "000010"}])
+    checkpoint(tmp_path)
+    assert listing.listing_status(tmp_path)["supplement_complete"]
+    if change == "file_added":
+        write_rows(tmp_path / "market/krx_daily/2026/20260102.jsonl", [{"trade_date": "20260102"}])
+    elif change == "file_removed":
+        path.unlink()
+    else:
+        write_rows(path, [{"trade_date": "20250102", "stock_code": "000020"}])
+    status = listing.listing_status(tmp_path)
+    assert not status["supplement_complete"]
+    assert "frozen target scan" in status["file_integrity"]["reference_error"]

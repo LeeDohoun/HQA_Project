@@ -460,7 +460,8 @@ def backfill(from_year: int, to_year: int, *, execute=False, max_requests=DEFAUL
     return summary
 
 
-def load_quarterly(as_of, *, data_dir=DEFAULT_DATA_DIR, date_rule="stored") -> pd.DataFrame:
+def load_quarterly(as_of, *, data_dir=DEFAULT_DATA_DIR, date_rule="stored",
+                   filing_dates=None, stage=None) -> pd.DataFrame:
     """Latest known CFS per corp/quarter, or OFS only if no CFS is known.
 
     as_of is the caller's trading-session date (aware timestamps use KST).
@@ -472,6 +473,11 @@ def load_quarterly(as_of, *, data_dir=DEFAULT_DATA_DIR, date_rule="stored") -> p
     date_rule="original" uses merged-list provenance (later of receipt/list
     dates), assigning corrected saved values to the earliest original report.
     """
+    if date_rule in {"S", "O"}:
+        from .dart_financial_date_rules import FinancialVersions
+        if filing_dates is None or stage is None:
+            raise ValueError("S/O require filing_dates and an explicit stage")
+        return FinancialVersions(data_dir, filing_dates, date_rule, stage).load(as_of)
     if date_rule not in {"stored", "original"}:
         raise ValueError("DART quarterly date_rule must be stored or original")
     session_date = pd.Timestamp(as_of)

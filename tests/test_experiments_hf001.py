@@ -16,6 +16,7 @@ import pytest
 from backtesting import cost_model, experiment_registry
 from backtesting.experiments import common, hc001, hc002, hf001
 from src.ingestion import dart_quarterly
+from src.ingestion.storage import write_rows
 
 
 def market(start="2023-10-02", end="2025-12-31", codes=None, *, krx_sessions=False):
@@ -715,10 +716,12 @@ def test_dry_run_per_month_reports_pending_backfill_and_has_no_side_effects(tmp_
     (tmp_path / "fundamentals/dart_quarterly/2026_11013.jsonl").write_text("future financials must not be opened")
     prices = tmp_path / "market/krx_daily/2025"
     prices.mkdir(parents=True)
-    (prices / "20251128.jsonl").write_text("price data must not be loaded")
+    write_rows(prices / "20251128.jsonl", [{"trade_date": "20251128", "stock_code": "000010",
+                                           "sentinel": "price data must not be loaded"}])
     future = tmp_path / "market/krx_daily/2026"
     future.mkdir()
-    (future / "20260102.jsonl").write_text("holdout prices must not be opened")
+    write_rows(future / "20260102.jsonl", [{"trade_date": "20260102", "stock_code": "000010",
+                                          "sentinel": "holdout prices must not be opened"}])
     listing_archive(tmp_path, "2023-01-01", "2025-11-30")
     def denied(*args, **kwargs):
         raise AssertionError("dry-run evaluated, drew, or wrote")

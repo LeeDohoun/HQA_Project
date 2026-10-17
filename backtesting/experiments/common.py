@@ -225,10 +225,14 @@ def write_result_files(directory, stamp, encoded, lines) -> tuple[Path, Path]:
     return json_path, summary_path
 
 
-def write_results(experiment_id, payload, *, repo_root=PROJECT_ROOT) -> tuple[Path, Path]:
+def write_results(experiment_id, payload, *, repo_root=PROJECT_ROOT, summary_lines=None) -> tuple[Path, Path]:
     """Publish finite JSON and a Korean summary with exclusive UTC filenames."""
     load_preregistration(experiment_id, repo_root=repo_root)
     encoded = json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
+    if summary_lines is not None:
+        directory = Path(repo_root) / "research/experiments" / experiment_id / "results"
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        return write_result_files(directory, stamp, encoded, summary_lines)
     verdict = {"pass": "통과", "fail": "실패", "insufficient": "관측 부족"}[payload["verdict"]]
     lines = [f"# 실험 결과: {experiment_id}", "",
              f"- 선택 변형: {payload['selected_variant']}", f"- 최종 판정: {verdict}",

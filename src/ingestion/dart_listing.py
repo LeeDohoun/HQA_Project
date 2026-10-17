@@ -124,7 +124,7 @@ def listing_paths(data_dir, start=None, end=None, *, main_dir=None):
     return dict(sorted(paths.items()))
 
 
-def listing_rows(data_dir, day, *, main_dir=None):
+def listing_rows(data_dir, day, *, main_dir=None, conflicts=None):
     stamp, root = _day(day), directory(data_dir)
     main = Path(main_dir) if main_dir is not None else root / "list"
     rows = {}
@@ -135,7 +135,16 @@ def listing_rows(data_dir, day, *, main_dir=None):
                     or row.get("rcept_dt") != stamp):
                 raise ValueError("DART invalid listing receipt or archive date")
             if receipt in rows:
-                overlap_differences(rows[receipt], row)
+                if conflicts is not None and rows[receipt] != row:
+                    conflicts.add(receipt)
+                try:
+                    overlap_differences(rows[receipt], row)
+                except ValueError:
+                    if conflicts is None:
+                        raise
+                    conflicts.add(receipt)
+            if conflicts is not None and receipt in conflicts:
+                continue
             if receipt not in rows:
                 rows[receipt] = row
     return list(rows.values())
@@ -148,18 +157,93 @@ def supplement_paths(data_dir, days):
 
 def listing_version(data_dir, *, manifest=None):
     root = directory(data_dir)
-    return {"reader": "dart-listing-v2", "main_state_sha256": file_hash(root / "_state.json"),
+    return {"reader": "dart-listing-v3-frozen-target-scan", "main_state_sha256": file_hash(root / "_state.json"),
             "supplement_state_sha256": file_hash(root / "list_supplement/_state.json"),
             "supplement_files_sha256": digest(supplement_manifest(data_dir) if manifest is None else manifest)}
 
 
-def required_supplement_targets(data_dir, end_de, *, included_targets=()):
+def target_scan_paths(data_dir, end_de):
+    return sorted(p for p in (Path(data_dir) / "market/krx_daily").glob("*/*.jsonl")
+                  if re.fullmatch(r"[0-9]{8}", p.stem) and START <= p.stem <= end_de)
+
+
+def freeze_target_scan(data_dir, end_de):
+    """Operator collector/backfill only: scan identities and freeze the price inputs."""
+    root, traded, hashes = Path(data_dir), set(), {}
+    references = reference_version(root)
+    paths = target_scan_paths(root, end_de)
+    if not paths:
+        raise ValueError("DART supplement historical KRX sessions are missing")
+    for path in paths:
+        before = file_hash(path)
+        for row in read_rows(path):
+            if str(row.get("trade_date", "")).replace("-", "") != path.stem:
+                raise ValueError("KRX daily date disagrees with archive")
+            code = row.get("stock_code")
+            if not isinstance(code, str) or len(code) != 6:
+                raise ValueError("KRX invalid daily stock code")
+            traded.add(code)
+        if before != file_hash(path):
+            raise ValueError("KRX target scan input changed during scan")
+        hashes[path.relative_to(root).as_posix()] = before
+    if paths != target_scan_paths(root, end_de):
+        raise ValueError("KRX target scan file list changed during scan")
+    with (root / "reference/corp_codes.csv").open(encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        if not {"corp_code", "stock_code"}.issubset(reader.fieldnames or []):
+            raise ValueError("DART invalid corporate-code CSV columns")
+        corps = {}
+        for row in reader:
+            corp, code = row["corp_code"], row["stock_code"].strip()
+            if not re.fullmatch(r"[0-9]{8}", corp):
+                raise ValueError("DART invalid corporate code")
+            if code in traded:
+                corps.setdefault(corp, set()).add(code)
+    if references != reference_version(root):
+        raise ValueError("DART references changed during target scan")
+    return {"start_de": START, "end_de": end_de, "price_files": hashes,
+            "traded_stock_codes": sorted(traded),
+            "traded_codes_per_corp": {c: sorted(codes) for c, codes in sorted(corps.items())},
+            "reference_version": references}
+
+
+def verified_target_scan(data_dir, state):
+    """Coverage never opens protected prices, even inside an experiment session."""
+    from backtesting import holdout
+
+    scan = state.get("target_scan")
+    if (not isinstance(scan, dict) or scan.get("start_de") != START
+            or scan.get("end_de") != state["end_de"]
+            or not isinstance(scan.get("price_files"), dict)
+            or not scan["price_files"]
+            or any(not isinstance(h, str) or not re.fullmatch(r"[0-9a-f]{64}", h)
+                   for h in scan["price_files"].values())
+            or not isinstance(scan.get("traded_stock_codes"), list)
+            or any(not isinstance(c, str) or not re.fullmatch(r"[0-9A-Za-z]{6}", c)
+                   for c in scan["traded_stock_codes"])
+            or scan["traded_stock_codes"] != sorted(set(scan["traded_stock_codes"]))
+            or not isinstance(scan.get("traded_codes_per_corp"), dict)):
+        raise ValueError("DART frozen target scan missing or invalid; run offline target-scan backfill")
+    paths = target_scan_paths(data_dir, state["end_de"])
+    if {p.relative_to(data_dir).as_posix() for p in paths} != set(scan["price_files"]):
+        raise ValueError("DART frozen target scan KRX file list changed")
+    for path in paths:
+        day = datetime.strptime(path.stem, "%Y%m%d").date()
+        if holdout.HOLDOUT_START <= day <= holdout.HOLDOUT_END:
+            continue
+        holdout.guard_period(day, day)
+        if file_hash(path) != scan["price_files"][path.relative_to(data_dir).as_posix()]:
+            raise ValueError("DART frozen target scan non-protected KRX file changed")
+    return scan
+
+
+def required_supplement_targets(data_dir, end_de, *, included_targets=(), frozen_scan=None):
     """Current non-Y/K, historically traded corporations absent from main."""
     root = Path(data_dir).resolve()
     sources = sorted(p for p in (directory(root) / "list").glob("*/*.jsonl")
                      if re.fullmatch(r"[0-9]{8}", p.stem) and p.stem <= end_de)
-    sources += sorted(p for p in (root / "market/krx_daily").glob("*/*.jsonl")
-                      if re.fullmatch(r"[0-9]{8}", p.stem) and START <= p.stem <= end_de)
+    if frozen_scan is None:  # Only the operator collector may rescan price contents.
+        sources += target_scan_paths(root, end_de)
     versions = []
     for path in sources:
         stat = path.stat()
@@ -169,11 +253,12 @@ def required_supplement_targets(data_dir, end_de, *, included_targets=()):
     # because ctime changes; ctime moves in coarse kernel ticks, so an edit in
     # the same tick as the cached scan can be missed within one process.
     source_version = (tuple(sorted(reference_version(root).items())), tuple(versions))
-    return list(_required_supplement_targets(root, end_de, tuple(sorted(included_targets)), source_version))
+    traded = None if frozen_scan is None else tuple(frozen_scan["traded_stock_codes"])
+    return list(_required_supplement_targets(root, end_de, tuple(sorted(included_targets)), source_version, traded))
 
 
 @lru_cache(maxsize=1)
-def _required_supplement_targets(data_dir, end_de, included_targets, source_version):
+def _required_supplement_targets(data_dir, end_de, included_targets, source_version, frozen_traded):
     """Cache the metadata scan only; supplement file hashing is never cached."""
     root = Path(data_dir)
     master, profiles_path = root / "reference/corp_codes.csv", root / "reference/dart_company/companies.jsonl"
@@ -210,6 +295,9 @@ def _required_supplement_targets(data_dir, end_de, included_targets, source_vers
         if not candidates:
             return ()
     codes = {code for values in candidates.values() for code in values}
+    if frozen_traded is not None:
+        traded = set(frozen_traded)
+        return tuple(sorted(corp for corp, values in candidates.items() if values & traded))
     traded = set()
     paths = sorted(p for p in (root / "market/krx_daily").glob("*/*.jsonl")
                    if re.fullmatch(r"[0-9]{8}", p.stem) and START <= p.stem <= end_de)
@@ -262,7 +350,9 @@ def listing_status(data_dir):
                 reason = "supplement_manifest_row_count_mismatch"
             else:
                 try:
-                    required = required_supplement_targets(data_dir, state["end_de"], included_targets=state["target_corps"])
+                    scan = verified_target_scan(Path(data_dir), state)
+                    required = required_supplement_targets(data_dir, state["end_de"],
+                        included_targets=state["target_corps"], frozen_scan=scan)
                 except ValueError as exc:
                     reason = "supplement_reference_unavailable"
                     integrity["reference_error"] = str(exc)

@@ -117,12 +117,14 @@ def _observations(prices, universe, *, repo_root=PROJECT_ROOT, last_dates=None):
     return observations
 
 
-def universe_on_decision(history, decision_date, *, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT):
+def universe_on_decision(history, decision_date, *, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT,
+                         financial_loader=None):
     """One close-known monthly universe, without requiring future price observations."""
     day = pd.Timestamp(decision_date)
+    kwargs = {} if financial_loader is None else {"financial_loader": financial_loader}
     return hc001._universe_on_decision(
         history, day, day, hc001._industries(data_dir), data_dir=data_dir,
-        first_receipts=None, repo_root=repo_root)
+        first_receipts=None, repo_root=repo_root, **kwargs)
 
 
 def forward_observations(prices, universe, *, repo_root=PROJECT_ROOT, last_dates=None):

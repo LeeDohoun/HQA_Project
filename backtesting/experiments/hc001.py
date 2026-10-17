@@ -181,10 +181,13 @@ def phase_signals(frame):
     return result
 
 
-def signals_as_of(day, *, data_dir=PROJECT_ROOT / "data", first_receipts=None):
-    known = dart_quarterly.load_quarterly(day, data_dir=data_dir)
+def signals_as_of(day, *, data_dir=PROJECT_ROOT / "data", first_receipts=None, financial_loader=None):
+    loader = dart_quarterly.load_quarterly if financial_loader is None else financial_loader
+    known = loader(day, data_dir=data_dir)
     signals = phase_signals(known)
     signals["correction_used"] = False
+    if financial_loader is not None:
+        signals["correction_used"] = signals.rcept_no.isin(known.attrs["correction_receipts"])
     if first_receipts is not None:
         signals["correction_used"] = [row.rcept_no != first_receipts[(row.corp_code, row.fiscal_quarter, row.fs_div)]
                                        for row in signals.itertuples()]
@@ -204,9 +207,11 @@ def signals_as_of(day, *, data_dir=PROJECT_ROOT / "data", first_receipts=None):
     return latest.set_index("stock_code")
 
 
-def _universe_on_decision(history, decision, day, profiles, *, data_dir, first_receipts, repo_root):
+def _universe_on_decision(history, decision, day, profiles, *, data_dir, first_receipts, repo_root,
+                          financial_loader=None):
     universe = common.universe_filter(history, decision, repo_root=repo_root)
-    signals = signals_as_of(day, data_dir=data_dir, first_receipts=first_receipts).reindex(universe.index)
+    kwargs = {} if financial_loader is None else {"financial_loader": financial_loader}
+    signals = signals_as_of(day, data_dir=data_dir, first_receipts=first_receipts, **kwargs).reindex(universe.index)
     valid = signals.computable.eq(True)
     report = {"trade_date": day.date().isoformat(), "price_eligible": len(universe),
               "no_data": int((~valid).sum()),

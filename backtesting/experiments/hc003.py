@@ -135,8 +135,10 @@ class Quote:
 class PriceBook:
     """Adjusted-index marks; all execution/sensitivity snapshots are cached once."""
 
-    def __init__(self, prices, sessions, rebalances, end, *, repo_root=PROJECT_ROOT):
-        common.guard_prices(prices, experiment_id=EXPERIMENT_ID, repo_root=repo_root)
+    def __init__(self, prices, sessions, rebalances, end, *, repo_root=PROJECT_ROOT,
+                 experiment_id=EXPERIMENT_ID):
+        self.experiment_id, self.repo_root = experiment_id, repo_root
+        common.guard_prices(prices, experiment_id=experiment_id, repo_root=repo_root)
         if prices.index.has_duplicates:
             raise ValueError("price keys must be unique")
         required = {"open", "close", "volume", "market", "trading_value", "calendar_status", "ret_1d"}
@@ -221,11 +223,123 @@ class PriceBook:
 
     def marks(self, day, kind="open", *, loss=False):
         day = pd.Timestamp(day)
-        values = self.closings if kind == "close" else {code: q.mark for code, q in self.openings[day].items()}
-        if kind == "close" and day != self.end:
+        closes = getattr(self, "close_snapshots", {self.end: self.closings})
+        if kind == "close" and day not in closes:
             raise ValueError("close valuation must use the fixed evaluation end")
+        values = closes[day] if kind == "close" else {code: q.mark for code, q in self.openings[day].items()}
         return {code: 0.0 if loss and code in self.zero_from and self.zero_from[code] <= day else value
                 for code, value in values.items()}
+
+    @classmethod
+    def from_windows(cls, windows, sessions, rebalances, end, *, experiment_id, repo_root=PROJECT_ROOT,
+                     close_dates=()):
+        """Same index/quote formula with bounded raw windows and carried indices.
+
+        Windows partition exchange sessions (no overlap/gaps). Only execution
+        snapshots, twenty ADV inputs and the latest adjusted close survive.
+        """
+        book = cls.__new__(cls)
+        book.experiment_id, book.repo_root = experiment_id, repo_root
+        book.end = pd.Timestamp(end)
+        book.days = signal_eval._dates(sessions).sort_values().unique()
+        book.days = book.days[book.days <= book.end]
+        book.rebalances = signal_eval._dates(rebalances).sort_values().unique()
+        book.openings, book.close_snapshots, book.zero_from = {}, {}, {}
+        book.counts = dict.fromkeys(("unadjusted_fallback", "unchanged_missing_price_or_base",
+                                    "missing_base", "cost_input_untradable"), 0)
+        marks, previous_raw, adv_history, last_trade = {}, {}, {}, {}
+        captured_closes = {book.end, *(pd.Timestamp(day) for day in close_dates)}
+        seen = pd.DatetimeIndex([])
+        for prices in windows:
+            common.guard_prices(prices, experiment_id=experiment_id, repo_root=repo_root)
+            days = common._sessions(prices)
+            if prices.index.has_duplicates or days.empty or len(seen.intersection(days)):
+                raise ValueError("streamed price windows must be nonempty and disjoint")
+            expected = book.days[(book.days >= days[0]) & (book.days <= days[-1])]
+            if not days.equals(expected) or len(seen) and days[0] <= seen[-1]:
+                raise ValueError("incomplete or unordered streamed price sessions")
+            seen = seen.append(days)
+            snapshots = book.rebalances.intersection(days)
+            for day in snapshots:
+                book.openings[day] = {code: Quote(mark, float("nan"), None, float("nan"), False)
+                                      for code, mark in marks.items()}
+            closes = days.intersection(pd.DatetimeIndex(sorted(captured_closes)))
+            for day in closes:
+                book.close_snapshots[day] = dict(marks)
+            present = set()
+            thresholds = np.array([hf001.price_limit(day) - 0.005 for day in days])
+            for code, group in prices.groupby(level="stock_code", observed=True, sort=True):
+                present.add(code)
+                frame = group.droplevel("stock_code").reindex(days)
+                closing, opening, volume = (frame[key].to_numpy(dtype=float) for key in ("close", "open", "volume"))
+                bases = frame.base_price.to_numpy(dtype=float) if "base_price" in frame else np.full(len(days), np.nan)
+                bases = np.where(np.isnan(bases), np.r_[previous_raw.get(code, np.nan), closing[:-1]], bases)
+                valid_close, valid_base = np.isfinite(closing) & (closing > 0), np.isfinite(bases) & (bases > 0)
+                returns = frame.ret_1d.to_numpy(dtype=float)
+                if np.isinf(returns).any() or (returns[np.isfinite(returns)] < -1).any():
+                    raise ValueError(f"invalid adjusted daily return: {code}")
+                valid = valid_close & valid_base
+                fallback = valid & np.isnan(returns)
+                factors = np.ones(len(days))
+                factors[valid] = 1 + returns[valid]
+                factors[fallback] = closing[fallback] / bases[fallback]
+                first = 0
+                if code not in marks:
+                    found = np.flatnonzero(valid_close)
+                    if not len(found):
+                        previous_raw[code] = closing[-1]
+                        continue
+                    first = int(found[0])
+                    factors[:first + 1] = 1.0
+                adjusted = np.cumprod(factors) * marks.get(code, 1.0)
+                if code not in marks:
+                    adjusted[:first] = np.nan
+                adjusted_open = np.r_[marks.get(code, np.nan), adjusted[:-1]]
+                current_open = valid & np.isfinite(opening) & (opening > 0)
+                adjusted_open[current_open] = adjusted[current_open] * opening[current_open] / closing[current_open]
+                value = frame.trading_value.where(frame.calendar_status.eq("verified"))
+                value = value.where(np.isfinite(value) & value.ge(0)).to_numpy(dtype=float)
+                prior = adv_history.get(code, np.full(20, np.nan))
+                values = np.r_[prior, value]
+                adv = pd.Series(values).shift(1).rolling(20, min_periods=20).mean().to_numpy()[20:]
+                markets = frame.market.to_numpy()
+                cost_known = np.isfinite(adv) & np.isin(markets, ("KOSPI", "KOSDAQ"))
+                tradable = current_open & np.isfinite(volume) & (volume > 0) & cost_known & (adjusted_open > 0)
+                up, down = valid_base & (opening >= bases * (1 + thresholds)), valid_base & (opening <= bases * (1 - thresholds))
+                observed = days.isin(group.index.get_level_values("trade_date"))
+                counted_fallback = fallback.copy()
+                if code not in marks:
+                    counted_fallback[:first + 1] = False
+                book.counts["unadjusted_fallback"] += int(counted_fallback.sum())
+                book.counts["missing_base"] += int((observed & ~valid_base).sum())
+                book.counts["unchanged_missing_price_or_base"] += int((observed & ~valid).sum())
+                book.counts["cost_input_untradable"] += int((current_open & (volume > 0) & ~cost_known).sum())
+                traded = np.flatnonzero(valid_close & np.isfinite(volume) & (volume > 0))
+                if len(traded):
+                    last_trade[code] = days[traded[-1]]
+                for day in snapshots:
+                    pos = days.get_loc(day)
+                    if np.isfinite(adjusted_open[pos]):
+                        book.openings[day][code] = Quote(float(adjusted_open[pos]), float(opening[pos]), markets[pos],
+                            float(adv[pos]), bool(tradable[pos]), bool(up[pos]), bool(down[pos]))
+                for day in closes:
+                    pos = days.get_loc(day)
+                    if np.isfinite(adjusted[pos]):
+                        book.close_snapshots[day][code] = float(adjusted[pos])
+                marks[code], previous_raw[code], adv_history[code] = float(adjusted[-1]), closing[-1], values[-20:]
+            for code in set(marks) - present:
+                previous_raw[code] = np.nan
+                adv_history[code] = np.r_[adv_history.get(code, np.full(20, np.nan)), np.full(len(days), np.nan)][-20:]
+        if len(seen) == 0 or not seen.equals(book.days[book.days >= seen[0]]):
+            raise ValueError("incomplete streamed price coverage")
+        if set(book.rebalances) - set(book.openings) or captured_closes - set(book.close_snapshots):
+            raise ValueError("missing required accounting snapshots")
+        for code, last in last_trade.items():
+            after = book.rebalances[book.rebalances > last]
+            if len(after):
+                book.zero_from[code] = after[0]
+        book.closings = book.close_snapshots[book.end]
+        return book
 
 
 def portfolio_value(state, marks):
@@ -252,11 +366,16 @@ def rebalance(state, quotes, targets, day, *, blocked_buys=(), allocation_n=None
         raise ValueError("allocation denominator must be a nonnegative integer")
     target = allocatable / n if n else 0.0
     buy_orders, sells, trades = {}, {}, []
+    band_skipped = {"buy": 0.0, "sell": 0.0}
     for code in sorted((before | executable) - frozen):
         current = state.quantities.get(code, 0.0) * marks[code]
         full_exit = code in before and code not in targets
         delta = (0.0 if full_exit or code not in executable else target) - current
         if not full_exit and abs(delta) < value * 0.001:
+            if delta < 0:
+                band_skipped["sell"] -= delta
+            elif delta > 0 and code not in blocked_buys and not quotes[code].limit_up:
+                band_skipped["buy"] += delta
             continue
         if delta < 0:
             sells[code] = (-delta, full_exit)
@@ -297,6 +416,7 @@ def rebalance(state, quotes, targets, day, *, blocked_buys=(), allocation_n=None
         "H": sorted(targets), "Z": sorted(frozen), "T": sorted(executable), "n": n,
         "W": allocatable, "target_amount": target, "buy_scale": scale, "trades": trades,
         "buy_amount": totals["buy"], "sell_amount": totals["sell"],
+        "band_skipped_buy_value": band_skipped["buy"], "band_skipped_sell_value": band_skipped["sell"],
         "buy_cost": costs["buy"], "sell_cost": costs["sell"], "cost": sum(costs.values()),
         "buy_turnover": totals["buy"] / value if value > 0 else None,
         "sell_turnover": totals["sell"] / value if value > 0 else None,
@@ -314,6 +434,90 @@ def target_set(variant, universe, held):
     elif variant not in VARIANTS:
         raise ValueError("unknown HC003 variant")
     return phase2
+
+
+def path_sums(values):
+    """Use the scalar portfolio's Python float sum for each vectorised path.
+
+    Pairwise NumPy reductions can change band-boundary decisions and exact
+    strategy/control ties. Python 3.12 also compensates float sums.
+    """
+    return np.array([sum(row.tolist()) for row in values], dtype=float)
+
+
+def rebalance_paths(cash, quantities, codes, quotes, targets, day, *, allocation_n=None):
+    """Vectorised HC003 3.3 accounting for independent v2/x1 control paths.
+
+    Each row is a path; only current quantities are retained. Quotes and cost
+    rates are shared, while frozen sets and allocation denominators are per path.
+    """
+    if list(codes) != sorted(set(codes)):
+        raise ValueError("path stock codes must be unique and sorted")
+    cash, quantities = np.array(cash, dtype=float, copy=True), np.array(quantities, dtype=float, copy=True)
+    targets = np.asarray(targets, dtype=bool)
+    if quantities.shape != targets.shape or quantities.shape != (len(cash), len(codes)):
+        raise ValueError("path accounting array shapes disagree")
+    if not np.isfinite(cash).all() or (cash < 0).any() or not np.isfinite(quantities).all() or (quantities < 0).any():
+        raise ValueError("invalid path holdings/cash")
+    before = quantities > 0
+    marks = np.array([quotes[code].mark if code in quotes else np.nan for code in codes])
+    if (before & ~np.isfinite(marks)).any():
+        raise ValueError("held stock has no prior adjusted valuation")
+    marks = np.where(np.isfinite(marks), marks, 0.0)
+    tradable = np.array([code in quotes and quotes[code].tradable and not quotes[code].limit_down for code in codes])
+    up = np.array([code in quotes and quotes[code].limit_up for code in codes])
+    current = quantities * marks
+    value = cash + path_sums(current)
+    frozen = before & ~tradable
+    frozen_value = path_sums(np.where(frozen, current, 0))
+    executable = targets & ~frozen & tradable & ~(up & ~before)
+    n = executable.sum(axis=1) if allocation_n is None else np.asarray(allocation_n)
+    if n.shape != cash.shape or (n < 0).any() or (n != n.astype(int)).any():
+        raise ValueError("invalid path allocation denominator")
+    target_amount = np.divide(value - frozen_value, n, out=np.zeros_like(value), where=n > 0)
+    full_exit = before & ~targets & ~frozen
+    delta = np.where(executable, target_amount[:, None], 0.0) - current
+    skipped = ~frozen & ~full_exit & (np.abs(delta) < value[:, None] * 0.001)
+    skipped_sell = path_sums(np.where(skipped & (delta < 0), -delta, 0.0))
+    skipped_buy = path_sums(np.where(skipped & (delta > 0) & ~up, delta, 0.0))
+    active = ~frozen & (full_exit | (np.abs(delta) >= value[:, None] * 0.001))
+    sell = np.where(active & (delta < 0), -delta, 0.0)
+    buy = np.where(active & (delta > 0) & ~up, delta, 0.0)
+    buy_rates, sell_rates = np.zeros(len(codes)), np.zeros(len(codes))
+    for pos, code in enumerate(codes):
+        q = quotes.get(code)
+        for side, amounts, rates in (("buy", buy, buy_rates), ("sell", sell, sell_rates)):
+            if amounts[:, pos].any():
+                rates[pos] = cost_model.one_way_cost(q.raw_open, q.market, pd.Timestamp(day).date(), q.adv,
+                                                     side, model_version="v2")
+    sell_cost = sell * sell_rates
+    # Match the scalar cash += sell and cash -= buy sequence in code order.
+    cash = np.cumsum(np.column_stack((cash, sell - sell_cost)), axis=1)[:, -1].copy()
+    sold = np.divide(sell, marks, out=np.zeros_like(sell), where=marks > 0)
+    quantities -= sold
+    quantities[full_exit | (sell >= current) & (sell > 0)] = 0.0
+    needed = path_sums(buy * (1 + buy_rates))
+    scale = np.minimum(1.0, np.divide(cash, needed, out=np.ones_like(cash), where=needed > 0))
+    buy *= scale[:, None]
+    buy_cost = buy * buy_rates
+    cash = np.cumsum(np.column_stack((cash, -(buy + buy_cost))), axis=1)[:, -1].copy()
+    quantities += np.divide(buy, marks, out=np.zeros_like(buy), where=marks > 0)
+    if (cash < -1e-12 * np.maximum(value, 1.0)).any() or (quantities < -1e-12).any():
+        raise ValueError("portfolio borrowing or negative quantities detected")
+    cash = np.maximum(cash, 0.0)
+    quantities = np.maximum(quantities, 0.0)
+    after = quantities > 0
+    buy_total, sell_total = path_sums(buy), path_sums(sell)
+    buy_cost_total, sell_cost_total = path_sums(buy_cost), path_sums(sell_cost)
+    def fraction(amount):
+        return np.divide(amount, value, out=np.full_like(value, np.nan), where=value > 0)
+    return cash, quantities, {"pre_value": value, "n": n, "buy_scale": scale,
+        "band_skipped_buy_value": skipped_buy, "band_skipped_sell_value": skipped_sell,
+        "buy_turnover": fraction(buy_total), "sell_turnover": fraction(sell_total),
+        "cost_fraction": fraction(buy_cost_total + sell_cost_total),
+        "buy_cost": buy_cost_total, "sell_cost": sell_cost_total,
+        "cash_weight": fraction(cash), "frozen_weight": fraction(frozen_value),
+        "holdings_count": after.sum(axis=1), "retained_count": (before & after).sum(axis=1)}
 
 
 def random_target(universe, previous, size, retained, rng):
@@ -437,7 +641,8 @@ def benchmark_return(book, selection, *, loss=False):
     codes = list(selection["universe"].index)
     if not codes:
         return None
-    opening = book.marks(selection["trade_date"], loss=loss)
+    opening = book.marks(selection.get("benchmark_start_date", selection["trade_date"]),
+                         selection.get("benchmark_start_kind", "open"), loss=loss)
     ending = book.marks(selection["end_date"], selection["end_kind"], loss=loss)
     values = []
     for code in codes:
@@ -451,13 +656,20 @@ def benchmark_return(book, selection, *, loss=False):
 
 
 def simulate(book, selections, variant, *, model_version="v2", multiplier=1.0, loss=False,
-             initial_state=None, initial_value=None, control_reference=None, rng=None):
+             initial_state=None, initial_value=None, control_reference=None, rng=None,
+             experiment_id=EXPERIMENT_ID, variant_names=VARIANTS, target_set_fn=None,
+             observation_validity=None, retain_details=True):
+    if variant not in variant_names or book.experiment_id != experiment_id:
+        raise ValueError("accounting experiment ID or variant differs from its explicit contract")
     state = PortfolioState() if initial_state is None else PortfolioState.from_dict(initial_state)
     rows = []
     for number, selection in enumerate(selections):
+        holdout.guard_period(pd.Timestamp(selection["trade_date"]).date(), pd.Timestamp(selection["end_date"]).date(),
+                             experiment_id=experiment_id, repo_root=book.repo_root)
         u = selection["universe"]
         if control_reference is None:
-            targets = target_set(variant, u, state.quantities)
+            targets = (target_set(variant, u, state.quantities) if target_set_fn is None else
+                       target_set_fn(variant, selection, state.quantities))
             denominator = None
         else:
             reference = control_reference[number]
@@ -468,14 +680,23 @@ def simulate(book, selections, variant, *, model_version="v2", multiplier=1.0, l
         covered = variant != "t_filter" or selection["filter_covered"]
         if not covered:
             blocked = set(u.index)
+        target_retained = len(set(targets) & set(state.quantities))
         state, accounting = rebalance(state, book.quotes(selection["trade_date"], loss=loss), targets,
             selection["trade_date"], blocked_buys=blocked, allocation_n=denominator,
             model_version=model_version, multiplier=multiplier)
+        if target_set_fn is not None:
+            accounting["target_retained_count"] = target_retained
+            if retain_details:
+                accounting["holdings"] = sorted(state.quantities)
         beginning = initial_value if number == 0 and initial_value is not None else accounting["pre_value"]
         ending = portfolio_value(state, book.marks(selection["end_date"], selection["end_kind"], loss=loss))
         ret = ending / beginning - 1 if beginning > 0 else None
         benchmark = benchmark_return(book, selection, loss=loss)
         valid = covered and ret is not None and benchmark is not None
+        if observation_validity is not None:
+            valid = observation_validity(selection, ret, benchmark)
+        if not retain_details:
+            accounting = {key: value for key, value in accounting.items() if key not in ("H", "Z", "T", "trades")}
         rows.append({**{key: selection[key] for key in ("month", "decision_date", "trade_date", "end_date", "end_kind")},
                      **accounting, "return": ret, "benchmark": benchmark,
                      "excess": ret - benchmark if valid else None, "valid": valid,
@@ -902,6 +1123,12 @@ def _holdout_status(status, reason, *, repo_root):
 
 
 def run_holdout(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT):
+    from backtesting.experiments.ordering import execution_lock
+    with execution_lock(repo_root):
+        return _run_holdout(data_dir=data_dir, repo_root=repo_root)
+
+
+def _run_holdout(*, data_dir, repo_root):
     started = time.perf_counter()
     registration = _registration(repo_root)
     # Read only the ledger before any returns or source computation.

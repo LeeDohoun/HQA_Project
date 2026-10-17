@@ -5,7 +5,7 @@ fail() { printf '%s\n' "$*" >&2; exit 1; }
 checkout=/srv/hqa-research
 [[ $(id -u) == 0 ]] || fail 'Run as root (sudo).'
 if [[ "$#" -eq 0 || "$1" == --help || "$1" == -h ]]; then
-    printf '%s\n' 'Usage: research_run.sh <hc002|hc003|hi001|r001|hf001|bb001|lh001|lh002> [args...]' \
+    printf '%s\n' 'Usage: research_run.sh <hc002|hc003|av001|hi001|r001|hf001|bb001|lh001|lh002> [args...]' \
         '       research_run.sh status' \
         'Runs the experiment with --execute. For LH use: lh001 screening --experiment LH002'
     exit 0
@@ -26,7 +26,13 @@ if [[ "$1" == status ]]; then
 fi
 module=$1
 shift
-case "$module" in hc002|hc003|hi001|r001|hf001|bb001|lh001|lh002) ;; *) fail 'Unknown experiment module.' ;; esac
+case "$module" in hc002|hc003|av001|hi001|r001|hf001|bb001|lh001|lh002) ;; *) fail 'Unknown experiment module.' ;; esac
+mode_args=(--execute)
+if [[ "$module" == av001 ]]; then
+    for argument in "$@"; do
+        if [[ "$argument" == --holdout || "$argument" == --dry-run ]]; then mode_args=(); fi
+    done
+fi
 [[ -d "$checkout/.git" && -x "$checkout/venv/bin/python" && ! -L "$checkout" ]] || fail 'Research checkout/venv is missing; run setup first.'
 [[ -L "$checkout/data" && -d "$checkout/data" ]] || fail 'Research data volume link is missing.'
 data_directory=$(readlink -f -- "$checkout/data")
@@ -75,5 +81,5 @@ systemd-run --unit="$unit" --service-type=exec \
     HQA_DATA_DIR="$checkout/data" TZ=Asia/Seoul PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
     OPENAI_API_KEY=offline-disabled OPENAI_BASE_URL=http://127.0.0.1:9/v1 \
     LANGCHAIN_TRACING_V2=false LANGSMITH_TRACING=false \
-    "$checkout/venv/bin/python" -m "backtesting.experiments.$module" --execute "$@"
+    "$checkout/venv/bin/python" -m "backtesting.experiments.$module" "${mode_args[@]}" "$@"
 printf 'Follow: sudo tail -f %q\nStatus: sudo bash %q status\n' "$log" "$checkout/scripts/ops/research_run.sh"

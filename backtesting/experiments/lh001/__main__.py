@@ -6,6 +6,7 @@ import json
 import resource
 import time
 from datetime import datetime, timezone
+from contextlib import nullcontext
 from pathlib import Path
 
 import exchange_calendars as calendars
@@ -13,7 +14,7 @@ import pandas as pd
 
 from backtesting import experiment_registry, holdout
 from backtesting.experiment_registry import PROJECT_ROOT
-from backtesting.experiments import common, hc001, hc002
+from backtesting.experiments import common, hc001, hc002, ordering
 
 from . import FINAL_END, MODEL, VARIANTS, experiment_assumptions, workspace
 from . import arms, evaluate, inputs, probe, probe_v2
@@ -406,15 +407,25 @@ def guard_hc003_ordering(*, repo_root=PROJECT_ROOT, config=LH001):
         return
     from backtesting.experiments import hc003
 
-    rows = [row for row in hc003.registry_rows(repo_root) if row["experiment_id"] == hc003.EXPERIMENT_ID]
+    all_rows = hc003.registry_rows(repo_root)
+    rows = [row for row in all_rows if row["experiment_id"] == hc003.EXPERIMENT_ID]
     passed = any(row["variant"] in hc003.VARIANTS and row["verdict"] == "pass" for row in rows)
     finished = any(row["variant"].startswith("holdout_")
                    or row["verdict"] in ("holdout_contaminated", "holdout_aborted") for row in rows)
     if passed and not finished:
         raise ValueError("LH002 final must wait: HC003 design/validation passed and its holdout is unfinished")
+    return ordering.registered_releases(all_rows, repo_root)
 
 
 def execute_final(*, data_dir, repo_root=PROJECT_ROOT, limit_decisions=None, runner=None, sessions=None, text_loader=None, config=LH001):
+    with ordering.execution_lock(repo_root) if config == LH002 else nullcontext():
+        release = guard_hc003_ordering(repo_root=repo_root, config=config)
+        return _execute_final(data_dir=data_dir, repo_root=repo_root, limit_decisions=limit_decisions,
+                              runner=runner, sessions=sessions, text_loader=text_loader, config=config,
+                              ordering_release=release)
+
+
+def _execute_final(*, data_dir, repo_root, limit_decisions, runner, sessions, text_loader, config, ordering_release):
     fields = _registration(repo_root, config)
     _check_runner(runner, config)
     completed = _completed("final", data_dir, limit_decisions, config)
@@ -455,12 +466,12 @@ def execute_final(*, data_dir, repo_root=PROJECT_ROOT, limit_decisions=None, run
             pos = sessions.get_loc(pd.Timestamp(planned[0]["decision_date"]))
             inputs.require_supplement(data_dir, (sessions[max(0, pos - 60)], pd.Timestamp(planned[-1]["decision_date"]) - pd.Timedelta(days=1)))
         # First protected source read occurs only after this durable single claim.
-        guard_hc003_ordering(repo_root=repo_root, config=config)
         with holdout.HoldoutSession(config.experiment_id, repo_root=repo_root):
             return {**_prepare_decisions(planned, data_dir=data_dir, repo_root=repo_root, sessions=sessions, with_text=True, text_loader=text_loader, config=config),
                     "hc002_holdout": _prepare_hc002(data_dir=data_dir, repo_root=repo_root, sessions=sessions, config=config)}
     snapshot = _snapshot(snapshot_path, prepare, metadata={"stage": "final", "probe_hash": inputs.digest(saved_probe),
-                                                         "screening_hash": inputs.digest(screening), "limit": limit_decisions, "planned": planned})
+                                                         "screening_hash": inputs.digest(screening), "limit": limit_decisions, "planned": planned,
+                                                         **({"research_ordering": ordering_release} if config == LH002 else {})})
     runner = runner or LlmRunner(data_dir=data_dir, repo_root=repo_root, config=config)
     decisions, _ = _run_snapshot(snapshot, runner, final=True, data_dir=data_dir, config=config)
     result = evaluate.metrics(_frame(snapshot), decisions)
@@ -475,6 +486,8 @@ def execute_final(*, data_dir, repo_root=PROJECT_ROOT, limit_decisions=None, run
                        exclusions=excluded + snapshot["exclusions"], snapshot_hash=inputs.digest(snapshot),
                        listing_version=snapshot.get("listing_version"), prompt_hashes=runner.hashes,
                        source_reads=f"single {config.name} HoldoutSession; resume uses frozen source snapshot only")
+    if config == LH002:
+        payload["research_ordering"] = ordering_release
     return _publish(payload, data_dir, repo_root, limit_decisions is not None, config)
 
 
