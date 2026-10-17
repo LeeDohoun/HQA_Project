@@ -386,6 +386,32 @@ def test_concurrent_appends_preserve_every_trial(repo):
     assert trial_count("D001", repo_root=root) == 8
 
 
+def test_aborted_append_failure_preserves_registry_and_can_be_retried(repo, monkeypatch):
+    from backtesting import append_only
+
+    root, path, _ = repo
+    _commit(root, path)
+    registration = verify_preregistration("D001", root)
+    record_trial("D001", "seed", {}, "fail", repo_root=root)
+    registry = root / experiment_registry.REGISTRY_PATH
+    before = registry.read_bytes()
+
+    def fail(*args):
+        raise OSError("injected failure before replacement")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(append_only.os, "replace", fail)
+        with pytest.raises(OSError, match="before replacement"):
+            record_aborted_trial("D001", "aborted", {}, "design_aborted",
+                                 preregistration=registration, repo_root=root)
+    assert registry.read_bytes() == before
+    assert trial_count("D001", repo_root=root) == 1
+    record_aborted_trial("D001", "aborted", {}, "design_aborted",
+                         preregistration=registration, repo_root=root)
+    assert registry.read_bytes().startswith(before)
+    assert trial_count("D001", repo_root=root) == 2
+
+
 def test_registration_copied_from_another_experiment_counts_only_its_own_commit(repo):
     root, path, fields = repo
     _commit(root, path)

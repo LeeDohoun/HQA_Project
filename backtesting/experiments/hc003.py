@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import fcntl
 import hashlib
 import json
 import math
@@ -18,6 +17,7 @@ import pandas as pd
 from src.runner import trading_calendar
 
 from backtesting import capacity, cost_model, experiment_registry, holdout, signal_eval
+from backtesting.append_only import file_lock, text_buffer
 from backtesting.experiment_registry import PROJECT_ROOT
 from backtesting.experiments import common, hc001, hc002, hf001
 from src.ingestion import dart_quarterly, krx_market
@@ -1042,24 +1042,18 @@ def registry_rows(repo_root):
     path = Path(repo_root) / experiment_registry.REGISTRY_PATH
     if not path.exists():
         return []
-    with path.open(encoding="utf-8", newline="") as handle:
-        fcntl.flock(handle, fcntl.LOCK_SH)
-        try:
+    with file_lock(path, shared=True):
+        with text_buffer(path.read_bytes(), path) as handle:
             return experiment_registry._registry_rows(handle)
-        finally:
-            fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 def ledger_experiments(repo_root):
     path = Path(repo_root) / holdout.LEDGER_PATH
     if not path.exists():
         return set()
-    with path.open(encoding="utf-8") as handle:
-        fcntl.flock(handle, fcntl.LOCK_SH)
-        rows = [json.loads(line) for line in handle]
-    if any(not isinstance(row, dict) or not all(key in row for key in
-               ("experiment_id", "recorded_at", "from_date", "to_date")) for row in rows):
-        raise ValueError("invalid holdout ledger")
+    with file_lock(path, shared=True):
+        with text_buffer(path.read_bytes(), path) as handle:
+            rows = holdout._ledger_rows(handle)
     return {row["experiment_id"] for row in rows}
 
 
