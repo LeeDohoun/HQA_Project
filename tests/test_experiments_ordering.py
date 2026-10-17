@@ -4,7 +4,7 @@ import json
 import pytest
 
 from backtesting import experiment_registry, holdout
-from backtesting.experiments import hc003, ordering
+from backtesting.experiments import av001, ev001, hc003, ordering
 from backtesting.experiments.lh001 import __main__ as lh_cli
 from backtesting.experiments.lh001.config import LH001, LH002
 
@@ -36,6 +36,46 @@ def test_holdout_status_cannot_substitute_for_final_design_rows(terminal):
     designs = [row(experiment, v, terminal) for v in variants]
     with pytest.raises(ValueError, match="all three"):
         ordering.release_state(designs, experiment, variants)
+
+
+@pytest.mark.parametrize("experiment,variants", list(ordering.RELEASE_SPECS.items()))
+def test_aborted_design_never_releases_or_inherits_older_complete_results(experiment, variants):
+    complete = [row(experiment, v, "fail") for v in variants]
+    for verdict in ("design_aborted", "fail"):
+        aborted = [row(experiment, v, verdict, "abort-run.json") for v in variants]
+        for item in aborted:
+            metrics = json.loads(item["metrics_json"])
+            metrics.update(status="aborted", run_id="attempt-id")
+            item["metrics_json"] = json.dumps(metrics)
+        for history in (aborted, [*complete, *aborted[:1]], [*complete, *aborted]):
+            with pytest.raises(ValueError, match="all three"):
+                ordering.release_state(history, experiment, variants)
+    assert ordering.release_state([*aborted, *complete], experiment, variants)["passing_variants"] == []
+
+
+@pytest.mark.parametrize("runner", [av001, ev001])
+def test_publication_abort_after_evaluation_records_compact_validated_trials(tmp_path, monkeypatch, runner):
+    registration = experiment_registry.verify_preregistration(runner.EXPERIMENT_ID)
+    monkeypatch.setattr(experiment_registry, "verify_preregistration", lambda *a, **k: registration)
+    def compute(**kwargs):
+        kwargs["_attempt"]["source_hashes"] = {"prices": {"file": "hash"}}
+        return {}
+    def publish(*a, **k):
+        raise OSError("fixture publication failed")
+    monkeypatch.setattr(runner, "compute_design", compute)
+    monkeypatch.setattr(runner, "publish", publish)
+    original, validated = experiment_registry.encode_metrics, []
+    def encode(metrics):
+        validated.append(metrics)
+        return original(metrics)
+    monkeypatch.setattr(experiment_registry, "encode_metrics", encode)
+    with pytest.raises(OSError, match="publication failed"):
+        runner.run_experiment(repo_root=tmp_path, data_dir=tmp_path)
+    rows = hc003.registry_rows(tmp_path)
+    assert len(rows) == 3 and len(validated) == 4
+    assert all(r["verdict"] == "design_aborted" for r in rows)
+    assert json.loads(rows[0]["metrics_json"])["failure_location"]["function"] == "publish"
+    assert not (tmp_path / holdout.LEDGER_PATH).exists()
 
 
 def test_deleted_committed_preregistration_cannot_bypass_release(tmp_path, monkeypatch):

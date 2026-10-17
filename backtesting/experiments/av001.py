@@ -595,7 +595,7 @@ def _date_differences(prepared):
             "affected_months": sum(row["date_shifted_companies"] > 0 for row in months)}
 
 
-def compute_design(*, data_dir, repo_root, sessions=None, prices=None, trials=None):
+def compute_design(*, data_dir, repo_root, sessions=None, prices=None, trials=None, _attempt=None):
     started = time.perf_counter()
     registration = _registration(repo_root)
     sessions = hc003.session_calendar() if sessions is None else signal_eval._dates(sessions).sort_values().unique()
@@ -611,6 +611,8 @@ def compute_design(*, data_dir, repo_root, sessions=None, prices=None, trials=No
     paths = [] if prices is not None else hc003.price_files(data_dir, "20150101", "20251230",
                                                           repo_root=repo_root, experiment_id=EXPERIMENT_ID)
     hashes = source_hashes(data_dir, paths, stage="design_validation", prices=prices, repo_root=repo_root)
+    if _attempt is not None:
+        _attempt["source_hashes"] = hashes
     prepared = prepare(data_dir=data_dir, repo_root=repo_root, sessions=sessions, planned=planned,
                        stage="design_validation", prices=prices)
     trials = experiment_registry.trial_count(EXPERIMENT_ID, repo_root=repo_root) + 3 if trials is None else trials
@@ -699,6 +701,9 @@ def registry_metrics(payload, *, design_result_file=None):
             "stage": stage, "rules": rules, "combined_verdict": combined["verdict"],
             "state_sha256": payload.get("state_sha256"), "replay_sha256": payload.get("replay_sha256"),
             "design_result_file": design_result_file, "L": payload.get("L")}
+    if "abort" in payload:
+        for row in metrics.values():
+            row.update(payload["abort"])
     return metrics
 
 
@@ -731,8 +736,9 @@ def publish(payload, *, repo_root, design_result_file=None):
 
 def run_experiment(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT, prices=None, sessions=None):
     with ordering.execution_lock(repo_root):
-        result = compute_design(data_dir=data_dir, repo_root=repo_root, prices=prices, sessions=sessions)
-        return publish(result, repo_root=repo_root)
+        with ordering.design_attempt(EXPERIMENT_ID, VARIANTS, repo_root) as attempt:
+            result = compute_design(data_dir=data_dir, repo_root=repo_root, prices=prices, sessions=sessions, _attempt=attempt)
+            return publish(result, repo_root=repo_root)
 
 
 def saved_design(rows, *, repo_root, registration):
@@ -763,6 +769,9 @@ def saved_design(rows, *, repo_root, registration):
 def verify_non_holdout(design, *, data_dir, repo_root, sessions):
     replay = compute_design(data_dir=data_dir, repo_root=repo_root, sessions=sessions,
                             trials=design["trial_count_after_run"])
+    if replay["source_hashes"].get("code") != design["source_hashes"].get("code"):
+        raise ValueError("non-holdout reproducibility mismatch: code hashes differ; "
+                         "run a new design/validation trial with this code first; protected evaluation remains unopened")
     if replay["source_hashes"] != design["source_hashes"] or replay["replay_sha256"] != design["replay_sha256"]:
         raise ValueError("non-holdout reproducibility mismatch; protected evaluation was not opened")
 
@@ -881,9 +890,12 @@ def run_holdout(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT):
                     "peak_memory_mib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024}}
             return publish(payload, repo_root=repo_root, design_result_file=run["result_file"])
         except BaseException as exc:
+            if EXPERIMENT_ID not in hc003.ledger_experiments(repo_root):
+                raise
             payload = terminal_payload("holdout_aborted", f"{type(exc).__name__}: {exc}", passed,
                                        design=design, registration=registration)
             payload.update(source_hashes=hashes, input_hash_verification="aborted; inputs not verified")
+            payload["abort"] = ordering.abort_details(hashes, exc)
             publish(payload, repo_root=repo_root, design_result_file=run["result_file"])
             raise
 
