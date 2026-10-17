@@ -70,3 +70,9 @@ hqa:
   kis-account-no: ${KIS_ACCOUNT_NO:}
   kis-enc-key: ${HQA_KIS_ENC_KEY:}
   historical-data-dir: ${HQA_HISTORICAL_DATA_DIR:}
+  # KRX weekday closures and official special sessions for PAPER order gating; keep in step
+  # with src/runner/trading_calendar.py, e.g. HQA_KRX_SPECIAL_SESSIONS=2026-11-19@10:00-16:30
+  # Unset or blank uses KrxSessionCalendar.DEFAULT_CLOSED_DATES (that calendar's weekday
+  # closures from 2026-10 through its review horizon); a nonblank value replaces it.
+  krx-closed-dates: ${HQA_KRX_CLOSED_DATES:}
+  krx-special-sessions: ${HQA_KRX_SPECIAL_SESSIONS:}

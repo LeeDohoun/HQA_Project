@@ -44,8 +44,6 @@ def test_notice_applies_to_session_apis_and_completed_bars(day, previous):
 @pytest.mark.parametrize("operation", [
     lambda: calendar.session_calendar("2026-12-01", "2027-01-01"),
     lambda: calendar._calendar(2027),
-    lambda: calendar.daily_session_close("2027-01-04"),
-    lambda: calendar.completed_daily_sessions(datetime(2027, 1, 1, tzinfo=timezone.utc)),
     lambda: calendar._calendar(2026).sessions_in_range("2026-12-01", "2027-01-04"),
     lambda: calendar._calendar(2026).date_to_session("2026-12-31", direction="next"),
     lambda: calendar._calendar(2026).next_session("2026-12-30"),
@@ -56,6 +54,27 @@ def test_notice_applies_to_session_apis_and_completed_bars(day, previous):
 def test_unverified_session_requests_fail_clearly(operation):
     with pytest.raises(ValueError, match="calendar_unverified"):
         operation()
+
+
+def test_live_price_apis_use_the_reviewed_horizon_while_research_stays_official_only():
+    assert calendar.CALENDAR_VERIFIED_THROUGH < calendar.CALENDAR_REVIEWED_THROUGH
+    assert calendar.daily_session_close("2027-01-04").isoformat() == "2027-01-04T06:30:00+00:00"
+    assert calendar.completed_daily_sessions(datetime(2027, 1, 5, 7, 0, tzinfo=timezone.utc), 1) == [
+        ("2027-01-05", calendar.daily_session_close("2027-01-05"))]
+    with pytest.raises(ValueError, match="calendar_unverified"):
+        calendar.session_calendar("2027-01-04", "2027-01-05")
+    with pytest.raises(ValueError, match="calendar_unverified"):
+        shadow._calendar(pd.Timestamp("2027-01-04"))
+
+
+def test_research_horizon_is_announced_before_it_blocks_forward_records():
+    from datetime import date
+
+    assert not any("research_verified_through" in w for w in calendar.calendar_review_warnings(date(2026, 12, 9)))
+    soon = [w for w in calendar.calendar_review_warnings(date(2026, 12, 10)) if "research_verified_through" in w]
+    assert soon and ":2026-12-31:blocks_in_21_days:" in soon[0]
+    after = [w for w in calendar.calendar_review_warnings(date(2027, 1, 1)) if "research_verified_through" in w]
+    assert ":blocked:" in after[0]
 
 
 def inventory(root, days):

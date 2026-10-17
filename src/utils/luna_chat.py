@@ -10,6 +10,7 @@ from pydantic import Field
 
 from src.tracing.agent_tracer import add_token_usage_from_response
 from src.utils.llm_budget import MODEL, LLMBudgetAccountingError, get_llm_budget
+from src.utils.llm_errors import LLMInputLimitError, LLMResponseError
 from src.utils.llm_queue import (
     LLMTaskPriority,
     arun_with_llm_slot,
@@ -17,13 +18,7 @@ from src.utils.llm_queue import (
     run_with_llm_slot,
 )
 
-
-class LLMInputLimitError(ValueError):
-    pass
-
-
-class LLMResponseError(RuntimeError):
-    pass
+__all__ = ["LLMInputLimitError", "LLMResponseError", "LunaChatOpenAI"]
 
 
 class LunaChatOpenAI(ChatOpenAI):

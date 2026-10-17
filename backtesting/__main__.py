@@ -11,6 +11,8 @@ COMMANDS = {
     "sweep": ("sweep_leader_backtest", "Compare numerical strategy parameters."),
     "validate": ("proof_validation", "Compare fixed experiments; may call an LLM unless --mock-llm."),
     "replay-agents": ("agent_replay", "Compare scoring designs from cached multi-agent scores without API calls."),
+    "technical-baseline": ("technical_baseline", "Run technical-indicator baselines; prices come from local files."),
+    "validation-status": ("multi_agent_validation_status", "Summarize saved multi-agent validation runs without API calls."),
     "build-evidence": ("build_period_evidence", "Build a historical evidence snapshot."),
     "clean-evidence": ("clean_period_evidence", "Clean a snapshot into a separate output directory."),
     "build-membership": ("build_theme_membership", "Build historical theme membership evidence."),

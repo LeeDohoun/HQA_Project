@@ -11,6 +11,7 @@ import com.hqa.backend.dto.UserSecretResponse;
 import com.hqa.backend.dto.UserPreferenceRequest;
 import com.hqa.backend.dto.UserPreferenceResponse;
 import com.hqa.backend.entity.User;
+import com.hqa.backend.entity.enums.UserRole;
 import com.hqa.backend.entity.UserPreference;
 import com.hqa.backend.entity.UserSecret;
 import com.hqa.backend.exception.ApiException;
@@ -18,7 +19,9 @@ import com.hqa.backend.repository.UserPreferenceRepository;
 import com.hqa.backend.repository.UserRepository;
 import com.hqa.backend.repository.UserSecretRepository;
 import jakarta.servlet.http.HttpSession;
+import java.sql.SQLException;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -50,17 +53,28 @@ public class AuthService {
     }
 
     public AuthResponse signup(AuthSignupRequest request, HttpSession session) {
-        if (userRepository.existsByUserId(request.userId())) {
+        String userId = request.userId().trim();
+        if (userRepository.existsByUserId(userId)) {
             throw new ApiException(ErrorCode.USER_ALREADY_EXISTS, 409, "User ID already exists", request.userId());
         }
 
         User user = new User();
-        user.setUserId(request.userId().trim());
+        user.setUserId(userId);
+        user.setNickname(userRepository.existsByNickname(userId)
+                ? userId + "-" + java.util.UUID.randomUUID().toString().substring(0, 8) : userId);
         user.setFirstName(request.firstName().trim());
         user.setLastName(request.lastName().trim());
         user.setPassword(passwordEncoder.encode(request.password()));
 
-        User savedUser = userRepository.save(user);
+        User savedUser;
+        try {
+            savedUser = userRepository.saveAndFlush(user);
+        } catch (DataIntegrityViolationException exception) {
+            if (exception.getMostSpecificCause() instanceof SQLException sql && "23505".equals(sql.getSQLState())) {
+                throw new ApiException(ErrorCode.USER_ALREADY_EXISTS, 409, "User ID already exists", null);
+            }
+            throw exception;
+        }
         session.setAttribute(SESSION_USER_ID, savedUser.getId());
         return new AuthResponse(true, "Sign up completed", toUserResponse(savedUser));
     }
@@ -70,11 +84,11 @@ public class AuthService {
         User user = userRepository.findByUserId(request.userId().trim())
                 .orElseThrow(() -> new ApiException(ErrorCode.INVALID_CREDENTIALS, 401, "Invalid user ID or password", null));
 
-        if (!user.isActive()) {
-            throw new ApiException(ErrorCode.USER_INACTIVE, 403, "Inactive user", user.getUserId());
-        }
         if (!passwordEncoder.matches(request.password(), user.getPassword())) {
             throw new ApiException(ErrorCode.INVALID_CREDENTIALS, 401, "Invalid user ID or password", null);
+        }
+        if (!user.isActive()) {
+            throw new ApiException(ErrorCode.USER_INACTIVE, 403, "Inactive user", null);
         }
 
         session.setAttribute(SESSION_USER_ID, user.getId());
@@ -192,8 +206,26 @@ public class AuthService {
         if (!(userId instanceof String userPk) || userPk.isBlank()) {
             throw new ApiException(ErrorCode.UNAUTHORIZED, 401, "Login required", null);
         }
-        return userRepository.findById(userPk)
+        User user = userRepository.findById(userPk)
                 .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED, 401, "Invalid session", null));
+        if (!user.isActive()) {
+            session.removeAttribute(SESSION_USER_ID);
+            throw new ApiException(ErrorCode.USER_INACTIVE, 403, "Inactive user", null);
+        }
+        return user;
+    }
+
+    /**
+     * 관리자 전용 기능의 진입점. 로그인 확인과 권한 확인을 한 번에 한다.
+     * 권한 없음을 404가 아니라 403으로 돌려준다 — 관리자 API의 존재 자체는 비밀이 아니다.
+     */
+    @Transactional(readOnly = true)
+    public User requireAdmin(HttpSession session) {
+        User user = requireUser(session);
+        if (user.getRole() != UserRole.admin) {
+            throw new ApiException(ErrorCode.FORBIDDEN, 403, "Admin only", null);
+        }
+        return user;
     }
 
     @Transactional(readOnly = true)
@@ -213,6 +245,7 @@ public class AuthService {
         return new AuthUserResponse(
                 user.getId(),
                 user.getUserId(),
+                user.getNickname(),
                 user.getFirstName(),
                 user.getLastName(),
                 user.getRole(),

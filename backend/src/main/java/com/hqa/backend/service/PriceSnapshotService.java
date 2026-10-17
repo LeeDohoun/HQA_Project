@@ -17,7 +17,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class PriceSnapshotService {
 
-    private static final Duration CACHE_TTL = Duration.ofSeconds(20);
+    // Shorter than the monitor's 20 s poll, so every poll gets a fresh quote instead of every
+    // other poll reusing one that is already 10-19 s old (the quote budget is 10 per 20 s).
+    static final Duration CACHE_TTL = Duration.ofSeconds(10);
 
     private final UserRepository userRepository;
     private final KisClient kisClient;

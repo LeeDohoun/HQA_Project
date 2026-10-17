@@ -108,6 +108,34 @@
   background: var(--bg);
 }
 
+/* Shared palette for the dashboard and community pages. */
+.hqa-app-theme {
+  --paper: #14130d;
+  --paper-2: #1d1b12;
+  --ink: #ece6d3;
+  --ink-2: #a39c84;
+  --ink-3: #6d6753;
+  --card: #1f1c12;
+  --forest: #1c5040;
+  --forest-ink: #e9e4cf;
+  --moss: #36b079;
+  --moss-2: #43c489;
+  --spark: #e0a341;
+  --rule: #322d1f;
+  --up: #d2554a;
+  --down: #5d83d6;
+  --serif: Georgia, "Times New Roman", serif;
+  --sans: -apple-system, BlinkMacSystemFont, "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", "Segoe UI", sans-serif;
+  --ease: cubic-bezier(.22, 1, .36, 1);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
 * {
   box-sizing: border-box;
 }

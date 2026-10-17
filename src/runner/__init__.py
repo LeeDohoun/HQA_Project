@@ -15,17 +15,20 @@ __all__ = [
     "MultiThemeLeaderTradingRunner",
 ]
 
+# Exports load on first use so the signal monitor and scheduler processes do not
+# import the legacy agent/LLM/KIS stack just by importing a runner submodule.
+_EXPORTS = {
+    "AnalysisScheduler": "src.runner.analysis_scheduler",
+    "BackendAutoTradeTargetClient": "src.runner.analysis_scheduler",
+    "ThemeLeaderTradingRunner": "src.runner.theme_leader_trading_runner",
+    "MultiThemeLeaderTradingRunner": "src.runner.multi_theme_leader_trading_runner",
+}
 
-def __getattr__(name):
-    # Offline calendar users must not initialize trading clients/configuration.
-    modules = {
-        "AnalysisScheduler": "analysis_scheduler",
-        "BackendAutoTradeTargetClient": "analysis_scheduler",
-        "ThemeLeaderTradingRunner": "theme_leader_trading_runner",
-        "MultiThemeLeaderTradingRunner": "multi_theme_leader_trading_runner",
-    }
-    if name not in modules:
-        raise AttributeError(name)
-    value = getattr(import_module(f"{__name__}.{modules[name]}"), name)
+
+def __getattr__(name: str):
+    module = _EXPORTS.get(name)
+    if module is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(module), name)
     globals()[name] = value
     return value
