@@ -1,0 +1,24 @@
+Command exited with non-zero status 1
+	Command being timed: "venv/bin/python research/experiments/AV002_avoidance_holdout_recovery/validation/merge/guard.py tests -q tests/test_experiments_av002.py tests/test_experiments_av001.py tests/test_experiments_ordering.py tests/test_backtesting_experiment_registry.py tests/test_backtesting_holdout.py tests/test_backtesting_append_only.py tests/test_trading_calendar_overrides.py --basetemp=research/experiments/AV002_avoidance_holdout_recovery/validation/merge/suite_tmp --tb=short"
+	User time (seconds): 174.00
+	System time (seconds): 133.24
+	Percent of CPU this job got: 98%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 5:11.98
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 1295768
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 1785
+	Minor (reclaiming a frame) page faults: 14409599
+	Voluntary context switches: 61604
+	Involuntary context switches: 24458
+	Swaps: 0
+	File system inputs: 192520
+	File system outputs: 127392
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 1

@@ -945,6 +945,8 @@ def run_holdout(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT):
     with ordering.execution_lock(repo_root):
         registration = _registration(repo_root)
         used, rows = hc003.ledger_experiments(repo_root), hc003.registry_rows(repo_root)
+        if ordering._registered(ordering.AV002_ID, repo_root):
+            ordering.av002_release(rows, repo_root)
         design, run = saved_design(rows, repo_root=repo_root, registration=registration)
         passed = run["passing_variants"]
         if not passed:

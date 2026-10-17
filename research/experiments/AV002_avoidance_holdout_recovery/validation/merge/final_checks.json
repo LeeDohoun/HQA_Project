@@ -1,0 +1,141 @@
+{
+  "passed": true,
+  "head": "0b978a983357b48b8ad84e35b4bc91552c4044ad",
+  "merge_head": "bfc84ad768d4ffc86ca554d47c4886c988f58994",
+  "state_sha256": "b8daf99f7f8e27d06ecd5425be4952f6b6ecd6ff8d8949cb538ab5e9b27577da",
+  "monthly_series_equal_previous_and_parent": true,
+  "months_compared": {
+    "S": {
+      "av_all": 103,
+      "av_phase": 103,
+      "av_conc": 103
+    },
+    "O": {
+      "av_all": 103,
+      "av_phase": 103,
+      "av_conc": 103
+    }
+  },
+  "protected_before": {
+    "/home/are01/src/HQA_Project/HQA_av002/research/experiments/registry.csv": "186f33016acc6bdb6263fbff68524f89fe921b13a84470544f5cc20d0c40b1ec",
+    "/home/are01/src/HQA_Project/HQA_av002/research/experiments/holdout_ledger.jsonl": "1fc2160cb5302543d8b0e1a579045d886c760278782104a60e28845da7075a7f",
+    "/home/are01/src/HQA_Project/HQA_Project/research/experiments/registry.csv": "186f33016acc6bdb6263fbff68524f89fe921b13a84470544f5cc20d0c40b1ec",
+    "/home/are01/src/HQA_Project/HQA_Project/research/experiments/holdout_ledger.jsonl": "1fc2160cb5302543d8b0e1a579045d886c760278782104a60e28845da7075a7f"
+  },
+  "protected_after": {
+    "/home/are01/src/HQA_Project/HQA_av002/research/experiments/registry.csv": "186f33016acc6bdb6263fbff68524f89fe921b13a84470544f5cc20d0c40b1ec",
+    "/home/are01/src/HQA_Project/HQA_av002/research/experiments/holdout_ledger.jsonl": "1fc2160cb5302543d8b0e1a579045d886c760278782104a60e28845da7075a7f",
+    "/home/are01/src/HQA_Project/HQA_Project/research/experiments/registry.csv": "0024fdb5fab875a72aad908378f95ba300af2ff6605a8a9ff194127c877ab3a0",
+    "/home/are01/src/HQA_Project/HQA_Project/research/experiments/holdout_ledger.jsonl": "1fc2160cb5302543d8b0e1a579045d886c760278782104a60e28845da7075a7f"
+  },
+  "worktree_registry_and_both_ledgers_unchanged": true,
+  "concurrent_sibling_registry_drift": {
+    "hashes": {
+      "/home/are01/src/HQA_Project/HQA_Project/research/experiments/registry.csv": {
+        "before": "186f33016acc6bdb6263fbff68524f89fe921b13a84470544f5cc20d0c40b1ec",
+        "after": "0024fdb5fab875a72aad908378f95ba300af2ff6605a8a9ff194127c877ab3a0"
+      }
+    },
+    "added_rows": [
+      {
+        "recorded_at": "2026-10-17T16:33:06.134200+00:00",
+        "experiment_id": "EV001_earnings_filing_entry",
+        "variant": "ev_new20",
+        "verdict": "fail"
+      },
+      {
+        "recorded_at": "2026-10-17T16:33:06.247956+00:00",
+        "experiment_id": "EV001_earnings_filing_entry",
+        "variant": "ev_new60",
+        "verdict": "fail"
+      },
+      {
+        "recorded_at": "2026-10-17T16:33:06.355269+00:00",
+        "experiment_id": "EV001_earnings_filing_entry",
+        "variant": "ev_new20_f",
+        "verdict": "fail"
+      }
+    ],
+    "stage": "design_validation",
+    "original_prefix_preserved": true,
+    "note": "Sibling checkout is outside writable sandbox; guarded runs recorded zero write attempts. No AV002 rows added."
+  },
+  "preregistration_unchanged": true,
+  "parent_seals_unchanged": true,
+  "append_only_equals_incoming": true,
+  "calendar_equals_incoming": true,
+  "execution_code_sha256": {
+    "backtesting/append_only.py": "30be0fee09d89dc5e6b21f8871b54ffddbe51a991bc9a035e34d8290ad73a662",
+    "backtesting/capacity.py": "c27482cc766fc6bb09889dd4d8ea9b319458ff97ffce86f3774ee615338bc4d1",
+    "backtesting/cost_model.py": "d83624a39ca5e14fee415f83a01da5a4582abc00bfcf5f0f0a1f05eb42b37481",
+    "backtesting/experiment_registry.py": "875d20735698091060653294e5a182552cef78d98b6d6b4e6ca13299bfa9be9b",
+    "backtesting/experiments/av001.py": "be99accfc4016f0bcca57da51b4b4f4e6dc4fe42bc77c7cb598a5ed89f32509a",
+    "backtesting/experiments/av002.py": "270b5b74aeba9bfca73b2e78c130cc586ad6355d29101bf1626b8d56e2671530",
+    "backtesting/experiments/common.py": "e016a29278d3f2d0d79ff66c04e2940496beb440c0005d27a86b7a64b8acbdcf",
+    "backtesting/experiments/ev001.py": "0fba79242c3a6e70bacb57789096381aa0d35b8c5efa95e9a97546a6952cea83",
+    "backtesting/experiments/hc001.py": "90df5fc2e8efd868f6466467c1603d1db6361351d383e2d91aed49b97c161f90",
+    "backtesting/experiments/hc002.py": "e368edd21f0021713f29793f28233087f322064e06a570a6dd74a264db521069",
+    "backtesting/experiments/hc003.py": "102a1cc2fb9711e91fa3f7ad30ccf0daea6b40ce6d62738018fe85238ed720cb",
+    "backtesting/experiments/hf001.py": "3d2a11e1e2236e539ae37da816e8229960bcf08eacf3af2ae1388cdc36a5cb84",
+    "backtesting/experiments/ordering.py": "eb2c0f674703ef27def2ac3c3657ce9f1f8fe5d1664d1b3b8daf7e059140424d",
+    "backtesting/holdout.py": "5943eb45c2967b8a42fb3966342b9fec31c482bde03caa446a1c90f49931ac1d",
+    "backtesting/signal_eval.py": "493dfe34b20f6e35a3e1f00d432e3d716eea841f7f8846c40f2565f14c97fbd8",
+    "scripts/ops/research_run.sh": "2c713c5c1543595a753493073440a37606f6229cb9deb3e4901425721416f3c8",
+    "src/ingestion/dart_filing_dates.py": "41ae526cdac47e1f694f4ca905d46cb00e980109d48202818540f91775bfca6a",
+    "src/ingestion/dart_financial_date_rules.py": "d0fce8a2f1872f4594e49212b0a13ef7c3989ed5317ddf06638e04eb6326ae03",
+    "src/ingestion/dart_listing.py": "cc194ad29bceb0be8a3beb29f2624544a6f30de310c1eaf3b39cf3b771fe4a31",
+    "src/ingestion/dart_quarterly.py": "e1e0edbbc783aeef2f5685d6a9746fa0c0b29fcd144572e71f0a38ccc0bdac7a",
+    "src/ingestion/krx_market.py": "db58e189715f9c733d032138c21535f47025e76f81b9beccaaead1d8d9100fdd",
+    "src/ingestion/storage.py": "ea2301b9f6d0b1f1fcc5c61ec2670684c02534f384b53e156b6e0657e98b261f",
+    "src/research/industry_map.py": "77d9792739609e87ee663a8e8dca2d49ef5e1798e71ba895d8a7d69b4995864b",
+    "src/research/market_regimes.py": "443aa55ab5b60e1e90013f16afb6d68b584a6efb162a2c9d5ea9132cae2bc650",
+    "src/runner/trading_calendar.py": "f8571d2484ab11dc4c06ea16838a35f90e4d7e3bc7dbffe3b14b79da121a8e38",
+    "src/utils/stock_codes.py": "fa037cc9495763beecb268462936bd581483c48b90b319ea738657d409962b8f"
+  },
+  "audits": {
+    "preflight": {
+      "data_read_opens": 0,
+      "denied_write_attempts": 0,
+      "env_open_attempts": 0,
+      "network_attempts": 0,
+      "protected_price_read_attempts": 0
+    },
+    "reproduce": {
+      "data_read_opens": 36243,
+      "denied_write_attempts": 0,
+      "env_open_attempts": 0,
+      "network_attempts": 0,
+      "protected_price_read_attempts": 0
+    },
+    "final_tests": {
+      "data_read_opens": 0,
+      "denied_write_attempts": 0,
+      "env_open_attempts": 0,
+      "network_attempts": 0,
+      "protected_price_read_attempts": 0
+    },
+    "final_batch_tests": {
+      "data_read_opens": 0,
+      "denied_write_attempts": 0,
+      "env_open_attempts": 0,
+      "network_attempts": 0,
+      "protected_price_read_attempts": 0
+    },
+    "append_only_final": {
+      "data_read_opens": 0,
+      "denied_write_attempts": 0,
+      "env_open_attempts": 0,
+      "network_attempts": 0,
+      "protected_price_read_attempts": 0
+    }
+  },
+  "tests": "422 passed, 1 skipped",
+  "reproduction_external_wall": "1:01:10",
+  "reproduction_external_peak_rss_kib": 2926324,
+  "live_staging": "blocked: live Git directory is mounted read-only; coordinator must stage",
+  "live_unmerged_paths": [
+    "backtesting/experiment_registry.py",
+    "tests/test_trading_calendar_overrides.py"
+  ],
+  "rehearsal": "not rerun: default AV002 calculation unchanged; shared safety/I/O tested in temp repos"
+}
