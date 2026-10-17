@@ -24,6 +24,7 @@ from backtesting.experiments.lh001.config import LH002
 from src.ingestion import dart_quarterly
 from src.ingestion.storage import write_rows
 from dart_listing_fixtures import checkpoint as listing_checkpoint
+from preregistration_fixtures import committed_preregistrations
 from test_dart_financial_date_rules import filing, save, version
 from test_experiments_hc003 import prices_for, quote, selection, universe
 
@@ -32,10 +33,7 @@ from test_experiments_hc003 import prices_for, quote, selection, universe
 def repo(tmp_path, monkeypatch):
     ids = [av001.EXPERIMENT_ID, hc003.EXPERIMENT_ID, av001.hc002.EXPERIMENT_ID,
            hf001.EXPERIMENT_ID, "EV001_earnings_filing_entry"]
-    registrations = {name: experiment_registry.verify_preregistration(name) for name in ids}
-    monkeypatch.setattr(experiment_registry, "verify_preregistration", lambda name, *a, **k: registrations.get(name, registrations[av001.EXPERIMENT_ID]))
-    monkeypatch.setattr(holdout, "verify_preregistration", lambda name, *a, **k: registrations.get(name, registrations[av001.EXPERIMENT_ID]))
-    monkeypatch.setattr(experiment_registry, "_git", lambda *a: "fixture-code-commit")
+    committed_preregistrations(tmp_path, ids)
     monkeypatch.setattr(av001, "N_CONTROLS", 3)
     return tmp_path
 
@@ -548,8 +546,11 @@ def test_holdout_failure_uses_durable_claim_for_terminal_rows_and_retry(repo, mo
 
 @pytest.mark.parametrize("abort,sensitivity_available,change", [(False, True, None), (False, False, None), (True, True, None),
     (False, True, "entry_price"), (False, True, "price"), (False, True, "financial"),
-    (False, True, "company"), (False, True, "listing"), (False, True, "added_price"), (False, True, "removed_price")])
+    (False, True, "company"), (False, True, "listing"), (False, True, "added_price"), (False, True, "removed_price"),
+    (False, True, "preregistration")])
 def test_one_fixture_holdout_session_both_rules_close_start_gap_end_no_liquidation_and_abort(repo, monkeypatch, abort, sensitivity_available, change):
+    prereg = repo / "research/experiments" / av001.EXPERIMENT_ID / "preregistration.md"
+    original_prereg = prereg.read_bytes()
     # This fixture isolates post-preflight execution and durable-claim behavior.
     monkeypatch.setattr(av001.trading_calendar, "preflight_price_sessions", lambda *a, **k: {})
     av001.publish(terminal_design(repo), repo_root=repo)
@@ -572,6 +573,9 @@ def test_one_fixture_holdout_session_both_rules_close_start_gap_end_no_liquidati
             write_rows(data / "market/krx_daily/2026/20260105.jsonl", [{"trade_date": "20260105"}])
         elif change == "removed_price":
             protected.unlink()
+        elif change == "preregistration":
+            path = repo / "research/experiments" / av001.EXPERIMENT_ID / "preregistration.md"
+            path.write_text(path.read_text() + "changed mid-run\n")
     counts, original_session = [], holdout.HoldoutSession
     def session(*a, **k):
         with pytest.raises(ValueError, match="in progress"):
@@ -608,12 +612,18 @@ def test_one_fixture_holdout_session_both_rules_close_start_gap_end_no_liquidati
     monkeypatch.setattr(av001, "prepare", prepare)
     monkeypatch.setattr(hc003, "price_files", lambda *a, **k: [])
     if abort or change:
-        with pytest.raises(ValueError, match="computation failed" if abort else "holdout inputs changed"):
+        reason = ("computation failed" if abort else "preregistration git check failed"
+                  if change == "preregistration" else "holdout inputs changed")
+        with pytest.raises(ValueError, match=reason):
             av001.run_holdout(repo_root=repo, data_dir=repo / "data")
         assert all(r["verdict"] == "holdout_aborted" for r in hc003.registry_rows(repo)[-3:])
         details = [json.loads(r["metrics_json"]) for r in hc003.registry_rows(repo)[-3:]]
         assert len({r["run_id"] for r in details}) == 1
         assert all(r["input_hashes"] and r["failure_location"]["line"] > 0 for r in details)
+        if change == "preregistration":
+            rows = hc003.registry_rows(repo)
+            assert all(row["prereg_commit"] == rows[0]["prereg_commit"] for row in rows[-3:])
+            assert experiment_registry.trial_count(av001.EXPERIMENT_ID, repo_root=repo) == 6
     else:
         result = av001.run_holdout(repo_root=repo, data_dir=repo / "data")
         assert result["input_hash_verification"] == "pre_open == session_before == session_after"
@@ -635,6 +645,7 @@ def test_one_fixture_holdout_session_both_rules_close_start_gap_end_no_liquidati
             assert rows[-1]["end_kind"] == "close" and rows[-1]["end_date"] == "2026-06-30"
             assert all(not row["trades"] for row in rows)
     assert counts == [av001.EXPERIMENT_ID] and hc003.ledger_experiments(repo) == {av001.EXPERIMENT_ID}
+    prereg.write_bytes(original_prereg)
     with pytest.raises(ValueError, match="cannot reopen"):
         av001.run_holdout(repo_root=repo, data_dir=repo / "data")
 
@@ -737,7 +748,9 @@ def test_replay_depends_on_content_and_results_but_not_HEAD(repo, monkeypatch):
     assert json.dumps({k: v for k, v in protected.items() if k != "performance"}, sort_keys=True).encode() == json.dumps(
         {k: v for k, v in first.items() if k != "performance"}, sort_keys=True).encode()
     assert not (repo / experiment_registry.REGISTRY_PATH).exists()
-    monkeypatch.setattr(experiment_registry, "_git", lambda *a: "a-result-only-commit")
+    git = experiment_registry._git
+    monkeypatch.setattr(experiment_registry, "_git", lambda root, *args:
+                        "a-result-only-commit" if args == ("rev-parse", "HEAD") else git(root, *args))
     second = compute()
     assert first["code_commit"] != second["code_commit"]
     assert first["source_hashes"] == second["source_hashes"]

@@ -1,6 +1,7 @@
 """Synthetic, offline HC003 accounting, point-in-time and single-use tests."""
 from __future__ import annotations
 from dart_listing_fixtures import checkpoint
+from preregistration_fixtures import committed_preregistrations
 
 import copy
 import json
@@ -429,13 +430,8 @@ def write_financials(data_dir, codes=("000010", "000020")):
 
 @pytest.fixture
 def offline_repo(tmp_path, monkeypatch):
-    registration = experiment_registry.verify_preregistration(hc003.EXPERIMENT_ID)
-    monkeypatch.setattr(experiment_registry, "verify_preregistration", lambda *a, **k: registration)
-    monkeypatch.setattr(holdout, "verify_preregistration", lambda *a, **k: registration)
-    destination = tmp_path / "research/experiments" / hc003.EXPERIMENT_ID / "preregistration.md"
-    destination.parent.mkdir(parents=True)
-    source = experiment_registry.PROJECT_ROOT / "research/experiments" / hc003.EXPERIMENT_ID / "preregistration.md"
-    destination.write_bytes(source.read_bytes())
+    committed_preregistrations(tmp_path, [hc003.EXPERIMENT_ID, hc002.EXPERIMENT_ID, hf001.EXPERIMENT_ID,
+                                        LH002.experiment_id])
     write_financials(tmp_path / "data")
     checkpoint(tmp_path / "data")
     return tmp_path
@@ -672,8 +668,10 @@ def test_non_holdout_replay_verifies_sources_and_state_before_session(market, of
         assert hc003.verify_non_holdout(design, ["t_hold"], data_dir=offline_repo / "data", repo_root=offline_repo, sessions=days) is prices
 
 
-@pytest.mark.parametrize("abort", [False, True])
+@pytest.mark.parametrize("abort", [False, True, "preregistration"])
 def test_holdout_single_session_after_preflight_id_every_read_and_aborted_never_reopens(offline_repo, monkeypatch, abort):
+    prereg = offline_repo / "research/experiments" / hc003.EXPERIMENT_ID / "preregistration.md"
+    original_prereg = prereg.read_bytes()
     monkeypatch.setattr(hc003, "N_CONTROLS", 2)
     design = saved_design_fixture(offline_repo)
     publish_design_fixture(offline_repo, design)
@@ -698,6 +696,9 @@ def test_holdout_single_session_after_preflight_id_every_read_and_aborted_never_
         assert holdout._SESSIONS.get()[0].experiment_id == hc003.EXPERIMENT_ID
         events.append("protected_read")
         if abort:
+            if abort == "preregistration":
+                path = offline_repo / "research/experiments" / hc003.EXPERIMENT_ID / "preregistration.md"
+                path.write_text(path.read_text() + "changed mid-run\n")
             raise RuntimeError("synthetic protected failure")
         common.guard_prices(future, experiment_id=kwargs["experiment_id"], repo_root=offline_repo)
         return future, []
@@ -713,6 +714,9 @@ def test_holdout_single_session_after_preflight_id_every_read_and_aborted_never_
         with pytest.raises(RuntimeError, match="synthetic"):
             hc003.run_holdout(data_dir=offline_repo / "data", repo_root=offline_repo)
         assert hc003.registry_rows(offline_repo)[-1]["verdict"] == "holdout_aborted"
+        rows = hc003.registry_rows(offline_repo)
+        assert rows[-1]["prereg_commit"] == rows[0]["prereg_commit"]
+        assert experiment_registry.trial_count(hc003.EXPERIMENT_ID, repo_root=offline_repo) == 2
     else:
         result = hc003.run_holdout(data_dir=offline_repo / "data", repo_root=offline_repo)
         assert result["stage"] == "holdout" and set(result["variants"]) == {"t_hold"}
@@ -722,6 +726,7 @@ def test_holdout_single_session_after_preflight_id_every_read_and_aborted_never_
         assert result["variants"]["t_hold"]["per_month"][-1]["end_kind"] == "close"
     assert len((offline_repo / holdout.LEDGER_PATH).read_text().splitlines()) == 1
     assert events == ["preflight", "session", "protected_read"]
+    prereg.write_bytes(original_prereg)
     with pytest.raises(ValueError, match="cannot reopen"):
         hc003.run_holdout(data_dir=offline_repo / "data", repo_root=offline_repo)
 

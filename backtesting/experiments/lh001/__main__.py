@@ -509,6 +509,7 @@ def main(argv=None, *, default_experiment="LH001"):
     if args.resume_publication is not None and (args.stage != "screening" or args.limit_decisions is not None):
         parser.error("--resume-publication requires screening without --limit-decisions")
     started = time.perf_counter()
+    registration = None
     try:
         if args.resume_publication is not None:
             result = resume_publication(args.resume_publication, data_dir=args.data_dir, config=config)
@@ -517,20 +518,22 @@ def main(argv=None, *, default_experiment="LH001"):
         elif not args.execute:
             result = dry_run(args.stage, data_dir=args.data_dir, limit_decisions=args.limit_decisions, config=config)
         else:
+            registration = experiment_registry.verify_preregistration(config.experiment_id, PROJECT_ROOT)
             check_committed(config.prompt_dir, PROJECT_ROOT)
             result = {"probe": execute_probe, "screening": execute_screening, "final": execute_final}[args.stage](
                 data_dir=args.data_dir, limit_decisions=args.limit_decisions, config=config)
         print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
         return 0
     except (StageStopped, ValueError, OSError) as exc:
-        if args.execute:
+        if args.execute and registration is not None:
             state = "insufficient_clean_window" if "insufficient_clean_window" in str(exc) else "insufficient"
             if config.probe_version == "v2" and "probe_insensitive" in str(exc):
                 state = "probe_insensitive"
             variants = {arm: _unmeasured(state, str(exc)) for arm in VARIANTS}
             payload = _payload(args.stage, variants, started, config=config, interruption=str(exc))
             # Preserve completed official stage state on interruption.
-            evaluate.publish(payload, smoke=args.limit_decisions is not None, config=config)
+            evaluate.publish(payload, repo_root=PROJECT_ROOT, smoke=args.limit_decisions is not None, config=config,
+                             aborted_registration=registration)
         print(json.dumps({"stage": args.stage, "error": str(exc)}, ensure_ascii=False))
         return 2
 

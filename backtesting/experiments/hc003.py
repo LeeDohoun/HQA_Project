@@ -948,9 +948,12 @@ def _financial_ratios(counts):
     return result
 
 
-def write_results(payload, *, repo_root=PROJECT_ROOT):
+def write_results(payload, *, repo_root=PROJECT_ROOT, aborted_registration=None):
     """HC003's own finite JSON and interpretations, with exclusive filenames."""
-    _registration(repo_root)
+    if aborted_registration is not None:
+        experiment_registry.verify_captured_preregistration(EXPERIMENT_ID, aborted_registration, repo_root)
+    else:
+        _registration(repo_root)
     encoded = json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
     lines = [f"# {EXPERIMENT_ID}: {payload['stage']}", "", f"- Verdict: {payload['verdict']}",
              "- Reasons: " + "; ".join(payload["reasons"]), "", INTERPRETATIONS["note"], "",
@@ -1114,13 +1117,18 @@ def holdout_verdict(result, design_effect, fields):
     return "pass", ["all HC003 section-6 criteria satisfied"]
 
 
-def _holdout_status(status, reason, *, repo_root):
+def _holdout_status(status, reason, *, repo_root, aborted_registration=None):
     payload = {"experiment_id": EXPERIMENT_ID, "stage": "holdout", "selected_variant": "passed_design_variants",
                "verdict": status, "reasons": [reason], "variants": {},
                "interpretations": INTERPRETATIONS, "assumptions": ASSUMPTIONS}
-    experiment_registry.record_trial(EXPERIMENT_ID, status, {"stage": "holdout", "reason": reason},
-                                      status, repo_root=repo_root, note="terminal; no reopening of protected evaluation")
-    write_results(payload, repo_root=repo_root)
+    if aborted_registration is not None:
+        experiment_registry.record_aborted_trial(EXPERIMENT_ID, status, {"stage": "holdout", "reason": reason},
+            status, preregistration=aborted_registration, repo_root=repo_root,
+            note="terminal; no reopening of protected evaluation")
+    else:
+        experiment_registry.record_trial(EXPERIMENT_ID, status, {"stage": "holdout", "reason": reason},
+                                          status, repo_root=repo_root, note="terminal; no reopening of protected evaluation")
+    write_results(payload, repo_root=repo_root, aborted_registration=aborted_registration)
     return payload
 
 
@@ -1195,7 +1203,8 @@ def _run_holdout(*, data_dir, repo_root):
                 "result_file": str(result_paths[0].relative_to(repo_root))}, result["verdict"], repo_root=repo_root)
         return payload
     except BaseException as exc:
-        _holdout_status("holdout_aborted", f"{type(exc).__name__}: {exc}", repo_root=repo_root)
+        _holdout_status("holdout_aborted", f"{type(exc).__name__}: {exc}", repo_root=repo_root,
+                        aborted_registration=registration)
         raise
 
 
