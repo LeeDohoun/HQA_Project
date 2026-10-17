@@ -322,3 +322,16 @@ Final reviewed source hashes (notes excluded to avoid self-reference):
 
 - `backtesting/experiments/ch001.py`: `a627005ba983020378178ee726f6745b092140f44cc6bc89feeaf775169e2ebe`
 - `tests/test_experiments_ch001.py`: `4a09fe95874586566c847cdaa279ee5ac528568e11435405a0d68cc952205415`
+
+## Execution provenance
+
+Design/validation trials are executed from the git worktree
+`/home/are01/src/HQA_Project/HQA_ch001` (branch `claude/ch001-runner`), not from the
+main checkout, because the runner's credential preflight refuses a checkout that
+contains `.env`/`.env-ai` and the worktree has none. The trial rows are appended to
+that worktree's `research/experiments/registry.csv`; results are written under the
+same worktree's `research/experiments/<ID>/results/`. Data is read through read-only
+symlinks to the main checkout's `data/` subdirectories. The execution lock is the
+worktree directory's lock; CH001-CH003 use no holdout and no ledger. After the runs,
+`claude/strategy-research-system` is merged into this branch with a registry union
+(existing rows first, then CH rows, every row kept byte-for-byte).

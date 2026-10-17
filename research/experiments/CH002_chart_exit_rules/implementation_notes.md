@@ -394,3 +394,16 @@ The actual repository registry SHA-256 is unchanged:
 Both runners' referenced/source document hashes remain those above. The final
 code hashes are included in the audit evidence; notes are excluded to avoid
 self-reference. No real-data verdict, registry row or results file was created.
+
+## Execution provenance
+
+Design/validation trials are executed from the git worktree
+`/home/are01/src/HQA_Project/HQA_ch001` (branch `claude/ch001-runner`), not from the
+main checkout, because the runner's credential preflight refuses a checkout that
+contains `.env`/`.env-ai` and the worktree has none. The trial rows are appended to
+that worktree's `research/experiments/registry.csv`; results are written under the
+same worktree's `research/experiments/<ID>/results/`. Data is read through read-only
+symlinks to the main checkout's `data/` subdirectories. The execution lock is the
+worktree directory's lock; CH001-CH003 use no holdout and no ledger. After the runs,
+`claude/strategy-research-system` is merged into this branch with a registry union
+(existing rows first, then CH rows, every row kept byte-for-byte).
