@@ -20,6 +20,8 @@ SELL_TAX = (
     (date(2025, 1, 1), {"KOSPI": 0.0015, "KOSDAQ": 0.0015}),
     (date(2026, 1, 1), {"KOSPI": 0.0020, "KOSDAQ": 0.0020}),
 )
+# TODO FW001: add the 2027 sell/settlement rate only with a legal source URL,
+# effective date and recorded amendment hashes. Unknown sell years must fail.
 
 # KRX unified stock tick rule effective 2023-01-25 (KOSPI and KOSDAQ).
 # Verify against the exchange's quotation price unit table when updating.
@@ -122,12 +124,17 @@ def one_way_cost(
     if side not in ("buy", "sell"):
         raise ValueError(f"unknown side: {side}")
     trade_date = _parse_trade_date(trade_date)
-    if not SELL_TAX[0][0] <= trade_date <= date(SELL_TAX[-1][0].year, 12, 31):
+    if (trade_date < SELL_TAX[0][0]
+            or side == "sell" and trade_date > date(SELL_TAX[-1][0].year, 12, 31)):
         raise ValueError(f"unknown tax year: {trade_date.year}")
-    if version == "v2":
+    if version == "v2" and side == "sell":
         trade_date = _settlement_date(trade_date)
         if not SELL_TAX[0][0] <= trade_date <= date(SELL_TAX[-1][0].year, 12, 31):
             raise ValueError(f"unknown tax year: {trade_date.year}")
+    elif version == "v2":
+        from src.runner.trading_calendar import _calendar
+        if not _calendar(trade_date.year).is_session(trade_date):
+            raise ValueError(f"trade_date must be a KRX session: {trade_date}")
     slippage = next(rate for upper, rate in zip(TRADING_VALUE_BUCKETS, config.slippage_rates)
                     if avg_trading_value_20d < upper)
     tax = next(rates[market] for start, rates in reversed(SELL_TAX)

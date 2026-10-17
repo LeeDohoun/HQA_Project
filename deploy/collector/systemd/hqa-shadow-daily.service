@@ -1,5 +1,6 @@
 [Unit]
-Description=HQA local HC002 forward shadow recording and evaluation
+Description=HQA local HC002 shadow evaluation
+After=hqa-krx-daily.service hqa-fw001-daily.service
 
 [Service]
 Type=oneshot
@@ -11,6 +12,7 @@ Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
 ExecStart=/opt/hqa/venv/bin/python /opt/hqa/scripts/ops/shadow_daily.py --execute
 MemoryMax=800M
+TimeoutStartSec=10min
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true

@@ -72,8 +72,12 @@ def test_sell_tax_date_boundaries(trade_date, tax, market, as_string):
                                             date(2027, 1, 1), "20270101"])
 @pytest.mark.parametrize("side", ["buy", "sell"])
 def test_dates_outside_tax_table_rejected(trade_date, side):
-    with pytest.raises(ValueError, match="unknown tax year"):
-        one_way_cost(10000, "KOSPI", trade_date, 1e10, side, multiplier=0)
+    year = trade_date.year if isinstance(trade_date, date) else int(trade_date[:4])
+    if side == "buy" and year > 2026:
+        assert one_way_cost(10000, "KOSPI", trade_date, 1e10, side, multiplier=0) == 0
+    else:
+        with pytest.raises(ValueError, match="unknown tax year"):
+            one_way_cost(10000, "KOSPI", trade_date, 1e10, side, multiplier=0)
     with pytest.raises(ValueError, match="unknown tax year"):
         round_trip_cost_vectorized([10000.0], ["KOSPI"], [trade_date], [1e10], multiplier=0)
 
@@ -105,7 +109,7 @@ def test_invalid_config(kwargs):
 
 
 @pytest.mark.parametrize("kwargs", [
-    {"market": "NYSE"}, {"side": "hold"}, {"trade_date": "20270101"},
+    {"market": "NYSE"}, {"side": "hold"}, {"trade_date": "20140101"},
     {"trade_date": date(2014, 12, 31)}, {"trade_date": "20260230"}, {"trade_date": "2026-01-01"},
     {"trade_date": "202611"}, {"trade_date": None}, {"avg_trading_value_20d": -1},
     {"avg_trading_value_20d": float("nan")}, {"avg_trading_value_20d": float("inf")},

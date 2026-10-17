@@ -1,0 +1,129 @@
+{
+  "changed_at": "2026-10-17T14:56:13.628249+00:00",
+  "changes": {
+    "backtesting/append_only.py": {
+      "after": "30be0fee09d89dc5e6b21f8871b54ffddbe51a991bc9a035e34d8290ad73a662",
+      "before": null
+    },
+    "backtesting/experiment_registry.py": {
+      "after": "9555653d68669e4707f3a47ab331ab7bd8f03dfc6b009d97a2ac41c271acaeed",
+      "before": "74180fdb621674058c988d196c6966fd4c88fd5ae4686af61851dd2e652585e1"
+    },
+    "backtesting/experiments/av001.py": {
+      "after": "2ecbf4d5427a27d11447f407bed72b557168b1fc0a6ddca1f4b16e5263f14d97",
+      "before": "f386b6f8e4613cef85b4d8f50311aaa0680fc3f9a2b019283d0455384706cdbf"
+    },
+    "backtesting/experiments/common.py": {
+      "after": "7b9903a08c5be6385d6aa6c0430523c7368d2428c9482a46bbb3d4611a3b7331",
+      "before": "5cf9b5e220ec603aad5b7a2a835263a0c73e1334842eea16d41eed579c7cdb6f"
+    },
+    "backtesting/experiments/hc001.py": {
+      "after": "90df5fc2e8efd868f6466467c1603d1db6361351d383e2d91aed49b97c161f90",
+      "before": "2b56878fe6a395df80bd41bbbe032c652b44beaabf02f18dd75bdfc5b36b7c11"
+    },
+    "backtesting/experiments/hc002.py": {
+      "after": "e368edd21f0021713f29793f28233087f322064e06a570a6dd74a264db521069",
+      "before": "5d4760c37e02a22c324a641abddfb6408c6d7270d33b2423242552e2a3c4bf11"
+    },
+    "backtesting/experiments/hc003.py": {
+      "after": "102a1cc2fb9711e91fa3f7ad30ccf0daea6b40ce6d62738018fe85238ed720cb",
+      "before": "73e62a959edea2682f14cdc3f57b9589ca368c6902b66122a14b82942982932b"
+    },
+    "backtesting/experiments/hf001.py": {
+      "after": "3d2a11e1e2236e539ae37da816e8229960bcf08eacf3af2ae1388cdc36a5cb84",
+      "before": "03b732c3f0fdf81a626c5f9cbdb91ef828e669e1ee880e3bf2f0328191d373f7"
+    },
+    "backtesting/experiments/ordering.py": {
+      "after": "d6f7ea36c0e538bc38b06584a0eb6d0506985114b8095eeabeec11c6f07c0ffc",
+      "before": "3fd2578865f25482adb5c4072476680707883b956caab0de4667468196008a51"
+    },
+    "backtesting/holdout.py": {
+      "after": "100ba32ad62de13fd0b9c0b9a01bc966d6e1c4ce9872e1a5b4fee4f65ed81762",
+      "before": "084b462e1033f74025f4eac9857bf7824bcbb5da1a8df8c917e32f246699aea4"
+    },
+    "deploy/collector/install.sh": {
+      "after": "3464bb92e74cc8c457e90b0fa3d52137fdf11c9a23324bb041eeafd8743f8157",
+      "before": "0c69d4e7cef82c50e148dd254f72616a3fbc50bea34ffcc0e13ead1eeac6ac5f"
+    },
+    "deploy/collector/systemd/hqa-fw001-daily.service": {
+      "after": "f562b19660f4376479530bd444ec610083cd1e633d1272d9daf6a9548af715b4",
+      "before": null
+    },
+    "deploy/collector/systemd/hqa-fw001-daily.timer": {
+      "after": "a4488778d95344f8194ab16313900f269117f43b539a62abf84ad281ac649580",
+      "before": null
+    },
+    "deploy/collector/systemd/hqa-krx-daily.service": {
+      "after": "1736a6ce3a02bb50b3fa36b96f66924a4a100795028fb23802be89ecc1b70854",
+      "before": "525ef60a0339197006d0802f6cc6eaaaa6dcebc7db3a48b5794dc5d376dd7ec6"
+    },
+    "deploy/collector/systemd/hqa-krx-daily.timer": {
+      "after": "9d3e242f0e03d9c62d91f1228275eaf2ef66f9a98ea80ed6866e31014cb60874",
+      "before": "6bf7f4884bcc5325dc8a670b26ab58356eb201bec474b2507a871276325736a7"
+    },
+    "deploy/collector/systemd/hqa-shadow-daily.service": {
+      "after": "2d7170f239efd3f6f4a4f7295470f4e00369cd680b137bdabf94cc7dc22bfa5c",
+      "before": "873045d44cefe65ce0cb7d0ea6e35959ba268b1e6617c10a1c332db9b368986c"
+    },
+    "deploy/collector/systemd/hqa-shadow-daily.timer": {
+      "after": "4ffcea3b312ccc69a866cbeedf7e577e5e7fddf55642b271fc68ed8ec9f20fb9",
+      "before": "dbe029f26b547708b595b30118152788437ab08ea3b06f10c65f222ed8186323"
+    },
+    "scripts/ops/collector_manifest.py": {
+      "after": "ebdf416f0c67d2f8418b65412627fb7b7f9fea762fe7a051f20acf6cf8aaab81",
+      "before": "57ea4b9bac72c40ec55881bc9e08d329fa634a08fb89c86fbf870fd8c2948c90"
+    },
+    "scripts/ops/krx_catchup.py": {
+      "after": "474a111f896e467a13a4b317ecb06a9afae41f8b4d1a50ef91eac9ca16b2f711",
+      "before": "30a11103186eff7432797d5e602bfc74cabcb4db4d38b8b59412fa2b19c307d8"
+    },
+    "scripts/ops/push_collector_code.sh": {
+      "after": "e11157e32cc1012d53489149c10e5fe1536d77c8a6eeb97670f54bcc797a01a9",
+      "before": "0866f1e90eab98083a3ff26e2343b65de94dbc7decdfade9e3fd69e162998cc1"
+    },
+    "src/forward/fw001.py": {
+      "after": "1477ee4a9e5a84c72e018f645d14f8e19c230c8037228c3a10dab4657e972fb5",
+      "before": "927d10ec5d5601f00b89352271b103fefc9ea897ad532b3edae9f38bf96ae457"
+    },
+    "src/forward/hegemony_shadow.py": {
+      "after": "55547713fc36c32d740122ae1ae8d1cc1ea9ce339a262fc907238d80fd370c68",
+      "before": "5d7f2b1d75e4952089cf7146e9d5c67b6eb550f770fe5faa6307db47b4f54eb0"
+    },
+    "src/ingestion/dart_financial_date_rules.py": {
+      "after": "d0fce8a2f1872f4594e49212b0a13ef7c3989ed5317ddf06638e04eb6326ae03",
+      "before": "8f9a986548b5a00ea385d31864631ca3a5fe77c9f451b037db01d1957d015483"
+    },
+    "src/runner/trading_calendar.py": {
+      "after": "e92f97df8916f73f73b1d61df915d2ff3b421106f27bbf8749c650e4632b1454",
+      "before": "5a6a9c3807b72d22f71d6ee808017ff77efb83be7cf082710dcf9086da3282bb"
+    }
+  },
+  "implementation_changes": {
+    "backtesting/experiments/fw001.py": {
+      "after": "5f3810d1dd07fcd04c39bf7e345a6bf0e585a420acd444006252b921d4ec0d74",
+      "before": "4fbaf07ccb8f47e8ed91836034747e5ff0ae2a311a1ed28ec6fedf0461e0050a"
+    },
+    "research/experiments/FW001_forward_replication/resource_replay_guard.py": {
+      "after": "51493c0e6f2c3511dd563320b60c80be9ac6bcb70fbd487bb93183a6bdfca991",
+      "before": null
+    },
+    "tests/test_experiments_fw001.py": {
+      "after": "8b407c3f33b63a1643310a67d9e93956e2c6d8aada50a50b277270eab0a21ea3",
+      "before": "7399076137453a710b65740bb06dbe0b1b11f1afdeef51ff18749741ad5e8ff4"
+    },
+    "tests/test_forward_fw001.py": {
+      "after": "e28325889b134f9d73eee1ca5c4768ed400d6b17f9f95cbca0380943c761bd33",
+      "before": "a97e29ed0da2caa3c1e855f9566d7fcec8c2e3ba0f14170e67743df75c4b23cb"
+    },
+    "tests/test_ops_fw001.py": {
+      "after": "f2acde1eba0e5f6da0852643a520bf9ec8353fd7336b6a13971f7b242cbe33d3",
+      "before": "8e0ec92d4c34c4ba78e87ee72f1bf7b6e3192704dbb4168e2515d50caed62fda"
+    },
+    "tests/test_shadow_ops.py": {
+      "after": "7a1bc3c5bf6ed8869206f2903ec6841933d6beb8898fb323f43bdb2426b6f934",
+      "before": null
+    }
+  },
+  "previous_manifest_sha256": "a1c795740f471cb1629e1e9bdb46cc86d97f87281dd5224eebfeeab059f85fec",
+  "reason": "FW001 independent review 16: merged dependencies and calendar guard; completion proofs, immutable inputs and sealed-price recovery; freeze sensitivity and registry validation; dedicated evening service and timing verification gate"
+}

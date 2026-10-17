@@ -1,0 +1,12 @@
+{
+  "changed_at": "2026-10-17T15:26:02.080077+00:00",
+  "changes": {},
+  "implementation_changes": {
+    "tests/test_forward_fw001.py": {
+      "after": "878510378d9c68cc72e1199493ec0c17067e106b5efbf4a358559b61220ba9c3",
+      "before": "2b206cd0171d49bf2bd0468a822789ec33b6ae9e45ac9e9e2cd8ee8af945dbbf"
+    }
+  },
+  "previous_manifest_sha256": "f0331598dfce0c438efb363f8ee05fa77cf63d8787e32b4b2a73c106b4e6e415",
+  "reason": "Scope hypothetical November special-session coverage to the existing chain-accounting fixture; production window/calendar refusal tests remain strict"
+}
