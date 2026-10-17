@@ -48,7 +48,9 @@ rsync "${rsync_options[@]}" \
     "$project_root/./src/" "$project_root/./scripts/data/" \
     "$project_root/./scripts/ops/" "$project_root/./scripts/__init__.py" \
     "$project_root/./scripts/forward/" \
-    "$project_root"/./backtesting/{__init__,capacity,cost_model,experiment_registry,holdout,signal_eval}.py \
+    "$project_root"/./backtesting/{__init__,append_only,capacity,cost_model,experiment_registry,holdout,signal_eval}.py \
     "$project_root"/./backtesting/experiments/{__init__,common,d001,hc001,hc002,hc003,hf001,av001,ordering}.py \
     "$project_root"/./research/experiments/FW001_forward_replication/{preregistration.md,comparison_values.json,deployment_manifest.json} \
+    "$project_root/./research/experiments/FW001_forward_replication/manifest_history/" \
+    "$project_root/./research/experiments/FW001_forward_replication/manifest_changes/" \
     "$project_root/./deploy/collector/" "$project_root"/./requirements*.txt "$host:/opt/hqa/"

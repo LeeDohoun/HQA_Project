@@ -35,7 +35,6 @@ def no_real_providers_or_env(monkeypatch):
 
 @pytest.mark.parametrize("day,now,expected", [
     ("2026-10-30", "2026-10-31T08:55:00+09:00", True),  # Friday received Saturday.
-    ("2027-04-30", "2027-05-01T08:55:00+09:00", True),  # Calendar month ends Friday; arrival next month.
     ("2026-10-29", "2026-10-31T08:55:00+09:00", False),
     ("2026-12-30", "2026-12-31T08:55:00+09:00", True),  # Year-end holiday on Thursday.
     ("2026-12-31", "2027-01-01T08:55:00+09:00", False),
@@ -64,18 +63,12 @@ def test_daily_records_saturday_arrival_once_and_keeps_actual_time(shadow_data, 
     assert json.loads((shadow_data / shadow.RECORD_DIR / "_last_run.json").read_text()) == second
 
 
-def test_daily_friday_month_end_arriving_saturday_in_next_month(shadow_data, monkeypatch):
-    day = pd.Timestamp("2027-04-30")
-    sessions = shadow._calendar(day)
-    position = sessions.get_loc(day)
-    save_market(shadow_data, sessions[position - 59:position + 1])
+def test_unverified_future_shadow_month_fails_before_recording(shadow_data, monkeypatch):
+    # Official 2027 sessions are deliberately not yet available.
     monkeypatch.setattr(shadow, "_now", lambda: datetime(2027, 5, 1, 8, 55, tzinfo=shadow.KST))
-    report = daily.daily_shadow(shadow_data, execute=True)
-    assert report["decision"]["date"] == "2027-04-30"
-    path = shadow_data / shadow.RECORD_DIR / "decisions/202704.json"
-    assert json.loads(path.read_text())["recorded_at"] == "2027-05-01T08:55:00+09:00"
-    assert not (path.parent / "202705.json").exists()
-    assert daily.daily_shadow(shadow_data, execute=True)["decision"]["reason"] == "already_recorded"
+    with pytest.raises(ValueError, match="calendar_unverified"):
+        shadow.decide("2027-04-30", shadow_data, execute=True)
+    assert not (shadow_data / shadow.RECORD_DIR).exists()
 
 
 @pytest.mark.parametrize("status", [None, "unverified_special_session", "exchange_calendar_mismatch"])
@@ -162,7 +155,8 @@ assert record['preregistration_commit'] == 'unknown (server)'
 assert Path('research/experiments/FW001_forward_replication/preregistration.md').is_file()
 assert not Path('research/experiments/HC002_operating_leverage_monthly').exists()
 assert not Path('.git').exists()
-assert not any(name.startswith(('src.runner', 'src.tools.kis')) for name in sys.modules)
+assert not any((name.startswith('src.runner') and name not in ('src.runner','src.runner.trading_calendar'))
+               or name.startswith('src.tools.kis') for name in sys.modules)
 print(json.dumps(result))
 """
     result = subprocess.run([sys.executable, "-I", "-c", code, str(server), str(shadow_data)], cwd=server,
@@ -177,8 +171,8 @@ def test_bounded_evaluation_equals_unbounded_for_all_exit_policies(shadow_data, 
     shadow.decide(DECISION, shadow_data, execute=True)
     days = holding_days()
     save_market(shadow_data, days, returns={"000010": 0.001})
-    sessions = shadow._calendar(DECISION, pd.Timestamp("2027-04-30"))
-    later = sessions[(sessions > days[-1]) & (sessions < pd.Timestamp("2027-04-30"))]
+    sessions = shadow._calendar(DECISION, pd.Timestamp("2026-12-30"))
+    later = sessions[(sessions > days[-1]) & (sessions < pd.Timestamp("2026-12-30"))]
     save_market(shadow_data, later, returns={"000010": 0.1})
     if policy == "raw":
         change_market(shadow_data, days[3], "000010", change_rate_pct=None)
@@ -198,7 +192,7 @@ def test_bounded_evaluation_equals_unbounded_for_all_exit_policies(shadow_data, 
             write_rows(krx_market._path(later[-1].date(), shadow_data), rows)
     elif policy == "missing_exit":
         change_market(shadow_data, days[-1], "000010", remove=True)
-    monkeypatch.setattr(shadow, "_now", lambda: datetime(2027, 5, 1, 8, 55, tzinfo=shadow.KST))
+    monkeypatch.setattr(shadow, "_now", lambda: datetime(2026, 12, 31, 8, 55, tzinfo=shadow.KST))
     expected = shadow.evaluate(shadow_data)
     load = krx_market.load_prices
     calls = []

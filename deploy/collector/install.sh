@@ -33,9 +33,11 @@ if [[ "$project_root" != /opt/hqa ]]; then
         "$project_root/./src/" "$project_root/./scripts/data/" \
         "$project_root/./scripts/ops/" "$project_root/./scripts/__init__.py" \
         "$project_root/./scripts/forward/" \
-        "$project_root"/./backtesting/{__init__,capacity,cost_model,experiment_registry,holdout,signal_eval}.py \
+        "$project_root"/./backtesting/{__init__,append_only,capacity,cost_model,experiment_registry,holdout,signal_eval}.py \
         "$project_root"/./backtesting/experiments/{__init__,common,d001,hc001,hc002,hc003,hf001,av001,ordering}.py \
         "$project_root"/./research/experiments/FW001_forward_replication/{preregistration.md,comparison_values.json,deployment_manifest.json} \
+        "$project_root/./research/experiments/FW001_forward_replication/manifest_history/" \
+        "$project_root/./research/experiments/FW001_forward_replication/manifest_changes/" \
         "$project_root/./deploy/collector/" "$project_root"/./requirements*.txt /opt/hqa/
 fi
 if [[ -e /opt/hqa/.env || -e /opt/hqa/.env-ai ]]; then
@@ -46,6 +48,7 @@ if [[ ! -x /opt/hqa/venv/bin/python ]]; then
     python3 -m venv /opt/hqa/venv
 fi
 /opt/hqa/venv/bin/python -m pip install -r /opt/hqa/deploy/collector/requirements-collector.txt
+/opt/hqa/venv/bin/python /opt/hqa/scripts/ops/collector_manifest.py --verify
 chown -R root:root /opt/hqa
 install -o root -g hqa -m 0640 /opt/hqa/deploy/collector/collector.env.example /etc/hqa/collector.env.example
 for unit in /opt/hqa/deploy/collector/systemd/*; do
@@ -101,8 +104,8 @@ if [[ "$env_check" -eq 20 ]]; then
 fi
 
 if [[ "$env_check" -ne 0 ]]; then
-    systemctl disable --now hqa-dart-poller.service hqa-krx-daily.timer hqa-collector-status.timer hqa-dart-backfill.timer hqa-investor-flow.timer hqa-shadow-daily.timer hqa-fundamentals-refresh.timer
-    systemctl stop hqa-krx-daily.service hqa-collector-status.service hqa-dart-backfill.service hqa-investor-flow.service hqa-shadow-daily.service hqa-fundamentals-refresh.service
+    systemctl disable --now hqa-dart-poller.service hqa-krx-daily.timer hqa-collector-status.timer hqa-dart-backfill.timer hqa-investor-flow.timer hqa-shadow-daily.timer hqa-fw001-daily.timer hqa-fundamentals-refresh.timer
+    systemctl stop hqa-krx-daily.service hqa-collector-status.service hqa-dart-backfill.service hqa-investor-flow.service hqa-shadow-daily.service hqa-fw001-daily.service hqa-fundamentals-refresh.service
     cat <<'NEXT'
 Collectors have not been started. On this server:
   sudo cp -n /etc/hqa/collector.env.example /etc/hqa/collector.env

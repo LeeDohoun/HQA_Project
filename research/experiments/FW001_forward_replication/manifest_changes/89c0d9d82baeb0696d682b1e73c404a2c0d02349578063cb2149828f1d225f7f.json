@@ -1,0 +1,53 @@
+{
+  "changed_at": "2026-10-17T15:17:02.329270+00:00",
+  "changes": {
+    "deploy/collector/systemd/hqa-krx-daily.service": {
+      "after": "f97b7510b3d089ea307f2cc511cdcb1d87446051d6f6a06d678200769fe7652f",
+      "before": "1736a6ce3a02bb50b3fa36b96f66924a4a100795028fb23802be89ecc1b70854"
+    },
+    "deploy/collector/systemd/hqa-krx-daily.timer": {
+      "after": "6bf7f4884bcc5325dc8a670b26ab58356eb201bec474b2507a871276325736a7",
+      "before": "9d3e242f0e03d9c62d91f1228275eaf2ef66f9a98ea80ed6866e31014cb60874"
+    },
+    "scripts/ops/collector_manifest.py": {
+      "after": "a5e702b4f2244b9af1227780b20d9698e27ba819735dffcc0cfee6011353c4a2",
+      "before": "ebdf416f0c67d2f8418b65412627fb7b7f9fea762fe7a051f20acf6cf8aaab81"
+    },
+    "scripts/ops/krx_catchup.py": {
+      "after": "edeae545e88527eef2f9a8715709dca6d72cecd20c66f63c2a8e696330822b3e",
+      "before": "474a111f896e467a13a4b317ecb06a9afae41f8b4d1a50ef91eac9ca16b2f711"
+    },
+    "src/forward/fw001.py": {
+      "after": "2c0d09a487cd5c2ed4e11f192376b1acd2be5c64c0460838cba1a9dcaccb82c6",
+      "before": "c1a939fd2cf51eb3d1fded3f6c7a341314208ed00887c96310d296cef5ccaa36"
+    },
+    "src/runner/trading_calendar.py": {
+      "after": "f8571d2484ab11dc4c06ea16838a35f90e4d7e3bc7dbffe3b14b79da121a8e38",
+      "before": "e92f97df8916f73f73b1d61df915d2ff3b421106f27bbf8749c650e4632b1454"
+    }
+  },
+  "implementation_changes": {
+    "backtesting/experiments/fw001.py": {
+      "after": "bbc4230fa8a0078746f875076bb6b8a79d9363daa2304b38a8a550b625da8e8f",
+      "before": "5f3810d1dd07fcd04c39bf7e345a6bf0e585a420acd444006252b921d4ec0d74"
+    },
+    "tests/test_experiments_fw001.py": {
+      "after": "af32e0204bf7f524b3c40d4b83339ed5a678430c7966ea9da466f68bbc4cd3a1",
+      "before": "8b407c3f33b63a1643310a67d9e93956e2c6d8aada50a50b277270eab0a21ea3"
+    },
+    "tests/test_forward_fw001.py": {
+      "after": "30b1b15588a5b854f73d928d36644c10d3c1c397cba108d6844b5272d6a52c39",
+      "before": "3ed4df29dbd5804528c5d290e613267dd3393265b8b0ea1ec111727f6133eaca"
+    },
+    "tests/test_ops_fw001.py": {
+      "after": "31584f3002f178adf6472df6580ae0dadbe9a1c5499ce77de3ee1e5d1e572ef4",
+      "before": "f2acde1eba0e5f6da0852643a520bf9ec8353fd7336b6a13971f7b242cbe33d3"
+    },
+    "tests/test_trading_calendar_overrides.py": {
+      "after": "1a1f7d37dee7be1d0ecfda54b0ee46f60672c96fe605fb5b3153fa064a0c609a",
+      "before": null
+    }
+  },
+  "previous_manifest_sha256": "fe75e1460a55ce97a7fe77494532e436f244f4029fcd6b35266e50b338c06ca4",
+  "reason": "FW001 second fix round: restore previous-day KRX collection; validate only completed calendar sessions; atomically publish completion proofs with kernel directory publication timestamps and conservative precision; preserve activation gate and update final-code server checklist"
+}

@@ -6,7 +6,6 @@ primary carries sealed fills; repricing is a separately labelled audit only.
 from __future__ import annotations
 
 import argparse
-import csv
 import gzip
 from datetime import datetime
 import json
@@ -80,6 +79,7 @@ def apply_sensitivity(main, sensitivity):
 
 
 def read_records(data_dir, *, final=False):
+    recorder.verify_manifest(implementation=True)
     root = Path(data_dir)
     freeze_path = root / recorder.RECORD_DIR / "evaluation_freeze.json"
     if final:
@@ -93,14 +93,23 @@ def read_records(data_dir, *, final=False):
             if dart_listing.file_hash(root / name) != checksum:
                 raise ValueError("FW001 frozen input changed: " + name)
     else:
-        paths = [p for kind in ("decisions", "executions", "cost_resolutions", "missing", "prices")
-                 for p in (root / recorder.RECORD_DIR / kind).glob("*.json")]
+        paths = [p for kind in ("decisions", "executions", "cost_resolutions", "missing", "prices", "sealed")
+                 for p in (root / recorder.RECORD_DIR / kind).rglob("*.json")]
         inputs = recorder.hashes(root, sorted(paths))
     groups = {kind: {} for kind in ("decisions", "executions", "cost_resolutions", "missing", "prices")}
     for name in inputs:
         path = Path(name)
         if path.parent.name in groups:
-            groups[path.parent.name][path.stem] = recorder.load_json(root / path)
+            record = recorder.load_json(root / path)
+            if record.get("label") == "forward" and path.parent.name in ("decisions", "executions"):
+                kind = path.parent.name
+                multiplier = record.get("cost_multiplier")
+                proof_path = recorder.marker_path(root, kind, record["month"], multiplier)
+                if final and proof_path.relative_to(root).as_posix() not in inputs:
+                    continue  # A post-freeze marker cannot complete an old candidate.
+                if recorder.completion_proof(root, kind, record["month"], multiplier) is None:
+                    continue
+            groups[path.parent.name][path.stem] = record
     if final:
         groups["prices"] = freeze["selected_prices"]
     else:
@@ -109,10 +118,14 @@ def read_records(data_dir, *, final=False):
             if versions:
                 groups["prices"][directory.name] = recorder.load_json(versions[-1])
     for key, resolution in groups["cost_resolutions"].items():
+        if key not in groups["executions"]:
+            raise ValueError("FW001 cost resolution has no finalised execution")
         if resolution["resolution_of"] != recorder.digest(groups["executions"][key]):
             raise ValueError("FW001 cost resolution does not match the sealed execution")
         groups["executions"][key] = resolution
     for decision in groups["decisions"].values():
+        if decision["label"] != "forward":
+            continue
         planned = recorder.plan(decision["decision_date"])
         if any(decision[key] != planned[key] for key in ("month", "trade_date", "deadline", "f_both_exit")):
             raise ValueError("FW001 sealed decision dates differ from the official session plan")
@@ -154,7 +167,8 @@ def f_observations(records, prices, days, *, sealed=True):
                 "f_both": code in removed})
     if not selections:
         return pd.DataFrame()
-    sessions = recorder.calendar(days[0])
+    sessions = recorder.trading_calendar.session_calendar(
+        min(pd.Timestamp(row["decision_date"]) for row in selections), days[-1])
     return hf001.forward_observations(prices, pd.DataFrame(selections), sessions[sessions <= days[-1]],
         experiment_id=recorder.EXPERIMENT_ID, evaluation_end="2027-11-01", executions=fills if sealed else None)
 
@@ -182,9 +196,10 @@ def valuation_book(records, prices, days):
     if not candidates:
         return None
     seed = min(candidates, key=lambda row: row["chain_date"])
-    end = min(days[-1], pd.Timestamp("2027-10-29"))
-    period = recorder.calendar(end)
-    period = period[(period > pd.Timestamp(seed["chain_date"])) & (period <= end)]
+    # Last-trade detection includes re-trading through the registered freeze.
+    # Monthly wealth still ends at the explicit 2027-10-29 close in av_months.
+    end = min(days[-1], pd.Timestamp(recorder.FREEZE_AT.date()) - pd.Timedelta(days=1))
+    period = recorder.trading_calendar.session_calendar(pd.Timestamp(seed["chain_date"]) + pd.Timedelta(days=1), end)
     if period.empty:
         return None
     entries = sorted({row["trade_date"] for row in records["executions"].values()
@@ -193,7 +208,8 @@ def valuation_book(records, prices, days):
         for start in range(0, len(period), 20):
             yield prices.loc[prices.index.get_level_values("trade_date").isin(period[start:start + 20])]
     return hc003.PriceBook.from_windows(windows(), period, entries, end,
-        experiment_id=recorder.EXPERIMENT_ID, initial_chain=seed["chain"])
+        experiment_id=recorder.EXPERIMENT_ID, initial_chain=seed["chain"],
+        close_dates=[min(end, pd.Timestamp("2027-10-29"))])
 
 
 def av_months(records, data_dir, days, *, pc_dir=None, book=None):
@@ -254,7 +270,7 @@ def av_book_and_selections(records, prices, days):
     first = decisions[0]
     if first is None or first["chain"] is None:
         raise ValueError("FW001 controls/sensitivity unavailable: initial chain is missing")
-    selected, entry_days = [], []
+    selected = []
     for number, (month, decision) in enumerate(zip(recorder.MONTHS, decisions)):
         if decision is None:
             raise ValueError("FW001 controls/sensitivity unavailable: missing decision U")
@@ -269,15 +285,7 @@ def av_book_and_selections(records, prices, days):
             "trade_date": planned["trade_date"], "end_date": end, "end_kind": "close" if number == 11 else "open",
             "universe": u, "F_vol": set(rule["F_vol"]), "F_raise": set(rule["F_raise"]),
             "no_trade": decision["label"] != "forward", "blocked_buys": set(), "filter_covered": True})
-        entry_days.append(planned["trade_date"])
-    end = pd.Timestamp("2027-10-29")
-    period = days[(days > pd.Timestamp(first["chain_date"])) & (days <= end)]
-    def windows():
-        for start in range(0, len(period), 20):
-            window = period[start:start + 20]
-            yield prices.loc[prices.index.get_level_values("trade_date").isin(window)]
-    book = hc003.PriceBook.from_windows(windows(), period, entry_days, end,
-        experiment_id=recorder.EXPERIMENT_ID, initial_chain=first["chain"])
+    book = valuation_book(records, prices, days)
     return book, selected
 
 
@@ -393,7 +401,9 @@ def evaluate(data_dir, *, pc_dir=None, final=False, controls=True):
                 **hf001.random_controls(groups, f_rows), "used_for_judgement": False} if controls else None},
             "av_all": {**apply_sensitivity(av_main, av_sensitive), "per_month": av_rows,
                         "delisting_loss_months": av_loss, "random_control": av_random}},
-        "missing_months": sorted(r["month"] for r in records["missing"].values()),
+        "missing_months": sorted((set(map(str, recorder.MONTHS)) if final else
+            {r["month"] for r in records["missing"].values()}) -
+            {r["month"] for r in records["decisions"].values() if r["label"] == "forward"}),
         "missing_execution_months": sorted(str(month) for month in recorder.MONTHS if any(
             str(month).replace("-", "") + f"_{m}" not in records["executions"] for m in hf001.MULTIPLIERS)),
         "price_policy": "Use a matching PC hash or the server content-addressed frozen copy. Sealed fills are never repriced.",
@@ -417,6 +427,7 @@ def publish(result, output, *, repo_root=PROJECT_ROOT):
     A restart after publication can finish a missing registry row. It cannot
     evaluate again or replace the canonical result.
     """
+    recorder.verify_manifest(implementation=True)
     with file_lock(Path(repo_root) / recorder.RESEARCH_DIR / ".evaluation.lock"):
         return _publish(result, output, repo_root=repo_root)
 
@@ -424,14 +435,18 @@ def publish(result, output, *, repo_root=PROJECT_ROOT):
 def _publish(result, output, *, repo_root):
     if result["stage"] != "final" or recorder.now() < recorder.FREEZE_AT:
         raise ValueError("FW001 publishes only after the registered final freeze")
+    try:
+        result_hash = recorder.digest(result)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("FW001 result must contain finite JSON values") from exc
     canonical = Path(repo_root) / recorder.RESEARCH_DIR / "results/final.json"
-    recorder.put(canonical, result, execute=True)
-    recorder.put(output, result, execute=True)
-    registry = Path(repo_root) / experiment_registry.REGISTRY_PATH
-    rows = []
-    if registry.is_file():
-        with registry.open(encoding="utf-8", newline="") as handle:
-            rows = list(csv.DictReader(handle))
+    rows = hc003.registry_rows(repo_root)
+    registration = experiment_registry.verify_preregistration(recorder.EXPERIMENT_ID, repo_root)
+    accepted = {registration.commit_hash} | experiment_registry._commit_aliases(
+        Path(repo_root), recorder.EXPERIMENT_ID, registration.commit_hash)
+    if any(row["experiment_id"] == recorder.EXPERIMENT_ID and row["prereg_commit"] not in accepted for row in rows):
+        raise ValueError("FW001 registry prereg_commit differs before publication")
+    trials = []
     for name, rule in result["rules"].items():
         if any(row["experiment_id"] == recorder.EXPERIMENT_ID and row["variant"] == name
                and json.loads(row["metrics_json"]).get("stage") == "forward_final" for row in rows):
@@ -439,12 +454,20 @@ def _publish(result, output, *, repo_root):
         metrics = {key: rule[key] for key in ("valid_decisions", "monthly_observations", "mean_by_cost_multiplier",
                     "sealed_comparison", "base_verdict", "delisting_loss_verdict")}
         metrics.update(stage="forward_final", result_file=canonical.relative_to(repo_root).as_posix(),
-                       result_sha256=dart_listing.file_hash(canonical), missing_months=result["missing_months"])
-        experiment_registry.record_trial(recorder.EXPERIMENT_ID, name, metrics, rule["verdict"],
+                       result_sha256=result_hash, missing_months=result["missing_months"])
+        experiment_registry.encode_metrics(metrics)
+        if not isinstance(rule["verdict"], str) or not rule["verdict"].strip():
+            raise ValueError("FW001 registry verdict must be a nonempty string")
+        trials.append((name, metrics, rule["verdict"]))
+    recorder.put(canonical, result, execute=True)
+    recorder.put(output, result, execute=True)
+    for name, metrics, verdict in trials:
+        experiment_registry.record_trial(recorder.EXPERIMENT_ID, name, metrics, verdict,
             repo_root=repo_root, note="FW001 first-year forward replication; economic gate, reporting-only statistics")
 
 
 def main(argv=None):
+    recorder.verify_manifest(implementation=True)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", type=Path)
     parser.add_argument("--pc-data-dir", type=Path)

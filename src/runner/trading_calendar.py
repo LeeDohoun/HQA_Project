@@ -185,7 +185,6 @@ def completed_daily_sessions(as_of: datetime, count: int = 300) -> list[tuple[st
     cutoff = pd.Timestamp(as_of)
     korean_day = cutoff.tz_convert("Asia/Seoul")
     require_verified_calendar(korean_day.date().isoformat())
-    _check_special_session_coverage(korean_day.date().isoformat())
     calendar = _calendar(korean_day.year)
     schedule = calendar.schedule.copy()
     for day, notice in SPECIAL_CLOSES.items():
