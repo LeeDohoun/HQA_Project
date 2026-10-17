@@ -13,6 +13,7 @@ import pytest
 from backtesting import experiment_registry, holdout
 from backtesting.experiments import ch001, ch003, common, hf001
 from src.ingestion.storage import write_rows
+from ch_test_fixtures import hermetic_ch_roots
 from test_experiments_ch001 import offline_repo, prepared_fixture, selection
 from test_experiments_ch002 import runner_repo, protect_fixture, trap_price_opens
 

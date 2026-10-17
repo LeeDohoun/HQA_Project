@@ -15,6 +15,7 @@ import pytest
 from backtesting import experiment_registry, holdout
 from backtesting.experiments import ch001, ch002, ch003, common, hf001, ordering
 from src.ingestion.storage import write_rows
+from ch_test_fixtures import hermetic_ch_roots
 from dart_listing_fixtures import checkpoint
 from test_experiments_ch001 import offline_repo, prepared_fixture, market, selection, judgement_fixture
 

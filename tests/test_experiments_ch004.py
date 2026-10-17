@@ -16,6 +16,7 @@ import pytest
 from backtesting import experiment_registry, holdout
 from backtesting.experiments import ch001, ch004, ev001, hc003, ordering
 from src.ingestion.storage import write_rows
+from ch_test_fixtures import hermetic_ch_roots
 from dart_listing_fixtures import checkpoint
 from preregistration_fixtures import committed_preregistrations
 from test_experiments_ev001 import calendar, event, financial_fixture, prepared_for
@@ -32,7 +33,15 @@ def repo(tmp_path):
 
 
 @pytest.fixture
-def complete_inputs(repo):
+def synthetic_ev001_source(monkeypatch):
+    # Exercise synthetic CH004 logic with the live source and honest provenance.
+    # Tests of the reviewed-source policy deliberately do not use this fixture.
+    monkeypatch.setattr(ch004, "EV001_CODE_SHA256_ALLOWLIST",
+                        ch004.EV001_CODE_SHA256_ALLOWLIST | {hc003._digest(ev001.__file__)})
+
+
+@pytest.fixture
+def complete_inputs(repo, synthetic_ev001_source):
     data = repo / "data"
     _, listings = financial_fixture(data)
     for row in listings:
@@ -100,16 +109,26 @@ def trap_opens(monkeypatch, data):
     return opened
 
 
-def test_registration_pins_all_three_documents_and_EV001_source():
-    registered = ch004._registration(ch004.PROJECT_ROOT)
+def test_registration_pins_all_three_documents(repo, synthetic_ev001_source):
+    registered = ch004._registration(repo)
     assert registered.commit_hash.startswith("08079e2")
     assert registered.fields["variants_planned"] == 2
     assert not registered.fields["uses_holdout"] and not registered.fields["uses_llm"]
+
+
+def test_real_allowlist_keeps_two_reviewed_hashes_and_refuses_current_EV001(repo, monkeypatch):
     assert ch004.EV001_CODE_SHA256_ALLOWLIST == {
         "1063af57c51f07af9f28f96b523aede7ae10d44ed9317d3f03705f708be605e6",
         "e101b5ac04c8c56d588f7d3fbea8ad8a4a879b416520f81337e7c83ae50884db",
     }
-    assert hc003._digest(ev001.__file__) in ch004.EV001_CODE_SHA256_ALLOWLIST
+    assert hc003._digest(ev001.__file__) not in ch004.EV001_CODE_SHA256_ALLOWLIST
+    monkeypatch.setattr(ch004, "prepare_inputs", lambda **k: pytest.fail("data accessed"))
+    with pytest.raises(ValueError, match="EV001 source"):
+        ch004._registration(repo)
+    for runner in (ch004.run_experiment, ch004.dry_run):
+        with pytest.raises(ValueError, match="EV001 source"):
+            runner(repo_root=repo)
+    assert not (repo / experiment_registry.REGISTRY_PATH).exists()
 
 
 @pytest.mark.parametrize("digest", [
@@ -131,16 +150,15 @@ def test_EV001_source_allowlist_rejects_every_other_hash(repo, monkeypatch, dige
 
 
 @pytest.mark.parametrize("name", [".env", ".env-ai"])
-def test_env_preflight_checks_existence_without_opening(tmp_path, monkeypatch, name):
-    (tmp_path / name).touch()
-    monkeypatch.setattr(ch004, "PROJECT_ROOT", tmp_path)
+def test_env_preflight_checks_existence_without_opening(tmp_path, monkeypatch, name, hermetic_ch_roots):
+    (hermetic_ch_roots / name).touch()
     monkeypatch.setattr(Path, "open", lambda *a, **k: pytest.fail("preflight opened a file"))
     with pytest.raises(ValueError, match="no environment file was read"):
         ch004._registration(tmp_path)
 
 
 @pytest.mark.parametrize("name", list(ch004.REFERENCE_HASHES))
-def test_changed_preregistration_stops_before_data(repo, monkeypatch, name):
+def test_changed_preregistration_stops_before_data(repo, monkeypatch, name, synthetic_ev001_source):
     path = repo / "research/experiments" / name / "preregistration.md"
     path.write_text(path.read_text() + "\nchanged")
     monkeypatch.setattr(ch004, "prepare_inputs", lambda **k: pytest.fail("data accessed"))
@@ -416,7 +434,7 @@ def judgement_results():
 
 
 @pytest.mark.parametrize("trials,verdict", [(20, "pass"), (21, "fail")])
-def test_holm_two_and_strict_cumulative_trial_threshold(repo, trials, verdict):
+def test_holm_two_and_strict_cumulative_trial_threshold(repo, trials, verdict, synthetic_ev001_source):
     results = judgement_results()
     results["e_runup"]["primary"]["p_one_sided"] = .04
     actual = ch004.judge_variants(results, ch004._registration(repo).fields, trials)
@@ -427,7 +445,7 @@ def test_holm_two_and_strict_cumulative_trial_threshold(repo, trials, verdict):
 
 
 @pytest.mark.parametrize("missing", ["events", "months", "removal_months", "se", "t", "p", "mean", "cost", "control"])
-def test_insufficient_supplies_p_one_but_keeps_Holm_two(repo, missing):
+def test_insufficient_supplies_p_one_but_keeps_Holm_two(repo, missing, synthetic_ev001_source):
     results = judgement_results()
     r = results["e_anchor"]
     if missing == "events": r["event_count"] = 299
@@ -450,7 +468,7 @@ def test_combination_matches_EV001_precedence(s, o, available, expected):
     assert ch004.av001.combine_verdict(s, o, sensitivity_available=available) == expected
 
 
-def test_delisting_loss_reprices_x_and_reruns_controls_Holm_to_change_verdict(repo, monkeypatch):
+def test_delisting_loss_reprices_x_and_reruns_controls_Holm_to_change_verdict(repo, monkeypatch, synthetic_ev001_source):
     # Removing a consistent loser passes; loss of a retained benchmark-relative
     # event changes the random controls while the actual d remains fixed.
     rows = []
@@ -473,7 +491,7 @@ def test_delisting_loss_reprices_x_and_reruns_controls_Holm_to_change_verdict(re
 
 
 @pytest.mark.parametrize("complete,available,status", [(False, True, "data_incomplete"), (True, False, "sensitivity_unavailable")])
-def test_incomplete_and_original_sensitivity_statuses(repo, complete, available, status):
+def test_incomplete_and_original_sensitivity_statuses(repo, complete, available, status, synthetic_ev001_source):
     book, _ = book_for(repo, days=calendar("2025-01-01", "2025-12-30"), codes=["000010", "000020"])
     prepared = prepared_metadata(prepared_for(book, [event()]), complete=complete, available=available)
     result = ch004.evaluate(prepared, ch004._registration(repo).fields, 2)
@@ -645,7 +663,7 @@ def test_file_backed_complete_pipeline_and_dry_run_under_protected_open_trap(com
     assert not list(kwargs["repo_root"].rglob("results/*"))
 
 
-def test_all_EV001_replays_finish_before_first_chart_and_mismatch_stops(repo, monkeypatch):
+def test_all_EV001_replays_finish_before_first_chart_and_mismatch_stops(repo, monkeypatch, synthetic_ev001_source):
     book, _ = book_for(repo, days=calendar("2025-01-01", "2025-12-30"), codes=["000010", "000020"])
     prepared = prepared_metadata(prepared_for(book, [event()]))
     baseline, chart = ch004.ev001_baseline, ch004.attach_filters

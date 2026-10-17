@@ -14,6 +14,7 @@ from backtesting import experiment_registry, holdout
 from backtesting.experiments import av001, ch001, common, d001, hc002, hf001
 from src.ingestion import dart_listing
 from src.ingestion.storage import write_rows
+from ch_test_fixtures import hermetic_ch_roots
 from dart_listing_fixtures import checkpoint
 from preregistration_fixtures import committed_preregistrations
 from test_dart_financial_date_rules import filing, save, version
@@ -74,9 +75,8 @@ def test_registration_is_committed_fixed_plan_and_no_holdout():
 
 
 @pytest.mark.parametrize("name", [".env", ".env-ai"])
-def test_environment_preflight_stops_before_any_credential_file_read(tmp_path, monkeypatch, name):
-    (tmp_path / name).touch()
-    monkeypatch.setattr(ch001, "PROJECT_ROOT", tmp_path)
+def test_environment_preflight_stops_before_any_credential_file_read(tmp_path, monkeypatch, name, hermetic_ch_roots):
+    (hermetic_ch_roots / name).touch()
     monkeypatch.setattr(Path, "open", lambda *a, **k: pytest.fail("preflight opened a file"))
     with pytest.raises(ValueError, match="no environment file was read"):
         ch001._registration(tmp_path)
