@@ -1,0 +1,16 @@
+{
+  "note": "FW001 5절 비교 기준값. 한 번 기록 후 바꾸지 않음.",
+  "av_all": {
+    "source": "AV001 first complete design run",
+    "result_file": "research/experiments/AV001_avoidance_portfolio/results/20261017T105510174847Z.json.gz",
+    "sha256": "4c79e4c27c38a9cd7ef9c24e3898af721a0e3009a3ff6e0716edbbca856f9380",
+    "field": "rules.S.av_all.design.primary.mean",
+    "value": 0.0031823698965281247,
+    "sealed_at": "2026-10-17"
+  },
+  "f_both": {
+    "source": "first supplemented HF001 additional trial",
+    "status": "pending (run not yet done)",
+    "field": "variants.f_both.design.primary.mean"
+  }
+}
