@@ -685,6 +685,8 @@ def test_publication_validates_all_rows_before_any_write(repo):
 
 @pytest.mark.parametrize("failure", ["prepare", "evaluate", "interrupt"])
 def test_design_abort_records_each_variant_hashes_run_location_and_blocks_release(repo, monkeypatch, failure):
+    # This fixture isolates post-preflight execution and durable-claim behavior.
+    monkeypatch.setattr(ev001.trading_calendar, "preflight_price_sessions", lambda *a, **k: {})
     ev001.publish(design_payload(repo, passed=()), repo_root=repo)
     hashes = {"prices": {str(i): "a" * 64 for i in range(2000)}, "financials": {"q": "b" * 64}}
     monkeypatch.setattr(ev001, "source_hashes", lambda *a, **k: hashes)
@@ -716,6 +718,7 @@ def test_design_abort_records_each_variant_hashes_run_location_and_blocks_releas
 
 @pytest.mark.parametrize("preflight", ["_registration", "source_hashes"])
 def test_design_preflight_failure_does_not_record_evaluation(repo, monkeypatch, preflight):
+    monkeypatch.setattr(ev001.trading_calendar, "preflight_price_sessions", lambda *a, **k: {})
     def fail(*a, **k):
         raise ValueError("fixture preflight failed")
     monkeypatch.setattr(ev001, preflight, fail)
@@ -777,6 +780,8 @@ def test_new_design_trial_with_current_code_becomes_latest_reproduction_baseline
 
 
 def holdout_mocks(repo, monkeypatch, *, passed=("ev_new20",)):
+    # This fixture isolates post-preflight execution and durable-claim behavior.
+    monkeypatch.setattr(ev001.trading_calendar, "preflight_price_sessions", lambda *a, **k: {})
     payload = design_payload(repo, passed=passed)
     ev001.publish(payload, repo_root=repo)
     monkeypatch.setattr(ev001, "verify_non_holdout", lambda *a, **k: None)
@@ -838,6 +843,8 @@ def test_frozen_input_change_or_exception_consumes_single_session_aborts_and_rel
 
 @pytest.mark.parametrize("failure", ["reproduction", "freeze", "enter_before_claim", "enter_after_claim"])
 def test_holdout_failure_uses_durable_claim_for_terminal_rows_and_retry(repo, monkeypatch, failure):
+    # This fixture isolates post-preflight execution and durable-claim behavior.
+    monkeypatch.setattr(ev001.trading_calendar, "preflight_price_sessions", lambda *a, **k: {})
     holdout_mocks(repo, monkeypatch)
     design_rows = hc003.registry_rows(repo)
     monkeypatch.setattr(ev001, "holdout_input_hashes", lambda *a, **k: {"frozen": "a"})
@@ -1104,3 +1111,49 @@ def test_dry_run_prints_counts_listing_L_and_estimates_without_local_outcomes_or
     assert not (repo / experiment_registry.REGISTRY_PATH).exists()
     assert not (repo / holdout.LEDGER_PATH).exists()
     assert not list(repo.rglob("results/*"))
+
+
+def test_rehearsal_uses_actual_preparation_and_holdout_evaluation_without_claim_or_publication(repo, monkeypatch):
+    _, listings = financial_fixture(repo)
+    for row in listings:
+        write_rows(repo / "disclosures/dart_full/list" / row["rcept_dt"][:4] / (row["rcept_dt"] + ".jsonl"), [row])
+    checkpoint(repo)
+    sessions = calendar("2023-01-01", "2025-06-30")
+    prices = prices_for(sessions)
+    monkeypatch.setattr(ev001.av001, "rehearsal_window", lambda *a: (pd.Timestamp("2025-01-01"), pd.Timestamp("2025-06-30"), sessions))
+    monkeypatch.setattr(ev001.trading_calendar, "preflight_price_sessions", lambda *a, **k: {})
+    monkeypatch.setattr(holdout, "_claim", lambda *a, **k: pytest.fail("rehearsal claimed ledger"))
+    monkeypatch.setattr(experiment_registry, "record_trial", lambda *a, **k: pytest.fail("rehearsal wrote trial"))
+    monkeypatch.setattr(ev001, "publish", lambda *a, **k: pytest.fail("rehearsal published results"))
+    reads, evaluated = [], []
+    def load(data_dir, start, end, **kwargs):
+        reads.append((start, end))
+        assert pd.Timestamp(end) <= pd.Timestamp("2025-06-30")
+        return prices.loc[prices.index.get_level_values("trade_date").to_series(index=prices.index).between(start, end)], []
+    monkeypatch.setattr(hc003, "load_prices", load)
+    evaluate = ev001.evaluate
+    def checked(prepared, fields, **kwargs):
+        evaluated.append((prepared, kwargs))
+        return evaluate(prepared, fields, **kwargs)
+    monkeypatch.setattr(ev001, "evaluate", checked)
+    result = ev001.rehearse_holdout(data_dir=repo, repo_root=repo)
+    assert reads and len(evaluated) == 2
+    assert evaluated[0][0]["book"].end == pd.Timestamp("2024-12-30")
+    assert evaluated[1][0]["book"].end == pd.Timestamp("2025-06-30")
+    assert evaluated[1][1]["design_effects"] == result["design_effects"]
+    assert result["rules"]["S"]["ev_new20"]["event_count"] == 1
+    assert result["stage"] == "holdout_rehearsal"
+    assert all(pd.Timestamp(e["entry_date"]) >= pd.Timestamp("2025-01-01")
+               for e in result["rules"]["S"]["ev_new20"]["events"])
+    assert not (repo / holdout.LEDGER_PATH).exists() and not (repo / experiment_registry.REGISTRY_PATH).exists()
+    assert not list(repo.rglob("results/*"))
+
+
+def test_rehearsal_financial_cutoff_narrows_registered_stage_and_rejects_extension(repo):
+    _, listings = financial_fixture(repo)
+    dates = FilingDates(listings)
+    versions = FinancialVersions(repo, dates, "S", "design_validation", cutoff="2025-01-01")
+    assert versions.cutoff == "2025-01-01"
+    assert all(row["available_date"] < "2025-01-01" for row in versions.rows)
+    with pytest.raises(ValueError, match="cutoff exceeds"):
+        FinancialVersions(repo, dates, "S", "design_validation", cutoff="2027-01-01")

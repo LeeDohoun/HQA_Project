@@ -9,8 +9,9 @@ from datetime import datetime, timezone
 from contextlib import nullcontext
 from pathlib import Path
 
-import exchange_calendars as calendars
 import pandas as pd
+
+from src.runner import trading_calendar
 
 from backtesting import experiment_registry, holdout
 from backtesting.experiment_registry import PROJECT_ROOT
@@ -23,7 +24,7 @@ from .runner import LlmRunner, StageStopped, check_committed, prompt_hashes, rea
 
 
 def session_calendar():
-    return calendars.get_calendar("XKRX", start="2015-01-01", end="2026-11-30").sessions
+    return trading_calendar.session_calendar("2015-01-01", "2026-11-30")
 
 
 def _probe(config):

@@ -285,7 +285,7 @@ def test_v2_requires_market_and_full_session_date_and_known_tax_year():
     with pytest.raises(ValueError, match="full trade dates"):
         round_trip_cost_vectorized([12000], "KOSDAQ", [2024], 1e9, model_version="v2")
     for call in (round_trip_cost, round_trip_cost_vectorized):
-        with pytest.raises(ValueError, match="unknown tax year"):
+        with pytest.raises(ValueError, match="calendar_unverified"):
             call(12000, "KOSDAQ", "20261229", 1e9, model_version="v2")
 
 

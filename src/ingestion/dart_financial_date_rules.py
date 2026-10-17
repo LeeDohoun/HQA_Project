@@ -102,7 +102,7 @@ class FinancialVersions:
     This uses the existing quarterly derivation/ranking, including CFS priority
     and OFS fallback. Decisions filter the same stored versions under S or O.
     """
-    def __init__(self, data_dir, dates, rule, stage, *, derive=True, sample_end=None):
+    def __init__(self, data_dir, dates, rule, stage, *, derive=True, sample_end=None, cutoff=None):
         from . import dart_quarterly as quarterly
 
         if rule not in ("S", "O") or stage not in STAGE_CUTOFFS:
@@ -112,7 +112,11 @@ class FinancialVersions:
         self.counts = Counter()
         self.by_year = defaultdict(Counter)
         self.sample_counts = Counter()
-        cutoff = STAGE_CUTOFFS[stage]
+        registered_cutoff = STAGE_CUTOFFS[stage]
+        cutoff = registered_cutoff if cutoff is None else pd.Timestamp(cutoff).date().isoformat()
+        if cutoff > registered_cutoff:
+            raise ValueError("financial cutoff exceeds the registered stage")
+        self.cutoff = cutoff
         self.sample_end = cutoff if sample_end is None else pd.Timestamp(sample_end).date().isoformat()
         if self.sample_end > cutoff:
             raise ValueError("correction sample end exceeds the registered stage")
@@ -178,7 +182,7 @@ class FinancialVersions:
         if stamp.tzinfo is not None:
             stamp = stamp.tz_convert(quarterly.KST)
         day = stamp.date().isoformat()
-        if day >= STAGE_CUTOFFS[self.stage]:
+        if day >= self.cutoff:
             raise ValueError("financial decision lies outside the registered stage")
         latest = {}
         for row in self.rows:

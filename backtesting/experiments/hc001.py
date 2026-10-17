@@ -11,9 +11,10 @@ import resource
 import time
 from pathlib import Path
 
-import exchange_calendars as calendars
 import numpy as np
 import pandas as pd
+
+from src.runner import trading_calendar
 
 from backtesting import capacity, cost_model, experiment_registry, signal_eval
 from backtesting.experiment_registry import PROJECT_ROOT
@@ -77,7 +78,7 @@ def _registration(repo_root):
 def _session_calendar():
     # Calendar metadata after 2025 is used only to identify forbidden horizons;
     # no price file dated 2026 or later is opened.
-    return calendars.get_calendar("XKRX", start="2015-01-01", end="2026-03-31").sessions
+    return trading_calendar.session_calendar("2015-01-01", "2026-03-31")
 
 
 def rebalance_calendar(sessions):
@@ -451,7 +452,7 @@ def run_experiment(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT, pr
                "coverage": {"financials": financial_coverage, "first_session": days.min().date().isoformat(),
                             "last_session": days.max().date().isoformat(), "sessions": len(days),
                             "stocks": int(prices.index.get_level_values("stock_code").nunique()), "planned_rebalances": 40,
-                            "calendar_version": f"exchange-calendars:{calendars.__version__}:XKRX"},
+                            "calendar_version": trading_calendar.CALENDAR_VERSION},
                "performance": {"runtime_seconds": time.perf_counter() - started,
                                "peak_memory_mib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024},
                "assumptions": [

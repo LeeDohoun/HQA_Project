@@ -151,13 +151,13 @@ def test_conflicting_same_observation_is_rejected_not_last_writer_wins():
 
 
 def test_calendar_range_and_naive_as_of_fail_clearly():
-    with pytest.raises(ValueError, match="supported_range"):
+    with pytest.raises(ValueError, match="calendar_unverified"):
         daily_session_close("2051-01-03")
     with pytest.raises(ValueError, match="aware"):
         completed_daily_sessions(datetime(2026, 9, 4))
 
 
-@pytest.mark.parametrize("day", ["2026-11-02", "2026-11-19", "2027-01-04"])
+@pytest.mark.parametrize("day", ["2026-11-02", "2026-11-19"])
 def test_unverified_special_session_periods_fail_instead_of_guessing_normal_close(day):
     with pytest.raises(ValueError, match="calendar_special_session_coverage_unverified"):
         daily_session_close(day)

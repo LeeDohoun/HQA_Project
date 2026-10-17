@@ -18,6 +18,7 @@ from backtesting.experiment_registry import PROJECT_ROOT
 from backtesting.experiments import av001, common, hc001, hc002, hc003, hf001, ordering
 from src.ingestion import dart_financial_date_rules as financial_dates
 from src.ingestion import dart_listing, dart_quarterly
+from src.runner import trading_calendar
 from src.ingestion.storage import read_rows
 
 
@@ -87,10 +88,10 @@ def _preferred(rows):
     return {key: value[1] for key, value in selected.items()}
 
 
-def filing_events(versions, dates, sessions):
+def filing_events(versions, dates, sessions, *, bounds=None):
     """Build event-time phases with the newly published q and strictly older inputs."""
-    first, end = BOUNDS[versions.stage]
-    cutoff = financial_dates.STAGE_CUTOFFS[versions.stage]
+    first, end = BOUNDS[versions.stage] if bounds is None else bounds
+    cutoff = versions.cutoff
     companies, audit = defaultdict(list), Counts()
     for path in versions.paths:
         for raw in read_rows(path):
@@ -325,16 +326,16 @@ class EventPrices:
         return table
 
 
-def prepare(*, data_dir, repo_root, sessions, stage, prices=None, dry=False):
-    first, end = BOUNDS[stage]
+def prepare(*, data_dir, repo_root, sessions, stage, prices=None, dry=False, bounds=None):
+    first, end = BOUNDS[stage] if bounds is None else bounds
     status = dart_listing.listing_status(data_dir, price_end=end)
     if not dry and not status["supplement_complete"]:
         raise ValueError("DART listing supplement incomplete: " + str(status["reason"]))
     dates = financial_dates.FilingDates.from_data(data_dir)
     versions, events, event_counts = {}, {}, {}
     for rule in RULES:
-        versions[rule] = financial_dates.FinancialVersions(data_dir, dates, rule, stage, sample_end=end)
-        events[rule], event_counts[rule] = filing_events(versions[rule], dates, sessions)
+        versions[rule] = financial_dates.FinancialVersions(data_dir, dates, rule, stage, sample_end=end, cutoff=None if bounds is None else end + pd.Timedelta(days=1))
+        events[rule], event_counts[rule] = filing_events(versions[rule], dates, sessions, bounds=(first, end))
     decisions = {decision_date(e["entry_date"], sessions) for r in RULES for e in events[r]}
     universes, universe_counts = {r: {} for r in RULES}, {r: [] for r in RULES}
     book = EventPrices(sessions, end, repo_root)
@@ -799,6 +800,10 @@ def compute_design(*, data_dir, repo_root, sessions=None, prices=None, trials=No
     started = time.perf_counter()
     registration = _registration(repo_root)
     sessions = signal_eval._dates(hc003.session_calendar() if sessions is None else sessions).sort_values().unique()
+    trading_calendar.preflight_price_sessions(data_dir,
+        sessions[0] if prices is None else common._sessions(prices).min(),
+        hc003.DESIGN_END if prices is None else common._sessions(prices).max(),
+        price_days=None if prices is None else common._sessions(prices))
     hashes = source_hashes(data_dir, stage="design_validation", repo_root=repo_root, prices=prices)
     if _attempt is not None:
         _attempt["source_hashes"] = hashes
@@ -954,6 +959,7 @@ def run_holdout(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT):
         if not audit.sensitivity_available:
             raise ValueError("sensitivity_unavailable: holdout has corrections but zero original links; section 7 has no "
                              "terminal release for this state. Session remains unopened; LH002 remains blocked.")
+        trading_calendar.preflight_price_sessions(data_dir, sessions[0], hc003.HOLDOUT_END)
         hashes = holdout_input_hashes(data_dir, repo_root, before_open=True)
         started = time.perf_counter()
         try:
@@ -988,6 +994,26 @@ def run_holdout(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT):
             payload["abort"] = ordering.abort_details(hashes, exc)
             publish(payload, repo_root=repo_root, design_result_file=run["result_file"])
             raise
+
+
+def rehearse_holdout(start="2025-01-01", end="2025-06-30", *,
+                     data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT):
+    """Shared holdout preparation/evaluation on historical data, without publication."""
+    start, end, sessions = av001.rehearsal_window(start, end)
+    registration = _registration(repo_root)
+    preflight = trading_calendar.preflight_price_sessions(data_dir, sessions[0], end)
+    prior_close = sessions[sessions < start][-1]
+    training = prepare(data_dir=data_dir, repo_root=repo_root, sessions=sessions,
+                       stage="design_validation", bounds=(BOUNDS["design_validation"][0], prior_close))
+    design = evaluate(training, registration.fields, trials=3)
+    effects = {r: {v: design["rules"][r][v]["primary"]["mean"] for v in VARIANTS} for r in RULES}
+    del training, design
+    prepared = prepare(data_dir=data_dir, repo_root=repo_root, sessions=sessions,
+                       stage="design_validation", bounds=(start, end))
+    result = evaluate(prepared, registration.fields, passed=VARIANTS, design_effects=effects)
+    result.update(experiment_id=EXPERIMENT_ID, stage="holdout_rehearsal", start=start.date().isoformat(),
+                  end=end.date().isoformat(), preflight=preflight, design_effects=effects)
+    return result
 
 
 def fixture_timing(*, stocks=64, entries=12):
@@ -1057,9 +1083,16 @@ def main(argv=None):
     mode.add_argument("--dry-run", action="store_true", help="default: plan, event counts and synthetic timing only")
     mode.add_argument("--execute", action="store_true", help="evaluate design/validation and append three compact rows")
     mode.add_argument("--holdout", action="store_true", help="reproduce design then open one protected EV001 session")
+    mode.add_argument("--rehearse-holdout", nargs="*", metavar="DATE",
+                      help="read-only holdout rehearsal; default 2025-01-01 2025-06-30")
     parser.add_argument("--data-dir", type=Path, default=PROJECT_ROOT / "data")
     args = parser.parse_args(argv)
-    if args.execute or args.holdout:
+    if args.rehearse_holdout is not None:
+        if len(args.rehearse_holdout) not in (0, 2):
+            parser.error("--rehearse-holdout takes START END or no dates")
+        result = rehearse_holdout(*args.rehearse_holdout, data_dir=args.data_dir)
+        print(json.dumps(result, ensure_ascii=False, allow_nan=False))
+    elif args.execute or args.holdout:
         result = (run_holdout if args.holdout else run_experiment)(data_dir=args.data_dir)
         print(f"{EXPERIMENT_ID} {result['stage']}: {result['verdict']}")
     else:

@@ -605,7 +605,7 @@ def run_experiment(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT, pr
                "coverage": {"financials": financials, "planned_months": len(hc002.MONTHS), "listings_by_month": listing_months,
                             "first_session": days.min().date().isoformat(), "last_session": days.max().date().isoformat(),
                             "sessions": len(days), "stocks": int(prices.index.get_level_values("stock_code").nunique()),
-                            "calendar_version": f"exchange-calendars:{hc001.calendars.__version__}:XKRX"},
+                            "calendar_version": hc001.trading_calendar.CALENDAR_VERSION},
                "performance": {"runtime_seconds": time.perf_counter() - started,
                                "peak_memory_mib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024}}
     # Judgement inputs must be finite; other non-finite report values are stored as

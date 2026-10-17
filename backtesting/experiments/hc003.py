@@ -15,6 +15,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from src.runner import trading_calendar
+
 from backtesting import capacity, cost_model, experiment_registry, holdout, signal_eval
 from backtesting.experiment_registry import PROJECT_ROOT
 from backtesting.experiments import common, hc001, hc002, hf001
@@ -531,13 +533,13 @@ def random_target(universe, previous, size, retained, rng):
 
 
 def session_calendar():
-    return hc001.calendars.get_calendar("XKRX", start="2015-01-01", end="2026-07-31").sessions
+    return trading_calendar.session_calendar("2015-01-01", "2026-07-31")
 
 
-def rebalance_calendar(sessions, *, holdout_mode=False):
+def rebalance_calendar(sessions, *, holdout_mode=False, months=None, end=None):
     days = signal_eval._dates(sessions).sort_values().unique()
-    months = pd.period_range("2025-12", "2026-05", freq="M") if holdout_mode else hc002.MONTHS
-    end = HOLDOUT_END if holdout_mode else DESIGN_END
+    months = (pd.period_range("2025-12", "2026-05", freq="M") if holdout_mode else hc002.MONTHS) if months is None else months
+    end = (HOLDOUT_END if holdout_mode else DESIGN_END) if end is None else pd.Timestamp(end)
     planned, excluded = [], []
     for month in months:
         monthly = days[days.to_period("M") == month]
