@@ -2,18 +2,18 @@
 from __future__ import annotations
 
 import csv
-import fcntl
+import io
 import json
-import os
 import subprocess
 import sys
-from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator, TextIO
+from typing import Any, TextIO
 
 import yaml
+
+from backtesting.append_only import TornTailError, file_lock, locked_append as _locked_append, text_buffer
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -31,6 +31,8 @@ class Preregistration:
     commit_hash: str
     commit_time: datetime
     fields: dict[str, Any]
+    blob_hash: str
+    path: str
 
 
 def _validate_experiment_id(experiment_id: str) -> None:
@@ -101,34 +103,15 @@ def verify_preregistration(experiment_id: str, repo_root: str | Path = PROJECT_R
     if type(fields["variants_planned"]) is not int or fields["variants_planned"] < 1:
         raise ValueError("variants_planned must be a positive integer")
     commit_hash, commit_time = commits[0].split("|", 1)
-    return Preregistration(commit_hash, datetime.fromisoformat(commit_time), fields)
+    blob_hash = _git(root, "rev-parse", f"{commit_hash}:{relative.as_posix()}")
+    return Preregistration(commit_hash, datetime.fromisoformat(commit_time), fields, blob_hash, relative.as_posix())
 
 
 def _resolve_path(repo_root: str | Path, path: str | Path) -> Path:
     return (Path(repo_root) / path).resolve()
 
 
-@contextmanager
-def _locked_append(path: Path) -> Iterator[TextIO]:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a+", encoding="utf-8", newline="") as handle:
-        fcntl.flock(handle, fcntl.LOCK_EX)
-        try:
-            handle.seek(0, os.SEEK_END)
-            size = handle.tell()
-            if size:
-                handle.seek(size - 1)
-                if handle.read(1) != "\n":
-                    raise ValueError(f"append-only file must end with a newline: {path}")
-            handle.seek(0)
-            yield handle
-            handle.flush()
-            os.fsync(handle.fileno())
-        finally:
-            fcntl.flock(handle, fcntl.LOCK_UN)
-
-
-def _csv_reader(handle: TextIO) -> csv.DictReader:
+def _csv_reader(handle: TextIO, *, strict: bool = False) -> csv.DictReader:
     # Preserve historical large fields; platforms may use a smaller C long.
     limit = sys.maxsize
     while True:
@@ -137,16 +120,58 @@ def _csv_reader(handle: TextIO) -> csv.DictReader:
             break
         except OverflowError:
             limit //= 10
-    return csv.DictReader(handle)
+    return csv.DictReader(handle, strict=strict)
 
 
 def _registry_rows(handle: TextIO) -> list[dict[str, str]]:
-    reader = _csv_reader(handle)
-    if reader.fieldnames != list(REGISTRY_COLUMNS):
-        raise ValueError("registry.csv has an invalid header")
-    rows = list(reader)
-    if any(None in row or any(value is None for value in row.values()) for row in rows):
-        raise ValueError("registry.csv has an invalid row")
+    text = handle.read()
+    if not text:
+        return []
+    source = io.StringIO(text, newline="")
+    path = Path(getattr(handle, "name", "registry.csv"))
+    header = _csv_reader(source, strict=True)
+    reader = header.reader
+    try:
+        fieldnames = header.fieldnames
+    except csv.Error as exc:
+        if source.tell() == len(text):
+            raise TornTailError(path, "registry", text, 0, 1, "invalid registry.csv header") from exc
+        raise ValueError(f"invalid registry.csv header on line 1: {exc}") from exc
+    if fieldnames != list(REGISTRY_COLUMNS):
+        if text and source.tell() == len(text) and not text.endswith("\n"):
+            raise TornTailError(path, "registry", text, 0, 1, "invalid registry.csv header")
+        raise ValueError("registry.csv has an invalid header on line 1")
+    if source.tell() == len(text) and not text.endswith("\n"):
+        raise TornTailError(path, "registry", text, 0, 1, "append-only file must end with a newline")
+    rows = []
+    while True:
+        start, line = source.tell(), reader.line_num + 1
+        try:
+            row = next(reader)
+        except StopIteration:
+            if not text.endswith("\n"):
+                raise TornTailError(path, "registry", text, start, line, "append-only file must end with a newline")
+            break
+        except csv.Error as exc:
+            if source.tell() == len(text):
+                raise TornTailError(path, "registry", text, start, line, "invalid registry.csv row") from exc
+            raise ValueError(f"invalid registry.csv row on line {line}: {exc}") from exc
+        final = source.tell() == len(text)
+        if final and not text.endswith("\n"):
+            raise TornTailError(path, "registry", text, start, line, "append-only file must end with a newline")
+        try:
+            text[start:source.tell()].encode("utf-8")
+        except UnicodeEncodeError as exc:
+            if final:
+                raise TornTailError(path, "registry", text, start, line, "invalid registry.csv UTF-8") from exc
+            raise ValueError(f"invalid registry.csv UTF-8 on line {line}") from exc
+        if not row:  # Match DictReader's handling of historical blank lines.
+            continue
+        if len(row) != len(REGISTRY_COLUMNS):
+            if final:
+                raise TornTailError(path, "registry", text, start, line, "registry.csv has an invalid row")
+            raise ValueError(f"registry.csv has an invalid row on line {line}")
+        rows.append(dict(zip(REGISTRY_COLUMNS, row)))
     return rows
 
 
@@ -209,6 +234,46 @@ def record_trial(
     registry_path: str | Path = REGISTRY_PATH,
 ) -> None:
     preregistration = verify_preregistration(experiment_id, repo_root)
+    _record_trial(experiment_id, preregistration.commit_hash, variant, metrics, verdict,
+                  note=note, repo_root=repo_root, registry_path=registry_path)
+
+
+def record_aborted_trial(
+    experiment_id: str,
+    variant: str,
+    metrics: dict[str, Any],
+    verdict: str,
+    *,
+    preregistration: Preregistration,
+    note: str = "",
+    repo_root: str | Path = PROJECT_ROOT,
+    registry_path: str | Path = REGISTRY_PATH,
+) -> None:
+    """Account for an interrupted run using its verified starting plan, even if dirty."""
+    _validate_experiment_id(experiment_id)
+    if verdict not in {"design_aborted", "holdout_aborted", "insufficient", "insufficient_clean_window", "probe_insensitive"}:
+        raise ValueError("abort recording requires an interruption verdict")
+    verify_captured_preregistration(experiment_id, preregistration, repo_root)
+    _record_trial(experiment_id, preregistration.commit_hash, variant, metrics, verdict,
+                  note=note, repo_root=repo_root, registry_path=registry_path)
+
+
+def verify_captured_preregistration(experiment_id: str, preregistration: Preregistration,
+                                    repo_root: str | Path = PROJECT_ROOT) -> None:
+    """Validate a run's captured plan against Git objects, independent of the working tree."""
+    _validate_experiment_id(experiment_id)
+    relative = f"research/experiments/{experiment_id}/preregistration.md"
+    if (preregistration.path != relative or preregistration.fields["experiment_id"] != experiment_id
+            or not _is_sha(preregistration.commit_hash) or not _is_sha(preregistration.blob_hash)):
+        raise ValueError("captured preregistration must identify this experiment's committed path and blob")
+    root = Path(repo_root).resolve()
+    if (_git(root, "cat-file", "-t", preregistration.commit_hash) != "commit"
+            or _git(root, "rev-parse", f"{preregistration.commit_hash}:{relative}") != preregistration.blob_hash
+            or _git(root, "cat-file", "-t", preregistration.blob_hash) != "blob"):
+        raise ValueError("captured preregistration commit/blob does not match git history for its path")
+
+
+def _record_trial(experiment_id, prereg_commit, variant, metrics, verdict, *, note, repo_root, registry_path):
     if not isinstance(variant, str) or not variant.strip() or not isinstance(verdict, str) or not verdict.strip():
         raise ValueError("variant and verdict must be nonempty strings")
     if not isinstance(metrics, dict) or not isinstance(note, str):
@@ -216,18 +281,18 @@ def record_trial(
     metrics_json = encode_metrics(metrics)
     path = _resolve_path(repo_root, registry_path)
     with _locked_append(path) as handle:
-        empty = path.stat().st_size == 0
+        empty = not handle.getvalue()
         if not empty:
             rows = _registry_rows(handle)
-            accepted = {preregistration.commit_hash} | _commit_aliases(
-                Path(repo_root).resolve(), experiment_id, preregistration.commit_hash)
+            accepted = {prereg_commit} | _commit_aliases(
+                Path(repo_root).resolve(), experiment_id, prereg_commit)
             if any(row["experiment_id"] == experiment_id
                    and row["prereg_commit"] not in accepted for row in rows):
                 raise ValueError("registry prereg_commit differs for this experiment_id; a changed plan requires a new experiment_id")
         writer = csv.writer(handle)
         if empty:
             writer.writerow(REGISTRY_COLUMNS)
-        writer.writerow((datetime.now(timezone.utc).isoformat(), experiment_id, preregistration.commit_hash,
+        writer.writerow((datetime.now(timezone.utc).isoformat(), experiment_id, prereg_commit,
                          variant, verdict, metrics_json, note))
 
 
@@ -241,12 +306,9 @@ def trial_count(
     path = _resolve_path(repo_root, registry_path)
     if not path.exists():
         return 0
-    with path.open(encoding="utf-8", newline="") as handle:
-        fcntl.flock(handle, fcntl.LOCK_SH)
-        try:
+    with file_lock(path, shared=True):
+        with text_buffer(path.read_bytes(), path) as handle:
             return sum(row["experiment_id"] == experiment_id for row in _registry_rows(handle))
-        finally:
-            fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 def required_t_stat(

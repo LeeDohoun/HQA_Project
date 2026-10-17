@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import fcntl
 import hashlib
 import json
 import math
@@ -15,7 +14,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from src.runner import trading_calendar
+
 from backtesting import capacity, cost_model, experiment_registry, holdout, signal_eval
+from backtesting.append_only import file_lock, text_buffer
 from backtesting.experiment_registry import PROJECT_ROOT
 from backtesting.experiments import common, hc001, hc002, hf001
 from src.ingestion import dart_quarterly, krx_market
@@ -543,13 +545,13 @@ def random_target(universe, previous, size, retained, rng):
 
 
 def session_calendar():
-    return hc001.calendars.get_calendar("XKRX", start="2015-01-01", end="2026-07-31").sessions
+    return trading_calendar.session_calendar("2015-01-01", "2026-07-31")
 
 
-def rebalance_calendar(sessions, *, holdout_mode=False):
+def rebalance_calendar(sessions, *, holdout_mode=False, months=None, end=None):
     days = signal_eval._dates(sessions).sort_values().unique()
-    months = pd.period_range("2025-12", "2026-05", freq="M") if holdout_mode else hc002.MONTHS
-    end = HOLDOUT_END if holdout_mode else DESIGN_END
+    months = (pd.period_range("2025-12", "2026-05", freq="M") if holdout_mode else hc002.MONTHS) if months is None else months
+    end = (HOLDOUT_END if holdout_mode else DESIGN_END) if end is None else pd.Timestamp(end)
     planned, excluded = [], []
     for month in months:
         monthly = days[days.to_period("M") == month]
@@ -958,9 +960,12 @@ def _financial_ratios(counts):
     return result
 
 
-def write_results(payload, *, repo_root=PROJECT_ROOT):
+def write_results(payload, *, repo_root=PROJECT_ROOT, aborted_registration=None):
     """HC003's own finite JSON and interpretations, with exclusive filenames."""
-    _registration(repo_root)
+    if aborted_registration is not None:
+        experiment_registry.verify_captured_preregistration(EXPERIMENT_ID, aborted_registration, repo_root)
+    else:
+        _registration(repo_root)
     encoded = json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
     lines = [f"# {EXPERIMENT_ID}: {payload['stage']}", "", f"- Verdict: {payload['verdict']}",
              "- Reasons: " + "; ".join(payload["reasons"]), "", INTERPRETATIONS["note"], "",
@@ -1049,24 +1054,18 @@ def registry_rows(repo_root):
     path = Path(repo_root) / experiment_registry.REGISTRY_PATH
     if not path.exists():
         return []
-    with path.open(encoding="utf-8", newline="") as handle:
-        fcntl.flock(handle, fcntl.LOCK_SH)
-        try:
+    with file_lock(path, shared=True):
+        with text_buffer(path.read_bytes(), path) as handle:
             return experiment_registry._registry_rows(handle)
-        finally:
-            fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 def ledger_experiments(repo_root):
     path = Path(repo_root) / holdout.LEDGER_PATH
     if not path.exists():
         return set()
-    with path.open(encoding="utf-8") as handle:
-        fcntl.flock(handle, fcntl.LOCK_SH)
-        rows = [json.loads(line) for line in handle]
-    if any(not isinstance(row, dict) or not all(key in row for key in
-               ("experiment_id", "recorded_at", "from_date", "to_date")) for row in rows):
-        raise ValueError("invalid holdout ledger")
+    with file_lock(path, shared=True):
+        with text_buffer(path.read_bytes(), path) as handle:
+            rows = holdout._ledger_rows(handle)
     return {row["experiment_id"] for row in rows}
 
 
@@ -1124,13 +1123,18 @@ def holdout_verdict(result, design_effect, fields):
     return "pass", ["all HC003 section-6 criteria satisfied"]
 
 
-def _holdout_status(status, reason, *, repo_root):
+def _holdout_status(status, reason, *, repo_root, aborted_registration=None):
     payload = {"experiment_id": EXPERIMENT_ID, "stage": "holdout", "selected_variant": "passed_design_variants",
                "verdict": status, "reasons": [reason], "variants": {},
                "interpretations": INTERPRETATIONS, "assumptions": ASSUMPTIONS}
-    experiment_registry.record_trial(EXPERIMENT_ID, status, {"stage": "holdout", "reason": reason},
-                                      status, repo_root=repo_root, note="terminal; no reopening of protected evaluation")
-    write_results(payload, repo_root=repo_root)
+    if aborted_registration is not None:
+        experiment_registry.record_aborted_trial(EXPERIMENT_ID, status, {"stage": "holdout", "reason": reason},
+            status, preregistration=aborted_registration, repo_root=repo_root,
+            note="terminal; no reopening of protected evaluation")
+    else:
+        experiment_registry.record_trial(EXPERIMENT_ID, status, {"stage": "holdout", "reason": reason},
+                                          status, repo_root=repo_root, note="terminal; no reopening of protected evaluation")
+    write_results(payload, repo_root=repo_root, aborted_registration=aborted_registration)
     return payload
 
 
@@ -1205,7 +1209,8 @@ def _run_holdout(*, data_dir, repo_root):
                 "result_file": str(result_paths[0].relative_to(repo_root))}, result["verdict"], repo_root=repo_root)
         return payload
     except BaseException as exc:
-        _holdout_status("holdout_aborted", f"{type(exc).__name__}: {exc}", repo_root=repo_root)
+        _holdout_status("holdout_aborted", f"{type(exc).__name__}: {exc}", repo_root=repo_root,
+                        aborted_registration=registration)
         raise
 
 

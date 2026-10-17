@@ -18,6 +18,7 @@ from backtesting.experiment_registry import PROJECT_ROOT
 from backtesting.experiments import common, hc001, hc002, hc003, hf001, ordering
 from src.ingestion import dart_financial_date_rules as financial_dates
 from src.ingestion import dart_listing
+from src.runner import trading_calendar
 
 
 EXPERIMENT_ID = "AV001_avoidance_portfolio"
@@ -164,13 +165,15 @@ def _selections(prices, planned, versions, events, coverage, *, data_dir, repo_r
     return result, counts
 
 
-def prepare(*, data_dir, repo_root, sessions, planned, stage, prices=None):
-    end = hc003.HOLDOUT_END if stage == "holdout" else hc003.DESIGN_END
+def prepare(*, data_dir, repo_root, sessions, planned, stage, prices=None, end=None, checkpoint_close=None):
+    custom_end = end is not None
+    end = (hc003.HOLDOUT_END if stage == "holdout" else hc003.DESIGN_END) if end is None else pd.Timestamp(end)
+    checkpoint_close = (hc003.DESIGN_END if stage == "holdout" else None) if checkpoint_close is None else pd.Timestamp(checkpoint_close)
     status, coverage = coverage_plan(data_dir, planned, sessions)
     by_month = {row["month"]: row["listing"] for row in coverage}
     dates = financial_dates.FilingDates.from_data(data_dir)
     versions = {rule: financial_dates.FinancialVersions(data_dir, dates, rule, stage,
-                sample_end=planned[-1]["decision_date"]) for rule in RULES}
+                sample_end=planned[-1]["decision_date"], cutoff=end + pd.Timedelta(days=1) if custom_end else None) for rule in RULES}
     event_listings = dates.event_listings()
     event_listings = event_listings.loc[event_listings.rcept_dt < end.strftime("%Y%m%d")]
     events, event_counts = hf001.rights_events(event_listings, sessions)
@@ -203,12 +206,12 @@ def prepare(*, data_dir, repo_root, sessions, planned, stage, prices=None):
     rebalances = [row["trade_date"] for row in planned] + [row["end_date"] for row in planned if row["end_kind"] == "open"]
     book = hc003.PriceBook.from_windows(windows(), days, rebalances, end,
         experiment_id=EXPERIMENT_ID, repo_root=repo_root,
-        close_dates=[hc003.DESIGN_END] if stage == "holdout" else ())
+        close_dates=[checkpoint_close] if checkpoint_close is not None else ())
     if any(len(selections[r]) != len(planned) for r in RULES):
         raise ValueError("missing decision months; continuous portfolio evaluation cannot drop them")
-    if stage == "holdout":
+    if checkpoint_close is not None:
         for rule in RULES:
-            selections[rule][0].update(benchmark_start_date="2025-12-30", benchmark_start_kind="close")
+            selections[rule][0].update(benchmark_start_date=checkpoint_close.date().isoformat(), benchmark_start_kind="close")
     return {"book": book, "selections": selections, "counts": counts, "dates": dates,
             "versions": versions, "price_paths": paths, "listing_status": status,
             "coverage": coverage, "event_counts": event_counts,
@@ -608,6 +611,10 @@ def compute_design(*, data_dir, repo_root, sessions=None, prices=None, trials=No
         if prices.empty or common._sessions(prices).max() > hc003.DESIGN_END:
             raise ValueError("design prices must end by 2025-12-30")
         common.guard_prices(prices, experiment_id=EXPERIMENT_ID, repo_root=repo_root)
+    trading_calendar.preflight_price_sessions(data_dir,
+        sessions[0] if prices is None else common._sessions(prices).min(),
+        hc003.DESIGN_END if prices is None else common._sessions(prices).max(),
+        price_days=None if prices is None else common._sessions(prices))
     paths = [] if prices is not None else hc003.price_files(data_dir, "20150101", "20251230",
                                                           repo_root=repo_root, experiment_id=EXPERIMENT_ID)
     hashes = source_hashes(data_dir, paths, stage="design_validation", prices=prices, repo_root=repo_root)
@@ -707,7 +714,7 @@ def registry_metrics(payload, *, design_result_file=None):
     return metrics
 
 
-def publish(payload, *, repo_root, design_result_file=None):
+def publish(payload, *, repo_root, design_result_file=None, aborted_registration=None):
     names = set(payload["variants"])
     if (payload["stage"] not in ("design_validation", "holdout") or not names or not names.issubset(VARIANTS)
             or payload["stage"] == "design_validation" and names != set(VARIANTS)
@@ -722,15 +729,21 @@ def publish(payload, *, repo_root, design_result_file=None):
     for name, result in payload["variants"].items():
         lines.append(f"| {name} | {result['rule_verdicts']['S']} | {result['rule_verdicts']['O']} | {result['verdict']} |")
     lines += ["", *INTERPRETATIONS]
-    paths = common.write_results(EXPERIMENT_ID, payload, repo_root=repo_root, summary_lines=lines)
+    paths = common.write_results(EXPERIMENT_ID, payload, repo_root=repo_root, summary_lines=lines,
+                                 aborted_registration=aborted_registration)
     result_file, checksum = str(paths[0].relative_to(repo_root)), hc003._digest(paths[0])
     for row in metrics.values():
         row.update(result_file=result_file, result_sha256=checksum)
     for row in metrics.values():
         experiment_registry.encode_metrics(row)
     for name, row in metrics.items():
-        experiment_registry.record_trial(EXPERIMENT_ID, name, row, row["combined_verdict"], repo_root=repo_root,
-                                         note=f"AV001 {payload['stage']}; S/O, calendar NW(3), Holm(3); compact summary")
+        if aborted_registration is not None:
+            experiment_registry.record_aborted_trial(EXPERIMENT_ID, name, row, row["combined_verdict"],
+                preregistration=aborted_registration, repo_root=repo_root,
+                note=f"AV001 {payload['stage']}; aborted attempt; compact summary")
+        else:
+            experiment_registry.record_trial(EXPERIMENT_ID, name, row, row["combined_verdict"], repo_root=repo_root,
+                                             note=f"AV001 {payload['stage']}; S/O, calendar NW(3), Holm(3); compact summary")
     return payload
 
 
@@ -799,6 +812,41 @@ def terminal_payload(status, reason, passed, *, design, registration):
         "interpretations": INTERPRETATIONS}
 
 
+def evaluate_holdout(prepared, design, passed):
+    rules, losses = {}, {}
+    available = prepared["versions"]["S"].sensitivity_available
+    for rule in RULES:
+        selections, book = prepared["selections"][rule], prepared["book"]
+        rules[rule], losses[rule] = {}, {}
+        if rule == "O" and not available:
+            reasons = sensitivity_reasons(prepared["versions"])[rule]
+            rules[rule] = {v: unavailable_metrics("sensitivity_unavailable", reasons=reasons) for v in passed}
+            losses[rule] = {v: unavailable_metrics("sensitivity_unavailable", reasons=reasons) for v in passed}
+            continue
+        for v in passed:
+            for destination, loss in ((rules[rule], False), (losses[rule], True)):
+                result = variant_metrics(book, selections, v, loss=loss,
+                                         saved=design["design_states"][rule][v])
+                effect = design["design_effects"][rule][v]
+                verdict, reasons = holdout_verdict(result, effect)
+                result.update(verdict=verdict, reasons=reasons, design_mean_excess=effect)
+                _pop_checkpoint(result)
+                destination[v] = result
+        hc003.apply_delisting_verdict(rules[rule], losses[rule])
+        comparison = design["comparison_states"][rule]
+        baseline = hc003.simulate(book, selections, "t_hold", experiment_id=EXPERIMENT_ID,
+            variant_names=hc003.VARIANTS, initial_state=comparison["state"],
+            initial_value=comparison["terminal_value"], retain_details=False)
+        for v in passed:
+            secondary_metrics(book, selections, v, rules[rule][v], baseline,
+                              saved=design["design_states"][rule][v]["diagnostics"])
+            _compact_months(losses[rule][v])
+    variants = {v: {"verdict": combine_verdict(rules["S"][v]["verdict"], rules["O"][v]["verdict"],
+                                             sensitivity_available=available),
+                    "rule_verdicts": {r: rules[r][v]["verdict"] for r in RULES}} for v in passed}
+    return rules, losses, variants
+
+
 def run_holdout(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT):
     with ordering.execution_lock(repo_root):
         registration = _registration(repo_root)
@@ -825,6 +873,7 @@ def run_holdout(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT):
         _, coverage = coverage_plan(data_dir, planned, sessions)
         if any(not row["listing"]["covered"] for row in coverage) and any(v != "av_phase" for v in passed):
             raise ValueError("data_incomplete: holdout F_raise listing windows are incomplete; no session opened")
+        trading_calendar.preflight_price_sessions(data_dir, sessions[0], hc003.HOLDOUT_END)
         hashes = holdout_input_hashes(data_dir, repo_root, before_open=True)
         started = time.perf_counter()
         try:
@@ -835,37 +884,8 @@ def run_holdout(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT):
                 if verified_coverage != coverage:
                     raise ValueError("holdout coverage changed after input freeze")
                 prepared = prepare(data_dir=data_dir, repo_root=repo_root, sessions=sessions, planned=planned, stage="holdout")
-                rules, losses = {}, {}
-                available = prepared["versions"]["S"].sensitivity_available
-                for rule in RULES:
-                    selections, book = prepared["selections"][rule], prepared["book"]
-                    rules[rule], losses[rule] = {}, {}
-                    if rule == "O" and not available:
-                        reasons = sensitivity_reasons(prepared["versions"])[rule]
-                        rules[rule] = {v: unavailable_metrics("sensitivity_unavailable", reasons=reasons) for v in passed}
-                        losses[rule] = {v: unavailable_metrics("sensitivity_unavailable", reasons=reasons) for v in passed}
-                        continue
-                    for v in passed:
-                        for destination, loss in ((rules[rule], False), (losses[rule], True)):
-                            result = variant_metrics(book, selections, v, loss=loss,
-                                                     saved=design["design_states"][rule][v])
-                            effect = design["design_effects"][rule][v]
-                            verdict, reasons = holdout_verdict(result, effect)
-                            result.update(verdict=verdict, reasons=reasons, design_mean_excess=effect)
-                            _pop_checkpoint(result)
-                            destination[v] = result
-                    hc003.apply_delisting_verdict(rules[rule], losses[rule])
-                    comparison = design["comparison_states"][rule]
-                    baseline = hc003.simulate(book, selections, "t_hold", experiment_id=EXPERIMENT_ID,
-                        variant_names=hc003.VARIANTS, initial_state=comparison["state"],
-                        initial_value=comparison["terminal_value"], retain_details=False)
-                    for v in passed:
-                        secondary_metrics(book, selections, v, rules[rule][v], baseline,
-                                          saved=design["design_states"][rule][v]["diagnostics"])
-                        _compact_months(losses[rule][v])
-                variants = {v: {"verdict": combine_verdict(rules["S"][v]["verdict"], rules["O"][v]["verdict"],
-                                                         sensitivity_available=available),
-                                "rule_verdicts": {r: rules[r][v]["verdict"] for r in RULES}} for v in passed}
+                rules, losses, variants = evaluate_holdout(prepared, design, passed)
+                book = prepared["book"]
                 if holdout_input_hashes(data_dir, repo_root) != hashes:
                     raise ValueError("holdout inputs changed during computation")
                 if coverage_plan(data_dir, planned, sessions)[1] != coverage:
@@ -896,8 +916,70 @@ def run_holdout(*, data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT):
                                        design=design, registration=registration)
             payload.update(source_hashes=hashes, input_hash_verification="aborted; inputs not verified")
             payload["abort"] = ordering.abort_details(hashes, exc)
-            publish(payload, repo_root=repo_root, design_result_file=run["result_file"])
+            publish(payload, repo_root=repo_root, design_result_file=run["result_file"], aborted_registration=registration)
             raise
+
+
+def rehearsal_window(start="2025-01-01", end="2025-06-30"):
+    """Only complete historical six-month windows, never protected returns."""
+    start, end = pd.Timestamp(start), pd.Timestamp(end)
+    if (pd.isna(start) or pd.isna(end) or start.tzinfo is not None or end.tzinfo is not None
+            or start != start.normalize() or end != end.normalize()
+            or start.day != 1 or end != end + pd.offsets.MonthEnd(0)
+            or end.to_period("M").ordinal - start.to_period("M").ordinal != 5
+            or start < pd.Timestamp("2017-07-01") or end >= pd.Timestamp("2026-01-01")):
+        raise ValueError("rehearsal requires six complete unprotected months between 2017-07-01 and 2025-12-31")
+    sessions = trading_calendar.session_calendar("2015-01-01", end)
+    return start, end, sessions
+
+
+def rehearse_holdout(start="2025-01-01", end="2025-06-30", *,
+                     data_dir=PROJECT_ROOT / "data", repo_root=PROJECT_ROOT):
+    """Rebuild prior checkpoints, then exercise the shared holdout evaluator.
+
+    No ledger session, result publication or registry writes are permitted here.
+    All variants are exercised regardless of historical pass/fail eligibility.
+    """
+    start, end, sessions = rehearsal_window(start, end)
+    _registration(repo_root)
+    preflight = trading_calendar.preflight_price_sessions(data_dir, sessions[0], end)
+    prior_close = sessions[sessions < start][-1]
+    end_close = sessions[-1]
+    training_months = pd.period_range("2017-05", start.to_period("M") - 2, freq="M")
+    planned, excluded = hc003.rebalance_calendar(sessions, months=training_months, end=prior_close)
+    if excluded:
+        raise ValueError("rehearsal checkpoint calendar is incomplete")
+    training = prepare(data_dir=data_dir, repo_root=repo_root, sessions=sessions, planned=planned,
+                       stage="design_validation", end=prior_close)
+    if not training["raise_complete"] or not training["versions"]["S"].sensitivity_available:
+        raise ValueError("rehearsal checkpoint listing/original-link coverage is incomplete")
+    design = {"design_states": {}, "comparison_states": {}, "design_effects": {}}
+    for rule in RULES:
+        book, selections = training["book"], training["selections"][rule]
+        baseline = hc003.simulate(book, selections, "t_hold", experiment_id=EXPERIMENT_ID,
+                                  variant_names=hc003.VARIANTS, retain_details=False)
+        design["comparison_states"][rule] = {"state": baseline["state"], "terminal_value": baseline["terminal_value"]}
+        design["design_states"][rule], design["design_effects"][rule] = {}, {}
+        for variant in VARIANTS:
+            result = variant_metrics(book, selections, variant)
+            diagnostics = secondary_metrics(book, selections, variant, result, baseline)
+            design["design_states"][rule][variant] = _pop_checkpoint(result)
+            design["design_states"][rule][variant]["diagnostics"] = diagnostics
+            design["design_effects"][rule][variant] = result["primary"]["mean"]
+    del training, book, baseline, result
+    months = pd.period_range(start.to_period("M") - 1, end.to_period("M") - 1, freq="M")
+    planned, excluded = hc003.rebalance_calendar(sessions, months=months, end=end_close)
+    if len(planned) != 6 or excluded:
+        raise ValueError("rehearsal must contain six monthly observations")
+    prepared = prepare(data_dir=data_dir, repo_root=repo_root, sessions=sessions, planned=planned,
+                       stage="design_validation", end=end_close, checkpoint_close=prior_close)
+    if not prepared["raise_complete"]:
+        raise ValueError("rehearsal holdout listing coverage is incomplete")
+    rules, losses, variants = evaluate_holdout(prepared, design, VARIANTS)
+    return {"experiment_id": EXPERIMENT_ID, "stage": "holdout_rehearsal", "start": start.date().isoformat(),
+            "end": end.date().isoformat(), "preflight": preflight, "variants": variants,
+            "rules": rules, "delisting_sensitivity": losses, "design_effects": design["design_effects"],
+            "checkpoint_close": prior_close.date().isoformat()}
 
 
 def fixture_timing(*, stocks=512, paths=200, months=12):
@@ -960,9 +1042,16 @@ def main(argv=None):
     mode.add_argument("--dry-run", action="store_true", help="default: local coverage/date audit and synthetic timing")
     mode.add_argument("--execute", action="store_true", help="append three design rows with both rules")
     mode.add_argument("--holdout", action="store_true", help="one protected session for both rules' passing variants")
+    mode.add_argument("--rehearse-holdout", nargs="*", metavar="DATE",
+                      help="read-only holdout rehearsal; default 2025-01-01 2025-06-30")
     parser.add_argument("--data-dir", type=Path, default=PROJECT_ROOT / "data")
     args = parser.parse_args(argv)
-    if args.execute or args.holdout:
+    if args.rehearse_holdout is not None:
+        if len(args.rehearse_holdout) not in (0, 2):
+            parser.error("--rehearse-holdout takes START END or no dates")
+        result = rehearse_holdout(*args.rehearse_holdout, data_dir=args.data_dir)
+        print(json.dumps(result, ensure_ascii=False, allow_nan=False))
+    elif args.execute or args.holdout:
         result = (run_holdout if args.holdout else run_experiment)(data_dir=args.data_dir)
         print(f"{EXPERIMENT_ID} {result['stage']}: {result['verdict']}")
         if result["stage"] == "holdout" and any(v["verdict"] == "sensitivity_unavailable"

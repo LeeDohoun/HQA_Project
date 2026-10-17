@@ -15,9 +15,10 @@ from pathlib import Path
 import resource
 import time
 
-import exchange_calendars as calendars
 import numpy as np
 import pandas as pd
+
+from src.runner import trading_calendar
 
 from backtesting import cost_model, event_study, experiment_registry, holdout, signal_eval
 from backtesting.experiment_registry import PROJECT_ROOT
@@ -83,7 +84,7 @@ def _registration(repo_root):
 
 def _session_calendar():
     # Later calendar metadata identifies forbidden horizons; later prices are never loaded.
-    return calendars.get_calendar("XKRX", start="2022-12-01", end="2026-02-28").sessions
+    return trading_calendar.session_calendar("2022-12-01", "2026-02-28")
 
 
 def _counts(frame):

@@ -4,6 +4,7 @@ import csv
 import json
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,7 @@ import yaml
 
 from backtesting import experiment_registry
 from backtesting.experiment_registry import (
-    REGISTRY_COLUMNS, REQUIRED_FIELDS, record_trial, required_t_stat, trial_count, verify_preregistration,
+    REGISTRY_COLUMNS, REQUIRED_FIELDS, record_aborted_trial, record_trial, required_t_stat, trial_count, verify_preregistration,
 )
 
 
@@ -126,6 +127,98 @@ def test_committed_registration_returns_file_commit_and_fields(repo):
     assert result.commit_time.isoformat() == _git(root, "log", "-1", "--format=%cI", "--", str(path))
     assert result.commit_time.tzinfo is not None
     assert result.fields == fields
+    assert result.path == "research/experiments/D001/preregistration.md"
+    assert result.blob_hash == _git(root, "rev-parse", f"{expected_hash}:{result.path}")
+
+
+@pytest.mark.parametrize("change", ["unstaged", "staged", "deleted", "recommitted"])
+def test_design_abort_uses_starting_plan_and_counts_towards_next_threshold(repo, change):
+    from backtesting.experiments import ordering
+
+    root, path, _ = repo
+    _commit(root, path)
+    original = path.read_bytes()
+    registration = verify_preregistration("D001", root)
+    for i in range(20):
+        record_trial("D001", f"v{i}", {}, "fail", repo_root=root)
+    registry = root / experiment_registry.REGISTRY_PATH
+    before = registry.read_bytes()
+    with pytest.raises(ValueError, match="inputs changed during computation"):
+        with ordering.design_attempt("D001", ["v20"], root) as attempt:
+            attempt["source_hashes"] = {"preregistration": registration.blob_hash}
+            if change == "deleted":
+                path.unlink()
+            else:
+                path.write_bytes(original + b"changed mid-run\n")
+                if change == "staged":
+                    _git(root, "add", "--", registration.path)
+                elif change == "recommitted":
+                    _commit(root, path)
+            # The normal writer must still reject a changed preregistration.
+            with pytest.raises(ValueError):
+                record_trial("D001", "v20", {}, "pass", repo_root=root)
+            raise ValueError("inputs changed during computation")
+    assert registry.read_bytes().startswith(before)
+    with registry.open(encoding="utf-8", newline="") as handle:
+        aborted = list(csv.DictReader(handle))[-1]
+    assert aborted["verdict"] == "design_aborted"
+    assert aborted["prereg_commit"] == registration.commit_hash
+    assert json.loads(aborted["metrics_json"])["failure_reason"] == "inputs changed during computation"
+    if change != "recommitted":
+        path.write_bytes(original)
+        _git(root, "reset", "-q", "HEAD", "--", registration.path)
+        assert verify_preregistration("D001", root) == registration
+    assert trial_count("D001", repo_root=root) == 21
+    assert required_t_stat("D001", repo_root=root) == 3.0
+    if change != "recommitted":
+        record_trial("D001", "next", {}, "fail", repo_root=root)
+        assert trial_count("D001", repo_root=root) == 22
+
+
+@pytest.mark.parametrize("invalid", ["commit", "blob", "path", "experiment", "noncommit", "wrong_blob", "verdict"])
+def test_abort_requires_captured_commit_blob_and_experiment_path(repo, invalid):
+    root, path, _ = repo
+    _commit(root, path)
+    registration = verify_preregistration("D001", root)
+    other = root / "other.txt"
+    other.write_text("unrelated blob")
+    _commit(root, other)
+    changes = {
+        "commit": {"commit_hash": "0" * 40},
+        "blob": {"blob_hash": "0" * 40},
+        "path": {"path": "other.txt"},
+        "experiment": {"fields": {**registration.fields, "experiment_id": "OTHER"}},
+        "noncommit": {"commit_hash": registration.blob_hash},
+        "wrong_blob": {"blob_hash": _git(root, "rev-parse", "HEAD:other.txt")},
+        "verdict": {},
+    }
+    with pytest.raises(ValueError):
+        record_aborted_trial("D001", "v1", {}, "pass" if invalid == "verdict" else "design_aborted",
+                             preregistration=replace(registration, **changes[invalid]), repo_root=root)
+    assert not (root / experiment_registry.REGISTRY_PATH).exists()
+
+
+def test_abort_preserves_registry_validation_and_metrics_limit(repo):
+    root, path, _ = repo
+    _commit(root, path)
+    registration = verify_preregistration("D001", root)
+    registry = root / "custom.csv"
+    record_aborted_trial("D001", "first", {}, "design_aborted", preregistration=registration,
+                         repo_root=root, registry_path=registry)
+    before = registry.read_bytes()
+    path.write_text("dirty preregistration")
+    for metrics in ({"detail": "x" * 32768}, {"bad": float("nan")}):
+        with pytest.raises(ValueError):
+            record_aborted_trial("D001", "bad", metrics, "design_aborted", preregistration=registration,
+                                 repo_root=root, registry_path=registry)
+        assert registry.read_bytes() == before
+    registry.write_text(",".join(REGISTRY_COLUMNS) + "\n" + ",".join(
+        ("2026-10-17", "D001", "0" * 40, "old", "fail", "{}", "")) + "\n")
+    before = registry.read_bytes()
+    with pytest.raises(ValueError, match="prereg_commit differs"):
+        record_aborted_trial("D001", "bad", {}, "design_aborted", preregistration=registration,
+                             repo_root=root, registry_path=registry)
+    assert registry.read_bytes() == before
 
 
 @pytest.mark.parametrize("staged", [False, True])
@@ -291,6 +384,32 @@ def test_concurrent_appends_preserve_every_trial(repo):
         rows = list(csv.DictReader(handle))
     assert {row["variant"] for row in rows} == {f"v{i}" for i in range(8)}
     assert trial_count("D001", repo_root=root) == 8
+
+
+def test_aborted_append_failure_preserves_registry_and_can_be_retried(repo, monkeypatch):
+    from backtesting import append_only
+
+    root, path, _ = repo
+    _commit(root, path)
+    registration = verify_preregistration("D001", root)
+    record_trial("D001", "seed", {}, "fail", repo_root=root)
+    registry = root / experiment_registry.REGISTRY_PATH
+    before = registry.read_bytes()
+
+    def fail(*args):
+        raise OSError("injected failure before replacement")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(append_only.os, "replace", fail)
+        with pytest.raises(OSError, match="before replacement"):
+            record_aborted_trial("D001", "aborted", {}, "design_aborted",
+                                 preregistration=registration, repo_root=root)
+    assert registry.read_bytes() == before
+    assert trial_count("D001", repo_root=root) == 1
+    record_aborted_trial("D001", "aborted", {}, "design_aborted",
+                         preregistration=registration, repo_root=root)
+    assert registry.read_bytes().startswith(before)
+    assert trial_count("D001", repo_root=root) == 2
 
 
 def test_registration_copied_from_another_experiment_counts_only_its_own_commit(repo):
