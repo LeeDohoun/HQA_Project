@@ -2,16 +2,14 @@
 from __future__ import annotations
 
 import dataclasses
-import hashlib
 import json
 import math
 import re
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 
 DECISION_DIR = Path("forward/fw001/decisions")
-SEAL_DIR = Path("forward/fw001/sealed")
 EXPERIMENT_ID = "FW001_forward_replication"
 LABELS = ("forward", "reconstructed", "missing")
 _FILE = re.compile(r"^\d{6}\.json$")
@@ -22,83 +20,39 @@ class DecisionError(ValueError):
     """A decision record is garbled or violates the FW001 contract."""
 
 
-class SealError(ValueError):
-    """A completion marker is missing or does not seal the record being read."""
+def completion(data_dir, kind: str, month: str, multiplier=None):
+    """FW001's own completion check (src.forward.fw001.completion_proof), read-only.
 
-    def __init__(self, reason, detail=""):
-        super().__init__(f"{reason}:{detail}" if detail else reason)
-        self.reason = reason
-
-
-def decision_marker_path(data_dir, month) -> Path:
-    return Path(data_dir) / SEAL_DIR / f"{month.replace('-', '')}.decision.json"
-
-
-def execution_marker_path(data_dir, month, multiplier="1.0") -> Path:
-    return Path(data_dir) / SEAL_DIR / f"{month.replace('-', '')}.execution.{multiplier}.json"
-
-
-def _aware(value):
-    stamp = datetime.fromisoformat(value) if isinstance(value, str) else None
-    if stamp is None or stamp.tzinfo is None or stamp.utcoffset() is None:
-        raise ValueError("timestamp must be an aware ISO 8601 string")
-    return stamp
-
-
-def parse_seal_marker(raw) -> dict:
-    """The FW001 completion-marker field contract, isolated so it can follow the recorder.
-
-    Fields: record_path, record_digest (sha256 hex of the record file bytes),
-    sealed_at and deadline (aware ISO), reconstructed (must be false).
-    Raises ValueError for a malformed marker.
+    Returns (proof, reason, error):
+    - (proof, None, None): final (sealed in time);
+    - (None, "<p>_missing", None): no record file;
+    - (None, "<p>_not_sealed", None): record without a completion marker;
+    - (None, "<p>_seal_late", None): marker published at/after the deadline (or within
+      the one-second precision bound) - FW001 section 6: that month is missing/no-trade;
+    - (None, "<p>_seal_invalid", message): corrupt or inconsistent evidence (visible error).
+    <p> is "decision" or "execution".
     """
-    if not isinstance(raw, dict):
-        raise ValueError("marker must be an object")
-    path, digest = raw.get("record_path"), raw.get("record_digest")
-    if not isinstance(path, str) or not path:
-        raise ValueError("record_path must be a nonempty string")
-    if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
-        raise ValueError("record_digest must be 64 lowercase hex characters")
-    if not isinstance(raw.get("reconstructed"), bool):
-        raise ValueError("reconstructed must be a boolean")
-    return {"record_path": path, "record_digest": digest, "sealed_at": _aware(raw.get("sealed_at")),
-            "deadline": _aware(raw.get("deadline")), "reconstructed": raw["reconstructed"]}
+    from src.forward import fw001
 
-
-def verify_seal(data_dir, record_path, record_bytes: bytes, marker_path, kind: str) -> str:
-    """Return the marker's record_digest when it validly seals these bytes; raise SealError otherwise.
-
-    Reasons: <kind>_not_sealed, <kind>_seal_invalid, <kind>_seal_path_mismatch,
-    <kind>_seal_digest_mismatch, <kind>_seal_reconstructed, <kind>_seal_after_deadline.
-    """
-    marker_path = Path(marker_path)
-    if not marker_path.is_file():
-        raise SealError(f"{kind}_not_sealed")
+    prefix = "decision" if kind == "decisions" else "execution"
     try:
-        marker = parse_seal_marker(json.loads(marker_path.read_text(encoding="utf-8")))
-    except (OSError, ValueError) as error:  # JSONDecodeError is a ValueError
-        raise SealError(f"{kind}_seal_invalid", str(error)) from None
-    sealed = Path(marker["record_path"])
-    sealed = sealed if sealed.is_absolute() else Path(data_dir) / sealed
-    if sealed.resolve() != Path(record_path).resolve():
-        raise SealError(f"{kind}_seal_path_mismatch")
-    if hashlib.sha256(record_bytes).hexdigest() != marker["record_digest"]:
-        raise SealError(f"{kind}_seal_digest_mismatch")
-    if marker["reconstructed"]:
-        raise SealError(f"{kind}_seal_reconstructed")
-    if not marker["sealed_at"] < marker["deadline"]:
-        raise SealError(f"{kind}_seal_after_deadline")
-    return marker["record_digest"]
+        proof = fw001.completion_proof(data_dir, kind, month, multiplier)
+    except (ValueError, KeyError, TypeError, AttributeError, OSError) as error:
+        return None, f"{prefix}_seal_invalid", str(error) or type(error).__name__
+    if proof is not None:
+        return proof, None, None
+    if not fw001.path_for(data_dir, kind, month, multiplier).is_file():
+        return None, f"{prefix}_missing", None
+    if not fw001.marker_path(data_dir, kind, month, multiplier).is_file():
+        return None, f"{prefix}_not_sealed", None
+    return None, f"{prefix}_seal_late", None
 
 
 def record_hash(record: dict) -> str:
-    """sha256 of the whole immutable record, encoded as FW001's ``digest`` does.
+    """FW001's ``digest`` (same code): the decision_hash stored in FW001 execution records."""
+    from src.forward import fw001
 
-    Matching the recorder's encoding lets a batch's decisionHash be compared
-    with the decision_hash stored in FW001 execution records.
-    """
-    text = json.dumps(record, sort_keys=True, ensure_ascii=False, allow_nan=False, indent=2) + "\n"
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return fw001.digest(record)
 
 
 @dataclass(frozen=True)
@@ -115,6 +69,8 @@ class Decision:
     adv20: dict = field(default_factory=dict, compare=False, repr=False)
     sealed: bool = False
     seal_reason: str | None = None
+    seal_error: str | None = field(default=None, compare=False)
+    sealed_at: str | None = field(default=None, compare=False)
 
     @property
     def forward(self) -> bool:
@@ -189,27 +145,28 @@ def parse_decision(record: dict, rule: str, *, path: Path | None = None, executi
 
 
 def load_decision(path: str | Path, rule: str, *, execution: str = "basket_20", data_dir=None) -> Decision:
-    """Parse a record and check its completion marker. Only label forward is checked;
-    reconstructed records never get markers and never trade."""
+    """Parse a record and apply FW001's completion check. Only a final (sealed in time)
+    forward record trades; reconstructed records are never sealed and never trade."""
     path = Path(path)
     data_dir = Path(data_dir) if data_dir is not None else path.parents[3]
     try:
-        raw = path.read_bytes()
-        record = json.loads(raw.decode("utf-8"))
+        record = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise DecisionError(f"{path.name}: unreadable decision record: {error}") from None
     decision = parse_decision(record, rule, path=path, execution=execution)
     if path.stem != decision.month.replace("-", ""):
         raise DecisionError(f"{path.name}: file name does not match month {decision.month}")
-    if decision.label != "forward":
+    from src.forward import fw001
+
+    if decision.label != "forward" and not fw001.marker_path(data_dir, "decisions", decision.month).is_file():
         return decision
-    try:
-        digest = verify_seal(data_dir, path, raw, decision_marker_path(data_dir, decision.month), "decision")
-    except SealError as error:
-        return dataclasses.replace(decision, seal_reason=error.reason)
-    if digest != decision.record_hash:
+    proof, reason, error = completion(data_dir, "decisions", decision.month)
+    if proof is None:
+        return dataclasses.replace(decision, seal_reason=reason, seal_error=error)
+    if proof.get("record_digest") != decision.record_hash:
+        # The recorder writes encoded(record), so the byte digest equals the record digest.
         return dataclasses.replace(decision, seal_reason="decision_hash_marker_mismatch")
-    return dataclasses.replace(decision, sealed=True)
+    return dataclasses.replace(decision, sealed=True, sealed_at=proof.get("sealed_at"))
 
 
 def decision_files(data_dir: str | Path) -> list[Path]:

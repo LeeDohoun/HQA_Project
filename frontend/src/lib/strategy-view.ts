@@ -71,12 +71,9 @@ const REASON_TEXT: Record<string, string> = {
   shadow_independent_check_failed: "섀도 체결이 FW001 체결 기록과 다릅니다",
   shadow_independent_check_unavailable: "FW001 체결 기록과 대조하지 못한 섀도 기록이 있습니다",
   decision_not_sealed: "결정 기록이 아직 봉인되지 않았습니다",
-  decision_seal_invalid: "결정 기록의 봉인 표식이 올바르지 않습니다",
-  decision_seal_path_mismatch: "봉인 표식이 다른 결정 기록을 가리킵니다",
-  decision_seal_digest_mismatch: "결정 기록이 봉인 이후 바뀌었습니다",
-  decision_seal_reconstructed: "재구성된 결정 기록이라 쓰지 않습니다",
-  decision_seal_after_deadline: "결정 기록이 마감 이후에 봉인됐습니다",
-  decision_hash_marker_mismatch: "결정 해시가 봉인 표식과 다릅니다",
+  decision_seal_late: "결정 기록이 마감(08:59) 이후 봉인돼 그달은 거래하지 않습니다",
+  decision_seal_invalid: "결정 기록의 완료 증명이 손상됐거나 맞지 않습니다 (오류)",
+  decision_hash_marker_mismatch: "결정 해시가 완료 증명과 다릅니다",
   unknown_stage: "알 수 없는 단계 요청입니다"
 };
 

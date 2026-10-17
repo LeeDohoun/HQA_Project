@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import shutil
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -10,6 +11,7 @@ from datetime import UTC, datetime
 import pytest
 
 from scripts.ops import strategy_runtime as cli
+from src.forward import fw001
 from src.live import backend_client, gates, runtime, shadow
 from test_live_fixtures import REPO, decision_record, make_repo, write_decision, write_flat_days
 
@@ -270,11 +272,17 @@ def test_shadow_fill_command_refusals_and_missing_file_incident(tmp_path, monkey
 
 def test_status_hides_unsealed_decision_and_reports_reason(tmp_path):
     root, data = _world(tmp_path)
-    (data / "forward/fw001/sealed/202610.decision.json").unlink()
+    marker = fw001.marker_path(data, "decisions", "2026-10")
+    (marker.parent / "extra").write_text("x", encoding="utf-8")
     status = runtime.status_command(runtime.load_context(root, data))
     hf = status["strategies"][0]
     assert set(hf) == PAYLOAD_KEYS and hf["decision"] is None
-    assert hf["stage"]["reasons"] == ["decision_not_sealed:2026-10"]
+    assert hf["stage"]["reasons"] == ["decision_seal_invalid:2026-10"]
+    assert status["errors"][0].startswith("hf001_f_both:decision_seal_invalid:2026-10:FW001 invalid completion")
+    shutil.rmtree(marker.parent)
+    status = runtime.status_command(runtime.load_context(root, data))
+    assert status["strategies"][0]["stage"]["reasons"] == ["decision_not_sealed:2026-10"]
+    assert status["errors"] == []
 
 
 class AnyUserClient(FakeClient):

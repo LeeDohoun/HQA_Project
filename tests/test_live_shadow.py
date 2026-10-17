@@ -3,11 +3,13 @@ from __future__ import annotations
 import dataclasses
 import json
 import math
+import shutil
 from datetime import datetime
 
 import pytest
 
 from backtesting import cost_model
+from src.forward import fw001
 from src.live import book, decisions, shadow
 from test_live_fixtures import (REPO, decision_record, krx_row, write_decision, write_execution, write_flat_days,
                                write_krx)
@@ -252,7 +254,8 @@ def _execution(data, *, slots=None, quotes=None, av_status="executed", **marker)
               "trade_date": "2026-11-02", "decision_hash": decision.record_hash, "label": "forward",
               "cost_multiplier": 1.0, "f_both": {"slots": slots or {}, "baskets": {}},
               "av_all": {"status": av_status}, "quotes": quotes or {}}
-    return write_execution(data, record, **marker)
+    raw = json.loads((data / "forward/fw001/decisions/202610.json").read_text(encoding="utf-8"))
+    return write_execution(data, record, decision=raw, **marker)
 
 
 SLOTS = {A: {"raw_open": 10000.0, "filled": True, "reason": None},
@@ -273,8 +276,8 @@ def test_independent_check_against_sealed_fw001_execution(tmp_path):
         False, "execution_fill_mismatch")
     _execution(data, slots={**SLOTS, B: {**SLOTS[B], "filled": True}})
     assert shadow.shadow_fill(entry, "2026-11-02", data, mode="shadow")["match"]["independent_check"] is False
+    shutil.rmtree(fw001.marker_path(data, "executions", "2026-10", 1.0).parent)
     _execution(data, slots=SLOTS, seal=False)
-    (data / "forward/fw001/sealed/202610.execution.1.0.json").unlink()
     record = shadow.shadow_fill(entry, "2026-11-02", data, mode="shadow")
     assert (record["match"]["independent_check"], record["match"]["independent_check_reason"]) == (
         "unavailable", "execution_not_sealed")
@@ -298,3 +301,28 @@ def test_independent_check_continuous_uses_fw001_quotes(tmp_path):
     _execution(data, quotes=quotes, av_status="cost_evaluation_blocked")
     assert shadow.shadow_fill(entry, "2026-11-02", data, mode="shadow")["match"]["independent_check"] == \
         "unavailable"
+
+
+def test_execution_seal_states(tmp_path):
+    data = _basket_fixture(tmp_path)
+    entry = _entries()["hf001_f_both"]
+    path = _execution(data, slots=SLOTS, sealed_at="2026-11-02T09:20:00+09:00")
+    marker = fw001.marker_path(data, "executions", "2026-10", 1.0)
+    path.write_text(path.read_text(encoding="utf-8").replace('"forward"', '"forward" '), encoding="utf-8")
+    record = shadow.shadow_fill(entry, "2026-11-02", data, mode="shadow")
+    assert (record["match"]["independent_check"], record["match"]["independent_check_reason"]) == (
+        False, "execution_seal_invalid")
+    assert any(i.startswith("execution_seal_invalid:2026-10:") for i in record["incidents"])
+    _execution(data, slots=SLOTS)
+    (fw001.marker_path(data, "decisions", "2026-10").parent / "extra").write_text("x", encoding="utf-8")
+    broken = shadow.shadow_fill(entry, "2026-11-02", data, mode="shadow")
+    assert any(i.startswith("decision_seal_invalid:2026-10:") for i in broken["incidents"])
+    assert broken["orders"] == [] and marker.is_file()
+
+
+def test_late_decision_publication_is_a_no_trade_incident(tmp_path):
+    data = tmp_path / "data"
+    write_decision(data, decision_record(f_both=[A]), sealed_at="2026-11-02T08:58:59.500000+09:00")
+    write_flat_days(data, "2026-10-30", "2026-11-02", [A])
+    record = shadow.shadow_fill(_entries()["hf001_f_both"], "2026-11-02", data, mode="shadow")
+    assert record["incidents"] == ["decision_seal_late:2026-10"] and record["orders"] == []

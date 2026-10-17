@@ -124,15 +124,25 @@ src/live  ── gates: 실험 대장·섀도 장부·승인 → 실제 단계 (
 
 `avgSlippagePct`는 체결된 주문의 (평균 체결가 − 기준가) / 기준가 × 100의 평균이며, 매도는 부호를 바꿉니다 (불리한 쪽이 양수).
 
-## FW001 결정 기록의 봉인 표식
+## FW001 결정 기록의 완료 증명
 
-FW001 기록기는 확정한 기록마다 봉인 표식을 따로 씁니다. 실행 경로는 표식이 유효한 기록만 확정 결정으로 읽습니다 (필드 목록은 FW001 커밋에서 최종 확인 예정, `src/live/decisions.py`의 `parse_seal_marker` 한 곳에서 처리).
+결정이 확정됐는지는 FW001 코드의 `src.forward.fw001.completion_proof()`로 판정합니다 (같은 코드 원칙; 계약 원문은 `research/experiments/FW001_forward_replication/implementation_notes.md`). 실행 경로는 증명 디렉터리를 읽기만 합니다.
 
-- 결정: `data/forward/fw001/sealed/<YYYYMM>.decision.json`, 체결: `.../sealed/<YYYYMM>.execution.<배수>.json`
-- 필드: `record_path`, `record_digest`(기록 파일 바이트의 sha256), `sealed_at`, `deadline`, `reconstructed`(false)
-- 확인: 표식이 가리키는 파일이 맞고, 바이트 해시가 같고, 재구성 기록이 아니고, 마감 전에 봉인됐고, 기록 `label`이 `forward`.
-- 실패하면 결정을 쓰지 않고 이유를 `stage.reasons`에 `<이유>:<YYYY-MM>`로 남깁니다: `decision_not_sealed`, `decision_seal_invalid`, `decision_seal_path_mismatch`, `decision_seal_digest_mismatch`, `decision_seal_reconstructed`, `decision_seal_after_deadline`, `decision_hash_marker_mismatch`. 진입일이 지나도 봉인된 결정이 없으면 섀도 장부의 운영 사고로 셉니다.
-- `decisionHash`는 FW001 `digest()`와 같은 인코딩이라 FW001 체결 기록의 `decision_hash`와 직접 비교됩니다.
+- 증명 위치: `data/forward/fw001/sealed/<YYYYMM>.decision/complete.json`, `.../sealed/<YYYYMM>.execution.<배수>/complete.json`. 증명마다 전용 디렉터리가 있고, 봉인 시각은 그 디렉터리의 커널 mtime입니다. 1초 정밀도 상한까지 포함한 공개 구간 전체가 진입일 08:59 KST 전이어야 합니다.
+- 판정 (`src/live/decisions.py`의 `completion()`):
+  - 증명이 유효하면 확정 결정입니다.
+  - 기록 파일이 없으면 `decision_missing`, 증명이 없으면 `decision_not_sealed`.
+  - 늦은 봉인이면 `decision_seal_late`: 그달은 거래하지 않습니다 (FW001 6절의 누락 처리). 다음 달은 계속합니다.
+  - 손상·불일치 증거는 `decision_seal_invalid`이며, "없음"이 아니라 오류로 상태의 `errors`에 표시합니다.
+  - `decisionHash`는 `fw001.digest(record)`이며, 증명의 `record_digest`와 다르면 `decision_hash_marker_mismatch`.
+- 상태의 `stage.reasons`에는 `<이유>:<YYYY-MM>`가 붙고, 진입일에 확정 결정이 없으면 섀도 장부의 운영 사고가 됩니다.
+- 섀도 독립 대조는 `executions` 증명(배수 1.0)이 유효할 때만 합니다. 손상된 체결 증거는 `execution_seal_invalid` 사고, 없거나 늦으면 `unavailable`(PAPER 승격 근거가 되지 않음).
+
+## 배포 구성
+
+- 수집 서버와 FW001 최종 평가는 FW001 봉인본(`release/collector-fw001`, FW001 담당 세션이 관리)에서만 실행합니다. FW001은 실행 트리 전체(`src/`, `scripts/ops` 등)가 봉인 목록과 같아야 실행되므로, M8이나 팀 브랜치가 들어간 트리는 수집 서버에 배포하지 않습니다.
+- M8 실행기는 별도 체크아웃(이 브랜치)에서 실행하고, FW001 자료는 파일·디렉터리 mtime을 보존해 받습니다 (`rsync -a`). mtime이 바뀐 사본은 유효한 완료 증명이 아닙니다.
+- 이 브랜치에서 `tests/test_forward_fw001.py`(30건), `tests/test_experiments_fw001.py`(12건), `tests/test_ops_fw001.py`(3건)는 실패합니다. FW001이 봉인되지 않은 트리를 거부하기 때문이며, 예상된 실패입니다. FW001 검증은 봉인본 트리에서 합니다.
 
 ## 상태 형식 (Python이 만들고 화면이 읽음)
 

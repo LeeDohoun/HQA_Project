@@ -302,9 +302,11 @@ def status_payload(ctx: Context, entry, *, generated_at: str, errors: list | Non
         found = []
     decision_reasons = []
     latest = found[-1] if found else None
-    if latest is not None and latest.label == "forward" and not latest.sealed:
-        # Not finalised: never shown or traded as a decision; the reason is surfaced instead.
+    if latest is not None and (latest.label == "forward" and not latest.sealed or latest.seal_reason):
+        # Not final: never shown or traded as a decision; the reason is surfaced instead.
         decision_reasons.append(f"{latest.seal_reason}:{latest.month}")
+        if latest.seal_error:
+            errors.append(f"{entry.strategy_id}:{latest.seal_reason}:{latest.month}:{latest.seal_error}")
         latest = None
     if latest is not None:
         decision = {"month": latest.month, "decisionDate": latest.decision_date, "tradeDate": latest.trade_date,

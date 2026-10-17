@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import csv
-import hashlib
 import json
+import os
 import shutil
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from src.live import shadow
@@ -92,38 +93,58 @@ def encoded(record) -> str:
     return json.dumps(record, sort_keys=True, ensure_ascii=False, allow_nan=False, indent=2) + "\n"
 
 
-def write_seal(data_dir, marker_name, record_path, *, deadline, **overrides):
-    """FW001 completion marker under forward/fw001/sealed/ for a record file on disk."""
-    record_path = Path(record_path)
-    marker = {"record_path": str(record_path.relative_to(data_dir)),
-              "record_digest": hashlib.sha256(record_path.read_bytes()).hexdigest(),
-              "sealed_at": "2026-10-30T17:00:00+09:00", "deadline": deadline, "reconstructed": False,
-              **overrides}
-    path = Path(data_dir) / "forward/fw001/sealed" / marker_name
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(marker), encoding="utf-8")
-    return path
+def _ns(stamp: str) -> int:
+    return int(datetime.fromisoformat(stamp).timestamp() * 1_000_000_000)
 
 
-def write_decision(data_dir, record, *, seal=None, **marker):
-    """Write a decision as the recorder does; forward records are sealed unless seal=False."""
+def write_seal(data_dir, kind, month, record_path, *, deadline, sealed_at, multiplier=None, **overrides):
+    """A completion proof exactly as fw001.complete() writes it, published with fw001's own
+    publish_completion; the private directory's mtime is then set to sealed_at."""
+    from src.forward import fw001
+    from src.ingestion import dart_listing
+
+    prepared = (datetime.fromisoformat(sealed_at) - timedelta(minutes=1)).isoformat()
+    proof = {"record_path": Path(record_path).relative_to(data_dir).as_posix(),
+             "record_digest": dart_listing.file_hash(record_path), "prepared_at": prepared,
+             "publication_clock": "private_directory_mtime_ns",
+             "publication_precision_ns": fw001.PUBLICATION_PRECISION.value,
+             "deadline": deadline, "reconstructed": False, **overrides}
+    marker = fw001.marker_path(data_dir, kind, month, multiplier)
+    if marker.parent.exists():  # fixtures may rewrite a month; the recorder never does
+        shutil.rmtree(marker.parent)
+    assert fw001.publish_completion(marker, proof)
+    os.utime(marker, ns=(_ns(prepared), _ns(prepared)))
+    set_sealed_at(marker, sealed_at)
+    return marker
+
+
+def set_sealed_at(marker, sealed_at):
+    os.utime(Path(marker).parent, ns=(_ns(sealed_at), _ns(sealed_at)))
+
+
+def write_decision(data_dir, record, *, seal=None, sealed_at=None, **marker):
+    """Write a decision as the recorder does; forward records are sealed (17:05 KST on the
+    decision date) unless seal=False."""
     month = record["month"].replace("-", "")
     path = Path(data_dir) / "forward/fw001/decisions" / (month + ".json")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(encoded(record), encoding="utf-8")
     if seal if seal is not None else record.get("label") == "forward":
-        write_seal(data_dir, f"{month}.decision.json", path, deadline=record["deadline"], **marker)
+        write_seal(data_dir, "decisions", record["month"], path, deadline=record["deadline"],
+                   sealed_at=sealed_at or f"{record['decision_date']}T17:05:00+09:00", **marker)
     return path
 
 
-def write_execution(data_dir, record, *, seal=True, **marker):
-    month = record["month"].replace("-", "")
-    path = Path(data_dir) / "forward/fw001/executions" / f"{month}_1.0.json"
+def write_execution(data_dir, record, *, decision, seal=True, sealed_at=None, **marker):
+    """A FW001 1.0x execution record (recorded_at 09:10 KST on the trade date) and its proof."""
+    month = record["month"]
+    record = {"recorded_at": f"{record['trade_date']}T09:10:00+09:00", **record}
+    path = Path(data_dir) / "forward/fw001/executions" / f"{month.replace('-', '')}_1.0.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(encoded(record), encoding="utf-8")
     if seal:
-        write_seal(data_dir, f"{month}.execution.1.0.json", path,
-                   deadline=marker.pop("deadline", "2026-11-03T08:59:00+09:00"), **marker)
+        write_seal(data_dir, "executions", month, path, deadline=decision["deadline"], multiplier=1.0,
+                   sealed_at=sealed_at or f"{record['trade_date']}T09:20:00+09:00", **marker)
     return path
 
 

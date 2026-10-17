@@ -36,7 +36,6 @@ ADV_SESSIONS = 20
 LIMIT_TOLERANCE = 0.005  # same as HF001/HC003: price_limit(day) - 0.005
 # A ledger entry is written only after the KRX daily file for the session can be final.
 LEDGER_WRITE_AFTER = time(16, 30)
-EXECUTION_DIR = Path("forward/fw001/executions")
 # Reasons a shadow order did not fill that are not about the session's price row.
 NON_PRICE_REASONS = ("cash_limited", "insufficient_cash", "cost_model_error")
 _LEDGER_FILE = re.compile(r"^\d{8}\.json$")
@@ -378,7 +377,9 @@ def _targets_match(entry, plan, decision, held_before) -> bool:
 
 
 def execution_path(data_dir, month) -> Path:
-    return Path(data_dir) / EXECUTION_DIR / f"{month.replace('-', '')}_1.0.json"
+    from src.forward import fw001
+
+    return fw001.path_for(data_dir, "executions", month, 1.0)
 
 
 def _same_price(a, b) -> bool:
@@ -387,35 +388,29 @@ def _same_price(a, b) -> bool:
 
 
 def independent_check(entry, decision, order_rows, data_dir):
-    """Compare the entry session's fills with FW001's own sealed execution record (read-only).
+    """Compare the entry session's fills with FW001's own final execution record (read-only).
 
-    Returns (result, reason): result is True/False, or "unavailable" when the FW001 1.0x
-    execution, its completion marker, or a needed field is absent or invalid. Only orders
-    the shadow tried to fill are compared: price-fillability (filled, or blocked only by
-    cash/cost) and the fill price against FW001's raw open.
+    Returns (result, reason, error). result is True/False, or "unavailable" when the FW001
+    1.0x execution is absent, unsealed, late, or lacks a needed field. Corrupt or
+    inconsistent completion evidence is False with reason execution_seal_invalid and the
+    error message (never treated as missing). Only orders the shadow tried to fill are
+    compared: price-fillability (filled, or blocked only by cash/cost) and the fill price.
     """
-    path = execution_path(data_dir, decision.month)
-    if not path.is_file():
-        return "unavailable", "execution_missing"
+    proof, reason, error = decision_store.completion(data_dir, "executions", decision.month, 1.0)
+    if reason == "execution_seal_invalid":
+        return False, reason, error
+    if proof is None:
+        return "unavailable", reason, None
     try:
-        raw = path.read_bytes()
-        record = json.loads(raw.decode("utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return "unavailable", "execution_unreadable"
-    try:
-        decision_store.verify_seal(data_dir, path, raw, decision_store.execution_marker_path(
-            data_dir, decision.month, "1.0"), "execution")
-    except decision_store.SealError as error:
-        return "unavailable", error.reason
-    if not isinstance(record, dict) or record.get("record_type") not in (None, "execution"):
-        return "unavailable", "execution_invalid"
-    if record.get("label") != "forward":
-        return "unavailable", "execution_not_forward"
+        record = json.loads(execution_path(data_dir, decision.month).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return False, "execution_seal_invalid", str(exc)
     if record.get("decision_hash") != decision.record_hash:
-        return False, "execution_decision_hash_mismatch"
+        return False, "execution_decision_hash_mismatch", None
     if record.get("trade_date") not in (None, decision.trade_date):
-        return False, "execution_trade_date_mismatch"
-    return _compare_execution(entry, record, order_rows)
+        return False, "execution_trade_date_mismatch", None
+    result, reason = _compare_execution(entry, record, order_rows)
+    return result, reason, None
 
 
 def _compare_execution(entry, record, order_rows):
@@ -506,8 +501,9 @@ def shadow_fill(entry, session_date, data_dir, *, mode, execute=False, recorded_
         else:
             if found is None:
                 incidents.append(f"decision_missing:{month}")
-            elif found.label == "forward" and not found.sealed:
-                incidents.append(f"{found.seal_reason}:{month}")
+            elif found.label == "forward" and not found.sealed or found.seal_reason:
+                incidents.append(f"{found.seal_reason}:{month}"
+                                 + (f":{found.seal_error}" if found.seal_error else ""))
             elif not found.forward:
                 incidents.append(f"decision_not_forward:{month}:{found.label}")
             elif found.trade_date != session:
@@ -617,8 +613,10 @@ def shadow_fill(entry, session_date, data_dir, *, mode, execute=False, recorded_
     if acting is None or acting.record_hash not in decision_hashes:
         match["independent_check"], match["independent_check_reason"] = "not_applicable", None
     else:
-        match["independent_check"], match["independent_check_reason"] = independent_check(
-            entry, acting, order_rows, data_dir)
+        result, reason, error = independent_check(entry, acting, order_rows, data_dir)
+        match["independent_check"], match["independent_check_reason"] = result, reason
+        if error is not None:
+            incidents.append(f"{reason}:{acting.month}:{error}")
     # Every code due today (targets acted on, orders, holdings before/after) must have a row.
     due = set(held_before) | {r["stock_code"] for r in order_rows} | set(_holdings(entry, state, holdings))
     if acting is not None and acting.record_hash in decision_hashes:

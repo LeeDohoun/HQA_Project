@@ -4,12 +4,14 @@ import dataclasses
 import hashlib
 import json
 import math
+import os
 
 import pytest
 
 from backtesting import cost_model
 from src.live import decisions, rebalance
-from test_live_fixtures import decision_record, write_decision
+from src.forward import fw001
+from test_live_fixtures import decision_record, set_sealed_at, write_decision, write_seal
 
 
 def _decision(targets, *, trade_date="2026-11-02", weights=None):
@@ -126,10 +128,11 @@ def test_basket_exit_sells_everything_at_close():
 
 
 def test_unknown_2027_tax_is_a_plan_error_not_a_guess():
-    d = _decision(["000010"], trade_date="2027-01-04")
+    # The cost model prices 2027 buys (no tax) but refuses 2027 sells until a sourced rate exists.
     with pytest.raises(rebalance.PlanError, match="cost_model_error"):
-        rebalance.plan_basket_entry("x", d, cash=1e6, ref_prices={"000010": 1000.0}, markets={"000010": "KOSPI"},
-                                    adv20={"000010": 5e9}, model_version="v1")
+        rebalance.plan_basket_exit("x", decision_hash="d" * 64, decision_date="2026-12-30", session_date="2027-01-28",
+                                   holdings={"000010": 10}, cash=0.0, ref_prices={"000010": 1000.0},
+                                   markets={"000010": "KOSPI"}, adv20={"000010": 5e9}, model_version="v1")
 
 
 # ---------------------------------------------------------------- continuous (HC003 conventions)
@@ -214,13 +217,13 @@ def test_batch_payload_shape_and_idempotency():
         rebalance.batch_payload(empty, user_id="u", expected_nav_krw=1, dry_run=False)
 
 
-# ---------------------------------------------------------------- FW001 completion markers
+# ---------------------------------------------------------------- FW001 completion proofs
 
 
 def _sealed(tmp_path, **marker):
     record = decision_record(f_both=["000010"])
     path = write_decision(tmp_path, record, **marker)
-    return record, path
+    return record, path, fw001.marker_path(tmp_path, "decisions", "2026-10")
 
 
 def _only(tmp_path):
@@ -228,66 +231,66 @@ def _only(tmp_path):
     return decision
 
 
-def test_valid_marker_seals_forward_decision(tmp_path):
-    record, path = _sealed(tmp_path)
+def test_valid_proof_makes_the_decision_final(tmp_path):
+    record, path, marker = _sealed(tmp_path)
     decision = _only(tmp_path)
     assert decision.sealed and decision.forward and decision.seal_reason is None
-    assert decision.record_hash == hashlib.sha256(path.read_bytes()).hexdigest()
-    marker = decisions.decision_marker_path(tmp_path, "2026-10")
-    data = json.loads(marker.read_text(encoding="utf-8"))
-    marker.write_text(json.dumps({**data, "record_path": str(path.resolve())}), encoding="utf-8")
-    assert _only(tmp_path).forward  # absolute record_path pointing at the same file
+    assert decision.sealed_at == "2026-10-30T17:05:00+09:00"
+    assert decision.record_hash == fw001.digest(record) == hashlib.sha256(path.read_bytes()).hexdigest()
+    assert decisions.latest_decision(tmp_path, "f_both", "2026-12-01") == decision
 
 
-@pytest.mark.parametrize("change, reason", [
-    ("missing", "decision_not_sealed"),
-    ("garbled", "decision_seal_invalid"),
-    ("no_digest", "decision_seal_invalid"),
-    ("naive", "decision_seal_invalid"),
-    ("tampered", "decision_seal_digest_mismatch"),
-    ("reconstructed", "decision_seal_reconstructed"),
-    ("late", "decision_seal_after_deadline"),
-    ("equal", "decision_seal_after_deadline"),
-    ("path", "decision_seal_path_mismatch"),
-    ("encoding", "decision_hash_marker_mismatch"),
-])
-def test_invalid_markers_never_trade(tmp_path, change, reason):
-    record, path = _sealed(tmp_path)
-    marker = decisions.decision_marker_path(tmp_path, "2026-10")
-    data = json.loads(marker.read_text(encoding="utf-8"))
-    if change == "missing":
-        marker.unlink()
+def test_absent_marker_is_not_sealed(tmp_path):
+    _sealed(tmp_path, seal=False)
+    decision = _only(tmp_path)
+    assert (decision.forward, decision.seal_reason, decision.seal_error) == (False, "decision_not_sealed", None)
+    assert decisions.latest_decision(tmp_path, "f_both", "2026-12-01") is None
+    assert decisions.completion(tmp_path, "decisions", "2026-09") == (None, "decision_missing", None)
+
+
+@pytest.mark.parametrize("sealed_at", ["2026-11-02T08:58:59+09:00", "2026-11-02T08:59:00+09:00",
+                                       "2026-11-02T09:30:00+09:00"])
+def test_publication_within_a_second_of_the_deadline_is_late_no_trade(tmp_path, sealed_at):
+    _sealed(tmp_path, sealed_at=sealed_at)
+    decision = _only(tmp_path)
+    assert (decision.forward, decision.seal_reason, decision.seal_error) == (False, "decision_seal_late", None)
+
+
+def test_just_before_the_precision_bound_is_final(tmp_path):
+    _sealed(tmp_path, sealed_at="2026-11-02T08:58:58.900000+09:00")
+    assert _only(tmp_path).forward
+
+
+@pytest.mark.parametrize("change", ["digest", "extra_file", "reconstructed", "path", "clock", "garbled"])
+def test_corrupt_evidence_raises_a_visible_error_not_missing(tmp_path, change):
+    record, path, marker = _sealed(tmp_path)
+    stamp = marker.parent.stat().st_mtime_ns
+    proof = json.loads(marker.read_text(encoding="utf-8"))
+    if change == "digest":
+        path.write_text(path.read_text(encoding="utf-8").replace('"forward"', '"forward" '), encoding="utf-8")
+    elif change == "extra_file":
+        (marker.parent / "note.txt").write_text("x", encoding="utf-8")
     elif change == "garbled":
         marker.write_text("{", encoding="utf-8")
-    elif change == "no_digest":
-        marker.write_text(json.dumps({**data, "record_digest": None}), encoding="utf-8")
-    elif change == "naive":
-        marker.write_text(json.dumps({**data, "sealed_at": "2026-10-30T17:00:00"}), encoding="utf-8")
-    elif change == "tampered":
-        path.write_text(path.read_text(encoding="utf-8").replace('"forward"', '"forward" '), encoding="utf-8")
-    elif change == "reconstructed":
-        marker.write_text(json.dumps({**data, "reconstructed": True}), encoding="utf-8")
-    elif change == "late":
-        marker.write_text(json.dumps({**data, "sealed_at": "2026-11-02T09:00:00+09:00"}), encoding="utf-8")
-    elif change == "equal":
-        marker.write_text(json.dumps({**data, "sealed_at": data["deadline"]}), encoding="utf-8")
-    elif change == "path":
-        marker.write_text(json.dumps({**data, "record_path": "forward/fw001/decisions/202609.json"}),
-                          encoding="utf-8")
-    else:  # file bytes are not the recorder's encoding, but the marker seals them
-        path.write_text(json.dumps(record), encoding="utf-8")
-        marker.write_text(json.dumps({**data, "record_digest": hashlib.sha256(path.read_bytes()).hexdigest()}),
-                          encoding="utf-8")
+    else:
+        key, value = {"reconstructed": ("reconstructed", True), "path": ("record_path", "elsewhere.json"),
+                      "clock": ("publication_clock", "wall")}[change]
+        marker.write_text(json.dumps({**proof, key: value}), encoding="utf-8")
+    os.utime(marker, ns=(stamp - 10**9, stamp - 10**9))
+    set_sealed_at(marker, "2026-10-30T17:05:00+09:00")
     decision = _only(tmp_path)
-    assert (decision.sealed, decision.forward, decision.seal_reason) == (False, False, reason)
-    assert decisions.latest_decision(tmp_path, "f_both", "2026-12-01") is None
+    assert (decision.forward, decision.seal_reason) == (False, "decision_seal_invalid")
+    assert decision.seal_error
 
 
-def test_reconstructed_records_need_no_marker(tmp_path):
-    write_decision(tmp_path, decision_record(f_both=["000010"], label="reconstructed"))
+def test_reconstructed_records_need_no_marker_but_a_marker_on_one_is_invalid(tmp_path):
+    path = write_decision(tmp_path, decision_record(f_both=["000010"], label="reconstructed"))
     decision = _only(tmp_path)
     assert (decision.label, decision.sealed, decision.seal_reason, decision.forward) == (
         "reconstructed", False, None, False)
+    write_seal(tmp_path, "decisions", "2026-10", path, deadline="2026-11-02T08:59:00+09:00",
+               sealed_at="2026-10-30T17:05:00+09:00")
+    assert _only(tmp_path).seal_reason == "decision_seal_invalid"
 
 
 # ---------------------------------------------------------------- funding
