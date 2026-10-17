@@ -7,6 +7,8 @@ from backtesting import experiment_registry, holdout
 from backtesting.experiments import av001, ev001, hc003, ordering
 from backtesting.experiments.lh001 import __main__ as lh_cli
 from backtesting.experiments.lh001.config import LH001, LH002
+from backtesting.experiments.lh001.runner import StageStopped
+from preregistration_fixtures import committed_preregistrations
 
 
 def row(experiment_id, variant, verdict, file="design.json", stage="design_validation"):
@@ -55,8 +57,7 @@ def test_aborted_design_never_releases_or_inherits_older_complete_results(experi
 
 @pytest.mark.parametrize("runner", [av001, ev001])
 def test_publication_abort_after_evaluation_records_compact_validated_trials(tmp_path, monkeypatch, runner):
-    registration = experiment_registry.verify_preregistration(runner.EXPERIMENT_ID)
-    monkeypatch.setattr(experiment_registry, "verify_preregistration", lambda *a, **k: registration)
+    committed_preregistrations(tmp_path, [runner.EXPERIMENT_ID])
     def compute(**kwargs):
         kwargs["_attempt"]["source_hashes"] = {"prices": {"file": "hash"}}
         return {}
@@ -76,6 +77,54 @@ def test_publication_abort_after_evaluation_records_compact_validated_trials(tmp
     assert all(r["verdict"] == "design_aborted" for r in rows)
     assert json.loads(rows[0]["metrics_json"])["failure_location"]["function"] == "publish"
     assert not (tmp_path / holdout.LEDGER_PATH).exists()
+
+
+@pytest.mark.parametrize("runner", [av001, ev001])
+def test_runner_design_abort_records_changed_preregistration_in_real_git(tmp_path, monkeypatch, runner):
+    registration = committed_preregistrations(tmp_path, [runner.EXPERIMENT_ID])[runner.EXPERIMENT_ID]
+    prereg = tmp_path / registration.path
+    original = prereg.read_bytes()
+
+    def compute(**kwargs):
+        kwargs["_attempt"]["source_hashes"] = {"preregistration": registration.blob_hash}
+        prereg.write_bytes(original + b"changed mid-run\n")
+        raise ValueError("inputs changed during computation")
+
+    monkeypatch.setattr(runner, "compute_design", compute)
+    for attempt in range(2):
+        with pytest.raises(ValueError, match="inputs changed during computation"):
+            runner.run_experiment(repo_root=tmp_path, data_dir=tmp_path)
+        rows = hc003.registry_rows(tmp_path)
+        assert len(rows) == 3 * (attempt + 1)
+        assert all(row["prereg_commit"] == registration.commit_hash and row["verdict"] == "design_aborted"
+                   for row in rows)
+        prereg.write_bytes(original)
+        assert experiment_registry.trial_count(runner.EXPERIMENT_ID, repo_root=tmp_path) == len(rows)
+    assert not (tmp_path / holdout.LEDGER_PATH).exists()
+
+
+@pytest.mark.parametrize("config", [LH001, LH002])
+def test_cli_interruption_records_captured_plan_in_real_git(tmp_path, monkeypatch, capsys, config):
+    registration = committed_preregistrations(tmp_path, [config.experiment_id])[config.experiment_id]
+    prereg = tmp_path / registration.path
+    original = prereg.read_bytes()
+    monkeypatch.setattr(lh_cli, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(lh_cli, "check_committed", lambda *a: None)
+
+    def interrupt(**kwargs):
+        prereg.write_bytes(original + b"changed mid-run\n")
+        raise StageStopped("inputs changed during computation")
+
+    monkeypatch.setattr(lh_cli, "execute_probe", interrupt)
+    assert lh_cli.main(["--experiment", config.name, "probe", "--execute", "--data-dir", str(tmp_path)]) == 2
+    assert json.loads(capsys.readouterr().out)["error"] == "inputs changed during computation"
+    rows = hc003.registry_rows(tmp_path)
+    assert len(rows) == 5
+    assert all(row["experiment_id"] == config.experiment_id and row["prereg_commit"] == registration.commit_hash
+               and row["verdict"] == "insufficient" for row in rows)
+    prereg.write_bytes(original)
+    assert experiment_registry.verify_preregistration(config.experiment_id, tmp_path) == registration
+    assert experiment_registry.trial_count(config.experiment_id, repo_root=tmp_path) == 5
 
 
 def test_deleted_committed_preregistration_cannot_bypass_release(tmp_path, monkeypatch):

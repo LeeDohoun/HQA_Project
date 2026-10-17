@@ -12,7 +12,7 @@ from datetime import datetime, time
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-import exchange_calendars as calendars
+from src.runner import trading_calendar
 import numpy as np
 import pandas as pd
 
@@ -55,8 +55,9 @@ def _git(*arguments):
 
 def _calendar(day, last=None):
     end = max(day, last) if last is not None else day
-    return calendars.get_calendar("XKRX", start=day - pd.Timedelta(days=180),
-                                  end=end + pd.Timedelta(days=90)).sessions
+    trading_calendar.require_verified_calendar(end)
+    return trading_calendar.session_calendar(day - pd.Timedelta(days=180),
+        min(end + pd.Timedelta(days=90), pd.Timestamp(trading_calendar.CALENDAR_VERIFIED_THROUGH)))
 
 
 def _date(value):
@@ -197,6 +198,9 @@ def decide(decision_date, data_dir=PROJECT_ROOT / "data", *, execute=False,
     if latest not in sessions:
         raise ValueError("latest stored KRX day is not an XKRX session")
     position = sessions.get_loc(day)
+    planned = sessions[position + 1:position + 1 + hc002.HORIZON]
+    if len(planned) != hc002.HORIZON:
+        raise ValueError("calendar_unverified:holding_sessions:official_KRX_2027_holiday_notice_required")
     delay = sessions.get_loc(latest) - position
     if delay > 3 and not backfill_label:
         raise ValueError(f"backdated decision: {delay} sessions behind latest stored KRX day; use --backfill-label")
@@ -237,7 +241,6 @@ def decide(decision_date, data_dir=PROJECT_ROOT / "data", *, execute=False,
     holdings = [{**row, "weight": 1 / len(chosen), "tags": {
         **volatility[row["stock_code"]], "capital_raise_prior_60_sessions": capital[row["stock_code"]]}}
         for row in chosen]
-    planned = sessions[position + 1:position + 1 + hc002.HORIZON]
     record = {"strategy_id": STRATEGY_ID, "record_type": "decision",
               "label": "reconstructed" if backfill_label else "forward",
               "recorded_at": now.isoformat(), "recording_delay_sessions": int(delay),
@@ -254,7 +257,7 @@ def decide(decision_date, data_dir=PROJECT_ROOT / "data", *, execute=False,
                       PROJECT_ROOT / "backtesting/signal_eval.py", PROJECT_ROOT / "backtesting/cost_model.py",
                       PROJECT_ROOT / "src/ingestion/dart_quarterly.py", PROJECT_ROOT / "src/ingestion/krx_market.py",
                       PROJECT_ROOT / "src/research/industry_map.py", PROJECT_ROOT / "src/ingestion/dart_backfill.py")}),
-              "calendar_version": f"exchange-calendars:{calendars.__version__}:XKRX",
+              "calendar_version": trading_calendar.CALENDAR_VERSION,
               "decision_date": day.date().isoformat(), "planned_entry_date": planned[0].date().isoformat(),
               "planned_exit_date": planned[-1].date().isoformat(),
               "planned_sessions": [date.date().isoformat() for date in planned],
@@ -336,6 +339,7 @@ def evaluate(data_dir=PROJECT_ROOT / "data", *, execute=False, bounded_window=Fa
     pending, frames, matured = [], [], []
     for record in records:
         day, exit_day = pd.Timestamp(record["decision_date"]), pd.Timestamp(record["planned_exit_date"])
+        trading_calendar.require_verified_calendar(exit_day)
         if exit_day not in days:
             pending.append({"decision_date": record["decision_date"], "reason": "exit_close_not_stored"})
             continue

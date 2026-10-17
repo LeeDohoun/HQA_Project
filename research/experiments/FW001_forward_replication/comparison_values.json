@@ -10,7 +10,11 @@
   },
   "f_both": {
     "source": "first supplemented HF001 additional trial",
-    "status": "pending (run not yet done)",
-    "field": "variants.f_both.design.primary.mean"
+    "result_file": "research/experiments/HF001_hegemony_filters/results/20261017T121118638812Z.json.gz",
+    "sha256": "2a300d8d7987f08820d7b5d44d8aabb931106d767600bed98b75874d293d22d9",
+    "field": "variants.f_both.design.primary.mean",
+    "value": 0.0025855947612501116,
+    "sealed_at": "2026-10-17",
+    "secondary_original_hf001": "results/20261010T031340342894Z.json.gz"
   }
 }

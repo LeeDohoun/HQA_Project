@@ -18,10 +18,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
-import exchange_calendars as calendars
 from jsonschema import Draft202012Validator
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from src.runner import trading_calendar
 from backtesting.experiments.lh001 import arms, inputs
 from scripts.research.dart_list_survivorship_impact import _JSONStream
 
@@ -278,7 +278,7 @@ def budget_projection(calls, budget, decisions=36):
 
 
 def calendar_decisions(clean_start):
-    days = calendars.get_calendar('XKRX', start='2026-01-01', end='2026-11-30').sessions
+    days = trading_calendar.session_calendar("2026-01-01", "2026-11-30")
     # Last session per Friday-ending week; same entry-inclusive holding rule as weekly_calendar.
     weeks = {}
     from datetime import timedelta

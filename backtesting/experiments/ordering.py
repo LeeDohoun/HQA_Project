@@ -36,6 +36,7 @@ def abort_details(hashes, exc):
 @contextmanager
 def design_attempt(experiment_id, variants, repo_root):
     """Record failures after preflight hashes, without changing successful results."""
+    registration = experiment_registry.verify_preregistration(experiment_id, repo_root)
     attempt = {}
     try:
         yield attempt
@@ -45,7 +46,8 @@ def design_attempt(experiment_id, variants, repo_root):
                        **abort_details(attempt["source_hashes"], exc)}
             experiment_registry.encode_metrics(metrics)
             for variant in variants:
-                experiment_registry.record_trial(experiment_id, variant, metrics, "design_aborted", repo_root=repo_root,
+                experiment_registry.record_aborted_trial(experiment_id, variant, metrics, "design_aborted",
+                                                 preregistration=registration, repo_root=repo_root,
                                                  note="Aborted design attempt; input hashes are category SHA256 digests")
         raise
 

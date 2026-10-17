@@ -431,6 +431,8 @@ hegemony_shadow.evaluate(sys.argv[1], execute=True)
 bad = []
 for name, module in sys.modules.items():
     path = str(getattr(module, '__file__', '') or '')
+    if name in ('src.runner', 'src.runner.trading_calendar'):
+        continue
     if (name.startswith('src.runner') or 'trade_signal_submitter' in name + path
             or 'backend' in name or name.startswith('src.tools.kis')
             or ('/src/runner/' in path and 'trading' in Path(path).name)):
@@ -442,3 +444,24 @@ print('isolated')
                             text=True, capture_output=True, check=False)
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "isolated"
+
+
+def test_november_decision_records_full_horizon_within_verified_year(data, monkeypatch):
+    day = pd.Timestamp("2026-11-30")
+    sessions = shadow._calendar(day)
+    position = sessions.get_loc(day)
+    save_market(data, sessions[position - 59:position + 1])
+    monkeypatch.setattr(shadow, "_now", lambda: datetime(2026, 11, 30, 17, tzinfo=shadow.KST))
+    result = shadow.decide(day, data, execute=True)
+    assert len(result["planned_sessions"]) == hc002.HORIZON
+    assert result["planned_exit_date"] <= "2026-12-31"
+    assert (data / shadow.RECORD_DIR / "decisions/202611.json").is_file()
+
+
+def test_december_decision_needing_2027_fails_before_recording(data, monkeypatch):
+    day = pd.Timestamp("2026-12-30")
+    save_market(data, pd.DatetimeIndex([day]))
+    monkeypatch.setattr(shadow, "_now", lambda: datetime(2026, 12, 30, 17, tzinfo=shadow.KST))
+    with pytest.raises(ValueError, match="calendar_unverified"):
+        shadow.decide(day, data, execute=True)
+    assert not (data / shadow.RECORD_DIR / "decisions/202612.json").exists()
