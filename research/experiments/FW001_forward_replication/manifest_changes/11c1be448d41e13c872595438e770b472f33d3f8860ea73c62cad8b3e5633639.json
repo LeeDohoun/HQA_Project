@@ -1,0 +1,12 @@
+{
+  "changed_at": "2026-10-17T15:37:08.818914+00:00",
+  "changes": {},
+  "implementation_changes": {
+    "tests/test_experiments_fw001.py": {
+      "after": "02807a74fdc3ddc06f61cb407dc86956670bee57cbbadb0e345f8ebd55de7c3c",
+      "before": "f9d6dd7b7e6a6c08457c7a8fb64a8f866e47bdae0c12bf7970a60487707d8982"
+    }
+  },
+  "previous_manifest_sha256": "4d325709ebfbcac0448f7187a5c2f9355d193175a0fb28a579d38cdb806640e4",
+  "reason": "FW001 third-fix test correction: run annual synthetic daily recording on eligible entry mornings because the fixture preloads future entry prices; production fix unchanged"
+}

@@ -41,6 +41,20 @@ def test_notice_applies_to_session_apis_and_completed_bars(day, previous):
     assert calendar._calendar(2026).session_offset(previous, 1) > pd.Timestamp(day)
 
 
+@pytest.mark.parametrize("stamp,previous", [("2026-11-18T08:40:00+09:00", "2026-11-17"),
+    ("2026-11-19T08:40:00+09:00", "2026-11-18"),
+    ("2026-11-20T18:30:00+09:00", "2026-11-20")])
+def test_completed_sessions_verify_only_sessions_being_returned(stamp, previous):
+    assert calendar.completed_daily_sessions(datetime.fromisoformat(stamp), 1)[-1][0] == previous
+
+
+@pytest.mark.parametrize("stamp,count", [("2026-11-19T18:30:00+09:00", 1),
+    ("2026-11-20T08:40:00+09:00", 1), ("2026-11-20T18:30:00+09:00", 2)])
+def test_completed_sessions_never_return_an_unverified_special_session(stamp, count):
+    with pytest.raises(ValueError, match="calendar_special_session_coverage_unverified:2026-11-19"):
+        calendar.completed_daily_sessions(datetime.fromisoformat(stamp), count)
+
+
 @pytest.mark.parametrize("operation", [
     lambda: calendar.session_calendar("2026-12-01", "2027-01-01"),
     lambda: calendar._calendar(2027),

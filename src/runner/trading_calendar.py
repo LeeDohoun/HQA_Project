@@ -127,6 +127,11 @@ def preflight_price_sessions(data_dir, start, end, *, price_days=None):
     return report
 
 
+# Days that may have special KRX hours but whose official notice is not yet
+# recorded in SPECIAL_CLOSES. Only these fail closed; other verified-year days
+# use the dependency's regular schedule. Derived from PENDING_SPECIAL_SESSION_NOTICES
+# (2026-11-19, 2027 CSAT); move a day to SPECIAL_CLOSES with the official notice.
+PENDING_SPECIAL_SESSIONS = {day: notice["reason"] for day, notice in PENDING_SPECIAL_SESSION_NOTICES.items()}
 SPECIAL_CLOSES = {
     "2021-11-18": {
         "open": "2021-11-18T10:00:00+09:00", "close": "2021-11-18T16:30:00+09:00",
@@ -172,11 +177,11 @@ SPECIAL_CLOSES = {
 
 
 def _check_special_session_coverage(day: str) -> None:
-    # The dependency's CSAT table ends in 2020. These are review boundaries,
-    # not inferred exam dates or invented market hours.
+    # The dependency's CSAT table ends in 2020. Pending days fail closed rather
+    # than guessing regular hours; live days after the reviewed horizon fail too.
     if day > CALENDAR_REVIEWED_THROUGH:
         raise ValueError(f"calendar_review_expired:{day}:reviewed_through={CALENDAR_REVIEWED_THROUGH}")
-    if day in PENDING_SPECIAL_SESSION_NOTICES and day not in SPECIAL_CLOSES:
+    if day in PENDING_SPECIAL_SESSIONS and day not in SPECIAL_CLOSES:
         raise ValueError(f"calendar_special_session_coverage_unverified:{day}:official_KRX_notice_required")
 
 
@@ -261,7 +266,11 @@ def completed_daily_sessions(as_of: datetime, count: int = 300) -> list[tuple[st
         raise ValueError("completed session count must be between 1 and 300")
     cutoff = pd.Timestamp(as_of)
     korean_day = cutoff.tz_convert("Asia/Seoul")
-    _check_special_session_coverage(korean_day.date().isoformat())
+    # Only the sessions being returned are verified (each is checked below), so a
+    # pending special day does not block the previous day's catch-up before it.
+    if korean_day.date().isoformat() > CALENDAR_REVIEWED_THROUGH:
+        raise ValueError(f"calendar_review_expired:{korean_day.date().isoformat()}:"
+                         f"reviewed_through={CALENDAR_REVIEWED_THROUGH}")
     calendar = _live_calendar(korean_day.year)
     schedule = calendar.schedule.copy()
     for day, notice in SPECIAL_CLOSES.items():

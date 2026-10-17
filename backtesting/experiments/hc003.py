@@ -234,7 +234,7 @@ class PriceBook:
 
     @classmethod
     def from_windows(cls, windows, sessions, rebalances, end, *, experiment_id, repo_root=PROJECT_ROOT,
-                     close_dates=()):
+                     close_dates=(), initial_chain=None):
         """Same index/quote formula with bounded raw windows and carried indices.
 
         Windows partition exchange sessions (no overlap/gaps). Only execution
@@ -249,7 +249,14 @@ class PriceBook:
         book.openings, book.close_snapshots, book.zero_from = {}, {}, {}
         book.counts = dict.fromkeys(("unadjusted_fallback", "unchanged_missing_price_or_base",
                                     "missing_base", "cost_input_untradable"), 0)
-        marks, previous_raw, adv_history, last_trade = {}, {}, {}, {}
+        chain = {} if initial_chain is None else initial_chain
+        marks = {code: row["adjusted_close"] for code, row in chain.items()}
+        previous_raw = {code: row["raw_close"] if row["raw_close"] is not None else np.nan
+                        for code, row in chain.items()}
+        adv_history = {code: np.array([np.nan if v is None else v for v in row["adv_history"]])
+                       for code, row in chain.items()}
+        last_trade = {code: pd.Timestamp(row["last_trade"]) for code, row in chain.items()
+                      if row["last_trade"] is not None}
         captured_closes = {book.end, *(pd.Timestamp(day) for day in close_dates)}
         seen = pd.DatetimeIndex([])
         for prices in windows:
@@ -341,6 +348,11 @@ class PriceBook:
             if len(after):
                 book.zero_from[code] = after[0]
         book.closings = book.close_snapshots[book.end]
+        book.chain_state = {code: {"adjusted_close": float(mark),
+            "raw_close": float(previous_raw[code]) if np.isfinite(previous_raw[code]) else None,
+            "adv_history": [float(v) if np.isfinite(v) else None for v in adv_history[code]],
+            "last_trade": last_trade[code].date().isoformat() if code in last_trade else None}
+            for code, mark in sorted(marks.items())}
         return book
 
 
@@ -351,17 +363,17 @@ def portfolio_value(state, marks):
 
 
 def rebalance(state, quotes, targets, day, *, blocked_buys=(), allocation_n=None,
-              model_version="v2", multiplier=1.0):
+              model_version="v2", multiplier=1.0, no_trade=False):
     """One open: freeze, fix targets, sell, and proportionally cash-fund buys."""
     state = PortfolioState.from_dict(state.to_dict())
     before = set(state.quantities)
     marks = {code: q.mark for code, q in quotes.items()}
     value = portfolio_value(state, marks)
-    frozen = {code for code in before if not quotes[code].tradable or quotes[code].limit_down}
+    frozen = {code for code in before if no_trade or not quotes[code].tradable or quotes[code].limit_down}
     frozen_value = sum(state.quantities[code] * marks[code] for code in sorted(frozen))
     allocatable = value - frozen_value
     targets = set(targets)
-    executable = {code for code in targets - frozen if code in quotes and quotes[code].tradable
+    executable = {code for code in targets - frozen if not no_trade and code in quotes and quotes[code].tradable
                   and not quotes[code].limit_down and not (quotes[code].limit_up and code not in before)}
     n = len(executable) if allocation_n is None else allocation_n
     if type(n) is not int or n < 0:
@@ -685,7 +697,7 @@ def simulate(book, selections, variant, *, model_version="v2", multiplier=1.0, l
         target_retained = len(set(targets) & set(state.quantities))
         state, accounting = rebalance(state, book.quotes(selection["trade_date"], loss=loss), targets,
             selection["trade_date"], blocked_buys=blocked, allocation_n=denominator,
-            model_version=model_version, multiplier=multiplier)
+            model_version=model_version, multiplier=multiplier, no_trade=selection.get("no_trade", False))
         if target_set_fn is not None:
             accounting["target_retained_count"] = target_retained
             if retain_details:

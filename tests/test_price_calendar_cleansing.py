@@ -163,7 +163,7 @@ def test_calendar_range_and_naive_as_of_fail_clearly():
 @pytest.mark.parametrize("day", ["2026-11-19"])
 def test_unverified_special_session_periods_fail_instead_of_guessing_normal_close(day):
     with pytest.raises(ValueError, match="calendar_special_session_coverage_unverified"):
-        daily_session_close(day)
+        daily_session_close("2026-11-19")
 
 
 def test_reviewed_regular_sessions_after_old_boundary_keep_working():
@@ -174,9 +174,13 @@ def test_reviewed_regular_sessions_after_old_boundary_keep_working():
 
 
 def test_pending_special_session_blocks_from_that_day_until_official_notice_is_added():
+    from src.runner.analysis_scheduler import within_analysis_session
+
     assert "2026-11-19" in PENDING_SPECIAL_SESSION_NOTICES and "2026-11-19" not in SPECIAL_CLOSES
-    with pytest.raises(ValueError, match="official_KRX_notice_required"):
-        completed_daily_sessions(datetime(2026, 11, 19, 0, 30, tzinfo=timezone.utc))
+    # Live analysis does not run during the unverified session (its hours are unknown) ...
+    assert not within_analysis_session(datetime(2026, 11, 19, 1, 30, tzinfo=timezone.utc))
+    # ... while the previous day's completed bars stay usable before it (research catch-up).
+    assert completed_daily_sessions(datetime(2026, 11, 19, 0, 30, tzinfo=timezone.utc), 1)[-1][0] == "2026-11-18"
     # A later as_of still includes the unverified session in its completed window.
     with pytest.raises(ValueError, match="official_KRX_notice_required"):
         completed_daily_sessions(datetime(2026, 11, 25, 7, 0, tzinfo=timezone.utc))
@@ -198,6 +202,17 @@ def test_calendar_warnings_announce_pending_notice_and_review_expiry_in_advance(
     assert later[0].startswith("calendar_notice_required:2026-11-19:blocked")
     assert later[-1] == "calendar_review_required:2027-09-30:expires_in_10_days"
     assert calendar_review_warnings(date(2027, 10, 2))[-1] == "calendar_review_required:2027-09-30:expired"
+
+
+def test_regular_november_2026_sessions_use_the_regular_close():
+    close = daily_session_close("2026-11-02")
+    assert close.astimezone(timezone.utc).isoformat() == "2026-11-02T06:30:00+00:00"
+
+
+def test_pending_special_session_blocks_windows_that_include_it():
+    with pytest.raises(ValueError, match="official_KRX_notice_required"):
+        completed_daily_sessions(datetime(2026, 11, 20, 8, tzinfo=timezone.utc))
+    assert completed_daily_sessions(datetime(2026, 11, 3, 8, tzinfo=timezone.utc), count=2)
 
 
 def test_future_observation_is_excluded_before_its_bad_bar_is_validated():

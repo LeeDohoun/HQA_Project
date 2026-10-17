@@ -1,0 +1,17 @@
+{
+  "changed_at": "2026-10-17T15:21:47.192785+00:00",
+  "changes": {
+    "src/forward/fw001.py": {
+      "after": "5008a2f8cd732ca7ced0e8bdeafc1015b8d1f351d14e9b96914c4f5beabb00da",
+      "before": "2c0d09a487cd5c2ed4e11f192376b1acd2be5c64c0460838cba1a9dcaccb82c6"
+    }
+  },
+  "implementation_changes": {
+    "tests/test_forward_fw001.py": {
+      "after": "9c41ac1b23dd59a203e145a7b9d109e0949850821fac65225c3170a55075b2d7",
+      "before": "30b1b15588a5b854f73d928d36644c10d3c1c397cba108d6844b5272d6a52c39"
+    }
+  },
+  "previous_manifest_sha256": "8806558d04fa58d3d51cc24cd49867ba67b35d5404d61647f09f2eb2ceb84e76",
+  "reason": "FW001 second-round final verification: retain nanosecond publication precision at the registered data freeze and add native os._exit immediately-after-publication regressions"
+}
