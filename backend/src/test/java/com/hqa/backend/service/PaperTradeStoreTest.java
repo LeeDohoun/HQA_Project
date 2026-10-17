@@ -308,6 +308,55 @@ class PaperTradeStoreTest {
                 100, 100, 0, 0, 0.5, now)).hasMessage("TRIGGER_ALREADY_CONSUMED");
     }
 
+    @Test
+    void onlyRefusalsAsUntradableAreListedOnceEachInCodeOrder() {
+        TradeSignal signal = store.save(request("BUY", 20, 1, "a", now), account(0), now);
+        var refused = store.claim(signal.getId(), 1, TradeConditions.TriggerType.ENTRY, "entry", account(0),
+                100, 100, 10000, 100, null, now);
+        // The answer KIS paper gave the contest account's 046970 buys on 2026-10-16.
+        store.acknowledge(refused.getId(), Map.of("success", false, "response",
+                Map.of("rt_cd", "1", "msg_cd", "40070000", "msg1", "모의투자 주문처리가 안되었습니다(매매불가 종목)")));
+        assertThat(refused.getStatus()).isEqualTo("REJECTED");
+        OffsetDateTime monday = OffsetDateTime.parse("2026-10-19T10:00:00+09:00");
+        when(executions.rejectedBuysSince("u1", "binding", OffsetDateTime.parse("2026-10-16T00:00:00+09:00"))).thenReturn(List.of(
+                refusedBuy("046970", "{\"success\":false,\"response\":{\"rt_cd\":\"1\",\"msg_cd\":\"40070000\"}}"),
+                refused,
+                refusedBuy("046970", "{\"success\":false,\"response\":{\"rt_cd\":\"1\",\"msg_cd\":\"40070000\"}}"),
+                refusedBuy("373220", "{\"success\":false,\"response\":{\"rt_cd\":\"1\",\"msg_cd\":\"40030000\"}}"),
+                refusedBuy("000660", "{\"success\":false,\"response\":{\"rt_cd\":\"1\",\"msg_cd\":\"EGW00201\"}}"),
+                refusedBuy("035420", "{\"operatorResolution\":{\"action\":\"CONFIRMED_NOT_SUBMITTED\"},\"previousResponse\":null}"),
+                refusedBuy("051910", "not json"),
+                refusedBuy("068270", null)));
+        assertThat(store.untradableStockCodes("u1", "binding", monday)).containsExactly("005930", "046970");
+    }
+
+    @Test
+    void anUntradableRefusalCountsForTheRestOfItsTradingDayAndAllOfTheNext() {
+        // When the lookup runs -> the earliest refusal that still counts.
+        Map<String, String> sinceByTime = new LinkedHashMap<>();
+        sinceByTime.put("2026-10-16T13:31:40+09:00", "2026-10-15T00:00+09:00");   // Friday
+        sinceByTime.put("2026-10-17T12:00:00+09:00", "2026-10-16T00:00+09:00");   // Saturday
+        sinceByTime.put("2026-10-19T09:00:00+09:00", "2026-10-16T00:00+09:00");   // Monday keeps Friday's
+        sinceByTime.put("2026-10-20T09:00:00+09:00", "2026-10-19T00:00+09:00");   // Tuesday drops them
+        sinceByTime.put("2026-10-19T15:30:00Z", "2026-10-19T00:00+09:00");        // Tuesday 00:30 in Seoul
+        sinceByTime.put("2026-10-12T09:00:00+09:00", "2026-10-08T00:00+09:00");   // after the Hangul Day closure
+        sinceByTime.forEach((at, since) -> {
+            clearInvocations(executions);
+            store.untradableStockCodes("u1", "binding", OffsetDateTime.parse(at));
+            verify(executions).rejectedBuysSince("u1", "binding", OffsetDateTime.parse(since));
+        });
+    }
+
+    private static TradeSignalExecution refusedBuy(String code, String kisResponse) {
+        TradeSignalExecution execution = new TradeSignalExecution();
+        execution.setUserId("u1");
+        execution.setStockCode(code);
+        execution.setOrderSide("BUY");
+        execution.setStatus("REJECTED");
+        execution.setKisResponse(kisResponse);
+        return execution;
+    }
+
     private InternalTradeSignalRequest reduceHold(int version, double fraction, OffsetDateTime plannedExit) {
         Map<String, Object> payload = Map.of("schema_version", 2,
                 "exit_conditions", List.of(Map.of("id", "stop", "all", List.of(Map.of("field", "current_price", "operator", "<=", "value", 90)))),

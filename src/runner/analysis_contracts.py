@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import time
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import (AwareDatetime, BaseModel, ConfigDict, Field, PrivateAttr, StrictBool, StrictFloat, StrictInt,
                       ValidationError, model_validator)
@@ -215,6 +215,10 @@ class AccountSnapshot(Contract):
     monitorCapacityExceeded: StrictBool
     # Set by the client, not the backend: holdings the pipeline cannot analyse.
     unsupportedHoldings: list[dict] = Field(default_factory=list)
+    # Stocks KIS recently refused to buy for this account as untradable (msg_cd 40070000); the
+    # backend sends them only when there are any. They are left out of the account's new entries,
+    # so the field is never part of the account the RiskManager sees.
+    untradableStockCodes: list[Annotated[str, Field(pattern=r"^[0-9]{6}$")]] = Field(default_factory=list, exclude=True)
 
     @model_validator(mode="after")
     def validate_account(self):

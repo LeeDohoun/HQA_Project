@@ -26,6 +26,9 @@ public interface TradeSignalExecutionRepository extends JpaRepository<TradeSigna
     @Query("SELECT COALESCE(SUM(e.reservedCash),0) FROM TradeSignalExecution e WHERE e.userId = :userId")
     long reservedCashForUser(String userId);
     long countByUserIdAndOrderSideAndSubmittedAtAfter(String userId, String orderSide, OffsetDateTime after);
+    @Query("SELECT e FROM TradeSignalExecution e WHERE e.userId = :userId AND e.accountBinding = :accountBinding "
+            + "AND e.orderSide = 'BUY' AND e.status = 'REJECTED' AND e.submittedAt >= :since")
+    List<TradeSignalExecution> rejectedBuysSince(String userId, String accountBinding, OffsetDateTime since);
     @Query("SELECT e.userId FROM TradeSignalExecution e WHERE e.id = :id")
     Optional<String> ownerOf(String id);
 }

@@ -45,6 +45,7 @@ import org.springframework.transaction.annotation.Transactional;
 @ImportAutoConfiguration({JacksonAutoConfiguration.class, JdbcTemplateAutoConfiguration.class})
 class PaperTradeStorePostgresTest {
     @Autowired PaperTradeStore store;
+    @Autowired PaperAccountGuard guard;
     @Autowired UserRepository users;
     @Autowired TradeSignalRepository signals;
     @Autowired TradeSignalExecutionRepository executions;
@@ -141,6 +142,46 @@ class PaperTradeStorePostgresTest {
             assertThat(((Throwable) failure).getMessage()).isIn("STALE_ANALYSIS", "planVersion must increase on replacement");
         });
         assertThat(signals.findByUserIdAndStatusIn(user, PaperTradeStore.ACTIVE)).hasSize(2);
+    }
+
+    @Test
+    void untradableStocksAreThisAccountsBuysKisRefusedSinceThePreviousTradingDay() {
+        String user = paperUser();
+        String binding = guard.binding(users.findByUserId(user).orElseThrow());
+        OffsetDateTime friday = OffsetDateTime.parse("2026-10-16T10:01:12+09:00");
+        Map<String, Object> account = account(user, 0, 100_000, 50_000);
+        account.put("capturedAt", friday.toString());
+        TradeSignal plan = store.save(buy(user, "046970", "refused-" + UUID.randomUUID(), friday), account, friday);
+        TradeSignalExecution order = store.claim(plan.getId(), 1, TradeConditions.TriggerType.ENTRY, "entry", account,
+                100, 100, 50_000, 1_000, null, friday);
+        store.acknowledge(order.getId(), Map.of("success", false, "response",
+                Map.of("rt_cd", "1", "msg_cd", "40070000", "msg1", "모의투자 주문처리가 안되었습니다(매매불가 종목)")));
+        refused(user, binding, "BUY", "373220", "40030000", "2026-10-16T11:31:20+09:00");   // off the price grid
+        refused(user, binding, "BUY", "000660", "40070000", "2026-10-15T14:00:00+09:00");   // Thursday
+        refused(user, binding, "SELL", "005930", "40070000", "2026-10-19T09:05:00+09:00");
+        refused(user, "previous-account", "BUY", "035420", "40070000", "2026-10-19T09:05:00+09:00");
+        String other = paperUser();
+        refused(other, guard.binding(users.findByUserId(other).orElseThrow()), "BUY", "051910", "40070000",
+                "2026-10-19T09:05:00+09:00");
+        assertThat(store.untradableStockCodes(user, binding, OffsetDateTime.parse("2026-10-19T09:30:00+09:00")))
+                .containsExactly("046970");
+        assertThat(store.untradableStockCodes(user, binding, OffsetDateTime.parse("2026-10-20T09:30:00+09:00"))).isEmpty();
+    }
+
+    /** An order KIS refused with msgCode, recorded the way PaperTradeStore.acknowledge records it. */
+    private void refused(String user, String binding, String side, String code, String msgCode, String submittedAt) {
+        TradeSignalExecution execution = new TradeSignalExecution();
+        execution.setSignalId("signal-" + UUID.randomUUID());
+        execution.setUserId(user);
+        execution.setAccountBinding(binding);
+        execution.setOrderSide(side);
+        execution.setTriggerType("BUY".equals(side) ? "ENTRY" : "EXIT");
+        execution.setStockCode(code);
+        execution.setStatus("REJECTED");
+        execution.setRejectReason("KIS_ORDER_REJECTED");
+        execution.setSubmittedAt(OffsetDateTime.parse(submittedAt));
+        execution.setKisResponse("{\"success\":false,\"response\":{\"rt_cd\":\"1\",\"msg_cd\":\"" + msgCode + "\",\"msg1\":\"refused\"}}");
+        executions.saveAndFlush(execution);
     }
 
     /** A plan for another stock first, so the race below runs on an account already in use. */

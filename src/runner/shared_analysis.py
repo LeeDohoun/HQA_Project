@@ -621,10 +621,15 @@ class SharedAnalysisService:
                 # held, so it is neither quoted nor sent to the RiskManager.
                 room = 0 if latest.monitorCapacityExceeded else latest.monitorCapacity - latest.monitorSymbolCount
                 can_enter = latest.entryEligible and room > 0
-                new = [r for r in rows if can_enter and r["stock_code"] not in account_held
-                       and r["stock_code"] in completed
-                       and not r["analysis"]["candidate"].get("entry_filter_errors")
-                       and self._eligible_for_target(r, target)][:5]
+                eligible = [r for r in rows if can_enter and r["stock_code"] not in account_held
+                            and r["stock_code"] in completed
+                            and not r["analysis"]["candidate"].get("entry_filter_errors")
+                            and self._eligible_for_target(r, target)]
+                # KIS refused to buy these for this account (a contest account trades a restricted
+                # list): they are reported as omitted and the next-ranked stocks take their places.
+                # Holdings are reviewed whatever KIS refused.
+                untradable = [r["stock_code"] for r in eligible if r["stock_code"] in latest.untradableStockCodes]
+                new = [r for r in eligible if r["stock_code"] not in untradable][:5]
                 review = new + [r for r in rows if r["stock_code"] in account_held]
                 for holding in latest.holdings:
                     if holding.stockCode not in missing:
@@ -633,7 +638,11 @@ class SharedAnalysisService:
                                    "theme_keys": [], "leader_score": None, "analysis": {
                                        "specialists": {}, "specialist_errors": ["new_holding_since_shared_snapshot"],
                                        "source_ids": [], "evidence": {"financial_snapshot": {"status": "blocked"}}}})
-                return self._review_account(target, latest, review)
+                result = self._review_account(target, latest, review)
+                if untradable:
+                    result["omitted_candidates"] = ([{"stock_code": code, "reason": "kis_untradable_for_account"}
+                                                     for code in untradable] + result.get("omitted_candidates", []))
+                return result
             except Exception as exc:
                 return {"schema_version": 2, "user_id": user_id, "strategy_profile": target.get("strategyProfile", "default"),
                         "as_of": as_of.isoformat(), "analysis_id": content_hash({"target": target, "as_of": as_of.isoformat()}),

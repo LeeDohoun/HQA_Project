@@ -11,7 +11,9 @@ import com.hqa.backend.repository.TradePlanReceiptRepository;
 import com.hqa.backend.repository.TradeSignalExecutionRepository;
 import com.hqa.backend.repository.TradeSignalRepository;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -28,6 +30,9 @@ public class PaperTradeStore {
     public static final List<String> UNRESOLVED = List.of("INTENT", "UNKNOWN", "ORDER_SUBMITTED", "PARTIALLY_FILLED", "CANCEL_REQUESTED");
     /** Rejections that say nothing about the trade itself; the same trigger may be tried again. */
     public static final Set<String> TRANSIENT_REJECTIONS = Set.of("KIS_RATE_LIMITED", "ORDER_NOT_SENT_RATE_QUEUE_FULL");
+    /** KIS msg_cd for an order in a stock the account may not trade: 모의투자 주문처리가 안되었습니다(매매불가 종목). */
+    static final String KIS_UNTRADABLE_STOCK = "40070000";
+    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
     /**
      * How long after the close a sell placed in the closing call auction keeps working. The match
      * reaches KIS's order inquiry only some time after the close: on 2026-10-15 KIS paper still
@@ -538,6 +543,38 @@ public class PaperTradeStore {
     }
     public boolean hasReceipt(String key) { return receipts.existsById(key); }
     public int monitorCapacity() { return (int) quoteCapacity; }
+
+    /**
+     * Stocks KIS refused to buy for this account as untradable (msg_cd 40070000). A contest account
+     * trades only a restricted list whose rules are not published: on 2026-10-16 KIS refused three
+     * 046970 buys for one while a regular PAPER account bought the stock. The analysis leaves these
+     * stocks out of the account's new entries.
+     *
+     * <p>A refusal counts for the rest of its trading day and all of the next one (one on Friday
+     * 2026-10-16 counts through Monday 10-19). After that the stock may be proposed again, and a new
+     * refusal counts afresh, so a lifted restriction is noticed within two trading days and a lasting
+     * one costs about one refused order every second trading day.
+     */
+    @Transactional(readOnly = true)
+    public List<String> untradableStockCodes(String userId, String accountBinding, OffsetDateTime now) {
+        LocalDate today = now.atZoneSameInstant(KST).toLocalDate();
+        OffsetDateTime since = sessions.previousTradingDay(today).atStartOfDay(KST).toOffsetDateTime();
+        return executions.rejectedBuysSince(userId, accountBinding, since).stream()
+                .filter(item -> KIS_UNTRADABLE_STOCK.equals(kisMessageCode(item.getKisResponse())))
+                .map(TradeSignalExecution::getStockCode).distinct().sorted().toList();
+    }
+
+    /** KIS's msg_cd in an order response {@link #acknowledge} recorded, or "" when it has none. */
+    private String kisMessageCode(String recorded) {
+        if (recorded == null) return "";
+        try {
+            Map<?, ?> response = mapper.readValue(recorded, Map.class);
+            Object body = response == null ? null : response.get("response");
+            return body instanceof Map<?, ?> map ? text(map.get("msg_cd")).trim() : "";
+        } catch (JsonProcessingException ex) {
+            return "";
+        }
+    }
     private String json(Object value) {
         try { return mapper.writeValueAsString(value); }
         catch (JsonProcessingException ex) { throw new IllegalArgumentException("Invalid JSON payload", ex); }

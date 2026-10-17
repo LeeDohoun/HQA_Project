@@ -1068,6 +1068,48 @@ def test_an_account_that_cannot_enter_reviews_only_its_holdings(blocked):
     assert [row["stock_code"] for row in risk["candidates"]] == ["000001"]
 
 
+def test_a_stock_kis_refused_as_untradable_is_left_out_of_only_that_accounts_new_entries():
+    class Refused(Accounts):
+        def fetch_accounts(self, ids):
+            # The contest account holds 000001 too; a holding is reviewed whatever KIS refused.
+            return {user: AccountSnapshot.model_validate({**row.model_dump(mode="json"),
+                                                          "untradableStockCodes": ["000024", "000001"]})
+                    if user == "contest" else row for user, row in super().fetch_accounts(ids).items()}
+
+    def risk_inputs(accounts):
+        engine, calls = service(accounts=accounts)
+        cycle = engine.run_cycle([{"userId": "contest"}, {"userId": "regular"}])
+        return cycle, {payload["account"]["userId"]: payload for role, payload in calls if role == "risk_manager"}
+
+    cycle, risk = risk_inputs(Refused())
+    assert [row["stock_code"] for row in risk["contest"]["candidates"]] == ["000025", "000023", "000022", "000021", "000020", "000001"]
+    assert [row["stock_code"] for row in risk["regular"]["candidates"]] == ["000025", "000024", "000023", "000022", "000021", "000001"]
+    assert cycle["accounts"]["contest"]["omitted_candidates"] == [{"stock_code": "000024", "reason": "kis_untradable_for_account"}]
+    assert cycle["accounts"]["regular"]["omitted_candidates"] == []
+    assert "000001" in {plan["stock_code"] for plan in cycle["accounts"]["contest"]["plans"]}
+    assert all("untradableStockCodes" not in payload["account"] for payload in risk.values())
+    # An account KIS refused nothing gets the same RiskManager input as when no account had refusals,
+    # and the refused account's own view of itself is unchanged too.
+    _, unrefused = risk_inputs(Accounts())
+    assert risk["regular"] == unrefused["regular"]
+    assert risk["contest"]["account"] == unrefused["contest"]["account"]
+
+
+def test_the_backend_list_of_kis_refused_stocks_is_read_but_never_dumped(monkeypatch):
+    from src.runner.analysis_data import BackendAccountClient
+
+    row = snapshot("a", [holding()]).model_dump(mode="json")
+    row["capturedAt"] = datetime.now(timezone.utc).isoformat()
+    rows = [row, {**row, "userId": "b", "untradableStockCodes": ["046970"]}]
+    response = SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"snapshots": rows})
+    monkeypatch.setattr("src.runner.analysis_data.requests.post", lambda *args, **kwargs: response)
+    accounts = BackendAccountClient(base_url="http://backend.invalid", internal_token="t").fetch_accounts(["a", "b"])
+    assert accounts["a"].untradableStockCodes == [] and accounts["b"].untradableStockCodes == ["046970"]
+    assert accounts["b"].model_dump(mode="json") == {**accounts["a"].model_dump(mode="json"), "userId": "b"}
+    with pytest.raises(ValidationError):
+        AccountSnapshot.model_validate({**row, "untradableStockCodes": ["04697"]})
+
+
 def test_a_plan_that_breaks_the_plan_contract_is_set_aside_not_the_whole_decision():
     class OneBrokenPlan(Model):
         def invoke(self, messages):

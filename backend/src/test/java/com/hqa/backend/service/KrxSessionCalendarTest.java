@@ -2,6 +2,7 @@ package com.hqa.backend.service;
 
 import static org.assertj.core.api.Assertions.*;
 
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import org.junit.jupiter.api.Test;
 
@@ -40,6 +41,16 @@ class KrxSessionCalendarTest {
         assertThat(calendar.closingAuctionClose(kst("2026-12-25T15:25:00"))).isEmpty();   // closed
         assertThat(calendar.closingAuctionClose(kst("2026-11-19T15:25:00"))).isEmpty();   // CSAT day closes at 16:30
         assertThat(calendar.closingAuctionClose(kst("2026-11-19T16:20:00"))).contains(kst("2026-11-19T16:30:00"));
+    }
+
+    @Test
+    void thePreviousTradingDaySkipsWeekendsAndClosures() {
+        KrxSessionCalendar calendar = new KrxSessionCalendar("", "2026-11-19@10:00-16:30");
+        assertThat(calendar.previousTradingDay(LocalDate.parse("2026-10-20"))).isEqualTo("2026-10-19");
+        assertThat(calendar.previousTradingDay(LocalDate.parse("2026-10-19"))).isEqualTo("2026-10-16");   // Monday
+        assertThat(calendar.previousTradingDay(LocalDate.parse("2026-10-17"))).isEqualTo("2026-10-16");   // Saturday
+        assertThat(calendar.previousTradingDay(LocalDate.parse("2026-10-12"))).isEqualTo("2026-10-08");   // after Hangul Day
+        assertThat(calendar.previousTradingDay(LocalDate.parse("2026-11-20"))).isEqualTo("2026-11-19");   // CSAT day trades
     }
 
     @Test

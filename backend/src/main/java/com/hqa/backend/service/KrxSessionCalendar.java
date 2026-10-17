@@ -79,6 +79,13 @@ public class KrxSessionCalendar {
         return at.isBefore(close.minus(CLOSING_AUCTION)) ? Optional.empty() : Optional.of(close);
     }
 
+    /** The last trading day before {@code day}, skipping weekends and closures. */
+    public LocalDate previousTradingDay(LocalDate day) {
+        LocalDate previous = day.minusDays(1);
+        while (hours(previous) == null) previous = previous.minusDays(1);
+        return previous;
+    }
+
     /** The day's open and close, or null on a weekend or closure. */
     private LocalTime[] hours(LocalDate day) {
         if (day.getDayOfWeek() == DayOfWeek.SATURDAY || day.getDayOfWeek() == DayOfWeek.SUNDAY || closed.contains(day)) {
