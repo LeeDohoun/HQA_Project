@@ -13,6 +13,7 @@ from backtesting.experiments.lh001 import __main__ as lh001
 from src.forward import hegemony_shadow as shadow
 from src.runner import trading_calendar as calendar
 from scripts.research import lh002_screening_diagnostic as diagnostic
+from preregistration_fixtures import committed_preregistrations
 
 
 def test_all_2015_2025_sessions_identical_to_dependency():
@@ -104,13 +105,21 @@ def test_holdout_mismatch_stops_before_hashing_claim_and_publication(tmp_path, m
 
 @pytest.mark.parametrize("module", [av001, ev001])
 def test_design_preflight_precedes_prices_and_computation(tmp_path, monkeypatch, module):
-    monkeypatch.setattr(module, "_registration", lambda *a: SimpleNamespace())
+    # A real committed preregistration: the abort path verifies it against git history.
+    repo = tmp_path / "repo"
+    # Runners and ordering verify dependent experiments' preregistrations too.
+    committed_preregistrations(repo, sorted({path.parent.name for path in Path(
+        "research/experiments").glob("*/preregistration.md") if path.parent.name not in {"A001_cb_overhang", "B002_contract_ratio", "TEMPLATE"}}))
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
     monkeypatch.setattr(module, "source_hashes", lambda *a, **k: pytest.fail("prices hashed before preflight"))
     monkeypatch.setattr(module, "prepare", lambda *a, **k: pytest.fail("prepared before preflight"))
     monkeypatch.setattr(holdout, "_claim", lambda *a, **k: pytest.fail("ledger claimed"))
     with pytest.raises(ValueError, match="calendar_price_session_mismatch"):
-        module.run_experiment(data_dir=tmp_path, repo_root=tmp_path)
-    assert not (tmp_path / "research/experiments/registry.csv").exists()
+        module.run_experiment(data_dir=data_dir, repo_root=repo)
+    # The preflight fails before evaluation starts, so no trial row is written.
+    assert not (repo / "research/experiments/registry.csv").exists() or "design_aborted" not in (
+        repo / "research/experiments/registry.csv").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("module", [av001, ev001])
