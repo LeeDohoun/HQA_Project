@@ -1,0 +1,18 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/are01/src/HQA_Project/HQA_Project/backtesting/experiments/av001.py", line 989, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/home/are01/src/HQA_Project/HQA_Project/backtesting/experiments/av001.py", line 966, in main
+    result = (run_holdout if args.holdout else run_experiment)(data_dir=args.data_dir)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/are01/src/HQA_Project/HQA_Project/backtesting/experiments/av001.py", line 837, in run_holdout
+    prepared = prepare(data_dir=data_dir, repo_root=repo_root, sessions=sessions, planned=planned, stage="holdout")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/are01/src/HQA_Project/HQA_Project/backtesting/experiments/av001.py", line 204, in prepare
+    book = hc003.PriceBook.from_windows(windows(), days, rebalances, end,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/are01/src/HQA_Project/HQA_Project/backtesting/experiments/hc003.py", line 260, in from_windows
+    raise ValueError("incomplete or unordered streamed price sessions")
+ValueError: incomplete or unordered streamed price sessions
