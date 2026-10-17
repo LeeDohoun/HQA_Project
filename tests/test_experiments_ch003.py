@@ -78,6 +78,7 @@ def test_one_delisting_changes_real_shift_controls_and_final_verdict(runner_repo
 
 
 def test_index_replacement_after_preparation_aborts_without_publication(runner_repo, monkeypatch):
+    registration = experiment_registry.verify_preregistration(ch003.EXPERIMENT_ID, runner_repo)
     data, prices, days = prepared_fixture(runner_repo)
     save_indices(data, days)
     monkeypatch.setattr(ch003, "MONTHS", ("2024-05", "2024-06"))
@@ -97,6 +98,7 @@ def test_index_replacement_after_preparation_aborts_without_publication(runner_r
         ch003.run_experiment(data_dir=data, repo_root=runner_repo, prices=prices, sessions=days)
     rows = ch001.av001.hc003.registry_rows(runner_repo)
     assert len(rows) == 1 and rows[0]["verdict"] == "design_aborted"
+    assert rows[0]["prereg_commit"] == registration.commit_hash
     expected = hashlib.sha256(json.dumps({"market_context/benchmarks.jsonl": initial_hash}, sort_keys=True).encode()).hexdigest()
     assert json.loads(rows[0]["metrics_json"])["input_hashes"]["index"] == expected
 

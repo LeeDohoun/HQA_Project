@@ -15,6 +15,7 @@ from backtesting.experiments import av001, ch001, common, d001, hc002, hf001
 from src.ingestion import dart_listing
 from src.ingestion.storage import write_rows
 from dart_listing_fixtures import checkpoint
+from preregistration_fixtures import committed_preregistrations
 from test_dart_financial_date_rules import filing, save, version
 
 
@@ -610,14 +611,7 @@ def test_secondary_overlap_reference_boundaries_year_ban_market_liquidity_and_ri
 def offline_repo(tmp_path, monkeypatch):
     ids = (ch001.EXPERIMENT_ID, av001.EXPERIMENT_ID, hf001.EXPERIMENT_ID,
            hc002.EXPERIMENT_ID, av001.hc003.EXPERIMENT_ID)
-    registrations = {name: experiment_registry.verify_preregistration(name) for name in ids}
-    for name in ids:
-        relative = Path("research/experiments") / name / "preregistration.md"
-        target = tmp_path / relative
-        target.parent.mkdir(parents=True)
-        target.write_bytes((experiment_registry.PROJECT_ROOT / relative).read_bytes())
-    monkeypatch.setattr(experiment_registry, "verify_preregistration", lambda name, *a, **k: registrations[name])
-    monkeypatch.setattr(experiment_registry, "_git", lambda *a: "fixture-code-commit")
+    committed_preregistrations(tmp_path, ids)
     monkeypatch.setattr(hc002, "MONTHS", pd.period_range("2024-05", "2024-06", freq="M"))
     return tmp_path
 

@@ -11,7 +11,6 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 import pytest
-import yaml
 
 from backtesting import experiment_registry, holdout
 from backtesting.experiments import ch001, ch002, ch003, common, hf001, ordering
@@ -21,18 +20,12 @@ from test_experiments_ch001 import offline_repo, prepared_fixture, market, selec
 
 
 @pytest.fixture
-def runner_repo(offline_repo, monkeypatch):
-    previous = experiment_registry.verify_preregistration
-    registrations = {}
+def runner_repo(offline_repo):
     for name in (ch002.EXPERIMENT_ID, ch003.EXPERIMENT_ID):
         relative = f"research/experiments/{name}/preregistration.md"
-        content = subprocess.check_output(["git", "-C", str(ch001.PROJECT_ROOT), "show", f"1a70359:{relative}"], text=True)
-        fields = yaml.safe_load(content.split("---", 2)[1])
-        registrations[name] = SimpleNamespace(commit_hash="1a70359-fixture", fields=fields)
-        path = offline_repo / relative
-        path.parent.mkdir(parents=True)
-        path.write_text(content)
-    monkeypatch.setattr(experiment_registry, "verify_preregistration", lambda name, *a, **k: registrations[name] if name in registrations else previous(name, *a, **k))
+        subprocess.run(["git", "-C", str(offline_repo), "checkout", "HEAD", "--", relative],
+                       check=True, capture_output=True)
+        experiment_registry.verify_preregistration(name, offline_repo)
     return offline_repo
 
 
@@ -50,6 +43,7 @@ def design_case(request, runner_repo, monkeypatch):
 
 def test_exception_after_real_evaluation_records_each_aborted_variant(design_case, monkeypatch):
     module, kwargs = design_case
+    registration = experiment_registry.verify_preregistration(module.EXPERIMENT_ID, kwargs["repo_root"])
     original = module.evaluate_rule
     evaluated = []
     def evaluate(*args, **kw):
@@ -63,6 +57,7 @@ def test_exception_after_real_evaluation_records_each_aborted_variant(design_cas
     rows = ch001.av001.hc003.registry_rows(kwargs["repo_root"])
     assert [r["variant"] for r in rows] == list(module.VARIANTS)
     assert all(r["verdict"] == "design_aborted" for r in rows)
+    assert all(r["prereg_commit"] == registration.commit_hash for r in rows)
     metrics = [json.loads(r["metrics_json"]) for r in rows]
     assert len({m["run_id"] for m in metrics}) == 1
     assert all(m["status"] == "aborted" and m["input_hashes"]["code"]
@@ -80,6 +75,29 @@ def test_exception_before_preflight_hashes_records_nothing(design_case, monkeypa
     with pytest.raises(RuntimeError, match="injected before hashes"):
         module.run_experiment(**kwargs)
     assert not (kwargs["repo_root"] / experiment_registry.REGISTRY_PATH).exists()
+
+
+def test_midrun_preregistration_change_records_against_captured_registration(design_case, monkeypatch):
+    module, kwargs = design_case
+    root = kwargs["repo_root"]
+    registration = experiment_registry.verify_preregistration(module.EXPERIMENT_ID, root)
+    path = root / registration.path
+    original = module.evaluate_rule
+    def evaluate(*args, **kw):
+        result = original(*args, **kw)
+        path.write_text(path.read_text() + "\nchanged during evaluation\n")
+        return result
+    monkeypatch.setattr(module, "evaluate_rule", evaluate)
+    monkeypatch.setattr(module, "publish", lambda *a, **k: pytest.fail("published changed plan"))
+    with pytest.raises(ValueError, match="inputs or code changed"):
+        module.run_experiment(**kwargs)
+    with pytest.raises(ValueError, match="preregistration git check failed"):
+        experiment_registry.verify_preregistration(module.EXPERIMENT_ID, root)
+    rows = ch001.av001.hc003.registry_rows(root)
+    assert [r["variant"] for r in rows] == list(module.VARIANTS)
+    assert all(r["verdict"] == "design_aborted" and r["prereg_commit"] == registration.commit_hash for r in rows)
+    assert len({json.loads(r["metrics_json"])["run_id"] for r in rows}) == 1
+    assert not list((root / "research/experiments" / module.EXPERIMENT_ID / "results").glob("*"))
 
 
 def test_count_judgement_and_publication_share_recording_root_lock(design_case, monkeypatch):
