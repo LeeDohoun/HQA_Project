@@ -512,6 +512,29 @@ def test_every_terminal_status_releases_only_both_verified_variants_from_one_par
             ordering.av002_release(changed, runner.root)
 
 
+@pytest.mark.parametrize("broken", ["missing", "partial", "parent"])
+def test_LH003_seal_release_requires_both_AV002_variants_linked_to_parent(runner, monkeypatch, broken):
+    av002.run_holdout(data_dir=runner.root, repo_root=runner.root)
+    rows = hc003.registry_rows(runner.root)
+    verify = experiment_registry.verify_preregistration
+    monkeypatch.setattr(experiment_registry, "verify_preregistration",
+        lambda name, root: SimpleNamespace() if name == "EV001_earnings_filing_entry" else verify(name, root))
+    monkeypatch.setattr(ordering, "release_state", lambda *a: {})
+    with ordering.execution_lock(runner.root):
+        assert ordering.lh003_releases(rows, runner.root)[av002.EXPERIMENT_ID]["parent"] == av002.parent_link()
+        damaged = copy.deepcopy(rows)
+        if broken == "missing":
+            damaged = []
+        elif broken == "partial":
+            damaged = damaged[:1]
+        else:
+            metrics = json.loads(damaged[1]["metrics_json"])
+            metrics["parent"] = "different AV001 result"
+            damaged[1]["metrics_json"] = json.dumps(metrics)
+        with pytest.raises(ValueError):
+            ordering.lh003_releases(damaged, runner.root)
+
+
 @pytest.mark.parametrize("successor", ["EV001_earnings_filing_entry", "LH003_llm_leader_forward", "LH002_llm_hegemony_judge"])
 def test_direct_successor_claim_is_blocked_before_ledger_write(registered, monkeypatch, successor):
     monkeypatch.setattr(av002, "load_parent", lambda *a: ({}, {}))

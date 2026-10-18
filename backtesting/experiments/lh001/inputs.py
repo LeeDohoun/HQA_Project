@@ -242,6 +242,18 @@ def build_inputs(prices, decision_date, *, data_dir, repo_root=PROJECT_ROOT, kno
     universe, coverage = close_universe(history, day, known, profiles)
     if benchmarks is None:
         benchmarks = load_benchmarks(data_dir, days[0], day, repo_root=repo_root, config=config)
+    disclosures = disclosure_counts(data_dir, days[days < day], set(universe.index),
+                                   repo_root=repo_root, config=config)
+    return build_tables(history, day, known=known, profiles=profiles, benchmarks=benchmarks,
+                        universe=universe, coverage=coverage, disclosures=disclosures, listing_version=version)
+
+
+def build_tables(history, decision_date, *, known, profiles, benchmarks, universe, coverage, disclosures, listing_version):
+    """Pure LH002 tables; callers own source access, coverage and date guards."""
+    day = pd.Timestamp(decision_date)
+    history = history.loc[history.index.get_level_values("trade_date") <= day].sort_index()
+    days = pd.DatetimeIndex(history.index.get_level_values("trade_date").unique()).sort_values()
+    known = known.loc[pd.to_datetime(known.available_date) < day].copy()
     benchmarks = benchmarks.loc[pd.to_datetime(benchmarks.trade_date) <= day]
     raw = history.copy()
     raw["industry"] = [profiles.get(code, industry_map.UNCLASSIFIED) for code in raw.index.get_level_values("stock_code")]
@@ -264,7 +276,6 @@ def build_inputs(prices, decision_date, *, data_dir, repo_root=PROJECT_ROOT, kno
     aggregate = hc001.phase_signals(known)
     # Listings have receipt dates, not publication times: same-day reports may
     # have arrived after the close. Use the prior 60 completed sessions only.
-    disclosures = disclosure_counts(data_dir, days[days < day], set(universe.index), repo_root=repo_root, config=config)
     stocks = []
     cap_pct = universe.market_cap.rank(pct=True, method="average") * 100
     trading_pct = universe.trading_value.rank(pct=True, method="average") * 100
@@ -325,7 +336,7 @@ def build_inputs(prices, decision_date, *, data_dir, repo_root=PROJECT_ROOT, kno
         row["financial_coverage"] = len(matched) / members.corp_code.nunique() if len(members) else None
         industries.append(row)
     return json_value({"decision_date": day, "market": market, "industries": industries, "stocks": stocks,
-                       "coverage": coverage, "listing_version": version,
+                       "coverage": coverage, "listing_version": listing_version,
                        "a_codes": universe.index[universe.phase.eq(2)].tolist(),
                        "source_window": [days[0], day]})
 

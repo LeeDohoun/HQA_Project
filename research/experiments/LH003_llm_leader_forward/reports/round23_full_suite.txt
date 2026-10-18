@@ -1,0 +1,1640 @@
+
+===== tests/test_agent_context.py =====
+.                                                                        [100%]
+1 passed in 0.03s
+
+===== tests/test_agents_public_surface.py =====
+...                                                                      [100%]
+3 passed in 0.16s
+
+===== tests/test_ai_server_analysis_modes.py =====
+..........                                                               [100%]
+10 passed in 1.29s
+
+===== tests/test_analysis_generations.py =====
+..............                                                           [100%]
+=============================== warnings summary ===============================
+tests/test_analysis_generations.py: 24 warnings
+  /home/are01/src/HQA_Project/HQA_lh003/src/evidence/index_builder.py:44: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    ref = reference_date or datetime.utcnow()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+14 passed, 24 warnings in 0.74s
+
+===== tests/test_analysis_scheduler.py =====
+........                                                                 [100%]
+8 passed in 0.08s
+
+===== tests/test_analyst_scoring.py =====
+.....                                                                    [100%]
+5 passed in 0.17s
+
+===== tests/test_backtesting_agent_replay.py =====
+.......                                                                  [100%]
+7 passed in 0.17s
+
+===== tests/test_backtesting_append_only.py =====
+.......................................                                  [100%]
+39 passed in 0.96s
+
+===== tests/test_backtesting_capacity.py =====
+...........                                                              [100%]
+11 passed in 0.13s
+
+===== tests/test_backtesting_cli.py =====
+..............................                                           [100%]
+30 passed in 0.57s
+
+===== tests/test_backtesting_cost_model.py =====
+........................................................................ [ 30%]
+........................................................................ [ 61%]
+........................................................................ [ 91%]
+...................                                                      [100%]
+235 passed in 3.79s
+
+===== tests/test_backtesting_event_study.py =====
+.....................................................                    [100%]
+53 passed in 2.48s
+
+===== tests/test_backtesting_experiment_registry.py =====
+..................................................................       [100%]
+66 passed in 5.80s
+
+===== tests/test_backtesting_holdout.py =====
+.........................                                                [100%]
+25 passed in 1.18s
+
+===== tests/test_backtesting_signal_eval.py =====
+.........................................                                [100%]
+41 passed in 4.26s
+
+===== tests/test_backtesting_temporal_evidence.py =====
+.........                                                                [100%]
+9 passed in 0.64s
+
+===== tests/test_benchmark_context.py =====
+.....................................                                    [100%]
+37 passed in 0.29s
+
+===== tests/test_chartist_price_snapshot.py =====
+..                                                                       [100%]
+2 passed in 0.17s
+
+===== tests/test_charts_tools_partial_history.py =====
+.                                                                        [100%]
+1 passed in 0.15s
+
+===== tests/test_cli_entrypoint.py =====
+..............................                                           [100%]
+30 passed in 0.35s
+
+===== tests/test_collection_cli_contract.py =====
+.................                                                        [100%]
+17 passed in 0.34s
+
+===== tests/test_collection_state.py =====
+.............                                                            [100%]
+13 passed in 0.41s
+
+===== tests/test_corporate_actions.py =====
+....................................................                     [100%]
+52 passed in 0.44s
+
+===== tests/test_dart_backfill.py =====
+........................................................................ [ 40%]
+........................................................................ [ 80%]
+...................................                                      [100%]
+179 passed in 3.30s
+
+===== tests/test_dart_business_text.py =====
+........................................................................ [ 88%]
+.........                                                                [100%]
+81 passed in 1.23s
+
+===== tests/test_dart_buyback.py =====
+....................................................................     [100%]
+68 passed in 1.17s
+
+===== tests/test_dart_collection_contract.py =====
+...................                                                      [100%]
+19 passed in 0.23s
+
+===== tests/test_dart_company.py =====
+.................................                                        [100%]
+33 passed in 0.61s
+
+===== tests/test_dart_event_metadata.py =====
+..........................                                               [100%]
+26 passed in 0.30s
+
+===== tests/test_dart_filing_dates.py =====
+.........                                                                [100%]
+9 passed in 0.20s
+
+===== tests/test_dart_financial_date_rules.py =====
+..............                                                           [100%]
+14 passed in 1.04s
+
+===== tests/test_dart_financials.py =====
+..............                                                           [100%]
+14 passed in 0.21s
+
+===== tests/test_dart_list_supplement.py =====
+..............................                                           [100%]
+30 passed in 1.04s
+
+===== tests/test_dart_listing.py =====
+.............................                                            [100%]
+29 passed in 2.93s
+
+===== tests/test_dart_poller.py =====
+........................................................................ [ 73%]
+..........................                                               [100%]
+98 passed in 1.36s
+
+===== tests/test_dart_quarterly.py =====
+........................................................................ [ 68%]
+.................................                                        [100%]
+105 passed in 4.16s
+
+===== tests/test_dart_survivorship_impact.py =====
+.......                                                                  [100%]
+7 passed in 0.77s
+
+===== tests/test_data_commands.py =====
+............                                                             [100%]
+12 passed in 0.26s
+
+===== tests/test_diagnostics_matched_controls.py =====
+........................                                                 [100%]
+24 passed in 3.90s
+
+===== tests/test_event_evidence.py =====
+........................................................................ [ 96%]
+...                                                                      [100%]
+75 passed in 0.53s
+
+===== tests/test_event_pipeline.py =====
+......................                                                   [100%]
+=============================== warnings summary ===============================
+tests/test_event_pipeline.py: 11 warnings
+  /home/are01/src/HQA_Project/HQA_lh003/src/evidence/index_builder.py:44: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    ref = reference_date or datetime.utcnow()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+22 passed, 11 warnings in 0.58s
+
+===== tests/test_event_reaction.py =====
+..................................................                       [100%]
+50 passed in 0.38s
+
+===== tests/test_evidence_legacy_cleanup.py =====
+.......                                                                  [100%]
+7 passed in 0.18s
+
+===== tests/test_evidence_naming.py =====
+.....                                                                    [100%]
+5 passed in 0.17s
+
+===== tests/test_evidence_retrieval.py =====
+......................................                                   [100%]
+38 passed in 0.46s
+
+===== tests/test_evidence_structured_dart.py =====
+...................                                                      [100%]
+=============================== warnings summary ===============================
+tests/test_evidence_structured_dart.py::test_collector_structured_only_fields_survive_raw_loading_and_corpus
+tests/test_evidence_structured_dart.py::test_structured_metadata_revisions_and_stock_associations_survive_canonical_deduplication
+tests/test_evidence_structured_dart.py::test_structured_metadata_revisions_and_stock_associations_survive_canonical_deduplication
+tests/test_evidence_structured_dart.py::test_structured_metadata_revisions_and_stock_associations_survive_canonical_deduplication
+  /home/are01/src/HQA_Project/HQA_lh003/src/evidence/index_builder.py:44: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    ref = reference_date or datetime.utcnow()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+19 passed, 4 warnings in 0.38s
+
+===== tests/test_experiments_av001.py =====
+........................................................................ [ 90%]
+......s.                                                                 [100%]
+79 passed, 1 skipped in 77.39s (0:01:17)
+
+===== tests/test_experiments_b001.py =====
+...............................................................          [100%]
+63 passed in 7.81s
+
+===== tests/test_experiments_bb001.py =====
+........................................................................ [ 77%]
+.....................                                                    [100%]
+93 passed in 14.73s
+
+===== tests/test_experiments_ch002.py =====
+........................................................................ [ 96%]
+...                                                                      [100%]
+75 passed in 108.84s (0:01:48)
+
+===== tests/test_experiments_ch003.py =====
+........................................................................ [100%]
+72 passed in 83.37s (0:01:23)
+
+===== tests/test_experiments_ch004.py =====
+F.................FFFF..............FFFFFFFFFFF.......FFFFFF.FFFFFFFF.FF [ 96%]
+.FF                                                                      [100%]
+=================================== FAILURES ===================================
+_________ test_registration_pins_all_three_documents_and_EV001_source __________
+tests/test_experiments_ch004.py:104: in test_registration_pins_all_three_documents_and_EV001_source
+    registered = ch004._registration(ch004.PROJECT_ROOT)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+_ test_source_invalid_returns_respect_EV001_base_and_chart_boundary[inf-stops-preparation] _
+tests/test_experiments_ch004.py:246: in test_source_invalid_returns_respect_EV001_base_and_chart_boundary
+    ch004.run_experiment(**complete_inputs)
+backtesting/experiments/ch004.py:475: in run_experiment
+    payload = compute_design(data_dir=data_dir, repo_root=repo_root, prices=prices, sessions=sessions, _attempt=attempt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+
+During handling of the above exception, another exception occurred:
+tests/test_experiments_ch004.py:245: in test_source_invalid_returns_respect_EV001_base_and_chart_boundary
+    with np.errstate(invalid="ignore"), pytest.raises(ValueError, match=failure):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'invalid adjusted return'
+E     Actual message: 'CH004 EV001 source differs from its approved 08079e2/f8c6845 versions'
+_ test_source_invalid_returns_respect_EV001_base_and_chart_boundary[minus-one-stops-baseline] _
+tests/test_experiments_ch004.py:246: in test_source_invalid_returns_respect_EV001_base_and_chart_boundary
+    ch004.run_experiment(**complete_inputs)
+backtesting/experiments/ch004.py:475: in run_experiment
+    payload = compute_design(data_dir=data_dir, repo_root=repo_root, prices=prices, sessions=sessions, _attempt=attempt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+
+During handling of the above exception, another exception occurred:
+tests/test_experiments_ch004.py:245: in test_source_invalid_returns_respect_EV001_base_and_chart_boundary
+    with np.errstate(invalid="ignore"), pytest.raises(ValueError, match=failure):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'undefined adjusted open-to-close return'
+E     Actual message: 'CH004 EV001 source differs from its approved 08079e2/f8c6845 versions'
+_ test_source_invalid_returns_respect_EV001_base_and_chart_boundary[nan-keeps-event] _
+tests/test_experiments_ch004.py:254: in test_source_invalid_returns_respect_EV001_base_and_chart_boundary
+    result = ch004.run_experiment(**complete_inputs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:475: in run_experiment
+    payload = compute_design(data_dir=data_dir, repo_root=repo_root, prices=prices, sessions=sessions, _attempt=attempt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+_ test_source_invalid_returns_respect_EV001_base_and_chart_boundary[minus-one-keeps-event] _
+tests/test_experiments_ch004.py:254: in test_source_invalid_returns_respect_EV001_base_and_chart_boundary
+    result = ch004.run_experiment(**complete_inputs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:475: in run_experiment
+    payload = compute_design(data_dir=data_dir, repo_root=repo_root, prices=prices, sessions=sessions, _attempt=attempt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+_________ test_holm_two_and_strict_cumulative_trial_threshold[20-pass] _________
+tests/test_experiments_ch004.py:422: in test_holm_two_and_strict_cumulative_trial_threshold
+    actual = ch004.judge_variants(results, ch004._registration(repo).fields, trials)
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+_________ test_holm_two_and_strict_cumulative_trial_threshold[21-fail] _________
+tests/test_experiments_ch004.py:422: in test_holm_two_and_strict_cumulative_trial_threshold
+    actual = ch004.judge_variants(results, ch004._registration(repo).fields, trials)
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+_________ test_insufficient_supplies_p_one_but_keeps_Holm_two[events] __________
+tests/test_experiments_ch004.py:439: in test_insufficient_supplies_p_one_but_keeps_Holm_two
+    result = ch004.judge_variants(results, ch004._registration(repo).fields, 2)
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+_________ test_insufficient_supplies_p_one_but_keeps_Holm_two[months] __________
+tests/test_experiments_ch004.py:439: in test_insufficient_supplies_p_one_but_keeps_Holm_two
+    result = ch004.judge_variants(results, ch004._registration(repo).fields, 2)
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+_____ test_insufficient_supplies_p_one_but_keeps_Holm_two[removal_months] ______
+tests/test_experiments_ch004.py:439: in test_insufficient_supplies_p_one_but_keeps_Holm_two
+    result = ch004.judge_variants(results, ch004._registration(repo).fields, 2)
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+___________ test_insufficient_supplies_p_one_but_keeps_Holm_two[se] ____________
+tests/test_experiments_ch004.py:439: in test_insufficient_supplies_p_one_but_keeps_Holm_two
+    result = ch004.judge_variants(results, ch004._registration(repo).fields, 2)
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+____________ test_insufficient_supplies_p_one_but_keeps_Holm_two[t] ____________
+tests/test_experiments_ch004.py:439: in test_insufficient_supplies_p_one_but_keeps_Holm_two
+    result = ch004.judge_variants(results, ch004._registration(repo).fields, 2)
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+____________ test_insufficient_supplies_p_one_but_keeps_Holm_two[p] ____________
+tests/test_experiments_ch004.py:439: in test_insufficient_supplies_p_one_but_keeps_Holm_two
+    result = ch004.judge_variants(results, ch004._registration(repo).fields, 2)
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+__________ test_insufficient_supplies_p_one_but_keeps_Holm_two[mean] ___________
+tests/test_experiments_ch004.py:439: in test_insufficient_supplies_p_one_but_keeps_Holm_two
+    result = ch004.judge_variants(results, ch004._registration(repo).fields, 2)
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+__________ test_insufficient_supplies_p_one_but_keeps_Holm_two[cost] ___________
+tests/test_experiments_ch004.py:439: in test_insufficient_supplies_p_one_but_keeps_Holm_two
+    result = ch004.judge_variants(results, ch004._registration(repo).fields, 2)
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+_________ test_insufficient_supplies_p_one_but_keeps_Holm_two[control] _________
+tests/test_experiments_ch004.py:439: in test_insufficient_supplies_p_one_but_keeps_Holm_two
+    result = ch004.judge_variants(results, ch004._registration(repo).fields, 2)
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+__ test_delisting_loss_reprices_x_and_reruns_controls_Holm_to_change_verdict ___
+tests/test_experiments_ch004.py:464: in test_delisting_loss_reprices_x_and_reruns_controls_Holm_to_change_verdict
+    rules = ch004.judge_variants({v: ch004.variant_metrics(rows, v, diagnostics=False) for v in ch004.VARIANTS}, ch004._registration(repo).fields, 2)
+                                                                                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+_ test_incomplete_and_original_sensitivity_statuses[False-True-data_incomplete] _
+tests/test_experiments_ch004.py:479: in test_incomplete_and_original_sensitivity_statuses
+    result = ch004.evaluate(prepared, ch004._registration(repo).fields, 2)
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+_ test_incomplete_and_original_sensitivity_statuses[True-False-sensitivity_unavailable] _
+tests/test_experiments_ch004.py:479: in test_incomplete_and_original_sensitivity_statuses
+    result = ch004.evaluate(prepared, ch004._registration(repo).fields, 2)
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+_ test_incomplete_listing_stops_before_EV001_preparation_and_records_two_final_rows _
+tests/test_experiments_ch004.py:494: in test_incomplete_listing_stops_before_EV001_preparation_and_records_two_final_rows
+    result = ch004.run_experiment(**complete_inputs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:475: in run_experiment
+    payload = compute_design(data_dir=data_dir, repo_root=repo_root, prices=prices, sessions=sessions, _attempt=attempt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+_ test_complete_fixture_replay_all_secondary_metrics_and_no_protected_price_opens _
+tests/test_experiments_ch004.py:509: in test_complete_fixture_replay_all_secondary_metrics_and_no_protected_price_opens
+    result = ch004.compute_design(**kwargs, _attempt=attempt)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+___ test_dry_path_on_complete_fixture_never_evaluates_outcomes_or_publishes ____
+tests/test_experiments_ch004.py:545: in test_dry_path_on_complete_fixture_never_evaluates_outcomes_or_publishes
+    plan = ch004.dry_run(**complete_inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:518: in dry_run
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+___ test_failures_before_after_freeze_record_zero_or_two_attempts[pre_hash] ____
+tests/test_experiments_ch004.py:573: in test_failures_before_after_freeze_record_zero_or_two_attempts
+    ch004.run_experiment(**complete_inputs)
+backtesting/experiments/ch004.py:475: in run_experiment
+    payload = compute_design(data_dir=data_dir, repo_root=repo_root, prices=prices, sessions=sessions, _attempt=attempt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+____ test_failures_before_after_freeze_record_zero_or_two_attempts[prepare] ____
+tests/test_experiments_ch004.py:573: in test_failures_before_after_freeze_record_zero_or_two_attempts
+    ch004.run_experiment(**complete_inputs)
+backtesting/experiments/ch004.py:475: in run_experiment
+    payload = compute_design(data_dir=data_dir, repo_root=repo_root, prices=prices, sessions=sessions, _attempt=attempt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+___ test_failures_before_after_freeze_record_zero_or_two_attempts[evaluate] ____
+tests/test_experiments_ch004.py:573: in test_failures_before_after_freeze_record_zero_or_two_attempts
+    ch004.run_experiment(**complete_inputs)
+backtesting/experiments/ch004.py:475: in run_experiment
+    payload = compute_design(data_dir=data_dir, repo_root=repo_root, prices=prices, sessions=sessions, _attempt=attempt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+____ test_failures_before_after_freeze_record_zero_or_two_attempts[publish] ____
+tests/test_experiments_ch004.py:573: in test_failures_before_after_freeze_record_zero_or_two_attempts
+    ch004.run_experiment(**complete_inputs)
+backtesting/experiments/ch004.py:475: in run_experiment
+    payload = compute_design(data_dir=data_dir, repo_root=repo_root, prices=prices, sessions=sessions, _attempt=attempt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+__ test_input_mutation_after_hash_freeze_aborts_before_publication[financial] __
+tests/test_experiments_ch004.py:604: in test_input_mutation_after_hash_freeze_aborts_before_publication
+    ch004.run_experiment(**complete_inputs)
+backtesting/experiments/ch004.py:475: in run_experiment
+    payload = compute_design(data_dir=data_dir, repo_root=repo_root, prices=prices, sessions=sessions, _attempt=attempt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+
+During handling of the above exception, another exception occurred:
+tests/test_experiments_ch004.py:603: in test_input_mutation_after_hash_freeze_aborts_before_publication
+    with pytest.raises(ValueError, match="inputs or code changed"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'inputs or code changed'
+E     Actual message: 'CH004 EV001 source differs from its approved 08079e2/f8c6845 versions'
+_ test_input_mutation_after_hash_freeze_aborts_before_publication[documentation] _
+tests/test_experiments_ch004.py:604: in test_input_mutation_after_hash_freeze_aborts_before_publication
+    ch004.run_experiment(**complete_inputs)
+backtesting/experiments/ch004.py:475: in run_experiment
+    payload = compute_design(data_dir=data_dir, repo_root=repo_root, prices=prices, sessions=sessions, _attempt=attempt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+
+During handling of the above exception, another exception occurred:
+tests/test_experiments_ch004.py:603: in test_input_mutation_after_hash_freeze_aborts_before_publication
+    with pytest.raises(ValueError, match="inputs or code changed"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'inputs or code changed'
+E     Actual message: 'CH004 EV001 source differs from its approved 08079e2/f8c6845 versions'
+_ test_input_mutation_after_hash_freeze_aborts_before_publication[in_memory_prices] _
+tests/test_experiments_ch004.py:604: in test_input_mutation_after_hash_freeze_aborts_before_publication
+    ch004.run_experiment(**complete_inputs)
+backtesting/experiments/ch004.py:475: in run_experiment
+    payload = compute_design(data_dir=data_dir, repo_root=repo_root, prices=prices, sessions=sessions, _attempt=attempt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+
+During handling of the above exception, another exception occurred:
+tests/test_experiments_ch004.py:603: in test_input_mutation_after_hash_freeze_aborts_before_publication
+    with pytest.raises(ValueError, match="inputs or code changed"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'inputs or code changed'
+E     Actual message: 'CH004 EV001 source differs from its approved 08079e2/f8c6845 versions'
+_ test_input_mutation_after_hash_freeze_aborts_before_publication[preregistration] _
+tests/test_experiments_ch004.py:604: in test_input_mutation_after_hash_freeze_aborts_before_publication
+    ch004.run_experiment(**complete_inputs)
+backtesting/experiments/ch004.py:475: in run_experiment
+    payload = compute_design(data_dir=data_dir, repo_root=repo_root, prices=prices, sessions=sessions, _attempt=attempt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+
+During handling of the above exception, another exception occurred:
+tests/test_experiments_ch004.py:603: in test_input_mutation_after_hash_freeze_aborts_before_publication
+    with pytest.raises(ValueError, match="inputs or code changed"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'inputs or code changed'
+E     Actual message: 'CH004 EV001 source differs from its approved 08079e2/f8c6845 versions'
+___ test_file_backed_complete_pipeline_and_dry_run_under_protected_open_trap ___
+tests/test_experiments_ch004.py:637: in test_file_backed_complete_pipeline_and_dry_run_under_protected_open_trap
+    result = ch004.compute_design(**kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+_____ test_all_EV001_replays_finish_before_first_chart_and_mismatch_stops ______
+tests/test_experiments_ch004.py:661: in test_all_EV001_replays_finish_before_first_chart_and_mismatch_stops
+    ch004.evaluate(prepared, ch004._registration(repo).fields, 2)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+_______ test_count_judgement_publication_under_one_lock_two_finite_rows ________
+tests/test_experiments_ch004.py:716: in test_count_judgement_publication_under_one_lock_two_finite_rows
+    result = ch004.run_experiment(**complete_inputs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:475: in run_experiment
+    payload = compute_design(data_dir=data_dir, repo_root=repo_root, prices=prices, sessions=sessions, _attempt=attempt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+________________ test_validate_both_rows_before_any_publication ________________
+tests/test_experiments_ch004.py:733: in test_validate_both_rows_before_any_publication
+    payload = ch004.compute_design(**complete_inputs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:424: in compute_design
+    registration = _registration(repo_root)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+backtesting/experiments/ch004.py:63: in _registration
+    raise ValueError("CH004 EV001 source differs from its approved 08079e2/f8c6845 versions")
+E   ValueError: CH004 EV001 source differs from its approved 08079e2/f8c6845 versions
+=========================== short test summary info ============================
+FAILED tests/test_experiments_ch004.py::test_registration_pins_all_three_documents_and_EV001_source
+FAILED tests/test_experiments_ch004.py::test_source_invalid_returns_respect_EV001_base_and_chart_boundary[inf-stops-preparation]
+FAILED tests/test_experiments_ch004.py::test_source_invalid_returns_respect_EV001_base_and_chart_boundary[minus-one-stops-baseline]
+FAILED tests/test_experiments_ch004.py::test_source_invalid_returns_respect_EV001_base_and_chart_boundary[nan-keeps-event]
+FAILED tests/test_experiments_ch004.py::test_source_invalid_returns_respect_EV001_base_and_chart_boundary[minus-one-keeps-event]
+FAILED tests/test_experiments_ch004.py::test_holm_two_and_strict_cumulative_trial_threshold[20-pass]
+FAILED tests/test_experiments_ch004.py::test_holm_two_and_strict_cumulative_trial_threshold[21-fail]
+FAILED tests/test_experiments_ch004.py::test_insufficient_supplies_p_one_but_keeps_Holm_two[events]
+FAILED tests/test_experiments_ch004.py::test_insufficient_supplies_p_one_but_keeps_Holm_two[months]
+FAILED tests/test_experiments_ch004.py::test_insufficient_supplies_p_one_but_keeps_Holm_two[removal_months]
+FAILED tests/test_experiments_ch004.py::test_insufficient_supplies_p_one_but_keeps_Holm_two[se]
+FAILED tests/test_experiments_ch004.py::test_insufficient_supplies_p_one_but_keeps_Holm_two[t]
+FAILED tests/test_experiments_ch004.py::test_insufficient_supplies_p_one_but_keeps_Holm_two[p]
+FAILED tests/test_experiments_ch004.py::test_insufficient_supplies_p_one_but_keeps_Holm_two[mean]
+FAILED tests/test_experiments_ch004.py::test_insufficient_supplies_p_one_but_keeps_Holm_two[cost]
+FAILED tests/test_experiments_ch004.py::test_insufficient_supplies_p_one_but_keeps_Holm_two[control]
+FAILED tests/test_experiments_ch004.py::test_delisting_loss_reprices_x_and_reruns_controls_Holm_to_change_verdict
+FAILED tests/test_experiments_ch004.py::test_incomplete_and_original_sensitivity_statuses[False-True-data_incomplete]
+FAILED tests/test_experiments_ch004.py::test_incomplete_and_original_sensitivity_statuses[True-False-sensitivity_unavailable]
+FAILED tests/test_experiments_ch004.py::test_incomplete_listing_stops_before_EV001_preparation_and_records_two_final_rows
+FAILED tests/test_experiments_ch004.py::test_complete_fixture_replay_all_secondary_metrics_and_no_protected_price_opens
+FAILED tests/test_experiments_ch004.py::test_dry_path_on_complete_fixture_never_evaluates_outcomes_or_publishes
+FAILED tests/test_experiments_ch004.py::test_failures_before_after_freeze_record_zero_or_two_attempts[pre_hash]
+FAILED tests/test_experiments_ch004.py::test_failures_before_after_freeze_record_zero_or_two_attempts[prepare]
+FAILED tests/test_experiments_ch004.py::test_failures_before_after_freeze_record_zero_or_two_attempts[evaluate]
+FAILED tests/test_experiments_ch004.py::test_failures_before_after_freeze_record_zero_or_two_attempts[publish]
+FAILED tests/test_experiments_ch004.py::test_input_mutation_after_hash_freeze_aborts_before_publication[financial]
+FAILED tests/test_experiments_ch004.py::test_input_mutation_after_hash_freeze_aborts_before_publication[documentation]
+FAILED tests/test_experiments_ch004.py::test_input_mutation_after_hash_freeze_aborts_before_publication[in_memory_prices]
+FAILED tests/test_experiments_ch004.py::test_input_mutation_after_hash_freeze_aborts_before_publication[preregistration]
+FAILED tests/test_experiments_ch004.py::test_file_backed_complete_pipeline_and_dry_run_under_protected_open_trap
+FAILED tests/test_experiments_ch004.py::test_all_EV001_replays_finish_before_first_chart_and_mismatch_stops
+FAILED tests/test_experiments_ch004.py::test_count_judgement_publication_under_one_lock_two_finite_rows
+FAILED tests/test_experiments_ch004.py::test_validate_both_rows_before_any_publication
+34 failed, 41 passed in 36.35s
+
+===== tests/test_experiments_common.py =====
+........................................................                 [100%]
+56 passed in 3.26s
+
+===== tests/test_experiments_d001.py =====
+..................                                                       [100%]
+18 passed in 7.43s
+
+===== tests/test_experiments_ev001.py =====
+........................................................................ [ 72%]
+............................                                             [100%]
+100 passed in 80.60s (0:01:20)
+
+===== tests/test_experiments_fw001.py =====
+..........FFFFFFF.FFFFF.                                                 [100%]
+=================================== FAILURES ===================================
+________________ test_sealed_values_and_pre_freeze_final_guard _________________
+tests/test_experiments_fw001.py:65: in test_sealed_values_and_pre_freeze_final_guard
+    evaluation.read_records(data, final=True)
+backtesting/experiments/fw001.py:82: in read_records
+    recorder.verify_manifest(implementation=True)
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+
+During handling of the above exception, another exception occurred:
+tests/test_experiments_fw001.py:64: in test_sealed_values_and_pre_freeze_final_guard
+    with pytest.raises(ValueError, match="data freeze"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'data freeze'
+E     Actual message: 'collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py'
+______ test_final_publication_is_immutable_and_registry_is_once_per_rule _______
+tests/test_experiments_fw001.py:100: in test_final_publication_is_immutable_and_registry_is_once_per_rule
+    evaluation.publish(result, output, repo_root=tmp_path)
+backtesting/experiments/fw001.py:430: in publish
+    recorder.verify_manifest(implementation=True)
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+_ test_full_fixture_freezes_prices_carries_sealed_fills_and_runs_reporting_controls[None] _
+tests/test_experiments_fw001.py:160: in test_full_fixture_freezes_prices_carries_sealed_fills_and_runs_reporting_controls
+    report = fw.daily(data, execute=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/forward/fw001.py:1020: in daily
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+_ test_full_fixture_freezes_prices_carries_sealed_fills_and_runs_reporting_controls[2026-11-02T08:59:00+09:00] _
+tests/test_experiments_fw001.py:140: in test_full_fixture_freezes_prices_carries_sealed_fills_and_runs_reporting_controls
+    fw.decide(day, data, execute=True)
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+_ test_full_fixture_freezes_prices_carries_sealed_fills_and_runs_reporting_controls[2026-11-02T08:58:59.999999999+09:00] _
+tests/test_experiments_fw001.py:140: in test_full_fixture_freezes_prices_carries_sealed_fills_and_runs_reporting_controls
+    fw.decide(day, data, execute=True)
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+_ test_final_freeze_uses_latest_correction_and_keeps_original_execution_input __
+tests/test_experiments_fw001.py:216: in test_final_freeze_uses_latest_correction_and_keeps_original_execution_input
+    decision = fw.decide(DAY, data, execute=True)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+___ test_freeze_refuses_a_server_price_published_after_the_registered_cutoff ___
+tests/test_experiments_fw001.py:246: in test_freeze_refuses_a_server_price_published_after_the_registered_cutoff
+    fw.seal_evaluation_inputs(data, execute=True)
+src/forward/fw001.py:866: in seal_evaluation_inputs
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+
+During handling of the above exception, another exception occurred:
+tests/test_experiments_fw001.py:245: in test_freeze_refuses_a_server_price_published_after_the_registered_cutoff
+    with pytest.raises(ValueError, match="published after cutoff"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'published after cutoff'
+E     Actual message: 'collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py'
+___ test_invalid_registry_metrics_are_rejected_before_any_result_publication ___
+tests/test_experiments_fw001.py:270: in test_invalid_registry_metrics_are_rejected_before_any_result_publication
+    evaluation.publish(result, tmp_path / "output.json", repo_root=tmp_path)
+backtesting/experiments/fw001.py:430: in publish
+    recorder.verify_manifest(implementation=True)
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+
+During handling of the above exception, another exception occurred:
+tests/test_experiments_fw001.py:269: in test_invalid_registry_metrics_are_rejected_before_any_result_publication
+    with pytest.raises(ValueError, match="finite JSON"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'finite JSON'
+E     Actual message: 'collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py'
+_____ test_reader_requires_completion_proof_and_checks_actual_record_bytes _____
+tests/test_experiments_fw001.py:278: in test_reader_requires_completion_proof_and_checks_actual_record_bytes
+    fw.decide(DAY, data, execute=True)
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+_ test_corrupt_late_marker_fails_recording_and_evaluation[record_digest-0000000000000000000000000000000000000000000000000000000000000000] _
+tests/test_experiments_fw001.py:296: in test_corrupt_late_marker_fails_recording_and_evaluation
+    fw.decide(DAY, data, execute=True)
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+_ test_corrupt_late_marker_fails_recording_and_evaluation[deadline-2026-11-02T09:00:00+09:00] _
+tests/test_experiments_fw001.py:296: in test_corrupt_late_marker_fails_recording_and_evaluation
+    fw.decide(DAY, data, execute=True)
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+_ test_corrupt_late_marker_fails_recording_and_evaluation[publication_precision_ns-0] _
+tests/test_experiments_fw001.py:296: in test_corrupt_late_marker_fails_recording_and_evaluation
+    fw.decide(DAY, data, execute=True)
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+=========================== short test summary info ============================
+FAILED tests/test_experiments_fw001.py::test_sealed_values_and_pre_freeze_final_guard
+FAILED tests/test_experiments_fw001.py::test_final_publication_is_immutable_and_registry_is_once_per_rule
+FAILED tests/test_experiments_fw001.py::test_full_fixture_freezes_prices_carries_sealed_fills_and_runs_reporting_controls[None]
+FAILED tests/test_experiments_fw001.py::test_full_fixture_freezes_prices_carries_sealed_fills_and_runs_reporting_controls[2026-11-02T08:59:00+09:00]
+FAILED tests/test_experiments_fw001.py::test_full_fixture_freezes_prices_carries_sealed_fills_and_runs_reporting_controls[2026-11-02T08:58:59.999999999+09:00]
+FAILED tests/test_experiments_fw001.py::test_final_freeze_uses_latest_correction_and_keeps_original_execution_input
+FAILED tests/test_experiments_fw001.py::test_freeze_refuses_a_server_price_published_after_the_registered_cutoff
+FAILED tests/test_experiments_fw001.py::test_invalid_registry_metrics_are_rejected_before_any_result_publication
+FAILED tests/test_experiments_fw001.py::test_reader_requires_completion_proof_and_checks_actual_record_bytes
+FAILED tests/test_experiments_fw001.py::test_corrupt_late_marker_fails_recording_and_evaluation[record_digest-0000000000000000000000000000000000000000000000000000000000000000]
+FAILED tests/test_experiments_fw001.py::test_corrupt_late_marker_fails_recording_and_evaluation[deadline-2026-11-02T09:00:00+09:00]
+FAILED tests/test_experiments_fw001.py::test_corrupt_late_marker_fails_recording_and_evaluation[publication_precision_ns-0]
+12 failed, 12 passed in 13.58s
+
+===== tests/test_experiments_hc001.py =====
+.......................................                                  [100%]
+39 passed in 2.86s
+
+===== tests/test_experiments_hc002.py =====
+............................                                             [100%]
+28 passed in 5.47s
+
+===== tests/test_experiments_hc003.py =====
+........................................................................ [ 67%]
+..................................                                       [100%]
+106 passed in 28.63s
+
+===== tests/test_experiments_hf001.py =====
+................................................................         [100%]
+64 passed in 30.66s
+
+===== tests/test_experiments_hi001.py =====
+............................................................             [100%]
+60 passed in 30.37s
+
+===== tests/test_experiments_lh001.py =====
+........................................................................ [ 66%]
+....................................                                     [100%]
+108 passed in 9.80s
+
+===== tests/test_experiments_lh002.py =====
+........................................................................ [ 59%]
+.................................................                        [100%]
+121 passed in 5.29s
+
+===== tests/test_experiments_ordering.py =====
+...............................                                          [100%]
+31 passed in 2.44s
+
+===== tests/test_experiments_r001.py =====
+.............................................................            [100%]
+61 passed in 17.87s
+
+===== tests/test_finance_tool.py =====
+...........                                                              [100%]
+11 passed in 0.30s
+
+===== tests/test_financial_snapshot.py =====
+..................                                                       [100%]
+18 passed in 0.33s
+
+===== tests/test_forward_fw001.py =====
+FFFF.FFFFFFF............FFFFFFFF........FFFFFFFFFFF                      [100%]
+=================================== FAILURES ===================================
+_____________ test_definitions_separate_HF_baskets_and_S_universe ______________
+tests/test_forward_fw001.py:111: in test_definitions_separate_HF_baskets_and_S_universe
+    record = fw.decide(DAY, data)
+             ^^^^^^^^^^^^^^^^^^^^
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+_ test_strict_deadline_no_three_session_grace[2026-11-02T08:58:58+09:00-forward] _
+tests/test_forward_fw001.py:130: in test_strict_deadline_no_three_session_grace
+    record = fw.decide(DAY, data, execute=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+_ test_strict_deadline_no_three_session_grace[2026-11-02T08:59:00+09:00-reconstructed] _
+tests/test_forward_fw001.py:130: in test_strict_deadline_no_three_session_grace
+    record = fw.decide(DAY, data, execute=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+_ test_strict_deadline_no_three_session_grace[2026-11-05T08:40:00+09:00-reconstructed] _
+tests/test_forward_fw001.py:130: in test_strict_deadline_no_three_session_grace
+    record = fw.decide(DAY, data, execute=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+_____________ test_immutable_decision_execution_and_separate_rerun _____________
+tests/test_forward_fw001.py:147: in test_immutable_decision_execution_and_separate_rerun
+    decision = fw.decide(DAY, data, execute=True)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+_________ test_incomplete_listing_or_market_never_becomes_observation __________
+tests/test_forward_fw001.py:172: in test_incomplete_listing_or_market_never_becomes_observation
+    fw.decide(DAY, data, execute=True)
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+
+During handling of the above exception, another exception occurred:
+tests/test_forward_fw001.py:171: in test_incomplete_listing_or_market_never_becomes_observation
+    with pytest.raises(ValueError, match="126-session"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: '126-session'
+E     Actual message: 'collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py'
+____________ test_merged_supplement_and_frozen_scan_protect_holdout ____________
+tests/test_forward_fw001.py:183: in test_merged_supplement_and_frozen_scan_protect_holdout
+    fw.decide(DAY, data)
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+___________ test_chain_carry_matches_single_stream_and_no_trade_band ___________
+tests/test_forward_fw001.py:194: in test_chain_carry_matches_single_stream_and_no_trade_band
+    decision = fw.decide(DAY, data)
+               ^^^^^^^^^^^^^^^^^^^^
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+_____________ test_missing_month_is_no_bundle_no_trade_and_counted _____________
+tests/test_forward_fw001.py:213: in test_missing_month_is_no_bundle_no_trade_and_counted
+    report = fw.daily(data, execute=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/forward/fw001.py:1020: in daily
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+______ test_late_reconstruction_never_changes_a_sealed_missing_transition ______
+tests/test_forward_fw001.py:223: in test_late_reconstruction_never_changes_a_sealed_missing_transition
+    fw.daily(data, execute=True)
+src/forward/fw001.py:1020: in daily
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+______ test_omitted_first_month_keeps_known_cash_without_inventing_prices ______
+tests/test_forward_fw001.py:234: in test_omitted_first_month_keeps_known_cash_without_inventing_prices
+    report = fw.daily(tmp_path, execute=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/forward/fw001.py:1020: in daily
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+_______ test_missing_volatility_session_is_uncomputable_not_an_exclusion _______
+tests/test_forward_fw001.py:311: in test_missing_volatility_session_is_uncomputable_not_an_exclusion
+    record = fw.decide(DAY, data)
+             ^^^^^^^^^^^^^^^^^^^^
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+___________ test_S_actual_date_is_strict_while_HF_keeps_stored_date ____________
+tests/test_forward_fw001.py:324: in test_S_actual_date_is_strict_while_HF_keeps_stored_date
+    record = fw.decide(DAY, data)
+             ^^^^^^^^^^^^^^^^^^^^
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+____________ test_supplement_raise_event_and_HF_limit_up_cash_slot _____________
+tests/test_forward_fw001.py:334: in test_supplement_raise_event_and_HF_limit_up_cash_slot
+    decision = fw.decide(DAY, data, execute=True)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+______ test_non_finalised_dry_run_cannot_create_an_observation_execution _______
+tests/test_forward_fw001.py:348: in test_non_finalised_dry_run_cannot_create_an_observation_execution
+    decision = fw.decide(DAY, data)
+               ^^^^^^^^^^^^^^^^^^^^
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+____ test_2027_pending_HF_cost_resolution_preserves_already_sealed_AV_fills ____
+tests/test_forward_fw001.py:357: in test_2027_pending_HF_cost_resolution_preserves_already_sealed_AV_fills
+    decision = fw.decide(DAY, data)
+               ^^^^^^^^^^^^^^^^^^^^
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+_____ test_unknown_2027_sale_seals_inputs_and_does_not_guess_cash_or_buys ______
+tests/test_forward_fw001.py:378: in test_unknown_2027_sale_seals_inputs_and_does_not_guess_cash_or_buys
+    decision = fw.decide(DAY, data)
+               ^^^^^^^^^^^^^^^^^^^^
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+_ test_crash_after_candidate_before_completion_cannot_admit_a_late_decision[2026-11-02T08:58:00+09:00-forward] _
+tests/test_forward_fw001.py:398: in test_crash_after_candidate_before_completion_cannot_admit_a_late_decision
+    fw.decide(DAY, data, execute=True)
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+_ test_crash_after_candidate_before_completion_cannot_admit_a_late_decision[2026-11-02T08:59:00+09:00-reconstructed] _
+tests/test_forward_fw001.py:398: in test_crash_after_candidate_before_completion_cannot_admit_a_late_decision
+    fw.decide(DAY, data, execute=True)
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+____ test_completion_freeze_preserves_nanosecond_publication_bound[-1-True] ____
+tests/test_forward_fw001.py:546: in test_completion_freeze_preserves_nanosecond_publication_bound
+    freeze = fw.seal_evaluation_inputs(tmp_path)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/forward/fw001.py:866: in seal_evaluation_inputs
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+____ test_completion_freeze_preserves_nanosecond_publication_bound[0-True] _____
+tests/test_forward_fw001.py:546: in test_completion_freeze_preserves_nanosecond_publication_bound
+    freeze = fw.seal_evaluation_inputs(tmp_path)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/forward/fw001.py:866: in seal_evaluation_inputs
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+____ test_completion_freeze_preserves_nanosecond_publication_bound[1-False] ____
+tests/test_forward_fw001.py:546: in test_completion_freeze_preserves_nanosecond_publication_bound
+    freeze = fw.seal_evaluation_inputs(tmp_path)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/forward/fw001.py:866: in seal_evaluation_inputs
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+_____ test_preserved_inputs_recompute_after_mutable_archives_are_destroyed _____
+tests/test_forward_fw001.py:555: in test_preserved_inputs_recompute_after_mutable_archives_are_destroyed
+    decision = fw.decide(DAY, data, execute=True)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+_ test_partial_execution_restart_uses_only_verified_sealed_entry_bytes[deleted] _
+tests/test_forward_fw001.py:574: in test_partial_execution_restart_uses_only_verified_sealed_entry_bytes
+    decision = fw.decide(DAY, data, execute=True)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+_ test_partial_execution_restart_uses_only_verified_sealed_entry_bytes[corrupt] _
+tests/test_forward_fw001.py:574: in test_partial_execution_restart_uses_only_verified_sealed_entry_bytes
+    decision = fw.decide(DAY, data, execute=True)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+_ test_corrupt_entry_blob_fails_recovery_and_blob_publication_fsyncs_directory _
+tests/test_forward_fw001.py:602: in test_corrupt_entry_blob_fails_recovery_and_blob_publication_fsyncs_directory
+    decision = fw.decide(DAY, data, execute=True)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+___ test_unverified_2027_months_are_missing_and_preserve_last_known_holdings ___
+tests/test_forward_fw001.py:621: in test_unverified_2027_months_are_missing_and_preserve_last_known_holdings
+    decision = fw.decide(DAY, data, execute=True)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+____ test_execution_candidate_cannot_get_a_proof_with_corrupt_sealed_inputs ____
+tests/test_forward_fw001.py:641: in test_execution_candidate_cannot_get_a_proof_with_corrupt_sealed_inputs
+    decision = fw.decide(DAY, data, execute=True)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+__ test_missing_state_recovery_does_not_rebuild_a_chain_from_mutable_history ___
+tests/test_forward_fw001.py:655: in test_missing_state_recovery_does_not_rebuild_a_chain_from_mutable_history
+    decision = fw.decide(DAY, data, execute=True)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+_ test_missing_month_keeps_holdings_but_cannot_execute_with_an_unvalued_old_chain _
+tests/test_forward_fw001.py:671: in test_missing_month_keeps_holdings_but_cannot_execute_with_an_unvalued_old_chain
+    decision = fw.decide(DAY, data, execute=True)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+=========================== short test summary info ============================
+FAILED tests/test_forward_fw001.py::test_definitions_separate_HF_baskets_and_S_universe
+FAILED tests/test_forward_fw001.py::test_strict_deadline_no_three_session_grace[2026-11-02T08:58:58+09:00-forward]
+FAILED tests/test_forward_fw001.py::test_strict_deadline_no_three_session_grace[2026-11-02T08:59:00+09:00-reconstructed]
+FAILED tests/test_forward_fw001.py::test_strict_deadline_no_three_session_grace[2026-11-05T08:40:00+09:00-reconstructed]
+FAILED tests/test_forward_fw001.py::test_immutable_decision_execution_and_separate_rerun
+FAILED tests/test_forward_fw001.py::test_incomplete_listing_or_market_never_becomes_observation
+FAILED tests/test_forward_fw001.py::test_merged_supplement_and_frozen_scan_protect_holdout
+FAILED tests/test_forward_fw001.py::test_chain_carry_matches_single_stream_and_no_trade_band
+FAILED tests/test_forward_fw001.py::test_missing_month_is_no_bundle_no_trade_and_counted
+FAILED tests/test_forward_fw001.py::test_late_reconstruction_never_changes_a_sealed_missing_transition
+FAILED tests/test_forward_fw001.py::test_omitted_first_month_keeps_known_cash_without_inventing_prices
+FAILED tests/test_forward_fw001.py::test_missing_volatility_session_is_uncomputable_not_an_exclusion
+FAILED tests/test_forward_fw001.py::test_S_actual_date_is_strict_while_HF_keeps_stored_date
+FAILED tests/test_forward_fw001.py::test_supplement_raise_event_and_HF_limit_up_cash_slot
+FAILED tests/test_forward_fw001.py::test_non_finalised_dry_run_cannot_create_an_observation_execution
+FAILED tests/test_forward_fw001.py::test_2027_pending_HF_cost_resolution_preserves_already_sealed_AV_fills
+FAILED tests/test_forward_fw001.py::test_unknown_2027_sale_seals_inputs_and_does_not_guess_cash_or_buys
+FAILED tests/test_forward_fw001.py::test_crash_after_candidate_before_completion_cannot_admit_a_late_decision[2026-11-02T08:58:00+09:00-forward]
+FAILED tests/test_forward_fw001.py::test_crash_after_candidate_before_completion_cannot_admit_a_late_decision[2026-11-02T08:59:00+09:00-reconstructed]
+FAILED tests/test_forward_fw001.py::test_completion_freeze_preserves_nanosecond_publication_bound[-1-True]
+FAILED tests/test_forward_fw001.py::test_completion_freeze_preserves_nanosecond_publication_bound[0-True]
+FAILED tests/test_forward_fw001.py::test_completion_freeze_preserves_nanosecond_publication_bound[1-False]
+FAILED tests/test_forward_fw001.py::test_preserved_inputs_recompute_after_mutable_archives_are_destroyed
+FAILED tests/test_forward_fw001.py::test_partial_execution_restart_uses_only_verified_sealed_entry_bytes[deleted]
+FAILED tests/test_forward_fw001.py::test_partial_execution_restart_uses_only_verified_sealed_entry_bytes[corrupt]
+FAILED tests/test_forward_fw001.py::test_corrupt_entry_blob_fails_recovery_and_blob_publication_fsyncs_directory
+FAILED tests/test_forward_fw001.py::test_unverified_2027_months_are_missing_and_preserve_last_known_holdings
+FAILED tests/test_forward_fw001.py::test_execution_candidate_cannot_get_a_proof_with_corrupt_sealed_inputs
+FAILED tests/test_forward_fw001.py::test_missing_state_recovery_does_not_rebuild_a_chain_from_mutable_history
+FAILED tests/test_forward_fw001.py::test_missing_month_keeps_holdings_but_cannot_execute_with_an_unvalued_old_chain
+30 failed, 21 passed in 25.18s
+
+===== tests/test_forward_hegemony_shadow.py =====
+.....................................                                    [100%]
+37 passed in 11.49s
+
+===== tests/test_industry_index.py =====
+............................................                             [100%]
+44 passed in 1.38s
+
+===== tests/test_industry_map.py =====
+.............................................                            [100%]
+45 passed in 0.48s
+
+===== tests/test_ingestion_pipeline_sources.py =====
+.....................                                                    [100%]
+21 passed in 0.34s
+
+===== tests/test_ingestion_public_surface.py =====
+..                                                                       [100%]
+2 passed in 0.12s
+
+===== tests/test_ingestion_storage.py =====
+............                                                             [100%]
+12 passed in 0.31s
+
+===== tests/test_kis_auth_config.py =====
+...                                                                      [100%]
+3 passed in 0.06s
+
+===== tests/test_kis_investor_flow.py =====
+........................................................................ [ 57%]
+......................................................                   [100%]
+126 passed in 2.21s
+
+===== tests/test_kis_paper_trading.py =====
+sss                                                                      [100%]
+3 skipped in 0.04s
+
+===== tests/test_krx_benchmarks.py =====
+........................................................................ [ 67%]
+...................................                                      [100%]
+107 passed in 0.89s
+
+===== tests/test_krx_chart_cleansing.py =====
+................................                                         [100%]
+32 passed in 1.59s
+
+===== tests/test_krx_market.py =====
+........................................................................ [ 71%]
+.............................                                            [100%]
+101 passed in 2.95s
+
+===== tests/test_krx_price_loader.py =====
+.                                                                        [100%]
+1 passed in 0.15s
+
+===== tests/test_legacy_runner_cleanup.py =====
+..                                                                       [100%]
+2 passed in 0.04s
+
+===== tests/test_lh002_screening_diagnostic.py =====
+..........                                                               [100%]
+10 passed in 2.06s
+
+===== tests/test_llm_budget.py =====
+.......                                                                  [100%]
+7 passed in 0.27s
+
+===== tests/test_llm_config.py =====
+.............                                                            [100%]
+13 passed in 1.93s
+
+===== tests/test_llm_queue.py =====
+......                                                                   [100%]
+6 passed in 0.64s
+
+===== tests/test_luna_chat.py =====
+............                                                             [100%]
+12 passed in 2.37s
+
+===== tests/test_market_context_data.py =====
+........................................................................ [ 84%]
+.............                                                            [100%]
+85 passed in 2.02s
+
+===== tests/test_market_context_ingestion.py =====
+..........                                                               [100%]
+10 passed in 1.37s
+
+===== tests/test_market_context_runtime.py =====
+............ss                                                           [100%]
+12 passed, 2 skipped in 0.70s
+
+===== tests/test_minute_bars.py =====
+..............................................................           [100%]
+62 passed in 0.77s
+
+===== tests/test_multi_theme_leader_trading_runner.py =====
+.......                                                                  [100%]
+7 passed in 0.26s
+
+===== tests/test_naver_news_cleansing.py =====
+....................................                                     [100%]
+36 passed in 0.35s
+
+===== tests/test_naver_theme_collector.py =====
+...............                                                          [100%]
+15 passed in 0.22s
+
+===== tests/test_naver_theme_docker_runtime.py =====
+.....                                                                    [100%]
+5 passed in 0.15s
+
+===== tests/test_offline_test_safety.py =====
+FF.FF.                                                                   [100%]
+=================================== FAILURES ===================================
+_________________ test_outbound_sockets_are_rejected[connect] __________________
+tests/test_offline_test_safety.py:13: in test_outbound_sockets_are_rejected
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as connection:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/socket.py:233: in __init__
+    _socket.socket.__init__(self, family, type, proto, fileno)
+E   PermissionError: [Errno 1] Operation not permitted
+________________ test_outbound_sockets_are_rejected[connect_ex] ________________
+tests/test_offline_test_safety.py:13: in test_outbound_sockets_are_rejected
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as connection:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/socket.py:233: in __init__
+    _socket.socket.__init__(self, family, type, proto, fileno)
+E   PermissionError: [Errno 1] Operation not permitted
+________ test_kis_opt_in_does_not_enable_network_in_other_test_modules _________
+tests/test_offline_test_safety.py:25: in test_kis_opt_in_does_not_enable_network_in_other_test_modules
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as connection:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/socket.py:233: in __init__
+    _socket.socket.__init__(self, family, type, proto, fileno)
+E   PermissionError: [Errno 1] Operation not permitted
+__________ test_local_socketpair_and_in_process_api_client_still_work __________
+tests/test_offline_test_safety.py:33: in test_local_socketpair_and_in_process_api_client_still_work
+    first.sendall(b"offline")
+E   PermissionError: [Errno 1] Operation not permitted
+=========================== short test summary info ============================
+FAILED tests/test_offline_test_safety.py::test_outbound_sockets_are_rejected[connect]
+FAILED tests/test_offline_test_safety.py::test_outbound_sockets_are_rejected[connect_ex]
+FAILED tests/test_offline_test_safety.py::test_kis_opt_in_does_not_enable_network_in_other_test_modules
+FAILED tests/test_offline_test_safety.py::test_local_socketpair_and_in_process_api_client_still_work
+4 failed, 2 passed in 0.28s
+
+===== tests/test_ops_collector.py =====
+........................................................................ [ 67%]
+...................................                                      [100%]
+107 passed in 6.92s
+
+===== tests/test_ops_fw001.py =====
+.............F.F.F.....                                                  [100%]
+=================================== FAILURES ===================================
+____________ test_restart_finishes_only_missing_execution_scenarios ____________
+tests/test_ops_fw001.py:90: in test_restart_finishes_only_missing_execution_scenarios
+    decision = fw.decide(DAY, data, execute=True)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/forward/fw001.py:533: in decide
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+_ test_deployed_module_set_and_recorder_dry_run_from_sealed_manifest_without_git _
+tests/test_ops_fw001.py:175: in test_deployed_module_set_and_recorder_dry_run_from_sealed_manifest_without_git
+    assert result.returncode == 0, result.stderr
+E   AssertionError: Traceback (most recent call last):
+E       File "<string>", line 32, in <module>
+E       File "/tmp/pytest-of-are01/pytest-385/test_deployed_module_set_and_r0/server/scripts/ops/fw001_daily.py", line 23, in main
+E         report = fw001.daily(args.data_dir, execute=args.execute)
+E                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       File "/tmp/pytest-of-are01/pytest-385/test_deployed_module_set_and_r0/server/src/forward/fw001.py", line 1020, in daily
+E         verify_manifest()
+E       File "/tmp/pytest-of-are01/pytest-385/test_deployed_module_set_and_r0/server/src/forward/fw001.py", line 81, in verify_manifest
+E         return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+E                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       File "/tmp/pytest-of-are01/pytest-385/test_deployed_module_set_and_r0/server/scripts/ops/collector_manifest.py", line 57, in verify
+E         raise ValueError("collector manifest differs: " + ", ".join(changed))
+E     ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+E     
+E   assert 1 == 0
+E    +  where 1 = CompletedProcess(args=['/home/are01/src/HQA_Project/HQA_lh003/venv/bin/python', '-I', '-c', "\nimport sys,socket,json,...y, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py\n').returncode
+______________ test_daily_and_rehearsal_CLI_default_is_read_only _______________
+tests/test_ops_fw001.py:199: in test_daily_and_rehearsal_CLI_default_is_read_only
+    assert fw001_daily.main(["--data-dir", str(data)]) == 0
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/fw001_daily.py:23: in main
+    report = fw001.daily(args.data_dir, execute=args.execute)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/forward/fw001.py:1020: in daily
+    verify_manifest()
+src/forward/fw001.py:81: in verify_manifest
+    return collector_manifest.verify(PROJECT_ROOT, implementation=implementation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ops/collector_manifest.py:57: in verify
+    raise ValueError("collector manifest differs: " + ", ".join(changed))
+E   ValueError: collector manifest differs: backtesting/experiment_registry.py, backtesting/experiments/av001.py, backtesting/experiments/common.py, backtesting/experiments/ordering.py, backtesting/holdout.py, scripts/data/dart_buyback.py, scripts/ops/research_run.sh, src/ingestion/dart_listing.py
+=========================== short test summary info ============================
+FAILED tests/test_ops_fw001.py::test_restart_finishes_only_missing_execution_scenarios
+FAILED tests/test_ops_fw001.py::test_deployed_module_set_and_recorder_dry_run_from_sealed_manifest_without_git
+FAILED tests/test_ops_fw001.py::test_daily_and_rehearsal_CLI_default_is_read_only
+3 failed, 20 passed in 4.71s
+
+===== tests/test_paper_audit.py =====
+....                                                                     [100%]
+4 passed in 0.52s
+
+===== tests/test_paper_performance.py =====
+.......................................                                  [100%]
+39 passed in 0.30s
+
+===== tests/test_portfolio_allocator.py =====
+.........................................................                [100%]
+57 passed in 0.44s
+
+===== tests/test_portfolio_position_sizing.py =====
+............................................                             [100%]
+44 passed in 0.42s
+
+===== tests/test_portfolio_risk_limits.py =====
+..........................................                               [100%]
+42 passed in 0.29s
+
+===== tests/test_price_calendar_cleansing.py =====
+.....................................                                    [100%]
+37 passed in 4.48s
+
+===== tests/test_price_snapshot_client.py =====
+.                                                                        [100%]
+1 passed in 0.03s
+
+===== tests/test_proof_validation.py =====
+.....                                                                    [100%]
+5 passed in 0.18s
+
+===== tests/test_public_tool_surface.py =====
+..                                                                       [100%]
+2 passed in 0.15s
+
+===== tests/test_research_ops.py =====
+........................................................................ [ 88%]
+.........                                                                [100%]
+81 passed in 26.68s
+
+===== tests/test_risk_manager_cross_validation.py =====
+.........                                                                [100%]
+9 passed in 0.23s
+
+===== tests/test_risk_report_writer.py =====
+.                                                                        [100%]
+1 passed in 0.04s
+
+===== tests/test_runtime_cleanup.py =====
+.........                                                                [100%]
+9 passed in 2.37s
+
+===== tests/test_runtime_integration.py =====
+.....                                                                    [100%]
+5 passed in 0.74s
+
+===== tests/test_runtime_load.py =====
+.....                                                                    [100%]
+=============================== warnings summary ===============================
+tests/test_runtime_load.py::test_synthetic_cold_and_warm_p95_report_is_not_a_real_llm_sla
+  tests/test_runtime_load.py:266: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    def test_synthetic_cold_and_warm_p95_report_is_not_a_real_llm_sla(record_property):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+5 passed, 1 warning in 1.32s
+
+===== tests/test_shadow_ops.py =====
+............................................                             [100%]
+=============================== warnings summary ===============================
+tests/test_shadow_ops.py::test_shadow_full_market_peak_rss_under_600_mib
+  tests/test_shadow_ops.py:469: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    def test_shadow_full_market_peak_rss_under_600_mib(tmp_path, record_property):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+44 passed, 1 warning in 43.16s
+
+===== tests/test_shared_analysis.py =====
+........................................................................ [ 75%]
+........................                                                 [100%]
+96 passed in 4.72s
+
+===== tests/test_signal_monitor.py =====
+.................................                                        [100%]
+33 passed in 0.24s
+
+===== tests/test_stock_code_parsers.py =====
+.........................                                                [100%]
+25 passed in 0.20s
+
+===== tests/test_stock_codes.py =====
+...................                                                      [100%]
+19 passed in 0.58s
+
+===== tests/test_strategies_base_data.py =====
+......................                                                   [100%]
+22 passed in 1.72s
+
+===== tests/test_strategies_disclosures.py =====
+.............................................................            [100%]
+61 passed in 0.54s
+
+===== tests/test_strategies_factors.py =====
+..............                                                           [100%]
+14 passed in 0.44s
+
+===== tests/test_strategies_filters.py =====
+.....................................                                    [100%]
+37 passed in 1.76s
+
+===== tests/test_theme_leader_trading_runner.py =====
+........                                                                 [100%]
+8 passed in 0.22s
+
+===== tests/test_theme_pipeline_corp_codes.py =====
+.....                                                                    [100%]
+5 passed in 0.17s
+
+===== tests/test_theme_target_store.py =====
+.........                                                                [100%]
+9 passed in 0.22s
+
+===== tests/test_tool_compatibility.py =====
+.                                                                        [100%]
+1 passed in 0.04s
+
+===== tests/test_tracer.py =====
+...................                                                      [100%]
+19 passed in 0.29s
+
+===== tests/test_trade_api.py =====
+...                                                                      [100%]
+3 passed in 1.17s
+
+===== tests/test_trade_signal_submitter.py =====
+...........                                                              [100%]
+11 passed in 0.10s
+
+===== tests/test_trading_calendar_overrides.py =====
+......................................                                   [100%]
+38 passed in 11.68s
+
+===== tests/test_web_search_tool_cleanup.py =====
+...                                                                      [100%]
+3 passed in 0.21s
+
+===== tests/test_experiments_av002.py, tests/test_experiments_ch001.py =====
+........................................................................ [ 28%]
+........................................................................ [ 56%]
+........................................................................ [ 85%]
+.....................................                                    [100%]
+253 passed in 181.95s (0:03:01)
+
+===== tests/test_experiments_lh003_evaluate.py, tests/test_experiments_lh003_round21.py, tests/test_experiments_lh003_round23.py, tests/test_experiments_lh003_runner.py, tests/test_experiments_lh003_snapshot.py =====
+........................................................................ [ 54%]
+.............................................................            [100%]
+133 passed in 171.95s (0:02:51)

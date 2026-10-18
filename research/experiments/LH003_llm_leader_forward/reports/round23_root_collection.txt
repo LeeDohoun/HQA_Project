@@ -1,0 +1,13 @@
+
+==================================== ERRORS ====================================
+________________ ERROR collecting tests/test_dart_quarterly.py _________________
+import file mismatch:
+imported module 'test_dart_quarterly' has this __file__ attribute:
+  /home/are01/src/HQA_Project/HQA_lh003/research/experiments/LH003_llm_leader_forward/reports/reverted_round2/tests/test_dart_quarterly.py
+which is not the same as the test file we want to collect:
+  /home/are01/src/HQA_Project/HQA_lh003/tests/test_dart_quarterly.py
+HINT: remove __pycache__ / .pyc files and/or use a unique basename for your test file modules
+=========================== short test summary info ============================
+ERROR tests/test_dart_quarterly.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 9.36s

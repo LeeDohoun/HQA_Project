@@ -1,0 +1,17 @@
+{
+  "data": {
+    "children_peak_rss_mib": 0.0,
+    "error": null,
+    "includes_children": true,
+    "increment_mib": 76.046875,
+    "invalid_weeks": 22,
+    "parent_peak_rss_mib": 233.86328125,
+    "peak_rss_mib": 233.86328125,
+    "sample_interval_seconds": 0.01,
+    "samples": 915,
+    "stocks": 500,
+    "verified": true,
+    "weekly_scenario_records": 312
+  },
+  "sha256": "b4f20868f307eb6576210e92b7afeee3f7ac083000f5adcc875f696771bfe36c"
+}

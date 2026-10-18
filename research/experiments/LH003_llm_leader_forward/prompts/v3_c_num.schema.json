@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ranked", "avoid"],
+  "properties": {
+    "ranked": {
+      "type": "array", "minItems": 30, "maxItems": 30, "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "avoid": {
+      "type": "array", "minItems": 10, "maxItems": 10, "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}

@@ -1,4 +1,4 @@
-"""Shared research ordering lock and AV001/EV001 release contract for LH002."""
+"""Shared research ordering lock and AV001/EV001 releases for LH002/LH003."""
 from __future__ import annotations
 
 import fcntl
@@ -146,6 +146,19 @@ def registered_releases(rows, repo_root):
             releases[experiment_id] = release_state(rows, experiment_id, variants)
     if _registered(AV002_ID, repo_root):
         releases[AV002_ID] = av002_release(rows, repo_root)
+    return releases
+
+
+def lh003_releases(rows, repo_root):
+    """All predecessors are mandatory, including AV002's linked terminal rows."""
+    releases = {}
+    for experiment_id, variants in RELEASE_SPECS.items():
+        experiment_registry.verify_preregistration(experiment_id, repo_root)
+        try:
+            releases[experiment_id] = release_state(rows, experiment_id, variants)
+        except ValueError as exc:
+            raise ValueError(str(exc).replace("LH002 final blocked", "LH003 start blocked")) from exc
+    releases[AV002_ID] = av002_release(rows, repo_root)
     return releases
 
 

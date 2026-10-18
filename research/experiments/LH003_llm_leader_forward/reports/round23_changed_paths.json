@@ -1,0 +1,46 @@
+{
+  "implementation_test_documentation_deletion_paths": [
+    "backtesting/experiments/lh003/__main__.py",
+    "backtesting/experiments/lh003/calendar.py",
+    "backtesting/experiments/lh003/distribution.py",
+    "backtesting/experiments/lh003/environment.py",
+    "backtesting/experiments/lh003/evaluate.py",
+    "backtesting/experiments/lh003/executions.py",
+    "backtesting/experiments/lh003/inputs.py",
+    "backtesting/experiments/lh003/pins.py",
+    "backtesting/experiments/lh003/runner.py",
+    "backtesting/experiments/lh003/simulation.py",
+    "backtesting/experiments/lh003/snapshot.py",
+    "backtesting/experiments/lh003/workflow.py",
+    "backtesting/statutory_rates.py",
+    "research/experiments/LH003_llm_leader_forward/IMPLEMENTATION_BLOCKERS.md",
+    "research/experiments/LH003_llm_leader_forward/implementation_notes.md",
+    "research/experiments/LH003_llm_leader_forward/validation_report.md",
+    "scripts/lh003/__init__.py",
+    "scripts/lh003/amend.py",
+    "scripts/lh003/distribute.py",
+    "src/ingestion/incremental_versions.py",
+    "src/krx_calendar_data.py",
+    "tests/test_experiments_lh003_evaluate.py",
+    "tests/test_experiments_lh003_round21.py",
+    "tests/test_experiments_lh003_round23.py",
+    "tests/test_experiments_lh003_runner.py",
+    "tests/test_experiments_lh003_snapshot.py"
+  ],
+  "validation_artifacts": [
+    "research/experiments/LH003_llm_leader_forward/reports/round23_lh003_tests.txt",
+    "research/experiments/LH003_llm_leader_forward/reports/round23_lh003_tests.junit.xml",
+    "research/experiments/LH003_llm_leader_forward/reports/round23_root_collection.txt",
+    "research/experiments/LH003_llm_leader_forward/reports/round23_test_harness.json",
+    "research/experiments/LH003_llm_leader_forward/reports/round23_full_process_crash.txt",
+    "research/experiments/LH003_llm_leader_forward/reports/round23_full_suite.txt",
+    "research/experiments/LH003_llm_leader_forward/reports/round23_full_suite.junit.xml",
+    "research/experiments/LH003_llm_leader_forward/reports/round23_validation.json",
+    "research/experiments/LH003_llm_leader_forward/reports/round23_changed_paths.json"
+  ],
+  "preserved_incoming_untracked_paths": [
+    "research/experiments/LH003_llm_leader_forward/reports/astra_round23_review.md",
+    "research/experiments/LH003_llm_leader_forward/reports/reverted_round2/",
+    "venv"
+  ]
+}
