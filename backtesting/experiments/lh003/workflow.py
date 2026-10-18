@@ -281,7 +281,7 @@ def run_week(*, data_dir, root, decision_day, sync_manifest, runner, repo_root=P
         else:
             publication, receipt = latest_distribution(
                 root / "distributions" if distribution_dir is None else distribution_dir,
-                sync_manifest=sync_manifest, at=clock(), allow_synthetic=simulation)
+                sync_manifest=sync_manifest, at=clock(), allow_synthetic=simulation, state_root=root, repo_root=repo_root)
             trigger = inputs.verify_day(publication.root, decision_day, at=clock(), sync_manifest=sync_manifest)
             snapshot = Snapshot(start["snapshot_path"], expected_hash=start["snapshot_sha256"], allow_synthetic=simulation,
                                 distribution=publication)

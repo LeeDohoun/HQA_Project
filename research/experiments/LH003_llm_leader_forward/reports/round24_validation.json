@@ -1,0 +1,4168 @@
+{
+  "starting_head": "66f5893",
+  "workdir": "/home/are01/src/HQA_Project/HQA_lh003",
+  "scope": "All six LH003 test files, serial fresh processes; repository-wide suite not rerun.",
+  "focused": {
+    "counts": {
+      "tests": 148,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 148
+    },
+    "files": 6,
+    "segments": [
+      {
+        "command": [
+          "/home/are01/src/HQA_Project/HQA_lh003/venv/bin/python",
+          "-m",
+          "pytest",
+          "-q",
+          "-p",
+          "no:cacheprovider",
+          "-p",
+          "lunar_cache",
+          "-p",
+          "progress_journal",
+          "tests/test_experiments_lh003_evaluate.py",
+          "--tb=short",
+          "--junitxml=/tmp/lh003-round24/final/000.xml"
+        ],
+        "exit_code": 0,
+        "seconds": 6.059,
+        "max_process_rss_mib": 152.633,
+        "process_tree_peak_rss_mib": 152.633,
+        "process_tree_peak_pss_mib": 129.938,
+        "violation": null,
+        "log": "/tmp/lh003-round24/final/000.log",
+        "sandbox_poll": true,
+        "file": "tests/test_experiments_lh003_evaluate.py",
+        "junit": "/tmp/lh003-round24/final/000.xml",
+        "journal": "/tmp/lh003-round24/final/000.journal.jsonl"
+      },
+      {
+        "command": [
+          "/home/are01/src/HQA_Project/HQA_lh003/venv/bin/python",
+          "-m",
+          "pytest",
+          "-q",
+          "-p",
+          "no:cacheprovider",
+          "-p",
+          "lunar_cache",
+          "-p",
+          "progress_journal",
+          "tests/test_experiments_lh003_round21.py",
+          "--tb=short",
+          "--junitxml=/tmp/lh003-round24/final/001.xml"
+        ],
+        "exit_code": 0,
+        "seconds": 62.217,
+        "max_process_rss_mib": 232.273,
+        "process_tree_peak_rss_mib": 240.305,
+        "process_tree_peak_pss_mib": 208.862,
+        "violation": null,
+        "log": "/tmp/lh003-round24/final/001.log",
+        "sandbox_poll": true,
+        "file": "tests/test_experiments_lh003_round21.py",
+        "junit": "/tmp/lh003-round24/final/001.xml",
+        "journal": "/tmp/lh003-round24/final/001.journal.jsonl"
+      },
+      {
+        "command": [
+          "/home/are01/src/HQA_Project/HQA_lh003/venv/bin/python",
+          "-m",
+          "pytest",
+          "-q",
+          "-p",
+          "no:cacheprovider",
+          "-p",
+          "lunar_cache",
+          "-p",
+          "progress_journal",
+          "tests/test_experiments_lh003_round23.py",
+          "--tb=short",
+          "--junitxml=/tmp/lh003-round24/final/002.xml"
+        ],
+        "exit_code": 0,
+        "seconds": 49.109,
+        "max_process_rss_mib": 157.262,
+        "process_tree_peak_rss_mib": 157.262,
+        "process_tree_peak_pss_mib": 133.676,
+        "violation": null,
+        "log": "/tmp/lh003-round24/final/002.log",
+        "sandbox_poll": true,
+        "file": "tests/test_experiments_lh003_round23.py",
+        "junit": "/tmp/lh003-round24/final/002.xml",
+        "journal": "/tmp/lh003-round24/final/002.journal.jsonl"
+      },
+      {
+        "command": [
+          "/home/are01/src/HQA_Project/HQA_lh003/venv/bin/python",
+          "-m",
+          "pytest",
+          "-q",
+          "-p",
+          "no:cacheprovider",
+          "-p",
+          "lunar_cache",
+          "-p",
+          "progress_journal",
+          "tests/test_experiments_lh003_round24.py",
+          "--tb=short",
+          "--junitxml=/tmp/lh003-round24/final/003.xml"
+        ],
+        "exit_code": 0,
+        "seconds": 51.915,
+        "max_process_rss_mib": 145.129,
+        "process_tree_peak_rss_mib": 145.129,
+        "process_tree_peak_pss_mib": 122.066,
+        "violation": null,
+        "log": "/tmp/lh003-round24/final/003.log",
+        "sandbox_poll": true,
+        "file": "tests/test_experiments_lh003_round24.py",
+        "junit": "/tmp/lh003-round24/final/003.xml",
+        "journal": "/tmp/lh003-round24/final/003.journal.jsonl"
+      },
+      {
+        "command": [
+          "/home/are01/src/HQA_Project/HQA_lh003/venv/bin/python",
+          "-m",
+          "pytest",
+          "-q",
+          "-p",
+          "no:cacheprovider",
+          "-p",
+          "lunar_cache",
+          "-p",
+          "progress_journal",
+          "tests/test_experiments_lh003_runner.py",
+          "--tb=short",
+          "--junitxml=/tmp/lh003-round24/final/004.xml"
+        ],
+        "exit_code": 0,
+        "seconds": 21.634,
+        "max_process_rss_mib": 153.477,
+        "process_tree_peak_rss_mib": 153.477,
+        "process_tree_peak_pss_mib": 130.261,
+        "violation": null,
+        "log": "/tmp/lh003-round24/final/004.log",
+        "sandbox_poll": true,
+        "file": "tests/test_experiments_lh003_runner.py",
+        "junit": "/tmp/lh003-round24/final/004.xml",
+        "journal": "/tmp/lh003-round24/final/004.journal.jsonl"
+      },
+      {
+        "command": [
+          "/home/are01/src/HQA_Project/HQA_lh003/venv/bin/python",
+          "-m",
+          "pytest",
+          "-q",
+          "-p",
+          "no:cacheprovider",
+          "-p",
+          "lunar_cache",
+          "-p",
+          "progress_journal",
+          "tests/test_experiments_lh003_snapshot.py",
+          "--tb=short",
+          "--junitxml=/tmp/lh003-round24/final/005.xml"
+        ],
+        "exit_code": 0,
+        "seconds": 57.98,
+        "max_process_rss_mib": 154.004,
+        "process_tree_peak_rss_mib": 154.004,
+        "process_tree_peak_pss_mib": 130.73,
+        "violation": null,
+        "log": "/tmp/lh003-round24/final/005.log",
+        "sandbox_poll": true,
+        "file": "tests/test_experiments_lh003_snapshot.py",
+        "junit": "/tmp/lh003-round24/final/005.xml",
+        "journal": "/tmp/lh003-round24/final/005.journal.jsonl"
+      }
+    ],
+    "max_process_rss_mib": 232.273,
+    "max_tree_pss_mib": 208.862,
+    "seconds": 248.914,
+    "all_nodeids_completed_once": true,
+    "completion_records": {
+      "tests/test_experiments_lh003_evaluate.py::test_raw_quotes_do_not_evaluate_costs_even_for_2027": [
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_raw_quotes_do_not_evaluate_costs_even_for_2027",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_raw_quotes_do_not_evaluate_costs_even_for_2027",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_raw_quotes_do_not_evaluate_costs_even_for_2027",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_evaluate.py::test_limit_up_exclusion_reweights_and_all_unfilled_is_cash": [
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_limit_up_exclusion_reweights_and_all_unfilled_is_cash",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_limit_up_exclusion_reweights_and_all_unfilled_is_cash",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_limit_up_exclusion_reweights_and_all_unfilled_is_cash",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_evaluate.py::test_HF001_delisting_temporary_halt_and_limit_down_exit_dates": [
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_HF001_delisting_temporary_halt_and_limit_down_exit_dates",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_HF001_delisting_temporary_halt_and_limit_down_exit_dates",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_HF001_delisting_temporary_halt_and_limit_down_exit_dates",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_evaluate.py::test_adjusted_chain_and_HF001_raw_price_fallback_are_reported": [
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_adjusted_chain_and_HF001_raw_price_fallback_are_reported",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_adjusted_chain_and_HF001_raw_price_fallback_are_reported",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_adjusted_chain_and_HF001_raw_price_fallback_are_reported",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_evaluate.py::test_exit_cost_uses_actual_substitute_day_raw_price_market_and_prior20_ADV": [
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_exit_cost_uses_actual_substitute_day_raw_price_market_and_prior20_ADV",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_exit_cost_uses_actual_substitute_day_raw_price_market_and_prior20_ADV",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_exit_cost_uses_actual_substitute_day_raw_price_market_and_prior20_ADV",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_evaluate.py::test_execution_span_and_required_data_fail_closed": [
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_execution_span_and_required_data_fail_closed",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_execution_span_and_required_data_fail_closed",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_execution_span_and_required_data_fail_closed",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_evaluate.py::test_cost_model_v2_exact_formula_at_2026_known_tax_dates": [
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_cost_model_v2_exact_formula_at_2026_known_tax_dates",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_cost_model_v2_exact_formula_at_2026_known_tax_dates",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_cost_model_v2_exact_formula_at_2026_known_tax_dates",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_evaluate.py::test_2027_cost_refuses_with_legal_update_message_without_modifying_raw": [
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_2027_cost_refuses_with_legal_update_message_without_modifying_raw",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_2027_cost_refuses_with_legal_update_message_without_modifying_raw",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_2027_cost_refuses_with_legal_update_message_without_modifying_raw",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_evaluate.py::test_calendar_week_NW_lag4_no_finite_sample_correction_and_normal_one_sided_p": [
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_calendar_week_NW_lag4_no_finite_sample_correction_and_normal_one_sided_p",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_calendar_week_NW_lag4_no_finite_sample_correction_and_normal_one_sided_p",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_calendar_week_NW_lag4_no_finite_sample_correction_and_normal_one_sided_p",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_evaluate.py::test_random_controls_draw_before_execution_filtering_no_refill_and_invalid_A": [
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_random_controls_draw_before_execution_filtering_no_refill_and_invalid_A",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_random_controls_draw_before_execution_filtering_no_refill_and_invalid_A",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_random_controls_draw_before_execution_filtering_no_refill_and_invalid_A",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_evaluate.py::test_all52_denominator_invalid_weeks_zero_and_30_valid_300_observations": [
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_all52_denominator_invalid_weeks_zero_and_30_valid_300_observations",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_all52_denominator_invalid_weeks_zero_and_30_valid_300_observations",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_all52_denominator_invalid_weeks_zero_and_30_valid_300_observations",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_evaluate.py::test_complete_fake_evaluation_passes_and_disappeared_selection_changes_verdict": [
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_complete_fake_evaluation_passes_and_disappeared_selection_changes_verdict",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_complete_fake_evaluation_passes_and_disappeared_selection_changes_verdict",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_complete_fake_evaluation_passes_and_disappeared_selection_changes_verdict",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_evaluate.py::test_x1_5_is_judged_x2_is_reported_and_t_threshold_counts_only_LH003_trials": [
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_x1_5_is_judged_x2_is_reported_and_t_threshold_counts_only_LH003_trials",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_x1_5_is_judged_x2_is_reported_and_t_threshold_counts_only_LH003_trials",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_x1_5_is_judged_x2_is_reported_and_t_threshold_counts_only_LH003_trials",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_evaluate.py::test_missing_or_reconstructed_A_never_becomes_an_invalid_zero_week": [
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_missing_or_reconstructed_A_never_becomes_an_invalid_zero_week",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_missing_or_reconstructed_A_never_becomes_an_invalid_zero_week",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_missing_or_reconstructed_A_never_becomes_an_invalid_zero_week",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_evaluate.py::test_one_offline_final_verdict_compact_registry_and_idempotent_publication": [
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_one_offline_final_verdict_compact_registry_and_idempotent_publication",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_one_offline_final_verdict_compact_registry_and_idempotent_publication",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_one_offline_final_verdict_compact_registry_and_idempotent_publication",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_evaluate.py::test_record_execution_seals_without_calling_costs_in_2027": [
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_record_execution_seals_without_calling_costs_in_2027",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_record_execution_seals_without_calling_costs_in_2027",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_record_execution_seals_without_calling_costs_in_2027",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_evaluate.py::test_call_audit_counts_first_cause_reasks_and_unfinished_reservations": [
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_call_audit_counts_first_cause_reasks_and_unfinished_reservations",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_call_audit_counts_first_cause_reasks_and_unfinished_reservations",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_call_audit_counts_first_cause_reasks_and_unfinished_reservations",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_evaluate.py::test_aborted_statistical_trial_is_recorded_without_a_final_verdict": [
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_aborted_statistical_trial_is_recorded_without_a_final_verdict",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_aborted_statistical_trial_is_recorded_without_a_final_verdict",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_aborted_statistical_trial_is_recorded_without_a_final_verdict",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_evaluate.py::test_2027_cost_preflight_does_not_consume_the_final_evaluation_trial": [
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_2027_cost_preflight_does_not_consume_the_final_evaluation_trial",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_2027_cost_preflight_does_not_consume_the_final_evaluation_trial",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_evaluate.py::test_2027_cost_preflight_does_not_consume_the_final_evaluation_trial",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_corrected_shared_calendar_excludes_election_and_constitution_holidays": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_corrected_shared_calendar_excludes_election_and_constitution_holidays",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_corrected_shared_calendar_excludes_election_and_constitution_holidays",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_corrected_shared_calendar_excludes_election_and_constitution_holidays",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_start_needs_only_first_slot_calendar_not_future_2027": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_start_needs_only_first_slot_calendar_not_future_2027",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_start_needs_only_first_slot_calendar_not_future_2027",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_start_needs_only_first_slot_calendar_not_future_2027",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_special_close_used_and_unverified_price_day_refuses": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_special_close_used_and_unverified_price_day_refuses",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_special_close_used_and_unverified_price_day_refuses",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_special_close_used_and_unverified_price_day_refuses",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_entire_missing_fixed_week_refuses_instead_of_dropping_or_extending_it": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_entire_missing_fixed_week_refuses_instead_of_dropping_or_extending_it",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_entire_missing_fixed_week_refuses_instead_of_dropping_or_extending_it",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_entire_missing_fixed_week_refuses_instead_of_dropping_or_extending_it",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_unverified_year_never_substitutes_last_completed_week_of_previous_year": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_unverified_year_never_substitutes_last_completed_week_of_previous_year",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_unverified_year_never_substitutes_last_completed_week_of_previous_year",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_unverified_year_never_substitutes_last_completed_week_of_previous_year",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_twentieth_session_cannot_extend_past_fixed_evaluation_cutoff": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_twentieth_session_cannot_extend_past_fixed_evaluation_cutoff",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_twentieth_session_cannot_extend_past_fixed_evaluation_cutoff",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_twentieth_session_cannot_extend_past_fixed_evaluation_cutoff",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_required_h1_file_existence_checked_without_content_reads_before_claim": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_required_h1_file_existence_checked_without_content_reads_before_claim",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_required_h1_file_existence_checked_without_content_reads_before_claim",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_required_h1_file_existence_checked_without_content_reads_before_claim",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_required_non_H1_cycle_history_is_checked_before_claim": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_required_non_H1_cycle_history_is_checked_before_claim",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_required_non_H1_cycle_history_is_checked_before_claim",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_required_non_H1_cycle_history_is_checked_before_claim",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_lh003_av002_release_runs_inside_shared_lock_before_claim": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_lh003_av002_release_runs_inside_shared_lock_before_claim",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_lh003_av002_release_runs_inside_shared_lock_before_claim",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_lh003_av002_release_runs_inside_shared_lock_before_claim",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_full_distribution_provides_new_versions_after_sync_without_research_h1_reread": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_full_distribution_provides_new_versions_after_sync_without_research_h1_reread",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_full_distribution_provides_new_versions_after_sync_without_research_h1_reread",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_full_distribution_provides_new_versions_after_sync_without_research_h1_reread",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_new_captured_archive_does_not_require_raw_aggregate_after_publication": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_new_captured_archive_does_not_require_raw_aggregate_after_publication",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_new_captured_archive_does_not_require_raw_aggregate_after_publication",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_new_captured_archive_does_not_require_raw_aggregate_after_publication",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_rule_S_excludes_merged_conflicts_and_retains_prior_date_scope": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_rule_S_excludes_merged_conflicts_and_retains_prior_date_scope",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_rule_S_excludes_merged_conflicts_and_retains_prior_date_scope",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_rule_S_excludes_merged_conflicts_and_retains_prior_date_scope",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_dry_environment_never_enters_real_path_without_flag": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_dry_environment_never_enters_real_path_without_flag",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_dry_environment_never_enters_real_path_without_flag",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_dry_environment_never_enters_real_path_without_flag",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_permitted_synthetic_trial_exercises_real_runner_path_with_fake_and_durable_six_calls": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_permitted_synthetic_trial_exercises_real_runner_path_with_fake_and_durable_six_calls",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_permitted_synthetic_trial_exercises_real_runner_path_with_fake_and_durable_six_calls",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_permitted_synthetic_trial_exercises_real_runner_path_with_fake_and_durable_six_calls",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_real_format_trial_cli_requires_explicit_mode_and_durable_state": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_real_format_trial_cli_requires_explicit_mode_and_durable_state",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_real_format_trial_cli_requires_explicit_mode_and_durable_state",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_real_format_trial_cli_requires_explicit_mode_and_durable_state",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_format_calls_cannot_reset_eight_attempt_cap": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_format_calls_cannot_reset_eight_attempt_cap",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_format_calls_cannot_reset_eight_attempt_cap",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_format_calls_cannot_reset_eight_attempt_cap",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_process_tree_measurement_includes_grandchildren": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_process_tree_measurement_includes_grandchildren",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_process_tree_measurement_includes_grandchildren",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_process_tree_measurement_includes_grandchildren",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_environment_call_and_tree_memory_gates_precede_claim[real_path]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_environment_call_and_tree_memory_gates_precede_claim[real_path]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_environment_call_and_tree_memory_gates_precede_claim[real_path]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_environment_call_and_tree_memory_gates_precede_claim[real_path]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_environment_call_and_tree_memory_gates_precede_claim[children]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_environment_call_and_tree_memory_gates_precede_claim[children]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_environment_call_and_tree_memory_gates_precede_claim[children]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_environment_call_and_tree_memory_gates_precede_claim[children]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_environment_call_and_tree_memory_gates_precede_claim[memory]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_environment_call_and_tree_memory_gates_precede_claim[memory]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_environment_call_and_tree_memory_gates_precede_claim[memory]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_environment_call_and_tree_memory_gates_precede_claim[memory]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_environment_call_and_tree_memory_gates_precede_claim[route]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_environment_call_and_tree_memory_gates_precede_claim[route]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_environment_call_and_tree_memory_gates_precede_claim[route]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_environment_call_and_tree_memory_gates_precede_claim[route]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_completed_canonical_evaluation_blocks_rollback_before_any_computation": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_completed_canonical_evaluation_blocks_rollback_before_any_computation",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_completed_canonical_evaluation_blocks_rollback_before_any_computation",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_completed_canonical_evaluation_blocks_rollback_before_any_computation",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_sealed_evaluation_registry_crash_recovers_without_computing": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_sealed_evaluation_registry_crash_recovers_without_computing",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_sealed_evaluation_registry_crash_recovers_without_computing",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_sealed_evaluation_registry_crash_recovers_without_computing",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[backtesting/experiments/lh001/evaluate.py]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[backtesting/experiments/lh001/evaluate.py]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[backtesting/experiments/lh001/evaluate.py]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[backtesting/experiments/lh001/evaluate.py]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[backtesting/cost_model.py]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[backtesting/cost_model.py]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[backtesting/cost_model.py]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[backtesting/cost_model.py]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[backtesting/experiments/lh003/__init__.py]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[backtesting/experiments/lh003/__init__.py]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[backtesting/experiments/lh003/__init__.py]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[backtesting/experiments/lh003/__init__.py]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[backtesting/experiments/lh001/__init__.py]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[backtesting/experiments/lh001/__init__.py]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[backtesting/experiments/lh001/__init__.py]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[backtesting/experiments/lh001/__init__.py]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[src/runner/trading_calendar.py]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[src/runner/trading_calendar.py]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[src/runner/trading_calendar.py]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[src/runner/trading_calendar.py]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[src/ingestion/dart_filing_dates.py]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[src/ingestion/dart_filing_dates.py]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[src/ingestion/dart_filing_dates.py]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[src/ingestion/dart_filing_dates.py]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[src/runner/event_evidence.py]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[src/runner/event_evidence.py]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[src/runner/event_evidence.py]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[src/runner/event_evidence.py]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[src/research/industry_map.py]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[src/research/industry_map.py]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[src/research/industry_map.py]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_evaluation_verifies_all_pinned_algorithms_before_computing[src/research/industry_map.py]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_not_started_recovers_seal_to_registry_crash_under_existing_hash": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_not_started_recovers_seal_to_registry_crash_under_existing_hash",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_not_started_recovers_seal_to_registry_crash_under_existing_hash",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_not_started_recovers_seal_to_registry_crash_under_existing_hash",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round21.py::test_500_stocks_22_invalid_weeks_stream_all_scenarios_with_bounded_memory": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_500_stocks_22_invalid_weeks_stream_all_scenarios_with_bounded_memory",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_500_stocks_22_invalid_weeks_stream_all_scenarios_with_bounded_memory",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round21.py::test_500_stocks_22_invalid_weeks_stream_all_scenarios_with_bounded_memory",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round23.py::test_distribution_has_entire_fixed_scope_without_h1_rows_or_checkpoint_summaries": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_distribution_has_entire_fixed_scope_without_h1_rows_or_checkpoint_summaries",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_distribution_has_entire_fixed_scope_without_h1_rows_or_checkpoint_summaries",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_distribution_has_entire_fixed_scope_without_h1_rows_or_checkpoint_summaries",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round23.py::test_actual_public_date_controls_distribution_not_receipt_or_fiscal_period": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_actual_public_date_controls_distribution_not_receipt_or_fiscal_period",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_actual_public_date_controls_distribution_not_receipt_or_fiscal_period",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_actual_public_date_controls_distribution_not_receipt_or_fiscal_period",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round23.py::test_new_nonh1_financial_and_benchmark_versions_are_captured_but_new_h1_is_not": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_new_nonh1_financial_and_benchmark_versions_are_captured_but_new_h1_is_not",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_new_nonh1_financial_and_benchmark_versions_are_captured_but_new_h1_is_not",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_new_nonh1_financial_and_benchmark_versions_are_captured_but_new_h1_is_not",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round23.py::test_research_never_inventories_or_reads_raw_files": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_research_never_inventories_or_reads_raw_files",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_research_never_inventories_or_reads_raw_files",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_research_never_inventories_or_reads_raw_files",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round23.py::test_missing_failed_or_future_publication_never_uses_previous_update": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_missing_failed_or_future_publication_never_uses_previous_update",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_missing_failed_or_future_publication_never_uses_previous_update",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_missing_failed_or_future_publication_never_uses_previous_update",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round23.py::test_distribution_detects_mutation_during_capture": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_distribution_detects_mutation_during_capture",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_distribution_detects_mutation_during_capture",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_distribution_detects_mutation_during_capture",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round23.py::test_unclassifiable_trade_date_fails_publication_instead_of_exporting_row[None]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_unclassifiable_trade_date_fails_publication_instead_of_exporting_row[None]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_unclassifiable_trade_date_fails_publication_instead_of_exporting_row[None]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_unclassifiable_trade_date_fails_publication_instead_of_exporting_row[None]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round23.py::test_unclassifiable_trade_date_fails_publication_instead_of_exporting_row[2026-02-30]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_unclassifiable_trade_date_fails_publication_instead_of_exporting_row[2026-02-30]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_unclassifiable_trade_date_fails_publication_instead_of_exporting_row[2026-02-30]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_unclassifiable_trade_date_fails_publication_instead_of_exporting_row[2026-02-30]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round23.py::test_actual_module_update_requires_amendment_then_preserves_model_identity[tax_update]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_actual_module_update_requires_amendment_then_preserves_model_identity[tax_update]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_actual_module_update_requires_amendment_then_preserves_model_identity[tax_update]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_actual_module_update_requires_amendment_then_preserves_model_identity[tax_update]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round23.py::test_actual_module_update_requires_amendment_then_preserves_model_identity[calendar_update]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_actual_module_update_requires_amendment_then_preserves_model_identity[calendar_update]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_actual_module_update_requires_amendment_then_preserves_model_identity[calendar_update]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_actual_module_update_requires_amendment_then_preserves_model_identity[calendar_update]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round23.py::test_ast_rejects_algorithm_changes_executable_data_and_incomplete_boundary[backtesting/cost_model.py-0.00015-0.00016]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_ast_rejects_algorithm_changes_executable_data_and_incomplete_boundary[backtesting/cost_model.py-0.00015-0.00016]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_ast_rejects_algorithm_changes_executable_data_and_incomplete_boundary[backtesting/cost_model.py-0.00015-0.00016]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_ast_rejects_algorithm_changes_executable_data_and_incomplete_boundary[backtesting/cost_model.py-0.00015-0.00016]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round23.py::test_ast_rejects_algorithm_changes_executable_data_and_incomplete_boundary[backtesting/cost_model.py-\"KOSDAQ\": 0.0020-\"KOSDAQ\": float(0.0020)]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_ast_rejects_algorithm_changes_executable_data_and_incomplete_boundary[backtesting/cost_model.py-\"KOSDAQ\": 0.0020-\"KOSDAQ\": float(0.0020)]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_ast_rejects_algorithm_changes_executable_data_and_incomplete_boundary[backtesting/cost_model.py-\"KOSDAQ\": 0.0020-\"KOSDAQ\": float(0.0020)]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_ast_rejects_algorithm_changes_executable_data_and_incomplete_boundary[backtesting/cost_model.py-\"KOSDAQ\": 0.0020-\"KOSDAQ\": float(0.0020)]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round23.py::test_ast_rejects_algorithm_changes_executable_data_and_incomplete_boundary[src/runner/trading_calendar.py-min(2026, year + 1)-min(2026, year + 2)]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_ast_rejects_algorithm_changes_executable_data_and_incomplete_boundary[src/runner/trading_calendar.py-min(2026, year + 1)-min(2026, year + 2)]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_ast_rejects_algorithm_changes_executable_data_and_incomplete_boundary[src/runner/trading_calendar.py-min(2026, year + 1)-min(2026, year + 2)]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_ast_rejects_algorithm_changes_executable_data_and_incomplete_boundary[src/runner/trading_calendar.py-min(2026, year + 1)-min(2026, year + 2)]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round23.py::test_ast_rejects_algorithm_changes_executable_data_and_incomplete_boundary[src/runner/trading_calendar.py-CALENDAR_VERIFIED_THROUGH = \"2026-12-31\"-CALENDAR_VERIFIED_THROUGH = \"2027-12-31\"]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_ast_rejects_algorithm_changes_executable_data_and_incomplete_boundary[src/runner/trading_calendar.py-CALENDAR_VERIFIED_THROUGH = \"2026-12-31\"-CALENDAR_VERIFIED_THROUGH = \"2027-12-31\"]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_ast_rejects_algorithm_changes_executable_data_and_incomplete_boundary[src/runner/trading_calendar.py-CALENDAR_VERIFIED_THROUGH = \"2026-12-31\"-CALENDAR_VERIFIED_THROUGH = \"2027-12-31\"]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_ast_rejects_algorithm_changes_executable_data_and_incomplete_boundary[src/runner/trading_calendar.py-CALENDAR_VERIFIED_THROUGH = \"2026-12-31\"-CALENDAR_VERIFIED_THROUGH = \"2027-12-31\"]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round23.py::test_ast_rejects_algorithm_changes_executable_data_and_incomplete_boundary[src/runner/trading_calendar.py-if day in PENDING_SPECIAL_SESSIONS-if False and day in PENDING_SPECIAL_SESSIONS]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_ast_rejects_algorithm_changes_executable_data_and_incomplete_boundary[src/runner/trading_calendar.py-if day in PENDING_SPECIAL_SESSIONS-if False and day in PENDING_SPECIAL_SESSIONS]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_ast_rejects_algorithm_changes_executable_data_and_incomplete_boundary[src/runner/trading_calendar.py-if day in PENDING_SPECIAL_SESSIONS-if False and day in PENDING_SPECIAL_SESSIONS]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_ast_rejects_algorithm_changes_executable_data_and_incomplete_boundary[src/runner/trading_calendar.py-if day in PENDING_SPECIAL_SESSIONS-if False and day in PENDING_SPECIAL_SESSIONS]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round23.py::test_amendment_chain_and_actually_loaded_hash_are_verified": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_amendment_chain_and_actually_loaded_hash_are_verified",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_amendment_chain_and_actually_loaded_hash_are_verified",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_amendment_chain_and_actually_loaded_hash_are_verified",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round23.py::test_amendment_requires_source_effective_date_and_change_time[source]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_amendment_requires_source_effective_date_and_change_time[source]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_amendment_requires_source_effective_date_and_change_time[source]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_amendment_requires_source_effective_date_and_change_time[source]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round23.py::test_amendment_requires_source_effective_date_and_change_time[effective]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_amendment_requires_source_effective_date_and_change_time[effective]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_amendment_requires_source_effective_date_and_change_time[effective]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_amendment_requires_source_effective_date_and_change_time[effective]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round23.py::test_amendment_requires_source_effective_date_and_change_time[time]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_amendment_requires_source_effective_date_and_change_time[time]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_amendment_requires_source_effective_date_and_change_time[time]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_amendment_requires_source_effective_date_and_change_time[time]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round23.py::test_code_pin_is_checked_before_weekly_A_and_no_bad_fallback_remains": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_code_pin_is_checked_before_weekly_A_and_no_bad_fallback_remains",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_code_pin_is_checked_before_weekly_A_and_no_bad_fallback_remains",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_code_pin_is_checked_before_weekly_A_and_no_bad_fallback_remains",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round23.py::test_decision_records_applied_code_amendment_and_distribution_hashes": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_decision_records_applied_code_amendment_and_distribution_hashes",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_decision_records_applied_code_amendment_and_distribution_hashes",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_decision_records_applied_code_amendment_and_distribution_hashes",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round23.py::test_environment_checks_pins_before_A_generation": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_environment_checks_pins_before_A_generation",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_environment_checks_pins_before_A_generation",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_environment_checks_pins_before_A_generation",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round23.py::test_execution_checks_B_before_reading_any_prices": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_execution_checks_B_before_reading_any_prices",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_execution_checks_B_before_reading_any_prices",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_execution_checks_B_before_reading_any_prices",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round23.py::test_approved_B_is_used_by_environment_execution_and_final_evaluation": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_approved_B_is_used_by_environment_execution_and_final_evaluation",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_approved_B_is_used_by_environment_execution_and_final_evaluation",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_approved_B_is_used_by_environment_execution_and_final_evaluation",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round23.py::test_loaded_hash_is_not_relabelled_by_a_file_change": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_loaded_hash_is_not_relabelled_by_a_file_change",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_loaded_hash_is_not_relabelled_by_a_file_change",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_loaded_hash_is_not_relabelled_by_a_file_change",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round23.py::test_weekly_requires_completed_distribution_before_A": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_weekly_requires_completed_distribution_before_A",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_weekly_requires_completed_distribution_before_A",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_weekly_requires_completed_distribution_before_A",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round23.py::test_first_week_keeps_52_slots_without_requiring_future_calendar": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_first_week_keeps_52_slots_without_requiring_future_calendar",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_first_week_keeps_52_slots_without_requiring_future_calendar",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_first_week_keeps_52_slots_without_requiring_future_calendar",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round23.py::test_unverified_needed_exit_stops_instead_of_dropping_slot": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_unverified_needed_exit_stops_instead_of_dropping_slot",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_unverified_needed_exit_stops_instead_of_dropping_slot",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_unverified_needed_exit_stops_instead_of_dropping_slot",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round23.py::test_next_week_calendar_scope_does_not_require_unrelated_change_note": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_next_week_calendar_scope_does_not_require_unrelated_change_note",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_next_week_calendar_scope_does_not_require_unrelated_change_note",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round23.py::test_next_week_calendar_scope_does_not_require_unrelated_change_note",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round24.py::test_prestart_publication_uses_fixed_reference_without_model_manifest": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_prestart_publication_uses_fixed_reference_without_model_manifest",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_prestart_publication_uses_fixed_reference_without_model_manifest",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_prestart_publication_uses_fixed_reference_without_model_manifest",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round24.py::test_missing_prestart_reference_refuses_before_raw_inventory": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_missing_prestart_reference_refuses_before_raw_inventory",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_missing_prestart_reference_refuses_before_raw_inventory",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_missing_prestart_reference_refuses_before_raw_inventory",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round24.py::test_prestart_publication_retains_fixed_reference_after_start_and_amendment": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_prestart_publication_retains_fixed_reference_after_start_and_amendment",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_prestart_publication_retains_fixed_reference_after_start_and_amendment",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_prestart_publication_retains_fixed_reference_after_start_and_amendment",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round24.py::test_modified_code_refuses_before_raw_inventory[False-scripts/lh003/distribute.py]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_modified_code_refuses_before_raw_inventory[False-scripts/lh003/distribute.py]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_modified_code_refuses_before_raw_inventory[False-scripts/lh003/distribute.py]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_modified_code_refuses_before_raw_inventory[False-scripts/lh003/distribute.py]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round24.py::test_modified_code_refuses_before_raw_inventory[False-src/ingestion/dart_financial_date_rules.py]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_modified_code_refuses_before_raw_inventory[False-src/ingestion/dart_financial_date_rules.py]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_modified_code_refuses_before_raw_inventory[False-src/ingestion/dart_financial_date_rules.py]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_modified_code_refuses_before_raw_inventory[False-src/ingestion/dart_financial_date_rules.py]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round24.py::test_modified_code_refuses_before_raw_inventory[True-scripts/lh003/distribute.py]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_modified_code_refuses_before_raw_inventory[True-scripts/lh003/distribute.py]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_modified_code_refuses_before_raw_inventory[True-scripts/lh003/distribute.py]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_modified_code_refuses_before_raw_inventory[True-scripts/lh003/distribute.py]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round24.py::test_modified_code_refuses_before_raw_inventory[True-src/ingestion/dart_financial_date_rules.py]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_modified_code_refuses_before_raw_inventory[True-src/ingestion/dart_financial_date_rules.py]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_modified_code_refuses_before_raw_inventory[True-src/ingestion/dart_financial_date_rules.py]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_modified_code_refuses_before_raw_inventory[True-src/ingestion/dart_financial_date_rules.py]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round24.py::test_code_drift_during_generation_blocks_completion": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_code_drift_during_generation_blocks_completion",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_code_drift_during_generation_blocks_completion",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_code_drift_during_generation_blocks_completion",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round24.py::test_copied_modified_script_cannot_borrow_approved_checkout_hashes": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_copied_modified_script_cannot_borrow_approved_checkout_hashes",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_copied_modified_script_cannot_borrow_approved_checkout_hashes",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_copied_modified_script_cannot_borrow_approved_checkout_hashes",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round24.py::test_foreign_distributor_publication_refused_after_code_restored[False]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_foreign_distributor_publication_refused_after_code_restored[False]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_foreign_distributor_publication_refused_after_code_restored[False]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_foreign_distributor_publication_refused_after_code_restored[False]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round24.py::test_foreign_distributor_publication_refused_after_code_restored[True]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_foreign_distributor_publication_refused_after_code_restored[True]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_foreign_distributor_publication_refused_after_code_restored[True]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_foreign_distributor_publication_refused_after_code_restored[True]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round24.py::test_mechanical_amendment_producer_and_reader_share_chain[tax_update]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_mechanical_amendment_producer_and_reader_share_chain[tax_update]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_mechanical_amendment_producer_and_reader_share_chain[tax_update]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_mechanical_amendment_producer_and_reader_share_chain[tax_update]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round24.py::test_mechanical_amendment_producer_and_reader_share_chain[calendar_update]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_mechanical_amendment_producer_and_reader_share_chain[calendar_update]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_mechanical_amendment_producer_and_reader_share_chain[calendar_update]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_mechanical_amendment_producer_and_reader_share_chain[calendar_update]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round24.py::test_legacy_manifest_without_producer_receipt_refused_even_with_valid_data_hashes": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_legacy_manifest_without_producer_receipt_refused_even_with_valid_data_hashes",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_legacy_manifest_without_producer_receipt_refused_even_with_valid_data_hashes",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_legacy_manifest_without_producer_receipt_refused_even_with_valid_data_hashes",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_round24.py::test_snapshot_rechecks_producer_before_merging_rows": [
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_snapshot_rechecks_producer_before_merging_rows",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_snapshot_rechecks_producer_before_merging_rows",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_round24.py::test_snapshot_rechecks_producer_before_merging_rows",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_runner.py::test_v3_dynamic_schema_array_lengths_enum_uniqueness_and_cross_overlap": [
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_v3_dynamic_schema_array_lengths_enum_uniqueness_and_cross_overlap",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_v3_dynamic_schema_array_lengths_enum_uniqueness_and_cross_overlap",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_v3_dynamic_schema_array_lengths_enum_uniqueness_and_cross_overlap",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_runner.py::test_leak_checker_covers_final_prompt_dynamic_schema_and_fixed_reask[v3_common.txt]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_leak_checker_covers_final_prompt_dynamic_schema_and_fixed_reask[v3_common.txt]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_leak_checker_covers_final_prompt_dynamic_schema_and_fixed_reask[v3_common.txt]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_leak_checker_covers_final_prompt_dynamic_schema_and_fixed_reask[v3_common.txt]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_runner.py::test_leak_checker_covers_final_prompt_dynamic_schema_and_fixed_reask[v3_c_num.txt]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_leak_checker_covers_final_prompt_dynamic_schema_and_fixed_reask[v3_c_num.txt]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_leak_checker_covers_final_prompt_dynamic_schema_and_fixed_reask[v3_c_num.txt]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_leak_checker_covers_final_prompt_dynamic_schema_and_fixed_reask[v3_c_num.txt]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_runner.py::test_leak_checker_covers_final_prompt_dynamic_schema_and_fixed_reask[v3_reask.txt]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_leak_checker_covers_final_prompt_dynamic_schema_and_fixed_reask[v3_reask.txt]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_leak_checker_covers_final_prompt_dynamic_schema_and_fixed_reask[v3_reask.txt]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_leak_checker_covers_final_prompt_dynamic_schema_and_fixed_reask[v3_reask.txt]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_runner.py::test_leak_checker_covers_final_prompt_dynamic_schema_and_fixed_reask[v3_c_num.schema.json]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_leak_checker_covers_final_prompt_dynamic_schema_and_fixed_reask[v3_c_num.schema.json]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_leak_checker_covers_final_prompt_dynamic_schema_and_fixed_reask[v3_c_num.schema.json]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_leak_checker_covers_final_prompt_dynamic_schema_and_fixed_reask[v3_c_num.schema.json]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_runner.py::test_A_is_not_capped_and_shown_pool_is_adv_top_300": [
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_A_is_not_capped_and_shown_pool_is_adv_top_300",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_A_is_not_capped_and_shown_pool_is_adv_top_300",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_A_is_not_capped_and_shown_pool_is_adv_top_300",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_runner.py::test_three_independent_repeats_use_empty_external_workspaces_and_frozen_prompt": [
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_three_independent_repeats_use_empty_external_workspaces_and_frozen_prompt",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_three_independent_repeats_use_empty_external_workspaces_and_frozen_prompt",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_three_independent_repeats_use_empty_external_workspaces_and_frozen_prompt",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_runner.py::test_fixed_reask_does_not_echo_invalid_output_and_preserves_raw_attempts": [
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_fixed_reask_does_not_echo_invalid_output_and_preserves_raw_attempts",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_fixed_reask_does_not_echo_invalid_output_and_preserves_raw_attempts",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_fixed_reask_does_not_echo_invalid_output_and_preserves_raw_attempts",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_runner.py::test_tool_events_invalidate_every_repeat_with_at_most_one_reask[command_execution]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_tool_events_invalidate_every_repeat_with_at_most_one_reask[command_execution]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_tool_events_invalidate_every_repeat_with_at_most_one_reask[command_execution]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_tool_events_invalidate_every_repeat_with_at_most_one_reask[command_execution]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_runner.py::test_tool_events_invalidate_every_repeat_with_at_most_one_reask[file_read]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_tool_events_invalidate_every_repeat_with_at_most_one_reask[file_read]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_tool_events_invalidate_every_repeat_with_at_most_one_reask[file_read]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_tool_events_invalidate_every_repeat_with_at_most_one_reask[file_read]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_runner.py::test_tool_events_invalidate_every_repeat_with_at_most_one_reask[web_search]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_tool_events_invalidate_every_repeat_with_at_most_one_reask[web_search]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_tool_events_invalidate_every_repeat_with_at_most_one_reask[web_search]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_tool_events_invalidate_every_repeat_with_at_most_one_reask[web_search]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_runner.py::test_tool_events_invalidate_every_repeat_with_at_most_one_reask[mcp_tool_call]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_tool_events_invalidate_every_repeat_with_at_most_one_reask[mcp_tool_call]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_tool_events_invalidate_every_repeat_with_at_most_one_reask[mcp_tool_call]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_tool_events_invalidate_every_repeat_with_at_most_one_reask[mcp_tool_call]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_runner.py::test_tool_events_invalidate_every_repeat_with_at_most_one_reask[unknown_tool]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_tool_events_invalidate_every_repeat_with_at_most_one_reask[unknown_tool]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_tool_events_invalidate_every_repeat_with_at_most_one_reask[unknown_tool]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_tool_events_invalidate_every_repeat_with_at_most_one_reask[unknown_tool]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_runner.py::test_one_failed_repeat_invalidates_decision_without_extra_repeats": [
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_one_failed_repeat_invalidates_decision_without_extra_repeats",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_one_failed_repeat_invalidates_decision_without_extra_repeats",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_one_failed_repeat_invalidates_decision_without_extra_repeats",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_runner.py::test_39_candidates_make_no_identity_or_model_call": [
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_39_candidates_make_no_identity_or_model_call",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_39_candidates_make_no_identity_or_model_call",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_39_candidates_make_no_identity_or_model_call",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_runner.py::test_timeout_and_interruption_are_durable_and_resume_has_only_one_reask": [
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_timeout_and_interruption_are_durable_and_resume_has_only_one_reask",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_timeout_and_interruption_are_durable_and_resume_has_only_one_reask",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_timeout_and_interruption_are_durable_and_resume_has_only_one_reask",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_runner.py::test_pending_reservation_counts_on_restart": [
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_pending_reservation_counts_on_restart",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_pending_reservation_counts_on_restart",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_pending_reservation_counts_on_restart",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_runner.py::test_hard_320_cap_including_prior_interruptions": [
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_hard_320_cap_including_prior_interruptions",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_hard_320_cap_including_prior_interruptions",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_hard_320_cap_including_prior_interruptions",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_runner.py::test_version_drift_persistently_stops_current_and_subsequent_decisions[0]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_version_drift_persistently_stops_current_and_subsequent_decisions[0]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_version_drift_persistently_stops_current_and_subsequent_decisions[0]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_version_drift_persistently_stops_current_and_subsequent_decisions[0]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_runner.py::test_version_drift_persistently_stops_current_and_subsequent_decisions[1]": [
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_version_drift_persistently_stops_current_and_subsequent_decisions[1]",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_version_drift_persistently_stops_current_and_subsequent_decisions[1]",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_version_drift_persistently_stops_current_and_subsequent_decisions[1]",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_runner.py::test_model_name_and_prompt_drift_stop_without_extra_calls": [
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_model_name_and_prompt_drift_stop_without_extra_calls",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_model_name_and_prompt_drift_stop_without_extra_calls",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_model_name_and_prompt_drift_stop_without_extra_calls",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_runner.py::test_implementation_drift_cannot_be_hidden_by_a_new_clean_commit": [
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_implementation_drift_cannot_be_hidden_by_a_new_clean_commit",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_implementation_drift_cannot_be_hidden_by_a_new_clean_commit",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_implementation_drift_cannot_be_hidden_by_a_new_clean_commit",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_runner.py::test_malformed_events_and_inconsistent_final_file_are_invalid_and_archived": [
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_malformed_events_and_inconsistent_final_file_are_invalid_and_archived",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_malformed_events_and_inconsistent_final_file_are_invalid_and_archived",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_malformed_events_and_inconsistent_final_file_are_invalid_and_archived",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_runner.py::test_frequency_mean_rank_and_ID_tie_break_are_the_LH002_rule": [
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_frequency_mean_rank_and_ID_tie_break_are_the_LH002_rule",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_frequency_mean_rank_and_ID_tie_break_are_the_LH002_rule",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_frequency_mean_rank_and_ID_tie_break_are_the_LH002_rule",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_runner.py::test_A_and_common_input_are_sealed_before_first_call_and_resume_uses_them": [
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_A_and_common_input_are_sealed_before_first_call_and_resume_uses_them",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_A_and_common_input_are_sealed_before_first_call_and_resume_uses_them",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_A_and_common_input_are_sealed_before_first_call_and_resume_uses_them",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_runner.py::test_crash_resume_reuses_A_inputs_counts_attempt_and_never_reopens_holdout": [
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_crash_resume_reuses_A_inputs_counts_attempt_and_never_reopens_holdout",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_crash_resume_reuses_A_inputs_counts_attempt_and_never_reopens_holdout",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_crash_resume_reuses_A_inputs_counts_attempt_and_never_reopens_holdout",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_runner.py::test_late_model_result_uses_timely_A_and_fresh_late_input_is_reconstructed": [
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_late_model_result_uses_timely_A_and_fresh_late_input_is_reconstructed",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_late_model_result_uses_timely_A_and_fresh_late_input_is_reconstructed",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_late_model_result_uses_timely_A_and_fresh_late_input_is_reconstructed",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_runner.py::test_missing_decision_day_refuses_cleanly_before_any_input_or_attempt": [
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_missing_decision_day_refuses_cleanly_before_any_input_or_attempt",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_missing_decision_day_refuses_cleanly_before_any_input_or_attempt",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_missing_decision_day_refuses_cleanly_before_any_input_or_attempt",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_runner.py::test_unreproducible_A_is_recorded_as_missing_not_zero": [
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_unreproducible_A_is_recorded_as_missing_not_zero",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_unreproducible_A_is_recorded_as_missing_not_zero",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_unreproducible_A_is_recorded_as_missing_not_zero",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_runner.py::test_real_call_commit_gate_rejects_uncommitted_implementation": [
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_real_call_commit_gate_rejects_uncommitted_implementation",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_real_call_commit_gate_rejects_uncommitted_implementation",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_runner.py::test_real_call_commit_gate_rejects_uncommitted_implementation",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_snapshot.py::test_fixed_52_weeks_calendar_deadline_and_twentieth_session": [
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_fixed_52_weeks_calendar_deadline_and_twentieth_session",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_fixed_52_weeks_calendar_deadline_and_twentieth_session",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_fixed_52_weeks_calendar_deadline_and_twentieth_session",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_snapshot.py::test_pinned_calendar_refuses_dependency_drift": [
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_pinned_calendar_refuses_dependency_drift",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_pinned_calendar_refuses_dependency_drift",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_pinned_calendar_refuses_dependency_drift",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_snapshot.py::test_calendar_session_hash_changes_require_an_explicit_operator_note": [
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_calendar_session_hash_changes_require_an_explicit_operator_note",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_calendar_session_hash_changes_require_an_explicit_operator_note",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_calendar_session_hash_changes_require_an_explicit_operator_note",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_snapshot.py::test_snapshot_acquisition_requires_a_session_and_synthetic_stays_outside_data": [
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_snapshot_acquisition_requires_a_session_and_synthetic_stays_outside_data",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_snapshot_acquisition_requires_a_session_and_synthetic_stays_outside_data",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_snapshot_acquisition_requires_a_session_and_synthetic_stays_outside_data",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_snapshot.py::test_weekly_inputs_never_open_original_protected_files_or_stream_prefixes": [
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_weekly_inputs_never_open_original_protected_files_or_stream_prefixes",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_weekly_inputs_never_open_original_protected_files_or_stream_prefixes",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_weekly_inputs_never_open_original_protected_files_or_stream_prefixes",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_snapshot.py::test_protected_source_corrections_cannot_change_frozen_inputs": [
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_protected_source_corrections_cannot_change_frozen_inputs",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_protected_source_corrections_cannot_change_frozen_inputs",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_protected_source_corrections_cannot_change_frozen_inputs",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_snapshot.py::test_snapshot_hash_and_read_only_mode_are_verified": [
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_snapshot_hash_and_read_only_mode_are_verified",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_snapshot_hash_and_read_only_mode_are_verified",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_snapshot_hash_and_read_only_mode_are_verified",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_snapshot.py::test_pinned_full_distribution_survives_raw_rewrites": [
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_pinned_full_distribution_survives_raw_rewrites",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_pinned_full_distribution_survives_raw_rewrites",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_pinned_full_distribution_survives_raw_rewrites",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_snapshot.py::test_s_date_uses_later_public_date_and_unlinked_since_2016_is_unusable": [
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_s_date_uses_later_public_date_and_unlinked_since_2016_is_unusable",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_s_date_uses_later_public_date_and_unlinked_since_2016_is_unusable",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_s_date_uses_later_public_date_and_unlinked_since_2016_is_unusable",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_snapshot.py::test_incomplete_disclosure_window_is_unavailable_not_zero": [
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_incomplete_disclosure_window_is_unavailable_not_zero",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_incomplete_disclosure_window_is_unavailable_not_zero",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_incomplete_disclosure_window_is_unavailable_not_zero",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_snapshot.py::test_LH003_requires_both_releases_and_all_passing_holdouts": [
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_LH003_requires_both_releases_and_all_passing_holdouts",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_LH003_requires_both_releases_and_all_passing_holdouts",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_LH003_requires_both_releases_and_all_passing_holdouts",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_snapshot.py::test_single_fake_claim_seals_start_and_cannot_reopen": [
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_single_fake_claim_seals_start_and_cannot_reopen",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_single_fake_claim_seals_start_and_cannot_reopen",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_single_fake_claim_seals_start_and_cannot_reopen",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_snapshot.py::test_preclaim_failure_allows_retry_without_not_started": [
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_preclaim_failure_allows_retry_without_not_started",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_preclaim_failure_allows_retry_without_not_started",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_preclaim_failure_allows_retry_without_not_started",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_snapshot.py::test_postclaim_failure_records_not_started_and_never_retries": [
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_postclaim_failure_records_not_started_and_never_retries",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_postclaim_failure_records_not_started_and_never_retries",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_postclaim_failure_records_not_started_and_never_retries",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_snapshot.py::test_postseal_real_cycle_failure_consumes_the_same_fake_claim": [
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_postseal_real_cycle_failure_consumes_the_same_fake_claim",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_postseal_real_cycle_failure_consumes_the_same_fake_claim",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_postseal_real_cycle_failure_consumes_the_same_fake_claim",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_snapshot.py::test_missing_calendar_journal_cannot_be_recreated_after_start": [
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_missing_calendar_journal_cannot_be_recreated_after_start",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_missing_calendar_journal_cannot_be_recreated_after_start",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_missing_calendar_journal_cannot_be_recreated_after_start",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_snapshot.py::test_machine_replacement_requires_and_records_reason_and_remaining_count": [
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_machine_replacement_requires_and_records_reason_and_remaining_count",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_machine_replacement_requires_and_records_reason_and_remaining_count",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_machine_replacement_requires_and_records_reason_and_remaining_count",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_snapshot.py::test_missing_machine_identity_fails_without_hostname_fallback": [
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_missing_machine_identity_fails_without_hostname_fallback",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_missing_machine_identity_fails_without_hostname_fallback",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_missing_machine_identity_fails_without_hostname_fallback",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_snapshot.py::test_CLI_dry_run_default_and_synthetic_execution_rejection": [
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_CLI_dry_run_default_and_synthetic_execution_rejection",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_CLI_dry_run_default_and_synthetic_execution_rejection",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_CLI_dry_run_default_and_synthetic_execution_rejection",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_snapshot.py::test_missed_start_is_not_started_without_a_claim": [
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_missed_start_is_not_started_without_a_claim",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_missed_start_is_not_started_without_a_claim",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_missed_start_is_not_started_without_a_claim",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_snapshot.py::test_missing_week_dry_report_has_no_real_cycle_or_holdout_and_a_restart_plan": [
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_missing_week_dry_report_has_no_real_cycle_or_holdout_and_a_restart_plan",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_missing_week_dry_report_has_no_real_cycle_or_holdout_and_a_restart_plan",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_missing_week_dry_report_has_no_real_cycle_or_holdout_and_a_restart_plan",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ],
+      "tests/test_experiments_lh003_snapshot.py::test_sync_hash_and_2026_future_data_refuse_invalid_trigger": [
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_sync_hash_and_2026_future_data_refuse_invalid_trigger",
+          "phase": "setup",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_sync_hash_and_2026_future_data_refuse_invalid_trigger",
+          "phase": "call",
+          "outcome": "passed",
+          "longrepr": null
+        },
+        {
+          "nodeid": "tests/test_experiments_lh003_snapshot.py::test_sync_hash_and_2026_future_data_refuse_invalid_trigger",
+          "phase": "teardown",
+          "outcome": "passed",
+          "longrepr": null
+        }
+      ]
+    }
+  },
+  "frozen_audit": {
+    "backtesting/__init__.py": {
+      "before": "e51bcc748c0d6464f399236cf5c794144776f8981bdbedde74ebe18c2ce9e2af",
+      "after": "e51bcc748c0d6464f399236cf5c794144776f8981bdbedde74ebe18c2ce9e2af"
+    },
+    "backtesting/append_only.py": {
+      "before": "30be0fee09d89dc5e6b21f8871b54ffddbe51a991bc9a035e34d8290ad73a662",
+      "after": "30be0fee09d89dc5e6b21f8871b54ffddbe51a991bc9a035e34d8290ad73a662"
+    },
+    "backtesting/capacity.py": {
+      "before": "c27482cc766fc6bb09889dd4d8ea9b319458ff97ffce86f3774ee615338bc4d1",
+      "after": "c27482cc766fc6bb09889dd4d8ea9b319458ff97ffce86f3774ee615338bc4d1"
+    },
+    "backtesting/cost_model.py": {
+      "before": "d83624a39ca5e14fee415f83a01da5a4582abc00bfcf5f0f0a1f05eb42b37481",
+      "after": "d83624a39ca5e14fee415f83a01da5a4582abc00bfcf5f0f0a1f05eb42b37481"
+    },
+    "backtesting/experiment_registry.py": {
+      "before": "875d20735698091060653294e5a182552cef78d98b6d6b4e6ca13299bfa9be9b",
+      "after": "875d20735698091060653294e5a182552cef78d98b6d6b4e6ca13299bfa9be9b"
+    },
+    "backtesting/experiments/__init__.py": {
+      "before": "b5b4d25e9438441f360a63f342ed319c2251e7f116e2070f4d91dfe49230bb79",
+      "after": "b5b4d25e9438441f360a63f342ed319c2251e7f116e2070f4d91dfe49230bb79"
+    },
+    "backtesting/experiments/av001.py": {
+      "before": "be99accfc4016f0bcca57da51b4b4f4e6dc4fe42bc77c7cb598a5ed89f32509a",
+      "after": "be99accfc4016f0bcca57da51b4b4f4e6dc4fe42bc77c7cb598a5ed89f32509a"
+    },
+    "backtesting/experiments/common.py": {
+      "before": "e016a29278d3f2d0d79ff66c04e2940496beb440c0005d27a86b7a64b8acbdcf",
+      "after": "e016a29278d3f2d0d79ff66c04e2940496beb440c0005d27a86b7a64b8acbdcf"
+    },
+    "backtesting/experiments/d001.py": {
+      "before": "7d08203e2906061bd28600f73b058cc4b15ddea7dad12c9fb2eb2002fdae8d59",
+      "after": "7d08203e2906061bd28600f73b058cc4b15ddea7dad12c9fb2eb2002fdae8d59"
+    },
+    "backtesting/experiments/hc001.py": {
+      "before": "90df5fc2e8efd868f6466467c1603d1db6361351d383e2d91aed49b97c161f90",
+      "after": "90df5fc2e8efd868f6466467c1603d1db6361351d383e2d91aed49b97c161f90"
+    },
+    "backtesting/experiments/hc002.py": {
+      "before": "e368edd21f0021713f29793f28233087f322064e06a570a6dd74a264db521069",
+      "after": "e368edd21f0021713f29793f28233087f322064e06a570a6dd74a264db521069"
+    },
+    "backtesting/experiments/hc003.py": {
+      "before": "102a1cc2fb9711e91fa3f7ad30ccf0daea6b40ce6d62738018fe85238ed720cb",
+      "after": "102a1cc2fb9711e91fa3f7ad30ccf0daea6b40ce6d62738018fe85238ed720cb"
+    },
+    "backtesting/experiments/hf001.py": {
+      "before": "3d2a11e1e2236e539ae37da816e8229960bcf08eacf3af2ae1388cdc36a5cb84",
+      "after": "3d2a11e1e2236e539ae37da816e8229960bcf08eacf3af2ae1388cdc36a5cb84"
+    },
+    "backtesting/experiments/ordering.py": {
+      "before": "c06b94fd40703fa48b2b3532ec8a58d30414c276bf0ccacc07a500dbc1161e5d",
+      "after": "c06b94fd40703fa48b2b3532ec8a58d30414c276bf0ccacc07a500dbc1161e5d"
+    },
+    "backtesting/holdout.py": {
+      "before": "5943eb45c2967b8a42fb3966342b9fec31c482bde03caa446a1c90f49931ac1d",
+      "after": "5943eb45c2967b8a42fb3966342b9fec31c482bde03caa446a1c90f49931ac1d"
+    },
+    "backtesting/signal_eval.py": {
+      "before": "493dfe34b20f6e35a3e1f00d432e3d716eea841f7f8846c40f2565f14c97fbd8",
+      "after": "493dfe34b20f6e35a3e1f00d432e3d716eea841f7f8846c40f2565f14c97fbd8"
+    },
+    "deploy/collector/install.sh": {
+      "before": "3464bb92e74cc8c457e90b0fa3d52137fdf11c9a23324bb041eeafd8743f8157",
+      "after": "3464bb92e74cc8c457e90b0fa3d52137fdf11c9a23324bb041eeafd8743f8157"
+    },
+    "deploy/collector/requirements-collector.txt": {
+      "before": "7f58dd3f5e4f07a5f175bd02414163258814a8443dc49a647e6310c1e78f7d32",
+      "after": "7f58dd3f5e4f07a5f175bd02414163258814a8443dc49a647e6310c1e78f7d32"
+    },
+    "deploy/collector/systemd/hqa-collector-status.service": {
+      "before": "cf4548625f4b110e00b87f8155c148773eb772a62ee2eccaa7f34420bf60c72b",
+      "after": "cf4548625f4b110e00b87f8155c148773eb772a62ee2eccaa7f34420bf60c72b"
+    },
+    "deploy/collector/systemd/hqa-collector-status.timer": {
+      "before": "7bcc5f64310c0245849a398695b969d515d5abeecd105e31ae357046b4e92921",
+      "after": "7bcc5f64310c0245849a398695b969d515d5abeecd105e31ae357046b4e92921"
+    },
+    "deploy/collector/systemd/hqa-dart-backfill.service": {
+      "before": "34953d6a48f0dc6ec3db19021bd74018bff7337f3790799f298b0b317aa0b14c",
+      "after": "34953d6a48f0dc6ec3db19021bd74018bff7337f3790799f298b0b317aa0b14c"
+    },
+    "deploy/collector/systemd/hqa-dart-backfill.timer": {
+      "before": "f6f3bcf2311569dd3271f3440758fb7000889269b7f36c5ad836a14b097a9dd5",
+      "after": "f6f3bcf2311569dd3271f3440758fb7000889269b7f36c5ad836a14b097a9dd5"
+    },
+    "deploy/collector/systemd/hqa-dart-poller.service": {
+      "before": "415bce4174f28b8f691538342bfb60eaf6d12c27bcb539dbde967931d562cbb5",
+      "after": "415bce4174f28b8f691538342bfb60eaf6d12c27bcb539dbde967931d562cbb5"
+    },
+    "deploy/collector/systemd/hqa-fundamentals-refresh.service": {
+      "before": "1ab1dad277c4217be90ea77060b788b51375c2bc2fa4c903e3f522ee6a18b2dd",
+      "after": "1ab1dad277c4217be90ea77060b788b51375c2bc2fa4c903e3f522ee6a18b2dd"
+    },
+    "deploy/collector/systemd/hqa-fundamentals-refresh.timer": {
+      "before": "56c005afd63ed2366880721ecfa1ed42ccb4a06a64efcd8a7be0c7c15aba5f0b",
+      "after": "56c005afd63ed2366880721ecfa1ed42ccb4a06a64efcd8a7be0c7c15aba5f0b"
+    },
+    "deploy/collector/systemd/hqa-fw001-daily.service": {
+      "before": "f562b19660f4376479530bd444ec610083cd1e633d1272d9daf6a9548af715b4",
+      "after": "f562b19660f4376479530bd444ec610083cd1e633d1272d9daf6a9548af715b4"
+    },
+    "deploy/collector/systemd/hqa-fw001-daily.timer": {
+      "before": "a4488778d95344f8194ab16313900f269117f43b539a62abf84ad281ac649580",
+      "after": "a4488778d95344f8194ab16313900f269117f43b539a62abf84ad281ac649580"
+    },
+    "deploy/collector/systemd/hqa-investor-flow.service": {
+      "before": "7edab8b7609ae0f708680e4aa751e4334d1e1779c73425c1b7f052717b899888",
+      "after": "7edab8b7609ae0f708680e4aa751e4334d1e1779c73425c1b7f052717b899888"
+    },
+    "deploy/collector/systemd/hqa-investor-flow.timer": {
+      "before": "554af4c2d5c7460d998bc6841b541ae4638fea6ea76138e2a2c313ad2d0bc511",
+      "after": "554af4c2d5c7460d998bc6841b541ae4638fea6ea76138e2a2c313ad2d0bc511"
+    },
+    "deploy/collector/systemd/hqa-krx-daily.service": {
+      "before": "f97b7510b3d089ea307f2cc511cdcb1d87446051d6f6a06d678200769fe7652f",
+      "after": "f97b7510b3d089ea307f2cc511cdcb1d87446051d6f6a06d678200769fe7652f"
+    },
+    "deploy/collector/systemd/hqa-krx-daily.timer": {
+      "before": "6bf7f4884bcc5325dc8a670b26ab58356eb201bec474b2507a871276325736a7",
+      "after": "6bf7f4884bcc5325dc8a670b26ab58356eb201bec474b2507a871276325736a7"
+    },
+    "deploy/collector/systemd/hqa-shadow-daily.service": {
+      "before": "2d7170f239efd3f6f4a4f7295470f4e00369cd680b137bdabf94cc7dc22bfa5c",
+      "after": "2d7170f239efd3f6f4a4f7295470f4e00369cd680b137bdabf94cc7dc22bfa5c"
+    },
+    "deploy/collector/systemd/hqa-shadow-daily.timer": {
+      "before": "4ffcea3b312ccc69a866cbeedf7e577e5e7fddf55642b271fc68ed8ec9f20fb9",
+      "after": "4ffcea3b312ccc69a866cbeedf7e577e5e7fddf55642b271fc68ed8ec9f20fb9"
+    },
+    "requirements-dev.txt": {
+      "before": "e68e2ea4ae1b4cb9568ea82dc64aa465c08ad77e049caecff864d3705b5ef350",
+      "after": "e68e2ea4ae1b4cb9568ea82dc64aa465c08ad77e049caecff864d3705b5ef350"
+    },
+    "requirements.txt": {
+      "before": "7870518934968828763654acccd3f075b08096244ea6b4c67f5b1671210d593d",
+      "after": "7870518934968828763654acccd3f075b08096244ea6b4c67f5b1671210d593d"
+    },
+    "research/experiments/AV001_avoidance_portfolio/preregistration.md": {
+      "before": "98c1a74074b9c80524ac79573b67d5e993a57baf5560e2faf31e28a861387bd0",
+      "after": "98c1a74074b9c80524ac79573b67d5e993a57baf5560e2faf31e28a861387bd0"
+    },
+    "research/experiments/AV002_avoidance_holdout_recovery/preregistration.md": {
+      "before": "959a56133f410709afcb2ae55b3835599d69df7bb8706cb2ba9d38f863722e3b",
+      "after": "959a56133f410709afcb2ae55b3835599d69df7bb8706cb2ba9d38f863722e3b"
+    },
+    "research/experiments/B001_disclosure_category/preregistration.md": {
+      "before": "732888dafc7867c39606b27fba81d442b0bbe3baeefd15d47d551f144846c558",
+      "after": "732888dafc7867c39606b27fba81d442b0bbe3baeefd15d47d551f144846c558"
+    },
+    "research/experiments/BB001_direct_buyback/preregistration.md": {
+      "before": "10e7e3e2b255365aad7715a29ac966c8f9f49dfcd4b6e5166d755a6de2128fe4",
+      "after": "10e7e3e2b255365aad7715a29ac966c8f9f49dfcd4b6e5166d755a6de2128fe4"
+    },
+    "research/experiments/CH001_chart_avoidance_filters/preregistration.md": {
+      "before": "80646531a49d1620a5cbb3f12abd36dc61c2b25c2e0373395af8010d8439381f",
+      "after": "80646531a49d1620a5cbb3f12abd36dc61c2b25c2e0373395af8010d8439381f"
+    },
+    "research/experiments/CH002_chart_exit_rules/preregistration.md": {
+      "before": "adf3d02c47a2feebb3ba54f129f22095782aed8fc4c982326c3641e5c5ee14b7",
+      "after": "adf3d02c47a2feebb3ba54f129f22095782aed8fc4c982326c3641e5c5ee14b7"
+    },
+    "research/experiments/CH003_market_regime_ma/preregistration.md": {
+      "before": "6a1f4e29c19cc0576dd17d47b60760b854c11590ff6134228b7c5586ed987dda",
+      "after": "6a1f4e29c19cc0576dd17d47b60760b854c11590ff6134228b7c5586ed987dda"
+    },
+    "research/experiments/CH004_event_chart_filters/preregistration.md": {
+      "before": "649848533003559651e541e4be69bf002402e253eadb4ac92b2df23378583f33",
+      "after": "649848533003559651e541e4be69bf002402e253eadb4ac92b2df23378583f33"
+    },
+    "research/experiments/D001_momentum_lowvol/preregistration.md": {
+      "before": "52960bf71b2402b7e3f3cc8659a5c33599df56d8ba3f6175cd645a308357b204",
+      "after": "52960bf71b2402b7e3f3cc8659a5c33599df56d8ba3f6175cd645a308357b204"
+    },
+    "research/experiments/EV001_earnings_filing_entry/preregistration.md": {
+      "before": "383f306d52b74df71946ce0da08e335e95f1f5f5db947a9ec64dd8f81998874f",
+      "after": "383f306d52b74df71946ce0da08e335e95f1f5f5db947a9ec64dd8f81998874f"
+    },
+    "research/experiments/FW001_forward_replication/comparison_values.json": {
+      "before": "6382bb8eb037a1166b9de8b801398f6abab9062ac5c7ecfef487a7e359897fb4",
+      "after": "6382bb8eb037a1166b9de8b801398f6abab9062ac5c7ecfef487a7e359897fb4"
+    },
+    "research/experiments/FW001_forward_replication/deployment_manifest.json": {
+      "before": "2d9b62fa23a651716b9738e43fd8a174656696dcb10b4d5e5ab6c9b7634ae8aa",
+      "after": "2d9b62fa23a651716b9738e43fd8a174656696dcb10b4d5e5ab6c9b7634ae8aa"
+    },
+    "research/experiments/FW001_forward_replication/dry_run_measurement.json": {
+      "before": "1fcc2c0ee04303b50105715c6710f50a1581b79f96ba29e041a0b15171039735",
+      "after": "1fcc2c0ee04303b50105715c6710f50a1581b79f96ba29e041a0b15171039735"
+    },
+    "research/experiments/FW001_forward_replication/implementation_notes.md": {
+      "before": "8aca7f3aa123b9254fd944a43fdd14bb74b47706db2ea6a78cadecc375a6322f",
+      "after": "8aca7f3aa123b9254fd944a43fdd14bb74b47706db2ea6a78cadecc375a6322f"
+    },
+    "research/experiments/FW001_forward_replication/manifest_changes/11c1be448d41e13c872595438e770b472f33d3f8860ea73c62cad8b3e5633639.json": {
+      "before": "11c1be448d41e13c872595438e770b472f33d3f8860ea73c62cad8b3e5633639",
+      "after": "11c1be448d41e13c872595438e770b472f33d3f8860ea73c62cad8b3e5633639"
+    },
+    "research/experiments/FW001_forward_replication/manifest_changes/35317d39487c2b8ba1c4ff50ae8b076b9e9cd3420d97cd26f233982eb2fe88ae.json": {
+      "before": "35317d39487c2b8ba1c4ff50ae8b076b9e9cd3420d97cd26f233982eb2fe88ae",
+      "after": "35317d39487c2b8ba1c4ff50ae8b076b9e9cd3420d97cd26f233982eb2fe88ae"
+    },
+    "research/experiments/FW001_forward_replication/manifest_changes/400f09307ac6ff62dc17bec6faa55bed183ef54ec0deedda0f5a066e6aa09c00.json": {
+      "before": "400f09307ac6ff62dc17bec6faa55bed183ef54ec0deedda0f5a066e6aa09c00",
+      "after": "400f09307ac6ff62dc17bec6faa55bed183ef54ec0deedda0f5a066e6aa09c00"
+    },
+    "research/experiments/FW001_forward_replication/manifest_changes/6c2d4d915605543de93e464e9cf03ddaa1efb8edc6f6010513f9a1bca4bb0b72.json": {
+      "before": "6c2d4d915605543de93e464e9cf03ddaa1efb8edc6f6010513f9a1bca4bb0b72",
+      "after": "6c2d4d915605543de93e464e9cf03ddaa1efb8edc6f6010513f9a1bca4bb0b72"
+    },
+    "research/experiments/FW001_forward_replication/manifest_changes/89c0d9d82baeb0696d682b1e73c404a2c0d02349578063cb2149828f1d225f7f.json": {
+      "before": "89c0d9d82baeb0696d682b1e73c404a2c0d02349578063cb2149828f1d225f7f",
+      "after": "89c0d9d82baeb0696d682b1e73c404a2c0d02349578063cb2149828f1d225f7f"
+    },
+    "research/experiments/FW001_forward_replication/manifest_changes/bafd50d61f8a286b6cd35b6d314daafe34dca30e520256a6d4dfc0c717c9d4e9.json": {
+      "before": "bafd50d61f8a286b6cd35b6d314daafe34dca30e520256a6d4dfc0c717c9d4e9",
+      "after": "bafd50d61f8a286b6cd35b6d314daafe34dca30e520256a6d4dfc0c717c9d4e9"
+    },
+    "research/experiments/FW001_forward_replication/manifest_changes/ee8ca2ac11a97ecdec4a62b6ee3858bb98de94df1c0d7d405b9e625dafad10c3.json": {
+      "before": "ee8ca2ac11a97ecdec4a62b6ee3858bb98de94df1c0d7d405b9e625dafad10c3",
+      "after": "ee8ca2ac11a97ecdec4a62b6ee3858bb98de94df1c0d7d405b9e625dafad10c3"
+    },
+    "research/experiments/FW001_forward_replication/manifest_changes/f457d068b960aa6b4c6eb75b3943731b612218c7d38e29a506594f6064bbda29.json": {
+      "before": "f457d068b960aa6b4c6eb75b3943731b612218c7d38e29a506594f6064bbda29",
+      "after": "f457d068b960aa6b4c6eb75b3943731b612218c7d38e29a506594f6064bbda29"
+    },
+    "research/experiments/FW001_forward_replication/manifest_history/0255a19b5dbdcd0b45b179978cbcccf526ebce6682c65ed23a75d221d9a00064.json": {
+      "before": "0255a19b5dbdcd0b45b179978cbcccf526ebce6682c65ed23a75d221d9a00064",
+      "after": "0255a19b5dbdcd0b45b179978cbcccf526ebce6682c65ed23a75d221d9a00064"
+    },
+    "research/experiments/FW001_forward_replication/manifest_history/4d325709ebfbcac0448f7187a5c2f9355d193175a0fb28a579d38cdb806640e4.json": {
+      "before": "4d325709ebfbcac0448f7187a5c2f9355d193175a0fb28a579d38cdb806640e4",
+      "after": "4d325709ebfbcac0448f7187a5c2f9355d193175a0fb28a579d38cdb806640e4"
+    },
+    "research/experiments/FW001_forward_replication/manifest_history/8806558d04fa58d3d51cc24cd49867ba67b35d5404d61647f09f2eb2ceb84e76.json": {
+      "before": "8806558d04fa58d3d51cc24cd49867ba67b35d5404d61647f09f2eb2ceb84e76",
+      "after": "8806558d04fa58d3d51cc24cd49867ba67b35d5404d61647f09f2eb2ceb84e76"
+    },
+    "research/experiments/FW001_forward_replication/manifest_history/a1c795740f471cb1629e1e9bdb46cc86d97f87281dd5224eebfeeab059f85fec.json": {
+      "before": "a1c795740f471cb1629e1e9bdb46cc86d97f87281dd5224eebfeeab059f85fec",
+      "after": "a1c795740f471cb1629e1e9bdb46cc86d97f87281dd5224eebfeeab059f85fec"
+    },
+    "research/experiments/FW001_forward_replication/manifest_history/ddedb75f7128dde7681a707e2c3e6c556b94bb6774e5eeb86879608e216a5822.json": {
+      "before": "ddedb75f7128dde7681a707e2c3e6c556b94bb6774e5eeb86879608e216a5822",
+      "after": "ddedb75f7128dde7681a707e2c3e6c556b94bb6774e5eeb86879608e216a5822"
+    },
+    "research/experiments/FW001_forward_replication/manifest_history/f0331598dfce0c438efb363f8ee05fa77cf63d8787e32b4b2a73c106b4e6e415.json": {
+      "before": "f0331598dfce0c438efb363f8ee05fa77cf63d8787e32b4b2a73c106b4e6e415",
+      "after": "f0331598dfce0c438efb363f8ee05fa77cf63d8787e32b4b2a73c106b4e6e415"
+    },
+    "research/experiments/FW001_forward_replication/manifest_history/fcc79d783063e6ee1d63cba27864cdaea1814bd8bced4b12d5a0d6f0656f4172.json": {
+      "before": "fcc79d783063e6ee1d63cba27864cdaea1814bd8bced4b12d5a0d6f0656f4172",
+      "after": "fcc79d783063e6ee1d63cba27864cdaea1814bd8bced4b12d5a0d6f0656f4172"
+    },
+    "research/experiments/FW001_forward_replication/manifest_history/fe75e1460a55ce97a7fe77494532e436f244f4029fcd6b35266e50b338c06ca4.json": {
+      "before": "fe75e1460a55ce97a7fe77494532e436f244f4029fcd6b35266e50b338c06ca4",
+      "after": "fe75e1460a55ce97a7fe77494532e436f244f4029fcd6b35266e50b338c06ca4"
+    },
+    "research/experiments/FW001_forward_replication/preregistration.md": {
+      "before": "3d8fd4450e3d7c82e6c8164187c933a6171fdde762963166fca83e591ded4224",
+      "after": "3d8fd4450e3d7c82e6c8164187c933a6171fdde762963166fca83e591ded4224"
+    },
+    "research/experiments/FW001_forward_replication/resource_replay_guard.py": {
+      "before": "51493c0e6f2c3511dd563320b60c80be9ac6bcb70fbd487bb93183a6bdfca991",
+      "after": "51493c0e6f2c3511dd563320b60c80be9ac6bcb70fbd487bb93183a6bdfca991"
+    },
+    "research/experiments/FW002_investor_flow_forward/preregistration.md": {
+      "before": "0642cc930e8f082b6c9fcc38274f81c127f2aed8ea413c4e455e1a831a24bb8c",
+      "after": "0642cc930e8f082b6c9fcc38274f81c127f2aed8ea413c4e455e1a831a24bb8c"
+    },
+    "research/experiments/HC001_operating_leverage/preregistration.md": {
+      "before": "e2e3dd658be7e96ed1ed264a2b85af6c7cdf57f0417e0d511e3e5750a3f6bf23",
+      "after": "e2e3dd658be7e96ed1ed264a2b85af6c7cdf57f0417e0d511e3e5750a3f6bf23"
+    },
+    "research/experiments/HC002_operating_leverage_monthly/preregistration.md": {
+      "before": "73d9a834736f231669b55c9ca5f254f2e305473dbe6fade80c5cc0399acb39d3",
+      "after": "73d9a834736f231669b55c9ca5f254f2e305473dbe6fade80c5cc0399acb39d3"
+    },
+    "research/experiments/HC003_operating_leverage_turnover/preregistration.md": {
+      "before": "b1c30c7fa8e68029195e100a26b313e7a9dab19898a43543c3409acf39e6c4d6",
+      "after": "b1c30c7fa8e68029195e100a26b313e7a9dab19898a43543c3409acf39e6c4d6"
+    },
+    "research/experiments/HF001_hegemony_filters/preregistration.md": {
+      "before": "fcad3819a864ed0fad38809937b8b17602b1ee9c453f538008e1d82d9ebca8d8",
+      "after": "fcad3819a864ed0fad38809937b8b17602b1ee9c453f538008e1d82d9ebca8d8"
+    },
+    "research/experiments/HI001_industry_strength/preregistration.md": {
+      "before": "565031558ca5266032d61e6be7bb70ba446678d911d4e3228977b35828d8216c",
+      "after": "565031558ca5266032d61e6be7bb70ba446678d911d4e3228977b35828d8216c"
+    },
+    "research/experiments/LH001_llm_hegemony_judge/preregistration.md": {
+      "before": "51885739ef060943535994521b7b9393ca4db8d0e0a860a39138f6f746335a69",
+      "after": "51885739ef060943535994521b7b9393ca4db8d0e0a860a39138f6f746335a69"
+    },
+    "research/experiments/LH002_llm_hegemony_judge/preregistration.md": {
+      "before": "57b7c4a13c139ab8f9d62384e252026a4f95b4483af7dbdd28baf86f15790a31",
+      "after": "57b7c4a13c139ab8f9d62384e252026a4f95b4483af7dbdd28baf86f15790a31"
+    },
+    "research/experiments/LH003_llm_leader_forward/preregistration.md": {
+      "before": "dc1ee3b669e515dc92b504eaf5d88061281b079f3c7f4fc5d7194dd5c37d190f",
+      "after": "dc1ee3b669e515dc92b504eaf5d88061281b079f3c7f4fc5d7194dd5c37d190f"
+    },
+    "research/experiments/R001_industry_adjusted_reversal/preregistration.md": {
+      "before": "4bf2a7a91bb824ce2fe13f0fdc976255737564cd4e0d2e8acd440fc5d918d859",
+      "after": "4bf2a7a91bb824ce2fe13f0fdc976255737564cd4e0d2e8acd440fc5d918d859"
+    },
+    "research/experiments/TEMPLATE/preregistration.md": {
+      "before": "45cd586008a6dd0734c0284ab9c5f5926550c60c376a9275ea4928198ac0846f",
+      "after": "45cd586008a6dd0734c0284ab9c5f5926550c60c376a9275ea4928198ac0846f"
+    },
+    "scripts/__init__.py": {
+      "before": "0fbb8bbfb6f9446af145f95496d59544b41033dd2925a028f4c096d2cea371cc",
+      "after": "0fbb8bbfb6f9446af145f95496d59544b41033dd2925a028f4c096d2cea371cc"
+    },
+    "scripts/data/__init__.py": {
+      "before": "9b3ff755342ecc42c81f4cfea0480445a6e62d238f21e950bb919a18dcfa6617",
+      "after": "9b3ff755342ecc42c81f4cfea0480445a6e62d238f21e950bb919a18dcfa6617"
+    },
+    "scripts/data/backfill_listing_target_scan.py": {
+      "before": "7e6124ceef0183b50ca3f016ad2dc9b202d558f206a37226dd953bddd70bb49d",
+      "after": "7e6124ceef0183b50ca3f016ad2dc9b202d558f206a37226dd953bddd70bb49d"
+    },
+    "scripts/data/batch.py": {
+      "before": "816699eca129dc7e5e3f8dfe42e48755423159d1b75c5ec481caa3aaaa7ffd15",
+      "after": "816699eca129dc7e5e3f8dfe42e48755423159d1b75c5ec481caa3aaaa7ffd15"
+    },
+    "scripts/data/build.py": {
+      "before": "2ed6fd56f9bebc287f86215bce9f136e31afa27bb0778860dbcb7cefd6a26bc7",
+      "after": "2ed6fd56f9bebc287f86215bce9f136e31afa27bb0778860dbcb7cefd6a26bc7"
+    },
+    "scripts/data/collect.py": {
+      "before": "6da4f7f9aae62b65fb48b23f4c80cc7f9e4e7526971ffc89c0e605864dad9f2b",
+      "after": "6da4f7f9aae62b65fb48b23f4c80cc7f9e4e7526971ffc89c0e605864dad9f2b"
+    },
+    "scripts/data/common.py": {
+      "before": "dda83cc8a74cdda32ebef71803cde54eeb095c099e1bb7f597c1d6c45a64dc33",
+      "after": "dda83cc8a74cdda32ebef71803cde54eeb095c099e1bb7f597c1d6c45a64dc33"
+    },
+    "scripts/data/corp_codes.py": {
+      "before": "745d82dc15348c60fb7d029bce83cae2333e37881ad5eba9439fd1f2f55f8a56",
+      "after": "745d82dc15348c60fb7d029bce83cae2333e37881ad5eba9439fd1f2f55f8a56"
+    },
+    "scripts/data/dart_backfill.py": {
+      "before": "599ea8dfdb8b482521aea3550104a0c844f253c90f245caa576cd81923bf4eef",
+      "after": "599ea8dfdb8b482521aea3550104a0c844f253c90f245caa576cd81923bf4eef"
+    },
+    "scripts/data/dart_business_text.py": {
+      "before": "540a52d919963aeae33e59a5d329ae4b098e461f7d24b9b8563215f7bc0c0e2d",
+      "after": "540a52d919963aeae33e59a5d329ae4b098e461f7d24b9b8563215f7bc0c0e2d"
+    },
+    "scripts/data/dart_buyback.py": {
+      "before": "44d0c6f724a2b5e0f2dd75c57ead5dbf30fb1029a499ba0395c09d0711211362",
+      "after": "44d0c6f724a2b5e0f2dd75c57ead5dbf30fb1029a499ba0395c09d0711211362"
+    },
+    "scripts/data/dart_company.py": {
+      "before": "da0875c665efb2a8a011e52c2aead4d214a2b6e8e3d6c15c37718844d0c477a8",
+      "after": "da0875c665efb2a8a011e52c2aead4d214a2b6e8e3d6c15c37718844d0c477a8"
+    },
+    "scripts/data/dart_list_supplement.py": {
+      "before": "0cbf6537d9aa0ca670c78c4a931960ede83698af13fa47cf17a63b235943040e",
+      "after": "0cbf6537d9aa0ca670c78c4a931960ede83698af13fa47cf17a63b235943040e"
+    },
+    "scripts/data/dart_poller.py": {
+      "before": "8f89ff33468941254b0b7095554b0a38187527bb1f12a7c937d6f3d58acff9e3",
+      "after": "8f89ff33468941254b0b7095554b0a38187527bb1f12a7c937d6f3d58acff9e3"
+    },
+    "scripts/data/dart_quarterly.py": {
+      "before": "113a923b41fb92ce95846a691658b5e6321b6a38bef0361042e74a240c82931b",
+      "after": "113a923b41fb92ce95846a691658b5e6321b6a38bef0361042e74a240c82931b"
+    },
+    "scripts/data/discover.py": {
+      "before": "ddf35e95162980b5874ae31b7421b3aad9570699e8cf9d025c95331e0541e08c",
+      "after": "ddf35e95162980b5874ae31b7421b3aad9570699e8cf9d025c95331e0541e08c"
+    },
+    "scripts/data/krx_market.py": {
+      "before": "1d8f0c99b27a28acb5bee9e51914982255907d3880ce738516648c875869d46e",
+      "after": "1d8f0c99b27a28acb5bee9e51914982255907d3880ce738516648c875869d46e"
+    },
+    "scripts/data/krx_relabel_calendar.py": {
+      "before": "7e258282234f0276b4d464c3609cd4a097fb79ef248ab821879cc9de1b8ebabb",
+      "after": "7e258282234f0276b4d464c3609cd4a097fb79ef248ab821879cc9de1b8ebabb"
+    },
+    "scripts/data/loop.py": {
+      "before": "ce531f2a25512b90a953384077d68596889b49d7a614005c32ab807189f36683",
+      "after": "ce531f2a25512b90a953384077d68596889b49d7a614005c32ab807189f36683"
+    },
+    "scripts/data/market_context.py": {
+      "before": "2e1b529f121dee1c70d6eb9e8d6f7d64325137fc2b03f008e73636c9762a39d3",
+      "after": "2e1b529f121dee1c70d6eb9e8d6f7d64325137fc2b03f008e73636c9762a39d3"
+    },
+    "scripts/data/minute_bars.py": {
+      "before": "7d19472fd4a85d963323ef27df319c7dce0570eecabd00c55c22599a981f15f0",
+      "after": "7d19472fd4a85d963323ef27df319c7dce0570eecabd00c55c22599a981f15f0"
+    },
+    "scripts/forward/fw001.py": {
+      "before": "390306fdf339cbc4b39695998a47dfa3c87db0223d92134ae36b0a145ff3091e",
+      "after": "390306fdf339cbc4b39695998a47dfa3c87db0223d92134ae36b0a145ff3091e"
+    },
+    "scripts/forward/hegemony_shadow.py": {
+      "before": "44debc3fe742657f394dd38a45fdf8fa7b3ab2257b76c39949a29d9b5fcbe0fa",
+      "after": "44debc3fe742657f394dd38a45fdf8fa7b3ab2257b76c39949a29d9b5fcbe0fa"
+    },
+    "scripts/ops/collector_manifest.py": {
+      "before": "a5e702b4f2244b9af1227780b20d9698e27ba819735dffcc0cfee6011353c4a2",
+      "after": "a5e702b4f2244b9af1227780b20d9698e27ba819735dffcc0cfee6011353c4a2"
+    },
+    "scripts/ops/collector_status.py": {
+      "before": "8ea5f6ed3274519389a5f4a66b61bbdefac4fadeda9609586315aaa93632eeec",
+      "after": "8ea5f6ed3274519389a5f4a66b61bbdefac4fadeda9609586315aaa93632eeec"
+    },
+    "scripts/ops/dart_backfill_daily.py": {
+      "before": "c8b298f6a65fbd0f58bb44f8b939c17c1673ff68813f529f087841c2684e7b10",
+      "after": "c8b298f6a65fbd0f58bb44f8b939c17c1673ff68813f529f087841c2684e7b10"
+    },
+    "scripts/ops/fundamentals_refresh.py": {
+      "before": "9738df81dd7da01a23ba3cee8446f024df858743774e9168f50df77395674ee4",
+      "after": "9738df81dd7da01a23ba3cee8446f024df858743774e9168f50df77395674ee4"
+    },
+    "scripts/ops/fw001_daily.py": {
+      "before": "4221e2f98ae7658b148c2a8f8d432302fe84df8113152527a6ce333a0c46002f",
+      "after": "4221e2f98ae7658b148c2a8f8d432302fe84df8113152527a6ce333a0c46002f"
+    },
+    "scripts/ops/investor_flow_daily.py": {
+      "before": "3cfb05bda93a7acd0dd2403805350a698be2eb4cf13e5d8ebc373be24d53640e",
+      "after": "3cfb05bda93a7acd0dd2403805350a698be2eb4cf13e5d8ebc373be24d53640e"
+    },
+    "scripts/ops/krx_catchup.py": {
+      "before": "edeae545e88527eef2f9a8715709dca6d72cecd20c66f63c2a8e696330822b3e",
+      "after": "edeae545e88527eef2f9a8715709dca6d72cecd20c66f63c2a8e696330822b3e"
+    },
+    "scripts/ops/pull_collector_data.sh": {
+      "before": "64ae37907a9caace5abd99f14e6a73fab5f59dbf88f53ae2cba071f35b4b7dc0",
+      "after": "64ae37907a9caace5abd99f14e6a73fab5f59dbf88f53ae2cba071f35b4b7dc0"
+    },
+    "scripts/ops/pull_research_results.sh": {
+      "before": "c9b1b947b7beac49cd94192e7e6f95efa216e7c437a709565abda924be0946f5",
+      "after": "c9b1b947b7beac49cd94192e7e6f95efa216e7c437a709565abda924be0946f5"
+    },
+    "scripts/ops/push_collector_code.sh": {
+      "before": "e11157e32cc1012d53489149c10e5fe1536d77c8a6eeb97670f54bcc797a01a9",
+      "after": "e11157e32cc1012d53489149c10e5fe1536d77c8a6eeb97670f54bcc797a01a9"
+    },
+    "scripts/ops/push_fw001_supplement.sh": {
+      "before": "e5730b32cd0c5ca978aea6e03a267ad80534b46bf2c027aeddfcd9cd4956b057",
+      "after": "e5730b32cd0c5ca978aea6e03a267ad80534b46bf2c027aeddfcd9cd4956b057"
+    },
+    "scripts/ops/research_run.sh": {
+      "before": "e4e754266198293625682e631038a1bda5d8d735d59c310393688ed3b6de2e5d",
+      "after": "e4e754266198293625682e631038a1bda5d8d735d59c310393688ed3b6de2e5d"
+    },
+    "scripts/ops/shadow_daily.py": {
+      "before": "74eee264bf85acb03152e78e22b99123e6c39c968066205edf888d3d2b67ff99",
+      "after": "74eee264bf85acb03152e78e22b99123e6c39c968066205edf888d3d2b67ff99"
+    },
+    "scripts/ops/sync_research_data.sh": {
+      "before": "8e24bf14dfcf3c7d5a565a5315da7027ce5ae84ede0afbadb20617296834b5cc",
+      "after": "8e24bf14dfcf3c7d5a565a5315da7027ce5ae84ede0afbadb20617296834b5cc"
+    },
+    "src/__init__.py": {
+      "before": "e799333dc816c273ba63b8d1289855b4622bb83c19a33096da3b5360907ac30e",
+      "after": "e799333dc816c273ba63b8d1289855b4622bb83c19a33096da3b5360907ac30e"
+    },
+    "src/agents/__init__.py": {
+      "before": "d03843b5e3032a36939eed70917f1ea63cfbc321c2b77ca950fda0666a597a44",
+      "after": "d03843b5e3032a36939eed70917f1ea63cfbc321c2b77ca950fda0666a597a44"
+    },
+    "src/agents/analyst.py": {
+      "before": "5cec158065b7d434cd74e31267f0ba0da794c5de043813fd42c5e7089021254b",
+      "after": "5cec158065b7d434cd74e31267f0ba0da794c5de043813fd42c5e7089021254b"
+    },
+    "src/agents/chartist.py": {
+      "before": "2c06f50fc03e26e040cb9a0d3784bedc152291d9828684f12ccb3df0f438ac6e",
+      "after": "2c06f50fc03e26e040cb9a0d3784bedc152291d9828684f12ccb3df0f438ac6e"
+    },
+    "src/agents/llm_config.py": {
+      "before": "d581c53b1bc73b3fb0c0e5569e5c29cb801db50f9fec547d7c41d06767c04460",
+      "after": "d581c53b1bc73b3fb0c0e5569e5c29cb801db50f9fec547d7c41d06767c04460"
+    },
+    "src/agents/quant.py": {
+      "before": "2ffa6dae869b7cee066d55fbde8ff9c222191f1035170b60288c75ef26023b69",
+      "after": "2ffa6dae869b7cee066d55fbde8ff9c222191f1035170b60288c75ef26023b69"
+    },
+    "src/agents/risk_manager.py": {
+      "before": "9fef1b840d571594d2f0a8ef350769aba8fe8f443cac039664c45e252104b039",
+      "after": "9fef1b840d571594d2f0a8ef350769aba8fe8f443cac039664c45e252104b039"
+    },
+    "src/agents/supervisor.py": {
+      "before": "442ce8dcf63ed25ca0a4b22e057eea150d48fbee6cc3e26b5936efb8d1e61988",
+      "after": "442ce8dcf63ed25ca0a4b22e057eea150d48fbee6cc3e26b5936efb8d1e61988"
+    },
+    "src/config/__init__.py": {
+      "before": "0126a9c0b70decacbb6d8d963d5c09cf879ce6fcbe190d417483ee1d95b0a03a",
+      "after": "0126a9c0b70decacbb6d8d963d5c09cf879ce6fcbe190d417483ee1d95b0a03a"
+    },
+    "src/config/settings.py": {
+      "before": "cdee3982685d684ca70b6284730ca10bdd131b68beae70edc6e514e3469f9f42",
+      "after": "cdee3982685d684ca70b6284730ca10bdd131b68beae70edc6e514e3469f9f42"
+    },
+    "src/data_pipeline/__init__.py": {
+      "before": "785ad1ace26638b7e3df32241b90238b7b2c8178d2b60803952e9c02997c8b88",
+      "after": "785ad1ace26638b7e3df32241b90238b7b2c8178d2b60803952e9c02997c8b88"
+    },
+    "src/data_pipeline/collectors.py": {
+      "before": "8248caaeb979de93c418ba726ad03ec27101d920f31b2207c6dcc877b4266db9",
+      "after": "8248caaeb979de93c418ba726ad03ec27101d920f31b2207c6dcc877b4266db9"
+    },
+    "src/data_pipeline/evidence_corpus_builder.py": {
+      "before": "b2d900cdd0b5f5b3044d0fc5ea9d705c8cbac83fe78c7af0795f44c352551961",
+      "after": "b2d900cdd0b5f5b3044d0fc5ea9d705c8cbac83fe78c7af0795f44c352551961"
+    },
+    "src/data_pipeline/price_loader.py": {
+      "before": "8169f0fac61a8663e2bf280a5392fd2099a90a2ce815736f4fbe5db34fb2b5d8",
+      "after": "8169f0fac61a8663e2bf280a5392fd2099a90a2ce815736f4fbe5db34fb2b5d8"
+    },
+    "src/evidence/__init__.py": {
+      "before": "1dd7547d3ebac52d717bcb4b5000ba4d2757cf7890cd554d6285a86b10b29a85",
+      "after": "1dd7547d3ebac52d717bcb4b5000ba4d2757cf7890cd554d6285a86b10b29a85"
+    },
+    "src/evidence/dedupe.py": {
+      "before": "380fe735131d13d2206caa1ecb7005f289a8cd55330595fd04bc832973cda12c",
+      "after": "380fe735131d13d2206caa1ecb7005f289a8cd55330595fd04bc832973cda12c"
+    },
+    "src/evidence/index_builder.py": {
+      "before": "6cbe5d3af22bf96a807af05feaa92cd3d879e0c18e7e194dbccbd174ab2ffd8c",
+      "after": "6cbe5d3af22bf96a807af05feaa92cd3d879e0c18e7e194dbccbd174ab2ffd8c"
+    },
+    "src/evidence/retriever.py": {
+      "before": "9a424d6d916e38dc3f617632402c20be688d1b9c6210ec0087e1ac7533e7db40",
+      "after": "9a424d6d916e38dc3f617632402c20be688d1b9c6210ec0087e1ac7533e7db40"
+    },
+    "src/evidence/source_registry.py": {
+      "before": "64549fafee6c2cf0bf4cd9ac87b53fc60c46c4e8167ff689a0c702b0f4e134db",
+      "after": "64549fafee6c2cf0bf4cd9ac87b53fc60c46c4e8167ff689a0c702b0f4e134db"
+    },
+    "src/evidence/source_weighting.py": {
+      "before": "8ef0d44244cd4e5afac61b7c28987e41a9087eb50a63a4004af72da0a5518861",
+      "after": "8ef0d44244cd4e5afac61b7c28987e41a9087eb50a63a4004af72da0a5518861"
+    },
+    "src/forward/__init__.py": {
+      "before": "162792779d702288a08086f0efa4827b954aaeadd9a5e35f6e407a48e327c996",
+      "after": "162792779d702288a08086f0efa4827b954aaeadd9a5e35f6e407a48e327c996"
+    },
+    "src/forward/fw001.py": {
+      "before": "93a1320d3b7dede99b5953614b5a0d19f9b8d005b3c445806bc9022f676bb2c1",
+      "after": "93a1320d3b7dede99b5953614b5a0d19f9b8d005b3c445806bc9022f676bb2c1"
+    },
+    "src/forward/hegemony_shadow.py": {
+      "before": "55547713fc36c32d740122ae1ae8d1cc1ea9ce339a262fc907238d80fd370c68",
+      "after": "55547713fc36c32d740122ae1ae8d1cc1ea9ce339a262fc907238d80fd370c68"
+    },
+    "src/ingestion/__init__.py": {
+      "before": "bc31ef315393ef375e134ede43181f6e2ab92af39fec973b0ea634b28cf7efd0",
+      "after": "bc31ef315393ef375e134ede43181f6e2ab92af39fec973b0ea634b28cf7efd0"
+    },
+    "src/ingestion/base.py": {
+      "before": "f1a51fc8e0554ab8ff9ea4644259d7b96629c8599aaeda1835d171429b8c2f97",
+      "after": "f1a51fc8e0554ab8ff9ea4644259d7b96629c8599aaeda1835d171429b8c2f97"
+    },
+    "src/ingestion/collection_state.py": {
+      "before": "799dfb2dc8f398168b27d80c3a2b57a6f5227a876e332395cdd40942a8cbfcdb",
+      "after": "799dfb2dc8f398168b27d80c3a2b57a6f5227a876e332395cdd40942a8cbfcdb"
+    },
+    "src/ingestion/dart.py": {
+      "before": "bb85d7ae2a2fa494eee62cf55fd4df8e157f2a78481e31e41cc9c05c2bac78ed",
+      "after": "bb85d7ae2a2fa494eee62cf55fd4df8e157f2a78481e31e41cc9c05c2bac78ed"
+    },
+    "src/ingestion/dart_api.py": {
+      "before": "f166a3c56fe13095913c346d09671ac8ebf12ec3c04aaaf7fe5f5b0f5c4f59e1",
+      "after": "f166a3c56fe13095913c346d09671ac8ebf12ec3c04aaaf7fe5f5b0f5c4f59e1"
+    },
+    "src/ingestion/dart_backfill.py": {
+      "before": "206c098ed93d4a01e12f185d006fe5b9b8d6c39d542a9e7a5cdf5dd80ab560d3",
+      "after": "206c098ed93d4a01e12f185d006fe5b9b8d6c39d542a9e7a5cdf5dd80ab560d3"
+    },
+    "src/ingestion/dart_business_text.py": {
+      "before": "dff2b9eef2bb4f068174169dbe752a5e473c479fbfd208cf16b12fc5b38d5568",
+      "after": "dff2b9eef2bb4f068174169dbe752a5e473c479fbfd208cf16b12fc5b38d5568"
+    },
+    "src/ingestion/dart_buyback.py": {
+      "before": "f662e713577981ca1017b2a5926687e1639a03fd96cdd100840e283209161d67",
+      "after": "f662e713577981ca1017b2a5926687e1639a03fd96cdd100840e283209161d67"
+    },
+    "src/ingestion/dart_company.py": {
+      "before": "57626e3272b0916ab7871d8acbb389a87cd4482baa65d521818a27a127d28b8c",
+      "after": "57626e3272b0916ab7871d8acbb389a87cd4482baa65d521818a27a127d28b8c"
+    },
+    "src/ingestion/dart_filing_dates.py": {
+      "before": "41ae526cdac47e1f694f4ca905d46cb00e980109d48202818540f91775bfca6a",
+      "after": "41ae526cdac47e1f694f4ca905d46cb00e980109d48202818540f91775bfca6a"
+    },
+    "src/ingestion/dart_financial_date_rules.py": {
+      "before": "d0fce8a2f1872f4594e49212b0a13ef7c3989ed5317ddf06638e04eb6326ae03",
+      "after": "d0fce8a2f1872f4594e49212b0a13ef7c3989ed5317ddf06638e04eb6326ae03"
+    },
+    "src/ingestion/dart_financials.py": {
+      "before": "d7166256edea400aae205da943361de90a5930b18c659366fb3a426da7492288",
+      "after": "d7166256edea400aae205da943361de90a5930b18c659366fb3a426da7492288"
+    },
+    "src/ingestion/dart_list_supplement.py": {
+      "before": "6fe10b05cc84dd99a2689f6009dcec2340df94fba8e8dc623d3188f906ccfb9a",
+      "after": "6fe10b05cc84dd99a2689f6009dcec2340df94fba8e8dc623d3188f906ccfb9a"
+    },
+    "src/ingestion/dart_listing.py": {
+      "before": "cc194ad29bceb0be8a3beb29f2624544a6f30de310c1eaf3b39cf3b771fe4a31",
+      "after": "cc194ad29bceb0be8a3beb29f2624544a6f30de310c1eaf3b39cf3b771fe4a31"
+    },
+    "src/ingestion/dart_poller.py": {
+      "before": "0c50ff12b04b8acc3df97fd1096dc56ac8bc1daa78d9a793923af118a46a4cb2",
+      "after": "0c50ff12b04b8acc3df97fd1096dc56ac8bc1daa78d9a793923af118a46a4cb2"
+    },
+    "src/ingestion/dart_quarterly.py": {
+      "before": "e1e0edbbc783aeef2f5685d6a9746fa0c0b29fcd144572e71f0a38ccc0bdac7a",
+      "after": "e1e0edbbc783aeef2f5685d6a9746fa0c0b29fcd144572e71f0a38ccc0bdac7a"
+    },
+    "src/ingestion/kis_investor_flow.py": {
+      "before": "39054da38fb5fc7aa2cb4e857efe346ccee2d73765ac14ab4253eb71fabb709e",
+      "after": "39054da38fb5fc7aa2cb4e857efe346ccee2d73765ac14ab4253eb71fabb709e"
+    },
+    "src/ingestion/krx_benchmarks.py": {
+      "before": "a1e883ee3f5a358bcd0f40de7ff0d5b7abdea3d3e63aa01f0ae085d35dc19d52",
+      "after": "a1e883ee3f5a358bcd0f40de7ff0d5b7abdea3d3e63aa01f0ae085d35dc19d52"
+    },
+    "src/ingestion/krx_chart.py": {
+      "before": "1d22d780cb43a2e2c9d320099d6af425ff85b6341d3b8cadaedc09c488549e25",
+      "after": "1d22d780cb43a2e2c9d320099d6af425ff85b6341d3b8cadaedc09c488549e25"
+    },
+    "src/ingestion/krx_market.py": {
+      "before": "db58e189715f9c733d032138c21535f47025e76f81b9beccaaead1d8d9100fdd",
+      "after": "db58e189715f9c733d032138c21535f47025e76f81b9beccaaead1d8d9100fdd"
+    },
+    "src/ingestion/minute_bars.py": {
+      "before": "22721c4a7388618cb3222510d10e762a2d9a0ab556386a30c1388a6d8eae9886",
+      "after": "22721c4a7388618cb3222510d10e762a2d9a0ab556386a30c1388a6d8eae9886"
+    },
+    "src/ingestion/naver_forum.py": {
+      "before": "1c06679823e2aea4d8822b89b11d1338d2d2792be07e98c4c2c43300a02b07ff",
+      "after": "1c06679823e2aea4d8822b89b11d1338d2d2792be07e98c4c2c43300a02b07ff"
+    },
+    "src/ingestion/naver_news.py": {
+      "before": "5d87350791e92d3e1e72df18af2fab5e60101da3656cfaed950cbc62be802372",
+      "after": "5d87350791e92d3e1e72df18af2fab5e60101da3656cfaed950cbc62be802372"
+    },
+    "src/ingestion/naver_theme.py": {
+      "before": "ab3435ad7e2d5d7ccfc9426bc496e064c055534cb3ee1ef300989525ce04f542",
+      "after": "ab3435ad7e2d5d7ccfc9426bc496e064c055534cb3ee1ef300989525ce04f542"
+    },
+    "src/ingestion/services.py": {
+      "before": "5d218860dfd0f81594fb9b1346e7d05bb477fe7036eaa176d2c89be8412ddb67",
+      "after": "5d218860dfd0f81594fb9b1346e7d05bb477fe7036eaa176d2c89be8412ddb67"
+    },
+    "src/ingestion/storage.py": {
+      "before": "ea2301b9f6d0b1f1fcc5c61ec2670684c02534f384b53e156b6e0657e98b261f",
+      "after": "ea2301b9f6d0b1f1fcc5c61ec2670684c02534f384b53e156b6e0657e98b261f"
+    },
+    "src/ingestion/theme_membership.py": {
+      "before": "ee2f970924a29c396bfca6f1f17011fc2357851408d96782c066ab3d541aa041",
+      "after": "ee2f970924a29c396bfca6f1f17011fc2357851408d96782c066ab3d541aa041"
+    },
+    "src/ingestion/theme_targets.py": {
+      "before": "fb470fe5cba360e6e222ae2139e5a7046c755891f01659522b8802e1ce7f43e0",
+      "after": "fb470fe5cba360e6e222ae2139e5a7046c755891f01659522b8802e1ce7f43e0"
+    },
+    "src/ingestion/types.py": {
+      "before": "e7ffbf9bdda184f8bc3306148920ac5e471a7cee8b829f32ec10a1637d790259",
+      "after": "e7ffbf9bdda184f8bc3306148920ac5e471a7cee8b829f32ec10a1637d790259"
+    },
+    "src/portfolio/__init__.py": {
+      "before": "b80e7f7d93ff1f34a467a5a341779c7e89638c1f947ad738400aff43ecb78229",
+      "after": "b80e7f7d93ff1f34a467a5a341779c7e89638c1f947ad738400aff43ecb78229"
+    },
+    "src/portfolio/allocator.py": {
+      "before": "849cd0fd1c328ee7e3070ddab764843b55154369b0a7289af959a2b95d425e8d",
+      "after": "849cd0fd1c328ee7e3070ddab764843b55154369b0a7289af959a2b95d425e8d"
+    },
+    "src/portfolio/position_sizing.py": {
+      "before": "b0e55c20562372c3904ae0be5e77e1160405da2ba512efc14f334c43f6aec1fe",
+      "after": "b0e55c20562372c3904ae0be5e77e1160405da2ba512efc14f334c43f6aec1fe"
+    },
+    "src/portfolio/risk_limits.py": {
+      "before": "f265194b0f3ad117a42d8caee910134de0c9f22063c60a090c1237f16097fafa",
+      "after": "f265194b0f3ad117a42d8caee910134de0c9f22063c60a090c1237f16097fafa"
+    },
+    "src/reports/__init__.py": {
+      "before": "dbe9bfe30ed75bef069b1852bcf91dfa5cbf1437f157553f1732452a9934749d",
+      "after": "dbe9bfe30ed75bef069b1852bcf91dfa5cbf1437f157553f1732452a9934749d"
+    },
+    "src/reports/risk_report_writer.py": {
+      "before": "5a8399677af9c35439c4db657cf9d9297c3a3fa13a55817f564334871668afca",
+      "after": "5a8399677af9c35439c4db657cf9d9297c3a3fa13a55817f564334871668afca"
+    },
+    "src/research/__init__.py": {
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "src/research/industry_index.py": {
+      "before": "2e71754df23970a271460aab9eb6baf43e8d9316d5057638c1b95f80f33e3b09",
+      "after": "2e71754df23970a271460aab9eb6baf43e8d9316d5057638c1b95f80f33e3b09"
+    },
+    "src/research/industry_map.py": {
+      "before": "77d9792739609e87ee663a8e8dca2d49ef5e1798e71ba895d8a7d69b4995864b",
+      "after": "77d9792739609e87ee663a8e8dca2d49ef5e1798e71ba895d8a7d69b4995864b"
+    },
+    "src/research/market_regimes.py": {
+      "before": "443aa55ab5b60e1e90013f16afb6d68b584a6efb162a2c9d5ea9132cae2bc650",
+      "after": "443aa55ab5b60e1e90013f16afb6d68b584a6efb162a2c9d5ea9132cae2bc650"
+    },
+    "src/retrieval/__init__.py": {
+      "before": "707453ee927ab7e198210cfa91421080d35b3ad2bbf4c32274fabb326755da42",
+      "after": "707453ee927ab7e198210cfa91421080d35b3ad2bbf4c32274fabb326755da42"
+    },
+    "src/retrieval/bm25_index.py": {
+      "before": "9cb552dddd57fd5dac249c539de933f05efc2113e850ed8df19327b7ea32f68d",
+      "after": "9cb552dddd57fd5dac249c539de933f05efc2113e850ed8df19327b7ea32f68d"
+    },
+    "src/retrieval/services.py": {
+      "before": "5fe01ec662815dcf6c0bda9e00819002f61f7130ae067d1326a2d561dfc146f7",
+      "after": "5fe01ec662815dcf6c0bda9e00819002f61f7130ae067d1326a2d561dfc146f7"
+    },
+    "src/retrieval/vector_store.py": {
+      "before": "81c0f291619407cc4a05221952172418ce352c31e5f84072582fd1acb6911cf7",
+      "after": "81c0f291619407cc4a05221952172418ce352c31e5f84072582fd1acb6911cf7"
+    },
+    "src/runner/__init__.py": {
+      "before": "f460a34a643483a5e0ae051775a0c02a42140c201a8b79ca9f2191b760690d0b",
+      "after": "f460a34a643483a5e0ae051775a0c02a42140c201a8b79ca9f2191b760690d0b"
+    },
+    "src/runner/analysis_contracts.py": {
+      "before": "6561ee7cce4f1727221979e540d84ffb71112017d8bd96708c6807512311bdf4",
+      "after": "6561ee7cce4f1727221979e540d84ffb71112017d8bd96708c6807512311bdf4"
+    },
+    "src/runner/analysis_data.py": {
+      "before": "0f3e5b66becb0bdc994bbee08b6d68a1ceb034b62e2a157f55f53de9ed0d8d35",
+      "after": "0f3e5b66becb0bdc994bbee08b6d68a1ceb034b62e2a157f55f53de9ed0d8d35"
+    },
+    "src/runner/analysis_scheduler.py": {
+      "before": "951d4b6a65d7a796059c011f51e7b82d2077697ad76075d8ac26fcf58598e0bf",
+      "after": "951d4b6a65d7a796059c011f51e7b82d2077697ad76075d8ac26fcf58598e0bf"
+    },
+    "src/runner/benchmark_context.py": {
+      "before": "1fbfdd89c8393e397ae256609b907ebf26cf6f795a03d682dcf9e32b70265656",
+      "after": "1fbfdd89c8393e397ae256609b907ebf26cf6f795a03d682dcf9e32b70265656"
+    },
+    "src/runner/corporate_actions.py": {
+      "before": "ebe2e59a424a313c838ba280f21ee09b195980a9de9de5cd9f96f9032f5a36db",
+      "after": "ebe2e59a424a313c838ba280f21ee09b195980a9de9de5cd9f96f9032f5a36db"
+    },
+    "src/runner/decision_adapter.py": {
+      "before": "9c7abf8fc20475bd3d5107c569208e3280947b66760cf0bd466d9421c36783a0",
+      "after": "9c7abf8fc20475bd3d5107c569208e3280947b66760cf0bd466d9421c36783a0"
+    },
+    "src/runner/event_evidence.py": {
+      "before": "9a515a5aa057630d61da90a21302e680445b6d42f13c60461da598d4f1800304",
+      "after": "9a515a5aa057630d61da90a21302e680445b6d42f13c60461da598d4f1800304"
+    },
+    "src/runner/event_reaction.py": {
+      "before": "40243eb2f0afb3c72d88187a14d786bcba62445fad9dc8506b20150d6f217437",
+      "after": "40243eb2f0afb3c72d88187a14d786bcba62445fad9dc8506b20150d6f217437"
+    },
+    "src/runner/financial_snapshot.py": {
+      "before": "9081f7557857bf0878f670c570e7ffab3d7d66a6fb35bee435b1d4a131ad2e24",
+      "after": "9081f7557857bf0878f670c570e7ffab3d7d66a6fb35bee435b1d4a131ad2e24"
+    },
+    "src/runner/market_context_data.py": {
+      "before": "e62331d0fed37b2baf3e6292a18db71ade1030b2f5f520bb29a26a256c72c882",
+      "after": "e62331d0fed37b2baf3e6292a18db71ade1030b2f5f520bb29a26a256c72c882"
+    },
+    "src/runner/multi_theme_leader_trading_runner.py": {
+      "before": "7162fa51d4f2bc4a7ffa870084087578a532ee9acf417a98e6c34bb9e63598b9",
+      "after": "7162fa51d4f2bc4a7ffa870084087578a532ee9acf417a98e6c34bb9e63598b9"
+    },
+    "src/runner/price_snapshot_client.py": {
+      "before": "2ef52c79096d6b5b5731ef159d9293a0fbfda7b5eaa1dc7dcf7e8e3ff1ace384",
+      "after": "2ef52c79096d6b5b5731ef159d9293a0fbfda7b5eaa1dc7dcf7e8e3ff1ace384"
+    },
+    "src/runner/shared_analysis.py": {
+      "before": "42c5294f8b469ee6799542941863a68bfcd9801ddee9d1def1daffb4fab1942e",
+      "after": "42c5294f8b469ee6799542941863a68bfcd9801ddee9d1def1daffb4fab1942e"
+    },
+    "src/runner/signal_monitor.py": {
+      "before": "3e0b33cc87c89b2719649ea8a1ba89047435964105ca4179fc466d5f0f68ebfc",
+      "after": "3e0b33cc87c89b2719649ea8a1ba89047435964105ca4179fc466d5f0f68ebfc"
+    },
+    "src/runner/signal_quality_filter.py": {
+      "before": "0c756823f77dbd4e81757acab129f64ced30bf50e78153c4a8abb66a8fac2537",
+      "after": "0c756823f77dbd4e81757acab129f64ced30bf50e78153c4a8abb66a8fac2537"
+    },
+    "src/runner/theme_candidate_filter.py": {
+      "before": "56b38625ffd02932f55c5ed198d50a70a4f7b0b1148a78c9feae1729153b3c1b",
+      "after": "56b38625ffd02932f55c5ed198d50a70a4f7b0b1148a78c9feae1729153b3c1b"
+    },
+    "src/runner/theme_leader_trading_runner.py": {
+      "before": "76a9553269a761a6fecbb0f11d8dbca5e6ac0ad857d75be8e99264f74dbe5456",
+      "after": "76a9553269a761a6fecbb0f11d8dbca5e6ac0ad857d75be8e99264f74dbe5456"
+    },
+    "src/runner/theme_universe_loader.py": {
+      "before": "c4fedcbb9062846db2f4cec691f1604de9ec4e565a532003ba9157a7c762efd8",
+      "after": "c4fedcbb9062846db2f4cec691f1604de9ec4e565a532003ba9157a7c762efd8"
+    },
+    "src/runner/trade_signal_submitter.py": {
+      "before": "56432b3cf95aec207e50a2b5cbc18c3f228fc0a30c18d44dcfe301f5f72aa864",
+      "after": "56432b3cf95aec207e50a2b5cbc18c3f228fc0a30c18d44dcfe301f5f72aa864"
+    },
+    "src/runner/trading_calendar.py": {
+      "before": "f8571d2484ab11dc4c06ea16838a35f90e4d7e3bc7dbffe3b14b79da121a8e38",
+      "after": "f8571d2484ab11dc4c06ea16838a35f90e4d7e3bc7dbffe3b14b79da121a8e38"
+    },
+    "src/strategies/__init__.py": {
+      "before": "d4930aca41d0dbabcd510523fee412910b8f5a16e66196ea9fdc03f5ba85a986",
+      "after": "d4930aca41d0dbabcd510523fee412910b8f5a16e66196ea9fdc03f5ba85a986"
+    },
+    "src/strategies/base.py": {
+      "before": "712e5387ae0607ca3233be8d1f5f68c8b0807f76bab8735a24294d3570b4efa4",
+      "after": "712e5387ae0607ca3233be8d1f5f68c8b0807f76bab8735a24294d3570b4efa4"
+    },
+    "src/strategies/data.py": {
+      "before": "85f2944fcaa1eac6d3069ca11465b24c16883d3c02272550ecd69d8db0befaa1",
+      "after": "85f2944fcaa1eac6d3069ca11465b24c16883d3c02272550ecd69d8db0befaa1"
+    },
+    "src/strategies/disclosures.py": {
+      "before": "5cb0d88aeec3c62d34363699b7a84a380c5b0d5d74fb144224c35d6acf04e34e",
+      "after": "5cb0d88aeec3c62d34363699b7a84a380c5b0d5d74fb144224c35d6acf04e34e"
+    },
+    "src/strategies/factors.py": {
+      "before": "c7891c765df529535b2005c4110b9241e98ad73061cac808e69adb1219883f4b",
+      "after": "c7891c765df529535b2005c4110b9241e98ad73061cac808e69adb1219883f4b"
+    },
+    "src/strategies/filters.py": {
+      "before": "ba731b413ad5778bdf1c41b40aa6ddf6726ea5dcb1c0b1e327baf029e2f06a85",
+      "after": "ba731b413ad5778bdf1c41b40aa6ddf6726ea5dcb1c0b1e327baf029e2f06a85"
+    },
+    "src/strategies/registry.py": {
+      "before": "2c9cdf0827fa2f7adf7402931502dcf82d548911f45d87fc3c135534ac333377",
+      "after": "2c9cdf0827fa2f7adf7402931502dcf82d548911f45d87fc3c135534ac333377"
+    },
+    "src/tools/__init__.py": {
+      "before": "aa2f9e95b7b3975fcc269545a3a75d2f9415cad23cf16d1688b011f98d54d5fb",
+      "after": "aa2f9e95b7b3975fcc269545a3a75d2f9415cad23cf16d1688b011f98d54d5fb"
+    },
+    "src/tools/charts_tools.py": {
+      "before": "8b17442ab2e08d6a56534ec3b4669868b5113b8213d6a5a9282930dd043d8710",
+      "after": "8b17442ab2e08d6a56534ec3b4669868b5113b8213d6a5a9282930dd043d8710"
+    },
+    "src/tools/evidence_tool.py": {
+      "before": "997b58eda76fe3f03f514a9ac8c5cb9d1339f5e5d24d6d78c157dbf35e4a4437",
+      "after": "997b58eda76fe3f03f514a9ac8c5cb9d1339f5e5d24d6d78c157dbf35e4a4437"
+    },
+    "src/tools/finance_tool.py": {
+      "before": "dedd53bbb73429481e94752401c97403323f4d5c68e64e43672fe1a7dc7a45e0",
+      "after": "dedd53bbb73429481e94752401c97403323f4d5c68e64e43672fe1a7dc7a45e0"
+    },
+    "src/tools/realtime_tool.py": {
+      "before": "ee1477b22ac07d235a98547869b65460d4d75f49149a4a472e75ad910cf61900",
+      "after": "ee1477b22ac07d235a98547869b65460d4d75f49149a4a472e75ad910cf61900"
+    },
+    "src/tracing/__init__.py": {
+      "before": "e5cb35c71d0d2ebfd61492986b23dcf36d9ecb2c53c2149c2eb3f70744e88962",
+      "after": "e5cb35c71d0d2ebfd61492986b23dcf36d9ecb2c53c2149c2eb3f70744e88962"
+    },
+    "src/tracing/agent_tracer.py": {
+      "before": "44aed04cf1e867a669dc2f981134aa08dcc929c7f4ac5e8d7bd3cc0f34a1f8e6",
+      "after": "44aed04cf1e867a669dc2f981134aa08dcc929c7f4ac5e8d7bd3cc0f34a1f8e6"
+    },
+    "src/tracing/paper_audit.py": {
+      "before": "87f0d1aa172dc6e420803bb215aa9a7a29809a6e816d1d0c3c62c87df9408800",
+      "after": "87f0d1aa172dc6e420803bb215aa9a7a29809a6e816d1d0c3c62c87df9408800"
+    },
+    "src/tracing/paper_performance.py": {
+      "before": "fd85990e3925b25a90e171e2268976cb455ea2d5812a24d96a402e970c0b5ccf",
+      "after": "fd85990e3925b25a90e171e2268976cb455ea2d5812a24d96a402e970c0b5ccf"
+    },
+    "src/utils/__init__.py": {
+      "before": "f6efc390a2b6b4a6ce05cae7a14d703e137150daad989bd2126e0a420ff88f25",
+      "after": "f6efc390a2b6b4a6ce05cae7a14d703e137150daad989bd2126e0a420ff88f25"
+    },
+    "src/utils/kis_auth.py": {
+      "before": "2c9e38b953a1f90a8deb1305db0cc50bbbcd0add2c3ec93e4565fe86897777a9",
+      "after": "2c9e38b953a1f90a8deb1305db0cc50bbbcd0add2c3ec93e4565fe86897777a9"
+    },
+    "src/utils/llm_budget.py": {
+      "before": "645bb969820c433ed04ce3dc69a71d9e95cae972a309f09c8b78be1de5b653ec",
+      "after": "645bb969820c433ed04ce3dc69a71d9e95cae972a309f09c8b78be1de5b653ec"
+    },
+    "src/utils/llm_queue.py": {
+      "before": "a07eb32a05a7d80e2d6e99ae71ed1ea2a0675684cabe5488c0e0993ed00f0743",
+      "after": "a07eb32a05a7d80e2d6e99ae71ed1ea2a0675684cabe5488c0e0993ed00f0743"
+    },
+    "src/utils/luna_chat.py": {
+      "before": "99d6289041a039a88874704f6cdfeec8129984e618fd71e09a294a9f43638016",
+      "after": "99d6289041a039a88874704f6cdfeec8129984e618fd71e09a294a9f43638016"
+    },
+    "src/utils/memory.py": {
+      "before": "f9ee4391a50f8769144006122d5526a8d13c4289663ae0ffe83b3ca646ef6a44",
+      "after": "f9ee4391a50f8769144006122d5526a8d13c4289663ae0ffe83b3ca646ef6a44"
+    },
+    "src/utils/parallel.py": {
+      "before": "a8b4b385f5bffe0c8c48ff8529b5fd33d3083837145fbdcec5e24194a4d99bb0",
+      "after": "a8b4b385f5bffe0c8c48ff8529b5fd33d3083837145fbdcec5e24194a4d99bb0"
+    },
+    "src/utils/portfolio_context.py": {
+      "before": "5ea6b709eff3ab60b05135b7fa4bedcd8830b88a9f6d022d1363aaafe350fcad",
+      "after": "5ea6b709eff3ab60b05135b7fa4bedcd8830b88a9f6d022d1363aaafe350fcad"
+    },
+    "src/utils/prompt_loader.py": {
+      "before": "fd79474d61c9794932c8b2c7d2c691e1ec85d37c59802fc9ff80006a3859211c",
+      "after": "fd79474d61c9794932c8b2c7d2c691e1ec85d37c59802fc9ff80006a3859211c"
+    },
+    "src/utils/stock_codes.py": {
+      "before": "fa037cc9495763beecb268462936bd581483c48b90b319ea738657d409962b8f",
+      "after": "fa037cc9495763beecb268462936bd581483c48b90b319ea738657d409962b8f"
+    },
+    "src/utils/stock_mapper.py": {
+      "before": "9e8312a9733824258b57f004a6f6903b363a75aae1ca5a23ea5f7d233c257a4b",
+      "after": "9e8312a9733824258b57f004a6f6903b363a75aae1ca5a23ea5f7d233c257a4b"
+    },
+    "tests/preregistration_fixtures.py": {
+      "before": "8dd07d33647cffdfe96cac9dfbcfc5ae95902d9cd17078ac8fcaa5cbd4c21676",
+      "after": "8dd07d33647cffdfe96cac9dfbcfc5ae95902d9cd17078ac8fcaa5cbd4c21676"
+    }
+  },
+  "implementation_hashes": {
+    "backtesting/__init__.py": "e51bcc748c0d6464f399236cf5c794144776f8981bdbedde74ebe18c2ce9e2af",
+    "backtesting/append_only.py": "30be0fee09d89dc5e6b21f8871b54ffddbe51a991bc9a035e34d8290ad73a662",
+    "backtesting/capacity.py": "c27482cc766fc6bb09889dd4d8ea9b319458ff97ffce86f3774ee615338bc4d1",
+    "backtesting/cost_model.py": "d83624a39ca5e14fee415f83a01da5a4582abc00bfcf5f0f0a1f05eb42b37481",
+    "backtesting/experiment_registry.py": "875d20735698091060653294e5a182552cef78d98b6d6b4e6ca13299bfa9be9b",
+    "backtesting/experiments/__init__.py": "b5b4d25e9438441f360a63f342ed319c2251e7f116e2070f4d91dfe49230bb79",
+    "backtesting/experiments/av001.py": "be99accfc4016f0bcca57da51b4b4f4e6dc4fe42bc77c7cb598a5ed89f32509a",
+    "backtesting/experiments/av002.py": "270b5b74aeba9bfca73b2e78c130cc586ad6355d29101bf1626b8d56e2671530",
+    "backtesting/experiments/common.py": "e016a29278d3f2d0d79ff66c04e2940496beb440c0005d27a86b7a64b8acbdcf",
+    "backtesting/experiments/d001.py": "7d08203e2906061bd28600f73b058cc4b15ddea7dad12c9fb2eb2002fdae8d59",
+    "backtesting/experiments/hc001.py": "90df5fc2e8efd868f6466467c1603d1db6361351d383e2d91aed49b97c161f90",
+    "backtesting/experiments/hc002.py": "e368edd21f0021713f29793f28233087f322064e06a570a6dd74a264db521069",
+    "backtesting/experiments/hc003.py": "102a1cc2fb9711e91fa3f7ad30ccf0daea6b40ce6d62738018fe85238ed720cb",
+    "backtesting/experiments/hf001.py": "3d2a11e1e2236e539ae37da816e8229960bcf08eacf3af2ae1388cdc36a5cb84",
+    "backtesting/experiments/lh001/__init__.py": "c283313e5ef7a9db5e6caf9f300b389e1118c524e9e039cc2d884a7b30a69125",
+    "backtesting/experiments/lh001/__main__.py": "0647893c4e81e891481b8f3337b673160f4c084165c100a845a2513e884204a8",
+    "backtesting/experiments/lh001/arms.py": "6b76c846700cf2f0ad50511d04e193ae4711a745de67e58634288c65890995a7",
+    "backtesting/experiments/lh001/config.py": "5951ceefc4523c031015824ba3584591016dd5d5eeadf85b92964af38d9f71ff",
+    "backtesting/experiments/lh001/evaluate.py": "63fba23f6bef7f4234b56721cdd46e0fbaf5414ceb1ba636e6b5359d8b711ea1",
+    "backtesting/experiments/lh001/inputs.py": "46722ca880d56e26158dc9e9b1df20a991d31667b55f6e18e82e54d834d2f3a0",
+    "backtesting/experiments/lh001/probe.py": "6ec478453a7954b0e44bf21a5ac08d9a840d40fc26339b7dbaf32785f1ee1fbc",
+    "backtesting/experiments/lh001/probe_v2.py": "1caf92fff771d18cbd500f60d66c2fbfe9aac151f3c3110545127a38dcc565d6",
+    "backtesting/experiments/lh001/runner.py": "ec6e2c6900f215b9d362b5674c986689f1c323d6ff9caf727cc184d2857dbc7a",
+    "backtesting/experiments/lh003/__init__.py": "70218414156d077a97779322b4f00281bb28b21a6c444c378b5484c3768d604e",
+    "backtesting/experiments/lh003/__main__.py": "b86d277ce2e4b220810d4bcf0543dc8ce0044735f1fd961eb81efcb2cac2194d",
+    "backtesting/experiments/lh003/calendar.py": "229b475d6ace375a6b7c6e596586ed69060a823bc2709ef1de69c0df6ba8392d",
+    "backtesting/experiments/lh003/distribution.py": "d9f96b7f1c55148c7c4918744cbb21ed547d68d0de5104a27b105ed40ff5e7eb",
+    "backtesting/experiments/lh003/environment.py": "ffd82b3e8b6a9cca0a0fb76f0b1743999dcab4f959d6c8da6b49603c807edfae",
+    "backtesting/experiments/lh003/evaluate.py": "9fab8d8075bf52e70fc7ebd1556d6fce68dc51ab06558f2fbbfb8ccc5da9ef27",
+    "backtesting/experiments/lh003/executions.py": "8acf3dcdc315b8ac722fb51d377bb65d98684814fc8d34f33e6245b39b0b9efa",
+    "backtesting/experiments/lh003/inputs.py": "953e98dada68dcba29102551433737f1c1317fedc70f12da99f929ad4f8fcda7",
+    "backtesting/experiments/lh003/pins.py": "bd7a821f4b4fffcf0d2f4d8aa0149b98853d65a2e656bb029d715802723445d1",
+    "backtesting/experiments/lh003/resources.py": "19c7af45e1be76b5a393d6cdbcea2d65e0a34b7516aef088c021043e07ba73fd",
+    "backtesting/experiments/lh003/runner.py": "582ca84e8f22bd8548e27d1a077e3e56307275630b76072c004b656fb7c4d0fa",
+    "backtesting/experiments/lh003/simulation.py": "8b46fa9c1632a6ea32d3f2e76bb62209048dfa01839e6dd1ff6c2b6f6575fa27",
+    "backtesting/experiments/lh003/snapshot.py": "e0d8fa2e7c5dcab8e080bffe236d7e3ebc878dc54e0a0fb52e07371572047065",
+    "backtesting/experiments/lh003/storage.py": "89f71811f954dbd73e654e7a2508bd9cc85d908f0785c511d3fc69c566c70c47",
+    "backtesting/experiments/lh003/workflow.py": "8f683dcadde9920c8c6412c16739f1ea4fd0f29c2023510dde80427c359bcede",
+    "backtesting/experiments/ordering.py": "c06b94fd40703fa48b2b3532ec8a58d30414c276bf0ccacc07a500dbc1161e5d",
+    "backtesting/holdout.py": "5943eb45c2967b8a42fb3966342b9fec31c482bde03caa446a1c90f49931ac1d",
+    "backtesting/signal_eval.py": "493dfe34b20f6e35a3e1f00d432e3d716eea841f7f8846c40f2565f14c97fbd8",
+    "research/experiments/LH003_llm_leader_forward/prompts/v3_c_num.schema.json": "36286e92c595447b5b01ec7ad705a89c7db2c53013425953fef44e727d995b4e",
+    "research/experiments/LH003_llm_leader_forward/prompts/v3_c_num.txt": "9d8d02d267b13eec7ea859a03b02bacda32d54804d9a0e79a384f41912d6b35b",
+    "research/experiments/LH003_llm_leader_forward/prompts/v3_common.txt": "ec61709943721f68936557de630b185fb60456a59f55a5f65ea011dbce7f5417",
+    "research/experiments/LH003_llm_leader_forward/prompts/v3_reask.txt": "2e24e184c38e8c647c690f7d04ddada13e966492abee30f90e235571c309abb0",
+    "scripts/__init__.py": "0fbb8bbfb6f9446af145f95496d59544b41033dd2925a028f4c096d2cea371cc",
+    "scripts/lh003/__init__.py": "9e07f3d81509016936248b03d0ece6a7224aa65dc9ba671d2948d805fcc870e0",
+    "scripts/lh003/amend.py": "cf8f79d4339d321f904d3912f7f1d889a27e0153a11827540196b291bb10524e",
+    "scripts/lh003/distribute.py": "e0631d9ba01c3f39a84a632a520b88a2dfa8c74274979edfd456a8c5eb6bf122",
+    "scripts/ops/research_run.sh": "e4e754266198293625682e631038a1bda5d8d735d59c310393688ed3b6de2e5d",
+    "src/__init__.py": "e799333dc816c273ba63b8d1289855b4622bb83c19a33096da3b5360907ac30e",
+    "src/ingestion/__init__.py": "bc31ef315393ef375e134ede43181f6e2ab92af39fec973b0ea634b28cf7efd0",
+    "src/ingestion/dart_filing_dates.py": "41ae526cdac47e1f694f4ca905d46cb00e980109d48202818540f91775bfca6a",
+    "src/ingestion/dart_financial_date_rules.py": "d0fce8a2f1872f4594e49212b0a13ef7c3989ed5317ddf06638e04eb6326ae03",
+    "src/ingestion/dart_financials.py": "d7166256edea400aae205da943361de90a5930b18c659366fb3a426da7492288",
+    "src/ingestion/dart_listing.py": "cc194ad29bceb0be8a3beb29f2624544a6f30de310c1eaf3b39cf3b771fe4a31",
+    "src/ingestion/dart_quarterly.py": "e1e0edbbc783aeef2f5685d6a9746fa0c0b29fcd144572e71f0a38ccc0bdac7a",
+    "src/ingestion/krx_benchmarks.py": "a1e883ee3f5a358bcd0f40de7ff0d5b7abdea3d3e63aa01f0ae085d35dc19d52",
+    "src/ingestion/storage.py": "ea2301b9f6d0b1f1fcc5c61ec2670684c02534f384b53e156b6e0657e98b261f",
+    "src/research/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "src/research/industry_index.py": "2e71754df23970a271460aab9eb6baf43e8d9316d5057638c1b95f80f33e3b09",
+    "src/research/industry_map.py": "77d9792739609e87ee663a8e8dca2d49ef5e1798e71ba895d8a7d69b4995864b",
+    "src/research/market_regimes.py": "443aa55ab5b60e1e90013f16afb6d68b584a6efb162a2c9d5ea9132cae2bc650",
+    "src/runner/__init__.py": "f460a34a643483a5e0ae051775a0c02a42140c201a8b79ca9f2191b760690d0b",
+    "src/runner/event_evidence.py": "9a515a5aa057630d61da90a21302e680445b6d42f13c60461da598d4f1800304",
+    "src/runner/trading_calendar.py": "f8571d2484ab11dc4c06ea16838a35f90e4d7e3bc7dbffe3b14b79da121a8e38",
+    "src/utils/__init__.py": "f6efc390a2b6b4a6ce05cae7a14d703e137150daad989bd2126e0a420ff88f25",
+    "src/utils/stock_codes.py": "fa037cc9495763beecb268462936bd581483c48b90b319ea738657d409962b8f"
+  },
+  "code_reference_envelope_sha256": "227006be5b3d74ef7c4913d2d26b6d06629f653c12547ea3beaf75dc69ed526d",
+  "code_reference_file_sha256": "0ed528440971e777da6925039f0a1f2dac32ee5e6c4e489546c6e1961b6c6e22",
+  "diagnostic_initial_round24": {
+    "command": [
+      "/home/are01/src/HQA_Project/HQA_lh003/venv/bin/python",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "-p",
+      "lunar_cache",
+      "tests/test_experiments_lh003_round24.py",
+      "--tb=short",
+      "--junitxml=/tmp/lh003-round24/initial_round24.xml"
+    ],
+    "exit_code": 0,
+    "seconds": 48.43,
+    "max_process_rss_mib": 144.754,
+    "process_tree_peak_rss_mib": 144.754,
+    "process_tree_peak_pss_mib": 122.261,
+    "violation": null,
+    "log": "/tmp/lh003-round24/initial_round24.log",
+    "sandbox_poll": true
+  }
+}

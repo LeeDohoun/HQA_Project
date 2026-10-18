@@ -93,7 +93,7 @@ def record_executions(*, data_dir, root, decisions, sync_manifest, clock=now, au
     root = Path(root)
     applied = verify_pinned(root, repo_root, at=clock())
     publication, receipt = latest_distribution(root / "distributions" if distribution_dir is None else distribution_dir,
-                                               sync_manifest=sync_manifest, at=clock())
+                                               sync_manifest=sync_manifest, at=clock(), state_root=root, repo_root=repo_root)
     data_dir = publication.root
     manifest = read(sync_manifest)
     if aware(manifest["as_of"]) != aware(EVALUATION_AT):

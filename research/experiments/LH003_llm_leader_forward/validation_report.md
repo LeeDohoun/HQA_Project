@@ -1,4 +1,111 @@
-# LH003 astra round 23 validation
+# LH003 astra round 24 validation
+
+Workdir: `/home/are01/src/HQA_Project/HQA_lh003`, starting HEAD `66f5893`.
+The interrupted run's uncommitted implementation was reviewed and retained;
+two additional pre-start regressions were added, and the modified producer test
+now checks its captured identity without replacing it. No commit or Git metadata
+write was performed.
+
+## Round 24 P1: seal the distribution producer
+
+`scripts/lh003/distribute.py` verifies the full existing implementation/dependency
+pin inventory and the allowed mechanical amendment chain before raw archive
+inventory/reads and again before writing a completion receipt. It also compares
+against its import-time hashes, including the executing script's own `__file__`.
+A drifted producer leaves an incomplete latest publication, so readers cannot
+fall back to an older completion.
+
+Every manifest carries `code_pins`: all implementation hashes, the original
+mechanical source-baseline hash, and ordered applied amendment hashes.
+`distribution.py` compares that complete receipt with the reader's independently
+approved reference at capture time. `snapshot.py` rechecks before stream merges
+and input-view construction. Environment, weekly and execution readers pass their
+approved state directory explicitly. Old manifests lacking producer provenance
+refuse and require republication.
+
+The fixed pre-start authority is the checked-in sealed
+`distribution_code_reference.json`, containing **68** implementation/dependency
+hashes and both mechanical baseline source texts. Its envelope digest is
+`227006be5b3d74ef7c4913d2d26b6d06629f653c12547ea3beaf75dc69ed526d`.
+The reference is not generated or approved by publishing data and is excluded
+from its own implementation inventory to avoid a circular hash. After start,
+publications use the existing start/baseline/amendment chain; pre-start captures
+continue to use the fixed reference even when read after start or amendments.
+The distributor CLI now requires `--state-dir`; see `implementation_notes.md`.
+
+Regression coverage includes modified producer/dependency rejection before raw
+inventory, code drift before completion, a copied modified distributor, actual
+publication by a changed distributor followed by code restoration (with and
+without injected H1 benchmark rows), both allowed tax/calendar amendments,
+missing pre-start reference, historical pre-start reads, legacy manifests and
+snapshot merge rechecks. All archive fixtures and model processes are synthetic.
+
+## Round 24 test results
+
+**148 passed, 0 failed, 0 errors, 0 skipped**, across all **6 LH003 files**
+run serially in fresh supervised processes. The new round 24 file contributes
+**15** cases. Total supervised runtime: **248.914 s**;
+maximum individual RSS: **232.273 MiB**;
+maximum process-tree PSS: **208.862 MiB**.
+All processes remained below the 1400 MiB supervisor cap (below 1.5 GB).
+Each selected test ID has exactly one completed setup/call/teardown journal.
+The initial 13-case diagnostic pass preceded the two additional regressions and
+is superseded by this final run.
+
+| File | Passed | Supervised seconds | Peak individual RSS MiB |
+| --- | ---: | ---: | ---: |
+| `tests/test_experiments_lh003_evaluate.py` | 19 | 6.059 | 152.633 |
+| `tests/test_experiments_lh003_round21.py` | 33 | 62.217 | 232.273 |
+| `tests/test_experiments_lh003_round23.py` | 29 | 49.109 | 157.262 |
+| `tests/test_experiments_lh003_round24.py` | 15 | 51.915 | 145.129 |
+| `tests/test_experiments_lh003_runner.py` | 30 | 21.634 | 153.477 |
+| `tests/test_experiments_lh003_snapshot.py` | 22 | 57.980 | 154.004 |
+
+The tests use the existing read-only venv symlink, disabled bytecode/dotenv/live
+endpoints/tracing, one BLAS/OpenMP thread and no pytest cache. The test guard
+blocks environment-file access, protected path writes, and real network/model
+subprocesses. The inherited sandbox selector shim and pure lunar-conversion cache
+are archived with the exact harness. No model or network call was made.
+Before/after hashes match for **230 monitored files**, including all FW001-listed
+backtesting files, its manifest, and LH003 preregistration. No preregistration,
+FW001 collector-inventory file, `.env*`, main checkout or Git metadata was changed.
+The user-preserved untracked venv symlink remains unchanged.
+
+Evidence: [test log](reports/round24_lh003_tests.txt),
+[JUnit](reports/round24_lh003_tests.junit.xml),
+[counts, per-case journals, memory and frozen-file audit](reports/round24_validation.json),
+[reconstructible test harness](reports/round24_test_harness.json).
+The repository-wide suite was not rerun in this task. Its round 23 results below
+are historical. Live data transfer, actual model timing/capacity and deployment
+recovery evidence remain operator prerequisites; these tests do not establish
+execution readiness or profitability.
+
+## Round 24 changed files
+
+**16 task paths relative to HEAD**: 7 production, 2 tests, 1 fixed reference,
+2 documentation files and 4 validation artifacts. This includes the interrupted
+run's retained edits and excludes the pre-existing venv symlink.
+
+- `backtesting/experiments/lh003/distribution.py`
+- `backtesting/experiments/lh003/environment.py`
+- `backtesting/experiments/lh003/executions.py`
+- `backtesting/experiments/lh003/pins.py`
+- `backtesting/experiments/lh003/snapshot.py`
+- `backtesting/experiments/lh003/workflow.py`
+- `scripts/lh003/distribute.py`
+- `tests/test_experiments_lh003_snapshot.py`
+- `tests/test_experiments_lh003_round24.py`
+- `research/experiments/LH003_llm_leader_forward/distribution_code_reference.json`
+- `research/experiments/LH003_llm_leader_forward/implementation_notes.md`
+- `research/experiments/LH003_llm_leader_forward/validation_report.md`
+- `research/experiments/LH003_llm_leader_forward/reports/round24_test_harness.json`
+- `research/experiments/LH003_llm_leader_forward/reports/round24_lh003_tests.txt`
+- `research/experiments/LH003_llm_leader_forward/reports/round24_lh003_tests.junit.xml`
+- `research/experiments/LH003_llm_leader_forward/reports/round24_validation.json`
+
+---
+
+## Historical round 23 record (not rerun)
 
 Worktree: `/home/are01/src/HQA_Project/HQA_lh003`, branch `claude/lh003-runner`,
 starting HEAD `de8ca4c` (main + round 21 WIP merge). The user-referenced later

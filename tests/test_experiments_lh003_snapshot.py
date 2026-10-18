@@ -179,6 +179,8 @@ def test_LH003_requires_both_releases_and_all_passing_holdouts(tmp_path, monkeyp
 
 @pytest.fixture
 def lifecycle(tmp_path, source, monkeypatch):
+    import scripts.lh003.distribute  # Capture producer identity before replacing runner hashes.
+
     root, clock, calls = tmp_path / "state", Clock("2026-11-12T10:00:00+09:00"), []
     registration = SimpleNamespace(commit_hash="fixture-only", fields={"uses_holdout": True})
     monkeypatch.setattr(experiment_registry, "verify_preregistration", lambda *a, **k: registration)

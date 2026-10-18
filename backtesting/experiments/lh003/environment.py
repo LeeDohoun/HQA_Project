@@ -135,7 +135,7 @@ def _verify_environment(*, data_dir, snapshot_path, synthetic, sync_manifest, re
     try:
         publication, receipt = latest_distribution(distribution_dir if distribution_dir is not None
             else Path(state_root) / "distributions" if state_root is not None else Path(data_dir) / "research/lh003/distributions",
-            sync_manifest=sync_manifest, at=at)
+            sync_manifest=sync_manifest, at=at, state_root=state_root, repo_root=PROJECT_ROOT)
         result["distribution"] = {"verified": True, **receipt}
         result["sync"] = sync_check(publication.root, sync_manifest, at=at, day=day)
     except (ValueError, OSError) as exc:

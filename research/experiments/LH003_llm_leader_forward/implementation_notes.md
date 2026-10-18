@@ -85,7 +85,8 @@ as its own process on the research machine (never on the collector):
 
 ```bash
 python -m scripts.lh003.distribute --data-dir /path/to/archive \
-  --distribution-dir /path/to/lh003/distributions --sync-manifest /path/to/transfer.json
+  --distribution-dir /path/to/lh003/distributions --sync-manifest /path/to/transfer.json \
+  --state-dir /path/to/lh003
 ```
 
 The fixed scope is every daily price/main/supplement listing archive, every
@@ -109,6 +110,35 @@ runner; an older snapshot is never silently presented as this sync's update.
 Weekly inputs pin that exact completed manifest before any model call. A raw row
 having existed earlier does not establish that a decision actually captured it.
 Uncaptured intermediate versions cannot be reconstructed as past observations.
+
+Round 24 adds the producer's `code_pins` receipt to that manifest: every pinned
+implementation/dependency hash, the mechanical source-baseline hash and the
+ordered amendment hashes. Before any raw archive inventory/read and again before
+the completion receipt, the distributor verifies the same pin/amendment chain as
+the runner. It also compares against the process's import-time implementation
+hashes, using the executing distributor's own `__file__` for its hash rather than
+assuming it came from the approved checkout; launch a fresh process after any
+approved source update. Drift leaves an
+incomplete newest journal entry, which blocks use of an older publication.
+
+Before `start.json` exists, the fixed approved reference is the checked-in sealed
+`distribution_code_reference.json` in this experiment directory. It contains the
+68 implementation/dependency hashes and both mechanical baseline source texts;
+it never derives approval from the running checkout or creates approval on first
+publication. Changes to this reference require explicit code review, separately
+from publishing data. It is excluded from its own implementation hash inventory
+to avoid a circular hash. After start, `--state-dir` supplies the approved
+`start.json`, `code_baseline.json` and contiguous amendment journal. Historical
+pre-start publications continue to use the fixed reference; later publications
+use the start/amendment chain as of their capture time. Pre-start mechanical
+changes need a reviewed reference update; the existing amendment command requires
+a start record.
+
+The reader compares the complete generating receipt with its own approved
+reference, never a reference supplied by the producer. Snapshot stream/view
+construction rechecks it before merging published rows. Restoring source code
+after publication cannot alter the captured receipt. Legacy manifests without
+producer provenance refuse and must be republished using approved code.
 
 The runner exposes only baseline and pinned distribution files, with no raw-file
 inventory, hash, size or content lookup. Protected rows always come from the
@@ -192,7 +222,9 @@ code. Launch a fresh process after a source amendment: writing a new file does n
 change code or tables that an existing process has already imported. The FW001 freeze policy still governs whether any such source change is
 permitted. No amendment or collector edit was performed during this task.
 
-Final verification: LH003 133 passed; complete collected-suite coverage in serial bounded processes is 5067 passed, 83 failed and 6 skipped. The one-process abort, existing manifest/source-pin failures and sandbox failures are detailed in `validation_report.md`. Round 21 reports are
+Round 24 verification: all six LH003 files passed serially, **148 passed** (including 15 new round 24 cases), with maximum individual RSS **232.273 MiB** and no memory-limit violation. See the round 24 log, JUnit, per-case audit and reconstructible harness linked in `validation_report.md`. The frozen-file audit preserves all 230 monitored hashes, including preregistration and FW001-listed backtesting files. No real model/network calls or Git metadata writes were performed.
+
+Historical round 23 verification: LH003 133 passed; complete collected-suite coverage in serial bounded processes was 5067 passed, 83 failed and 6 skipped. That repository-wide suite was not rerun for round 24. The one-process abort, existing manifest/source-pin failures and sandbox failures are detailed in `validation_report.md`. Round 21 reports are
 historical evidence of the pre-revert implementation and cannot certify round 23.
 Neither synthetic regression tests nor archived environment reports establish
 live authentication, actual-data capacity, deployment readiness or profitability.

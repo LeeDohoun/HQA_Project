@@ -6,14 +6,26 @@ import shutil
 import tempfile
 from pathlib import Path
 
+from backtesting.experiment_registry import PROJECT_ROOT
 from src.ingestion import dart_listing, dart_quarterly
 from src.ingestion.dart_financial_date_rules import FilingDates
 from src.ingestion.dart_filing_dates import known_date
 from src.ingestion.storage import file_lock
 
 from backtesting.experiments.lh003 import EXPERIMENT_ID, Refused
-from backtesting.experiments.lh003.distribution import COVERAGE, DAILY, REFERENCES, SCOPE, protected
+from backtesting.experiments.lh003.distribution import COVERAGE, DAILY, REFERENCES, SCOPE, code_pins, protected
+from backtesting.experiments.lh003.runner import implementation_hashes
 from backtesting.experiments.lh003.storage import aware, digest, file_hash, now, read, safe_path, seal
+
+_LOADED_HASHES = {**implementation_hashes(PROJECT_ROOT),
+                  "scripts/lh003/distribute.py": file_hash(__file__)}
+
+
+def verify_code(state_root, repo_root, *, at):
+    applied = code_pins(state_root, repo_root, at=at)
+    if applied["implementation_hashes"] != _LOADED_HASHES:
+        raise Refused("distribution pinned implementation differs from process-loaded code; launch a fresh process")
+    return applied
 
 
 def archive_rows(path):
@@ -46,9 +58,11 @@ def financial_dates(root, paths):
     return FilingDates(rows, conflicts=conflicts, receipt_filter=receipts)
 
 
-def publish(*, data_dir, directory, sync_manifest, clock=now, synthetic=False):
+def publish(*, data_dir, directory, sync_manifest, clock=now, synthetic=False,
+            state_root=None, repo_root=PROJECT_ROOT):
     """Operational mechanical reads only; never called by the research runner."""
     source, directory = Path(data_dir).resolve(), Path(directory).resolve()
+    state_root = directory.parent if state_root is None else Path(state_root)
     if directory.is_relative_to(source):
         raise Refused("distribution output must be separate from mixed raw archives")
     directory.mkdir(parents=True, exist_ok=True)
@@ -59,6 +73,7 @@ def publish(*, data_dir, directory, sync_manifest, clock=now, synthetic=False):
         number = len(starts)
         started = {"at": at.isoformat(), "sync_manifest_sha256": sync_hash}
         seal(directory / "publications" / f"{number:06d}.started.json", started)
+        applied = verify_code(state_root, repo_root, at=at)
         sync = read(sync_manifest)
         if aware(sync["verified_at"]) > at:
             raise Refused("distribution sync verification is from the future")
@@ -116,7 +131,7 @@ def publish(*, data_dir, directory, sync_manifest, clock=now, synthetic=False):
                     files[path.relative_to(target).as_posix()] = file_hash(path)
             manifest = {"experiment_id": EXPERIMENT_ID, "scope": SCOPE, "synthetic": synthetic,
                         "captured_at": at.isoformat(), "sync_verified_at": aware(sync["verified_at"]).isoformat(),
-                        "sync_manifest_sha256": sync_hash, "files": files}
+                        "sync_manifest_sha256": sync_hash, "files": files, "code_pins": applied}
             checksum = digest(manifest)
             seal(target / "manifest.json", manifest)
             destination = directory / "snapshots" / checksum
@@ -125,7 +140,8 @@ def publish(*, data_dir, directory, sync_manifest, clock=now, synthetic=False):
                 folder.chmod(0o555)
             if destination.exists():
                 from backtesting.experiments.lh003.distribution import Distribution
-                Distribution(destination / "manifest.json", expected_hash=checksum, at=clock(), allow_synthetic=synthetic)
+                Distribution(destination / "manifest.json", expected_hash=checksum, at=clock(), allow_synthetic=synthetic,
+                             state_root=state_root, repo_root=repo_root)
             else:
                 os.rename(target, destination)
                 destination.chmod(0o555)
@@ -134,6 +150,8 @@ def publish(*, data_dir, directory, sync_manifest, clock=now, synthetic=False):
                 os.fsync(descriptor)
             finally:
                 os.close(descriptor)
+        if verify_code(state_root, repo_root, at=clock()) != applied:
+            raise Refused("distribution code/amendments changed during publication")
         receipt = {"started_sha256": digest(started), "manifest_sha256": checksum,
                    "manifest_path": (destination / "manifest.json").relative_to(directory).as_posix(),
                    "publication_finished_at": aware(clock()).isoformat()}
@@ -146,8 +164,10 @@ def main(argv=None):
     parser.add_argument("--data-dir", type=Path, required=True)
     parser.add_argument("--distribution-dir", type=Path, required=True)
     parser.add_argument("--sync-manifest", type=Path, required=True)
+    parser.add_argument("--state-dir", type=Path, required=True)
     args = parser.parse_args(argv)
-    result = publish(data_dir=args.data_dir, directory=args.distribution_dir, sync_manifest=args.sync_manifest)
+    result = publish(data_dir=args.data_dir, directory=args.distribution_dir, sync_manifest=args.sync_manifest,
+                     state_root=args.state_dir)
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 

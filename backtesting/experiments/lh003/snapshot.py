@@ -133,6 +133,7 @@ class Snapshot:
 
         if self.distribution is None:
             raise Refused("a completed non-H1 distribution must be pinned before input reads")
+        self.distribution.verify_code()
         baseline = self.path(relative).read_bytes() if relative in self.manifest["files"] else b""
         rows = [json.loads(line) for line in baseline.splitlines() if line.strip()]
         if relative.startswith("fundamentals/"):
@@ -156,6 +157,7 @@ def input_view(data_dir, snapshot, *, end):
     publication = snapshot.distribution
     if publication is None:
         raise Refused("a completed non-H1 distribution must be pinned before input generation")
+    publication.verify_code()
     with tempfile.TemporaryDirectory(prefix="lh003-input-view-") as directory:
         view = Path(directory)
         names = set(snapshot.manifest["files"]) | set(publication.manifest["files"])

@@ -138,14 +138,14 @@ def capture(root, repo_root):
     return digest(sources)
 
 
-def _chain(root, start, *, at):
-    sources = verified(Path(root) / "code_baseline.json")
+def _chain(root, start, *, at, baseline=None):
+    sources = verified(Path(root) / "code_baseline.json") if baseline is None else dict(baseline)
     if digest(sources) != start["code_baseline_sha256"] or set(sources) != set(MECHANICAL):
         raise Refused("pinned implementation baseline differs from start")
     hashes = dict(start["implementation_hashes"])
     if any(source_hash(sources[n]) != hashes[n] for n in MECHANICAL):
         raise Refused("pinned implementation source differs from baseline hashes")
-    paths = sorted((Path(root) / "amendments").glob("*.json"))
+    paths = sorted((Path(root) / "amendments").glob("*.json")) if root is not None else []
     if [p.stem for p in paths] != [f"{i:06d}" for i in range(len(paths))]:
         raise Refused("amendment journal is not contiguous")
     applied, previous_time = [], aware(start["at"])
@@ -168,9 +168,10 @@ def _chain(root, start, *, at):
     return hashes, applied, sources
 
 
-def verify(root, repo_root, *, at, current, historical=False):
-    start = verified(Path(root) / "start.json")
-    expected, amendments, _ = _chain(root, start, at=at)
+def verify(root, repo_root, *, at, current, historical=False, reference=None):
+    start = verified(Path(root) / "start.json") if reference is None else reference["start"]
+    expected, amendments, _ = _chain(root, start, at=at,
+                                    baseline=None if reference is None else reference["sources"])
     if not historical and (current != expected or any(loaded_hashes()[n] != current[n] for n in MECHANICAL)):
         raise Refused("pinned implementation hashes differ from loaded code or approved amendments")
     return {"implementation_hashes": expected, "amendment_hashes": amendments,
