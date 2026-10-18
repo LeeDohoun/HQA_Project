@@ -592,6 +592,15 @@ Claude Pro 요금제에는 월 API 크레딧이 없어서(Max·Team 전용), API
 - **검증:** 백엔드 테스트 149개(실패 0, 건너뜀 0)와 시뮬레이션 205개 검사를 통과했습니다. 10/17(토) 19:49에 백엔드만 재시작해 반영했습니다. 모델·프롬프트·설정은 그대로입니다.
 - **운영:** 10/14부터 서비스를 Claude 앱의 터미널 탭이 아니라 독립 세션(자동 재시작)으로 돌립니다. 그날은 앱 재시작으로 서비스가 멈춰 관찰일에서 뺐고, 관찰은 11/9에 끝납니다.
 
+### 7.17 계좌별 매매불가 종목 제외 (`2058d4b`, 2026-10-18)
+
+- **배경:** 두 번째 사용자(대회 모의계좌)는 거래할 수 있는 종목이 제한돼 있습니다. 10/16 KIS가 이 계좌의 우리로(046970) 매수 3건을 '매매불가 종목'(40070000)으로 거부했고, 같은 날 PAPER 관찰 계좌는 같은 종목을 정상으로 샀습니다. RiskManager는 이 계좌에 그날 우리로 매수를 다섯 번 냈습니다.
+- **변경:** 백엔드가 계좌 정보에 그 계좌가 최근 '매매불가'로 거부당한 종목(`untradableStockCodes`)을 함께 보냅니다. 분석은 이 종목을 그 계좌의 신규 매수 후보에서 빼고, 다음 순위 종목으로 채웁니다.
+  - 거부한 날과 다음 거래일까지 빼고, 그 뒤에는 다시 후보가 될 수 있습니다.
+  - 보유 종목은 계속 검토합니다.
+  - 이 필드는 RiskManager가 보는 계좌 정보에 들어가지 않습니다. 그래서 거부 기록이 없는 계좌(PAPER 관찰 계좌)는 입력이 전과 같습니다.
+- **검증:** 파이썬 테스트 1,448개, 백엔드 테스트 154개(실패 0, 건너뜀 0), 시뮬레이션 205개 검사를 통과했습니다. 10/18(일) 20:00에 서비스를 다시 켜면서 반영했습니다(macOS 업데이트 재부팅 뒤).
+
 ## 부록: 커밋 목록
 
 | 커밋 | 날짜 | 구분 | 제목 |
@@ -681,3 +690,4 @@ Claude Pro 요금제에는 월 API 크레딧이 없어서(Max·Team 전용), API
 | `999e478` | 2026-10-12 | PAPER | fix(paper): let analysis reads wait out the paced KIS queue and retry transient KIS errors |
 | `cda0e6c` | 2026-10-17 | PAPER | fix(paper): keep sells placed in the closing call auction working until the match |
 | `2671f2a` | 2026-10-17 | PAPER | fix(paper): send PAPER orders only at prices on the KRX price grid |
+| `2058d4b` | 2026-10-18 | PAPER | fix(paper): stop offering an account the stocks KIS refused it as untradable |
