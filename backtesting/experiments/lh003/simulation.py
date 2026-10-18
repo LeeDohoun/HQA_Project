@@ -15,7 +15,7 @@ from src.ingestion.storage import atomic_write, write_rows
 from . import CODEX_VERSION, Refused
 from .calendar import exchange
 from .inputs import prepare, price_path, render
-from .runner import LlmRunner
+from .runner import LlmRunner, code_pins
 from .storage import aware, digest, seal
 
 
@@ -113,8 +113,9 @@ def synthetic_archive(root, *, day="2026-10-16", stocks=60):
 
 def fake_cycle(*, data_dir, snapshot, day, scratch, at, timeout=300):
     """Exercise real input preparation, sealing, prompt validation and all repeats."""
-    prepared = prepare(data_dir, snapshot, day)
     scratch = Path(scratch)
+    applied = code_pins(scratch, LlmRunner(scratch).repo_root, at=at)
+    prepared = {**prepare(data_dir, snapshot, day), "code_pins": applied}
     seal(scratch / "input.json", prepared)
     seal(scratch / "A.json", {"a_codes": prepared["bundle"]["a_codes"], "input_sha256": digest(prepared)})
     payload = render(prepared["bundle"])
@@ -129,3 +130,22 @@ def fake_cycle(*, data_dir, snapshot, day, scratch, at, timeout=300):
     return {"completed": True, "fake_calls": process.execs, "valid": result["valid"],
             "candidates": len(payload["candidate_codes"]), "input_sha256": digest(prepared),
             "deadline": deadline.isoformat(), "source_snapshot_synthetic": snapshot.manifest["synthetic"]}
+
+
+def synthetic_distribution(source, directory, *, at):
+    """In-process publication is restricted to explicitly labelled offline data."""
+    from scripts.lh003.distribute import inventory, publish
+    from .distribution import latest
+    from .storage import file_hash, immutable, verified
+
+    if verified(Path(source) / "SYNTHETIC.json")["synthetic"] is not True:
+        raise Refused("synthetic distribution requires labelled synthetic archives")
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    sync = {"verified_at": aware(at).isoformat(), "files": {
+        p.relative_to(source).as_posix(): file_hash(p) for p in inventory(Path(source))}}
+    sync_path = directory / ("sync-" + digest(sync) + ".json")
+    immutable(sync_path, sync)
+    publish(data_dir=source, directory=directory, sync_manifest=sync_path, clock=lambda: aware(at), synthetic=True)
+    publication, receipt = latest(directory, sync_manifest=sync_path, at=at, allow_synthetic=True)
+    return publication, sync_path

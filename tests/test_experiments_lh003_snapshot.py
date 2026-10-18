@@ -15,7 +15,7 @@ from backtesting.experiments import hc003, ordering
 from backtesting.experiments.lh003 import EXPERIMENT_ID, Refused
 from backtesting.experiments.lh003 import calendar, environment, inputs, workflow
 from backtesting.experiments.lh003.snapshot import Snapshot, input_view, publish_snapshot
-from backtesting.experiments.lh003.simulation import synthetic_archive
+from backtesting.experiments.lh003.simulation import synthetic_archive, synthetic_distribution
 from backtesting.experiments.lh003.storage import aware, digest, file_hash, read, seal, verified
 from src.ingestion.storage import atomic_write
 from test_experiments_lh003_runner import Clock, forbid_real_calls_and_holdout, verified_calendar
@@ -36,7 +36,9 @@ def source(tmp_path, source_fixture):
 def snapshot_for(source, tmp_path):
     path = tmp_path / "synthetic_snapshot"
     manifest = publish_snapshot(source, path, at=aware("2026-11-12T10:00:00+09:00"), synthetic=True)
-    return Snapshot(path, expected_hash=digest(manifest), allow_synthetic=True)
+    snapshot = Snapshot(path, expected_hash=digest(manifest), allow_synthetic=True)
+    snapshot.distribution, _ = synthetic_distribution(source, tmp_path / "distributions", at=aware("2026-11-13T18:00:00+09:00"))
+    return snapshot
 
 
 def test_fixed_52_weeks_calendar_deadline_and_twentieth_session():
@@ -62,13 +64,13 @@ def test_pinned_calendar_refuses_dependency_drift(monkeypatch):
 
 def test_calendar_session_hash_changes_require_an_explicit_operator_note(tmp_path):
     at = aware("2026-11-12T12:00:00+09:00")
-    original = calendar.check(tmp_path, at=at)
+    original = calendar.check(tmp_path, at=at, decision_day="2027-03-05")
     changed = calendar.exchange().sessions.drop(pd.Timestamp("2027-03-05"))
     with pytest.raises(Refused, match="operator note"):
-        calendar.check(tmp_path, at=at, sessions=changed)
-    reviewed = calendar.check(tmp_path, at=at, sessions=changed, operator_note="Fixture official holiday correction")
+        calendar.check(tmp_path, at=at, sessions=changed, decision_day="2027-03-05")
+    reviewed = calendar.check(tmp_path, at=at, sessions=changed, decision_day="2027-03-05", operator_note="Fixture official holiday correction")
     assert reviewed["sessions_sha256"] != original["sessions_sha256"]
-    assert len(reviewed["decisions"]) == 52 and reviewed["decisions"][-1]["decision_date"] == "2027-11-05"
+    assert len(reviewed["slots"]) == 52 and reviewed["decisions"][0]["decision_date"] == "2027-03-04"
     notes = sorted((tmp_path / "calendar").glob("*.json"))
     assert len(notes) == 2 and verified(notes[-1])["operator_note"]
 
@@ -121,48 +123,19 @@ def test_snapshot_hash_and_read_only_mode_are_verified(source, tmp_path):
         Snapshot(snapshot.root, expected_hash=digest(snapshot.manifest), allow_synthetic=True)
 
 
-def test_immutable_versions_survive_full_rewrites_without_original_reads(source, tmp_path, monkeypatch):
-    from src.ingestion.incremental_versions import publish_versions, version_directory
+def test_pinned_full_distribution_survives_raw_rewrites(source, tmp_path, monkeypatch):
     snapshot = snapshot_for(source, tmp_path)
     relative = next(p for p in snapshot.manifest["streams"] if "fundamentals" in p)
-    path = source / relative
-    baseline = [json.loads(line) for line in snapshot.path(relative).read_text().splitlines()]
-    added = {**baseline[0], "rcept_no": "20261116000001", "available_date": "2026-11-16"}
-    publish_versions(path, [added], date_field="available_date")
-    # Includes same-size, growth with reordering, and truncation of the mutable original.
-    for content in (path.read_bytes()[::-1], b"rewritten full archive\n" * 1000, b"\n"):
-        path.write_bytes(content)
-        original = Path.open
-        def guarded(p, *args, **kwargs):
-            if p.resolve() == path.resolve():
-                pytest.fail("mixed protected original opened after seal")
-            return original(p, *args, **kwargs)
-        with monkeypatch.context() as context:
-            context.setattr(Path, "open", guarded)
-            result = [json.loads(line) for line in snapshot.stream(source, relative).splitlines()]
-        assert len(result) == len(baseline) + 1 and added["rcept_no"] in {r["rcept_no"] for r in result}
-    version = next(version_directory(path).glob("*.json"))
-    version.chmod(0o644)
-    with pytest.raises(ValueError, match="hash/mode"):
-        snapshot.stream(source, relative)
-
-
-def test_incremental_protected_versions_are_never_published_and_injection_refuses(source, tmp_path):
-    from src.ingestion.incremental_versions import publish_versions, version_directory
-    snapshot = snapshot_for(source, tmp_path)
-    relative = next(p for p in snapshot.manifest["streams"] if "fundamentals" in p)
-    path = source / relative
-    protected = {"available_date": "2026-06-01"}
-    publish_versions(path, [protected], date_field="available_date")
-    assert not version_directory(path).exists()
-    content = json.dumps(protected).encode() + b"\n"
-    import hashlib
-    target = version_directory(path) / (hashlib.sha256(content).hexdigest() + ".json")
-    target.parent.mkdir()
-    target.write_bytes(content)
-    target.chmod(0o444)
-    with pytest.raises(ValueError, match="protected"):
-        snapshot.stream(source, relative)
+    baseline = snapshot.stream(relative)
+    (source / relative).write_text("rewritten aggregate; never read\n")
+    original = Path.open
+    def guard(path, *a, **k):
+        if path.resolve().is_relative_to(source.resolve()):
+            pytest.fail("raw archive opened by research")
+        return original(path, *a, **k)
+    monkeypatch.setattr(Path, "open", guard)
+    assert snapshot.stream(relative) == baseline
+    assert inputs.prepare(source, snapshot, "2026-11-13")["bundle"]["a_codes"]
 
 
 def test_s_date_uses_later_public_date_and_unlinked_since_2016_is_unusable(source, tmp_path):
@@ -184,6 +157,7 @@ def test_incomplete_disclosure_window_is_unavailable_not_zero(source, tmp_path):
     state = read(state_path)
     state["completed_listing_days"].remove("20261020")
     state_path.write_text(json.dumps(state))
+    snapshot.distribution, _ = synthetic_distribution(source, tmp_path / "updated", at=aware("2026-11-13T18:00:00+09:00"))
     bundle = inputs.prepare(source, snapshot, "2026-11-13")["bundle"]
     assert all(s["disclosures_contract"] is None and not s["listing_coverage"]["complete"] for s in bundle["stocks"])
 
@@ -220,6 +194,7 @@ def lifecycle(tmp_path, source, monkeypatch):
     from backtesting.experiments.lh003 import runner
     monkeypatch.setattr(runner, "implementation_hashes", lambda root: {"fixture": "algorithm"})
     monkeypatch.setattr(runner, "mechanical_data_hashes", lambda root: {"fixture": "data"})
+    monkeypatch.setattr(workflow.pins, "capture", lambda *a: "fixture-code-baseline")
     class FakeSession:
         def __init__(self, experiment_id, *, repo_root):
             self.experiment_id, self.repo_root = experiment_id, Path(repo_root)

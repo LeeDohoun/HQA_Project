@@ -7,11 +7,14 @@ import numpy as np
 import pandas as pd
 
 from backtesting import cost_model
+from backtesting.experiment_registry import PROJECT_ROOT
 from backtesting.experiments.hf001 import price_limit
 
 from . import EVALUATION_AT, Refused
 from .calendar import exchange
 from .inputs import price_path, prices_from_view
+from .runner import verify_pinned
+from .distribution import latest as latest_distribution
 from .storage import aware, digest, file_hash, now, read, seal
 
 PRICE_END = "2027-12-03"
@@ -84,9 +87,14 @@ def quote_cohort(prices, decision, sessions):
             "decision_sha256": digest(decision), "price_end": sessions[-1].date().isoformat(), "quotes": rows}
 
 
-def record_executions(*, data_dir, root, decisions, sync_manifest, clock=now, audit=False):
+def record_executions(*, data_dir, root, decisions, sync_manifest, clock=now, audit=False, repo_root=PROJECT_ROOT,
+                      distribution_dir=None):
     """Save quotes without ever consulting the tax table, including in 2027."""
     root = Path(root)
+    applied = verify_pinned(root, repo_root, at=clock())
+    publication, receipt = latest_distribution(root / "distributions" if distribution_dir is None else distribution_dir,
+                                               sync_manifest=sync_manifest, at=clock())
+    data_dir = publication.root
     manifest = read(sync_manifest)
     if aware(manifest["as_of"]) != aware(EVALUATION_AT):
         raise Refused("execution source manifest must freeze data as stored at 2027-12-17 00:00 KST")
@@ -112,6 +120,7 @@ def record_executions(*, data_dir, root, decisions, sync_manifest, clock=now, au
     results = []
     for decision in decisions:
         raw = {**quote_cohort(prices, decision, sessions), "source_hashes": hashes,
+               "code_pins": applied, "distribution": receipt,
                "data_asof": EVALUATION_AT, "source_manifest_sha256": file_hash(sync_manifest), "audit_only": audit}
         path = root / ("audit_executions" if audit else "executions/raw") / f"{decision['index']:02d}.json"
         if audit:
@@ -136,7 +145,7 @@ def priced_quotes(raw, multiplier, *, cost_fn=None):
         except ValueError as exc:
             if "unknown tax year" in str(exc):
                 raise Refused("LH003 cost evaluation refused: " + str(exc)
-                              + "; add a legally sourced statutory rate to backtesting.statutory_rates before evaluation. "
+                              + "; record a legally sourced statutory rate as a SELL_TAX amendment for the loaded backtesting/cost_model.py before evaluation. "
                                 "Decisions and raw executions remain usable without 2027 costs.") from exc
             raise
         if not np.isfinite([buy, sell]).all() or buy < 0 or not 0 <= sell < 1:

@@ -1,7 +1,9 @@
 # LH003 implementation and operator contract
 
-The preregistration is unchanged (SHA-256 `dc1ee3b669e515dc92b504eaf5d88061281b079f3c7f4fc5d7194dd5c37d190f`). Implementation:
-`backtesting/experiments/lh003/`. Development and tests are offline.
+The preregistration is unchanged (SHA-256 `dc1ee3b669e515dc92b504eaf5d88061281b079f3c7f4fc5d7194dd5c37d190f`). Implementation: `backtesting/experiments/lh003/`; research-machine operations:
+`scripts/lh003/`. Round 23 leaves the FW001 inventory and manifest untouched.
+Development and tests are offline; the three abandoned incremental/data modules
+were deleted at the operator's explicit request.
 
 ## Commands
 
@@ -47,8 +49,9 @@ python -m backtesting.experiments.lh003 --record-executions --data-dir /path/to/
 python -m backtesting.experiments.lh003 --evaluate --state-dir /path/to/lh003
 ```
 
-Default state is `<data-dir>/research/lh003`; `--state-dir` separates writable
-state from a read-only archive. `--snapshot-dir` configures acquisition or
+Default state is `<data-dir>/research/lh003`; production distribution uses an
+explicit `--state-dir` outside the mixed archive and `--distribution-dir` naming
+its publications. The default publication lookup is `<state-dir>/distributions`. `--snapshot-dir` configures acquisition or
 verification. `--call-timeout` defaults to the existing LH runner's 300 s; the
 production timeout must equal the verified start budget. `--operator-note`
 records calendar corrections or machine replacement reasons. No action sources
@@ -77,36 +80,64 @@ allows `lh003` and preserves action flags, defaulting to a dry run.
    failed measurement or a crash without `start.json`, consumes the claim and
    produces `not_started`; no second session is opened.
 
-Weekly reads verify the start hash and snapshot files. Protected daily paths
-always resolve to the snapshot. Mixed financial/index archives are never reopened,
-including for hashes, byte offsets or size checks. Collectors publish content-addressed,
-read-only `.versions/<sha256>.json` records before rewriting quarterly aggregates
-or appending benchmarks. They omit H1 dates. Weekly views merge the sealed baseline
-with these independently verified non-H1 records and deduplicate financial filing
-identities. Full-file reordering, growth, same-size rewrites and truncation of an
-original cannot alter the frozen baseline or lose a published new version. A new
-archive requires its immutable versions; new-version feeds remain discoverable even if a crash prevents creating the mutable
-aggregate. Protected/undated incremental injections,
-changed hashes/modes and conflicting filing values refuse. No H1 backfill/export is
-performed by the runner. Operators must deploy the updated collectors before start.
+After **every data sync and before each weekly decision**, run the distribution
+as its own process on the research machine (never on the collector):
+
+```bash
+python -m scripts.lh003.distribute --data-dir /path/to/archive \
+  --distribution-dir /path/to/lh003/distributions --sync-manifest /path/to/transfer.json
+```
+
+The fixed scope is every daily price/main/supplement listing archive, every
+quarterly financial archive, benchmarks and both company references, regardless
+of research outputs or selected stocks. The transfer manifest must hash this
+entire inventory, including the listing checkpoints used for coverage verification.
+The output contains the entire non-2026H1 portion, not an incremental change feed.
+Protection follows trade dates and the existing S public-date rule, including
+later receipt/list dates and pre-listing L; unlinked/conflicting financial rows
+without a usable date are withheld. Missing or malformed trade dates fail the
+publication; they are never assumed to be non-H1. Raw checkpoints, H1 rows, returns and summary
+counters are never published. Listing coverage alone is exported for non-H1 days
+under the existing coverage rules; H1 coverage stays in the original baseline.
+
+Publication reserves a durable journal entry before reading sources. It checks
+sync hashes, copies/filters all stocks with bounded archive processing, verifies
+source stability, fsyncs read-only files and atomically publishes a snapshot named
+by its completion-manifest hash. A final receipt records publication completion
+time. A missing/failed newest attempt or a receipt for a different sync stops the
+runner; an older snapshot is never silently presented as this sync's update.
+Weekly inputs pin that exact completed manifest before any model call. A raw row
+having existed earlier does not establish that a decision actually captured it.
+Uncaptured intermediate versions cannot be reconstructed as past observations.
+
+The runner exposes only baseline and pinned distribution files, with no raw-file
+inventory, hash, size or content lookup. Protected rows always come from the
+original seal; non-H1 rows come from the full pinned publication. The view includes
+benchmarks as well as financials, prices, listings and references. Raw rewrites,
+truncation or deletion after publication cannot change a pinned decision.
+Resume reuses its input, A, manifest and code/amendment receipt. No collector
+changes, `.versions` producer, FW001 reseal or separate statutory module is needed.
 
 Transfer manifests are JSON with aware `verified_at`, the actual `transfer_route`,
 and `files` mapping archive-relative paths to SHA-256. A decision requires both
 markets' verified rows, its exact file hash and verification after the pinned
 session close. Missing decision-day data refuses; another historical week is
 never substituted. Input-view hashes are checked before/after generation and
-recorded in the seal.
+recorded in the seal. The final execution transfer also requires the exact
+registered `as_of` plus `verified_at` and the full fixed-scope file hashes. Run
+the distribution process after that sync too; execution capture pins its completed
+manifest instead of reopening raw archives.
 
 ## Interpretations fixed in code
 
 | Topic | Implementation |
 | --- | --- |
 | Schedule | Fixed 52 W-FRI slots, 2026-11-13 through 2027-11-05, each week's last XKRX session. Next-session entry; entry-inclusive twentieth-session exit. No extension. |
-| Calendar | Pinned exchange-calendars 4.13.2 through the shared corrected calendar and official special-close guard. All 52 fixed slots and the full execution horizon must be verified before start. Pending 2026-11-19 hours and unverified 2027 coverage fail closed; no week is dropped and no window is extended. Store session/execution hashes; reviewed calendar-data updates require an operator note. Missing calendar state after start refuses. |
+| Calendar | Pinned exchange-calendars 4.13.2 through the shared corrected calendar and official special-close guard. The 52 slot identities remain fixed, while start resolves only the first slot and weekly runs resolve only their own decision/entry/twentieth-session dates. Input and execution price readers verify dates they actually need. Pending special hours stop a run when that close is needed; unverified years stop affected slots; no week is dropped and no window is extended. Store session/execution hashes; reviewed calendar-data updates require an operator note. Missing calendar state after start refuses. |
 | Finalisation | Seal inputs and A first, with an A fallback and publication receipt before calls. A proposal needs its post-publication receipt strictly before next-session 08:59 KST. Late proposals are reconstructed; a timely fallback remains the invalid-week observation. An A first sealed late is reconstructed and never observed. |
 | Resume | Reuse sealed inputs, schema, ID map and attempts. A reservation without a result counts as interrupted. No refill calls, source rereads or duplicate completed publications. |
 | Calls | Three independent ephemeral runs, first plus one fixed re-ask each. All three must validate. Tool/unknown events invalidate an attempt. Durable reservations count before process creation, including timeout/interruptions. Maximum 320 for the ID. |
-| Identity | Pin model argument, CLI version, artifacts and implementation hashes; check before/after calls and persist a stop on drift or unverifiable identity. Later policies use A. All LH001 modules, package initializers, cost/calendar algorithms and direct date, industry, disclosure and ledger dependencies are pinned, including at final evaluation. Only `backtesting/statutory_rates.py` and `src/krx_calendar_data.py` hold permitted mechanical updates; their hashes are recorded separately. Internal weight changes not exposed by the provider cannot be detected from CLI identifiers. |
+| Identity | Pin model argument, CLI version, artifacts and implementation hashes; check before/after calls and persist a stop on drift or unverifiable identity. Later policies use A. All LH001 modules, package initializers, cost/calendar algorithms and direct date, industry, disclosure and ledger dependencies are pinned, including at final evaluation. The actually loaded `backtesting/cost_model.py` and `src/runner/trading_calendar.py` are pinned by hash. A sealed amendment requires a legal/official URL, effective date, change time and before/after source hashes; strict data-node validation and equality of the remaining AST permit only SELL_TAX and calendar notice literals, verified-through/version data and the `_calendar()` min-year boundary. Environment, pre-A generation, model identity, execution and evaluation use the same verifier. Each decision records the applied code and amendment hashes. Internal weight changes not exposed by the provider cannot be detected from CLI identifiers. |
 | Aggregation | LH002 count, mean appearance rank, lexical ID. Aggregate 30 ranks, buy-ten appearances within those ranks, avoid-ten appearances excluding final buys. Disjoint arrays are required per model output. Aggregated rank diagnostics may overlap avoid diagnostics; bought/avoided portfolios are disjoint, as in LH002. |
 | A/candidates | A retains every eligible HC002 phase-2 stock. Display/random pool alone is capped to 300 by close-known ADV, then code. Fewer than 40 means no call and A. |
 | Features | Reuse LH002 pure numerical tables, industry table and anonymisation, including four-quarter ratios, daily-value percentiles, complete return chains and 250-session highs. Require 252 close-known sessions; no future prices enter prompts. |
@@ -142,21 +173,26 @@ the deadline. The runner verifies their outputs; it does not modify collector
 accounts or enable network collection. Operational checks stay pending until
 actually performed.
 
-## Round 21 validation artifacts
+## Mechanical amendments and validation
 
-`validation_report.md` records the focused/full-suite outcomes, memory bounds,
-remaining environment/merge blockers and complete changed-file list.
-`reports/round21_validation.json` records the algorithm/data hashes and measured
-process limits. `reports/round21_test_harness/` preserves the offline guard and
-sandbox/temporary-fixture compatibility settings. These checks use stand-ins;
-they do not establish live CLI authentication, actual-input capacity or returns.
-The older 2026-10-17 environment reports remain historical and cannot satisfy the
-new real-format, implementation-identity and process-tree start gates.
+`code_baseline.json` seals the two original source texts, tied to `start.json`.
+`amendments/NNNNNN.json` forms a contiguous before/after hash chain. The model's
+identity retains the baseline, while each call/decision records the applied chain.
+An update cannot bypass the code check by changing a clean Git commit or by
+reverting code after generating A. Final evaluation checks decision receipts
+against the amendment history as of input sealing. A missing baseline or journal
+is a refusal, not a migration with assumed defaults.
 
-Frozen-code verification: 108/108 LH003 tests passed; the related-area run passed
-514 tests. The full suite finished with 5084 passed, 41 failed and 6 skipped.
-The remaining CH004 source-pin, time-dependent ingestion, sandbox socket and
-shadow-memory failures are detailed in `validation_report.md`; their existing
-guards were preserved. All runs were serial and used `-p no:cacheprovider` with
-the archived offline/sandbox fixture harness. Maximum individual RSS in the full
-suite was 1374.703 MiB; no process crossed the supervisor limit.
+When an authorized future statutory/calendar change has been made separately,
+record it with `python -m scripts.lh003.amend --state-dir /path/to/lh003
+--path backtesting/cost_model.py --legal-source <official-url>
+--effective-date YYYY-MM-DD --changed-at <aware-ISO-time>` (one shell command).
+This command only records/validates the amendment; it never modifies collector
+code. Launch a fresh process after a source amendment: writing a new file does not
+change code or tables that an existing process has already imported. The FW001 freeze policy still governs whether any such source change is
+permitted. No amendment or collector edit was performed during this task.
+
+Final verification: LH003 133 passed; complete collected-suite coverage in serial bounded processes is 5067 passed, 83 failed and 6 skipped. The one-process abort, existing manifest/source-pin failures and sandbox failures are detailed in `validation_report.md`. Round 21 reports are
+historical evidence of the pre-revert implementation and cannot certify round 23.
+Neither synthetic regression tests nor archived environment reports establish
+live authentication, actual-data capacity, deployment readiness or profitability.

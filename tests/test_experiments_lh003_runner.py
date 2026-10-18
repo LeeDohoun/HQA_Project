@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from functools import lru_cache
 import shutil
 import subprocess
 from pathlib import Path
@@ -27,6 +28,13 @@ def verified_calendar(monkeypatch):
     monkeypatch.setattr(shared, "CALENDAR_VERIFIED_THROUGH", "2027-12-31")
     monkeypatch.setattr(shared, "SPECIAL_CLOSES", {**shared.SPECIAL_CLOSES, "2026-11-19": {
         "close": "2026-11-19T16:30:00+09:00", "source_urls": {"fixture": "synthetic-only"}}})
+    @lru_cache(maxsize=8)
+    def fixture_calendar(year):
+        shared.require_verified_calendar(f"{year}-01-01")
+        return shared._ProjectXKRX(start=f"{max(1956, year - 2)}-01-01",
+            end=f"{min(pd.Timestamp(shared.CALENDAR_VERIFIED_THROUGH).year, year + 1)}-12-31")
+    import pandas as pd
+    monkeypatch.setattr(shared, "_calendar", fixture_calendar)
     for cached in (shared._calendar, shared.daily_session_close, shared.session_calendar):
         cached.cache_clear()
     yield
@@ -292,8 +300,9 @@ def test_frequency_mean_rank_and_ID_tie_break_are_the_LH002_rule():
 def weekly(tmp_path, bundle, monkeypatch):
     root, source, clock = tmp_path / "state", tmp_path / "source", Clock()
     calendar.check(root, at=clock())
-    seal(root / "start.json", {"synthetic": True, "snapshot_path": str(tmp_path / "snapshot"),
-                               "snapshot_sha256": "fake", "machine_id": workflow.machine_id()})
+    from test_experiments_lh003_evaluate import pinned_start
+    pinned_start(root, tmp_path, synthetic=True, snapshot_path=str(tmp_path / "snapshot"),
+                 snapshot_sha256="fake", machine_id=workflow.machine_id())
     monkeypatch.setattr(workflow, "Snapshot", lambda *a, **k: SimpleNamespace(manifest={"synthetic": True}))
     path = inputs.price_path(source, "2026-11-13")
     path.parent.mkdir(parents=True)
@@ -302,6 +311,8 @@ def weekly(tmp_path, bundle, monkeypatch):
     manifest = source / "sync.json"
     manifest.write_text(json.dumps({"verified_at": clock().isoformat(), "files": {
         path.relative_to(source).as_posix(): file_hash(path)}}))
+    monkeypatch.setattr(workflow, "latest_distribution", lambda *a, **k: (
+        SimpleNamespace(root=source), {"manifest_sha256": "fixture-publication"}))
     def loader(*args):
         return {"bundle": bundle, "source_hashes": {"fake": "fixtures"}, "snapshot_sha256": "fake"}
     return {"data_dir": source, "root": root, "decision_day": "2026-11-13", "sync_manifest": manifest,
@@ -347,6 +358,7 @@ def test_late_model_result_uses_timely_A_and_fresh_late_input_is_reconstructed(w
     assert not result["valid"] and result["observation"] and result["policy_codes"] == result["a_codes"]
     weekly["root"] = root.parent / "late_state"
     shutil.copytree(root / "calendar", weekly["root"] / "calendar")
+    shutil.copyfile(root / "code_baseline.json", weekly["root"] / "code_baseline.json")
     seal(weekly["root"] / "start.json", verified(root / "start.json"))
     process = Process()
     result = workflow.run_week(**weekly, runner=instance(weekly["root"], process, clock))

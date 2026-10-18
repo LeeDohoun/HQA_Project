@@ -9,12 +9,11 @@ from backtesting.experiment_registry import PROJECT_ROOT
 from backtesting.experiments import ordering
 
 from . import EXPERIMENT_DIR
-from .calendar import plan
 from .environment import verify_environment
 from .evaluate import evaluate_saved
 from .executions import record_executions
 from .runner import LlmRunner
-from .storage import aware, now
+from .storage import now
 from .workflow import load_week, run_week, seal_holdout
 
 
@@ -29,6 +28,7 @@ def main(argv=None):
     parser.add_argument("--environment-report", type=Path)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--sync-manifest", type=Path)
+    parser.add_argument("--distribution-dir", type=Path, help="research-machine completed non-H1 publications")
     parser.add_argument("--restart-evidence", type=Path)
     parser.add_argument("--decision-day", help="YYYY-MM-DD; default latest fixed scheduled decision")
     parser.add_argument("--call-timeout", type=float, default=300)
@@ -52,15 +52,13 @@ def main(argv=None):
             if args.environment_report is None:
                 parser.error("--seal-holdout requires --environment-report")
             result = seal_holdout(data_dir=args.data_dir, root=root, snapshot_path=args.snapshot_dir,
-                                  environment_report=args.environment_report)
+                                  environment_report=args.environment_report, distribution_dir=args.distribution_dir)
         elif args.run_week:
-            available = [r for r in plan() if aware(r["deadline"]).date() <= now().date()
-                         or r["decision_date"] <= now().date().isoformat()]
-            if args.decision_day is None and not available:
-                raise ValueError("the fixed LH003 decision schedule has not started")
-            day = args.decision_day or available[-1]["decision_date"]
+            from .calendar import latest_completed_week
+            day = args.decision_day or latest_completed_week(now())
             result = run_week(data_dir=args.data_dir, root=root, decision_day=day, sync_manifest=args.sync_manifest,
-                              runner=LlmRunner(root, timeout=args.call_timeout), operator_note=args.operator_note)
+                              runner=LlmRunner(root, timeout=args.call_timeout), operator_note=args.operator_note,
+                              distribution_dir=args.distribution_dir)
         elif args.record_executions:
             if args.sync_manifest is None:
                 parser.error("--record-executions requires --sync-manifest with the evaluation as_of and file hashes")
@@ -69,7 +67,8 @@ def main(argv=None):
                 if args.decision_day:
                     decisions = [d for d in decisions if d and d["decision_date"] == args.decision_day]
                 records = record_executions(data_dir=args.data_dir, root=root, decisions=decisions,
-                                            sync_manifest=args.sync_manifest, audit=args.audit_price_corrections)
+                                            sync_manifest=args.sync_manifest, audit=args.audit_price_corrections,
+                                            distribution_dir=args.distribution_dir)
                 result = {"raw_execution_cohorts": len(records), "costs_evaluated": False,
                           "audit_only": args.audit_price_corrections}
         elif args.evaluate:
@@ -81,7 +80,8 @@ def main(argv=None):
             result = verify_environment(data_dir=args.data_dir, report_path=report, snapshot_path=args.snapshot_dir,
                                         synthetic=args.synthetic, sync_manifest=args.sync_manifest,
                                         restart_evidence=args.restart_evidence, timeout=args.call_timeout,
-                                        real_format_trial=args.real_format_trial, state_root=root)
+                                        real_format_trial=args.real_format_trial, state_root=root,
+                                        distribution_dir=args.distribution_dir)
             if report:
                 result = {**result, "report_file": str(report)}
         print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))

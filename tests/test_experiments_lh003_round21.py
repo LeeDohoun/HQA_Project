@@ -13,10 +13,9 @@ from backtesting.experiments import hc003, ordering
 from backtesting.experiments.lh003 import EVALUATION_AT, EXPERIMENT_ID, Refused
 from backtesting.experiments.lh003 import calendar, environment, evaluate, inputs, runner, workflow
 from backtesting.experiments.lh003.resources import ProcessTreeMemory
-from backtesting.experiments.lh003.simulation import FakeCodex
+from backtesting.experiments.lh003.simulation import FakeCodex, synthetic_distribution
 from backtesting.experiments.lh003.storage import attempts, aware, digest, seal, verified
 from src.ingestion import dart_quarterly
-from src.ingestion.incremental_versions import read_versions
 from src.ingestion.storage import read_rows, write_rows
 from src.runner import trading_calendar as shared_calendar
 from test_experiments_lh003_evaluate import experiment, fake_cost, pinned_start
@@ -32,17 +31,12 @@ def test_corrected_shared_calendar_excludes_election_and_constitution_holidays()
     assert pd.Timestamp("2026-07-17") not in sessions
 
 
-@pytest.mark.parametrize("missing", ["2027", "special"])
-def test_unverified_horizon_stops_before_claim_without_changing_fixed_weeks(lifecycle, monkeypatch, missing):
+def test_start_needs_only_first_slot_calendar_not_future_2027(lifecycle, monkeypatch):
     arguments, calls = lifecycle
-    if missing == "2027":
-        monkeypatch.setattr(shared_calendar, "CALENDAR_VERIFIED_THROUGH", "2026-12-31")
-    else:
-        monkeypatch.setattr(shared_calendar, "SPECIAL_CLOSES", {})
-    with pytest.raises(ValueError, match="calendar_.*unverified"):
-        workflow.seal_holdout(**arguments)
-    assert not calls and not (arguments["repo_root"] / holdout.LEDGER_PATH).exists()
-    assert len(calendar.WEEKS) == 52 and calendar.WEEKS[-1].end_time.date().isoformat() == "2027-11-05"
+    monkeypatch.setattr(shared_calendar, "CALENDAR_VERIFIED_THROUGH", "2026-12-31")
+    monkeypatch.setattr(shared_calendar, "SPECIAL_CLOSES", {})
+    assert workflow.seal_holdout(**arguments)["snapshot_sha256"]
+    assert calls == ["fake claim"] and len(calendar.WEEKS) == 52
 
 
 def test_special_close_used_and_unverified_price_day_refuses(monkeypatch):
@@ -112,16 +106,16 @@ def test_lh003_av002_release_runs_inside_shared_lock_before_claim(lifecycle, mon
     assert checked == ["AV002"] and not calls
 
 
-def test_quarterly_publisher_provides_new_versions_before_rewrite_without_h1_reread(source, tmp_path, monkeypatch):
+def test_full_distribution_provides_new_versions_after_sync_without_research_h1_reread(source, tmp_path, monkeypatch):
     snapshot = snapshot_for(source, tmp_path)
     archive = source / "fundamentals/dart_quarterly/2026_11012.jsonl"
     original = read_rows(archive)[0]
     added = {**original, "rcept_no": "20261112000001", "available_date": "2026-11-12"}
     dart_quarterly._publish(archive.parent, 2026, "11012", [added])
-    assert any(r["rcept_no"] == added["rcept_no"] for r in read_versions(archive, date_field="available_date"))
     listing = source / "disclosures/dart_full/list/2026/20261112.jsonl"
     write_rows(listing, [{"corp_code": added["corp_code"], "stock_code": added["stock_codes"][0],
                          "rcept_no": added["rcept_no"], "rcept_dt": "20261112", "report_nm": "정정 반기보고서 (2026.06)"}])
+    snapshot.distribution, _ = synthetic_distribution(source, tmp_path / "updated", at=aware("2026-11-13T18:00:00+09:00"))
     forbidden = {(source / name).resolve() for name in snapshot.manifest["files"]}
     opened = Path.open
     def guard(path, *args, **kwargs):
@@ -134,15 +128,19 @@ def test_quarterly_publisher_provides_new_versions_before_rewrite_without_h1_rer
                for r in prepared["financial_dates"]["annotations"])
 
 
-def test_new_immutable_archive_does_not_require_mutable_aggregate_after_publish_crash(source, tmp_path):
+def test_new_captured_archive_does_not_require_raw_aggregate_after_publication(source, tmp_path):
     from backtesting.experiments.lh003.snapshot import input_view
-    from src.ingestion.incremental_versions import publish_versions
     snapshot = snapshot_for(source, tmp_path)
     path = source / "fundamentals/dart_quarterly/2026_11014.jsonl"
     assert not path.exists()
     row = {**read_rows(source / "fundamentals/dart_quarterly/2026_11012.jsonl")[0],
            "reprt_code": "11014", "fiscal_quarter": "2026Q3", "available_date": "2026-11-12", "rcept_no": "20261112000001"}
-    publish_versions(path, [row], date_field="available_date")
+    write_rows(path, [row])
+    write_rows(source / "disclosures/dart_full/list/2026/20261112.jsonl", [{"corp_code": row["corp_code"],
+        "stock_code": row["stock_codes"][0], "rcept_no": row["rcept_no"], "rcept_dt": "20261112",
+        "report_nm": "분기보고서 (2026.09)"}])
+    snapshot.distribution, _ = synthetic_distribution(source, tmp_path / "updated", at=aware("2026-11-13T18:00:00+09:00"))
+    path.unlink()
     with input_view(source, snapshot, end="20261113") as view:
         assert read_rows(view / path.relative_to(source)) == [row]
 
@@ -157,10 +155,11 @@ def test_rule_S_excludes_merged_conflicts_and_retains_prior_date_scope(source, t
     write_rows(source / "disclosures/dart_full/list/2026/20261113.jsonl", [same_day])
     write_rows(source / "disclosures/dart_full/list_supplement/2026/20261113.jsonl",
                [{**same_day, "corp_code": "99999999"}])
+    snapshot.distribution, _ = synthetic_distribution(source, tmp_path / "updated", at=aware("2026-11-13T18:00:00+09:00"))
     with input_view(source, snapshot, end="20261113") as view:
         known, dates = inputs.financials(view, "2026-11-13")
     assert original["rcept_no"] not in set(known.rcept_no)
-    assert any(r["rcept_no"] == original["rcept_no"] and r["date_reason"] == "conflicting_link" for r in dates["annotations"])
+    assert not any(r["rcept_no"] == original["rcept_no"] for r in dates["annotations"])
     assert not any(r["rcept_no"] == same_day["rcept_no"] for r in dates["annotations"])
 
 
@@ -292,16 +291,6 @@ def test_evaluation_verifies_all_pinned_algorithms_before_computing(tmp_path, mo
     assert hc003.registry_rows(tmp_path) == []
 
 
-@pytest.mark.parametrize("name", ["backtesting/statutory_rates.py", "src/krx_calendar_data.py"])
-def test_mechanical_notice_and_rate_data_separate_from_pinned_algorithms(tmp_path, name):
-    root = tmp_path / "state"
-    pinned_start(root, tmp_path)
-    before = runner.mechanical_data_hashes(tmp_path)
-    path = tmp_path / name
-    path.write_text(path.read_text() + "\n# synthetic mechanical update\n")
-    assert runner.verify_pinned(root, tmp_path) and runner.mechanical_data_hashes(tmp_path) != before
-
-
 def test_not_started_recovers_seal_to_registry_crash_under_existing_hash(lifecycle, monkeypatch):
     arguments, calls = lifecycle
     original = experiment_registry.record_trial
@@ -331,6 +320,10 @@ def test_500_stocks_22_invalid_weeks_stream_all_scenarios_with_bounded_memory(tm
             decision.update(valid=False, policy_codes=codes, avoid=[], reasons=["synthetic invalid"])
         record["decision_sha256"] = digest(decision)
     root = evaluation_setup(tmp_path, monkeypatch)
+    applied = runner.verify_pinned(root, tmp_path)
+    for decision in decisions:
+        decision.update(code_pins=applied, sealed_at=decision["decision_date"] + "T18:00:00+09:00")
+        raw[decision["index"]]["decision_sha256"] = digest(decision)
     for index, record in raw.items():
         seal(root / "executions/raw" / f"{index:02d}.json", record)
     monkeypatch.setattr(evaluate, "load_week", lambda root, index: decisions[index])

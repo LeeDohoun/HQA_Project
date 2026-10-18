@@ -20,6 +20,7 @@ from .executions import MULTIPLIERS, portfolio, priced_quotes
 from .storage import attempts, aware, digest, file_hash, now, seal, verified
 from .workflow import load_week
 from .runner import mechanical_data_hashes, verify_pinned
+from .pins import verify as verify_code_history
 
 
 def statistics(values, positions=None):
@@ -240,6 +241,7 @@ def evaluate_saved(*, root, repo_root=PROJECT_ROOT, clock=now):
             if not result_path.exists():
                 raise Refused("evaluation already completed in canonical registry; restore only sealed result hash "
                               + completed["result_sha256"])
+            verify_pinned(root, repo_root, at=clock())
             result = verified(result_path)
             if digest(result) != completed["result_sha256"]:
                 raise Refused("existing evaluation differs from canonical completed result hash")
@@ -248,10 +250,16 @@ def evaluate_saved(*, root, repo_root=PROJECT_ROOT, clock=now):
         if start["synthetic"] or (root / "not_started.json").exists():
             raise Refused("synthetic/not_started run cannot be evaluated as LH003")
         if result_path.exists():
+            verify_pinned(root, repo_root, at=clock())
             _publish_evaluation(root=root, repo_root=repo_root)
             return verified(result_path)
-        pins = verify_pinned(root, repo_root)
+        pins = verify_pinned(root, repo_root, at=clock())
         decisions = [load_week(root, i) for i in range(52)]
+        for decision in decisions:
+            if decision is not None:
+                if (not decision.get("sealed_at") or decision.get("code_pins") != verify_code_history(
+                        root, repo_root, at=decision["sealed_at"], current={}, historical=True)):
+                    raise Refused("decision code/amendment receipt differs from its sealed-time history")
         if any(d and d.get("synthetic") for d in decisions):
             raise Refused("synthetic decision cannot enter the official evaluation")
         raw = {i: verified(path) for i in range(52) if (path := root / "executions/raw" / f"{i:02d}.json").exists()}
@@ -278,7 +286,8 @@ def evaluate_saved(*, root, repo_root=PROJECT_ROOT, clock=now):
                           trial_count=trials, call_audit=audit, reasks=audit["reasks"],
                           decisions_sha256=digest(decisions), raw_executions_sha256=raw_hash, calls_used=audit["used"],
                           cost_model_source_sha256=cost_hash, execution_record_hashes=execution_hashes,
-                          implementation_hashes=pins, mechanical_data_hashes=mechanical_data_hashes(repo_root))
+                          implementation_hashes=pins["implementation_hashes"], code_pins=pins,
+                          mechanical_data_hashes=mechanical_data_hashes(repo_root))
             if execution_scenarios:
                 seal(root / "executions/random_draws.json", execution_scenarios["random_draws"])
             metrics = compact(result, path=result_path, trials=trials)

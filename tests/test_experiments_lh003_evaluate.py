@@ -18,14 +18,17 @@ from backtesting.experiments.lh003.storage import digest, file_hash, seal, verif
 from test_experiments_lh003_runner import Clock, forbid_real_calls_and_holdout, verified_calendar
 
 
-def pinned_start(root, repo):
+def pinned_start(root, repo, **extra):
     from backtesting.experiments.lh003.runner import implementation_files, implementation_hashes, mechanical_data_hashes
     for path in [*implementation_files(experiment_registry.PROJECT_ROOT),
                  *(experiment_registry.PROJECT_ROOT / p for p in mechanical_data_hashes(experiment_registry.PROJECT_ROOT))]:
         target = repo / path.relative_to(experiment_registry.PROJECT_ROOT)
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(path, target)
-    seal(root / "start.json", {"synthetic": False, "implementation_hashes": implementation_hashes(repo)})
+    from backtesting.experiments.lh003.pins import capture
+    baseline = capture(root, repo)
+    seal(root / "start.json", {"synthetic": False, "at": "2026-11-12T10:00:00+09:00",
+        "code_baseline_sha256": baseline, "implementation_hashes": implementation_hashes(repo), **extra})
 
 
 def fake_cost(price, market, day, adv, side, *, multiplier, model_version):
@@ -283,9 +286,11 @@ def test_record_execution_seals_without_calling_costs_in_2027(tmp_path, cohort, 
     manifest = tmp_path / "manifest.json"
     manifest.write_text(json.dumps({"as_of": EVALUATION_AT, "files": hashes}))
     monkeypatch.setattr(executions, "prices_from_view", lambda *a: prices)
+    monkeypatch.setattr(executions, "latest_distribution", lambda *a, **k: (SimpleNamespace(root=source), {"manifest_sha256": "fixture"}))
     monkeypatch.setattr(cost_model, "one_way_cost", lambda *a, **k: pytest.fail("cost evaluated while recording"))
+    pinned_start(tmp_path / "state", tmp_path)
     records = executions.record_executions(data_dir=source, root=tmp_path / "state", decisions=[decision],
-                                           sync_manifest=manifest, clock=Clock(EVALUATION_AT))
+                                           sync_manifest=manifest, clock=Clock(EVALUATION_AT), repo_root=tmp_path)
     assert len(records) == 1 and verified(tmp_path / "state/executions/raw/10.json")["data_asof"] == EVALUATION_AT
     assert records[0]["quotes"]["000010"]["entry_date"].startswith("2027")
 
@@ -325,6 +330,11 @@ def test_2027_cost_preflight_does_not_consume_the_final_evaluation_trial(tmp_pat
     root = tmp_path / "state"
     pinned_start(root, tmp_path)
     decisions, records = experiment()
+    from backtesting.experiments.lh003.runner import verify_pinned
+    applied = verify_pinned(root, tmp_path)
+    for index, decision in enumerate(decisions):
+        decision.update(code_pins=applied, sealed_at=decision["decision_date"] + "T18:00:00+09:00")
+        records[index]["decision_sha256"] = digest(decision)
     for index, record in records.items():
         seal(root / "executions/raw" / f"{index:02d}.json", record)
     monkeypatch.setattr(evaluate, "load_week", lambda root, index: decisions[index])

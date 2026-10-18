@@ -17,6 +17,7 @@ from src.runner.event_evidence import _category
 
 from . import PROMPT_DIR, Refused
 from .calendar import exchange, session_close
+from .distribution import COVERAGE
 from .snapshot import input_view
 from .storage import aware, digest, file_hash, read
 
@@ -112,7 +113,7 @@ def disclosures(view, sessions, codes, status):
     if len(prior) != 60:
         raise Refused("60 completed sessions are required for the disclosure window")
     required = pd.date_range(prior[0], prior[-1])
-    covered = set(dart_listing.covered_listing_days(view, required, status=status))
+    covered = {d for d in status["covered_listing_days"] if pd.Timestamp(d) in required}
     complete = len(covered) == len(required)
     counts = {code: dict.fromkeys(shared.CATEGORIES, 0) if complete else None for code in codes}
     if complete:
@@ -145,7 +146,7 @@ def prepare(data_dir, snapshot, day):
         known, date_report = financials(view, day)
         profiles = hc001._industries(view)
         universe, coverage = shared.close_universe(history, day, known, profiles)
-        status = dart_listing.listing_status(view, price_end=day)
+        status = read(view / COVERAGE)
         counts = disclosures(view, sessions[:pos], set(universe.index), status)
         latest = {}
         for row in read_rows(view / "market_context/benchmarks.jsonl"):
@@ -163,7 +164,8 @@ def prepare(data_dir, snapshot, day):
         if before != hashes():
             raise Refused("input source changed during preparation")
         return {"bundle": bundle, "source_hashes": before, "financial_dates": date_report,
-                "snapshot_sha256": digest(snapshot.manifest)}
+                "snapshot_sha256": digest(snapshot.manifest),
+                "distribution_sha256": digest(snapshot.distribution.manifest)}
 
 
 def prompt_hashes(directory=PROMPT_DIR):

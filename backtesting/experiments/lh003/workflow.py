@@ -12,6 +12,9 @@ from backtesting.experiments import hc003, ordering
 
 from . import EXPERIMENT_ID, Refused
 from . import calendar, inputs
+from .distribution import latest as latest_distribution
+from .runner import code_pins
+from . import pins
 from .snapshot import Snapshot, publish_snapshot
 from .storage import aware, digest, now, seal, verified
 
@@ -79,7 +82,7 @@ def validate_environment(path, *, at, identity, require_cycle=True):
 
 
 def seal_holdout(*, data_dir, root, environment_report, snapshot_path=None, repo_root=PROJECT_ROOT,
-                 clock=now, session_factory=None, acquire=None, verify_cycle=None):
+                 clock=now, session_factory=None, acquire=None, verify_cycle=None, distribution_dir=None):
     """An explicit CLI operation. Tests inject both the session and acquisition."""
     root, repo_root = Path(root), Path(repo_root)
     snapshot_path = Path(snapshot_path) if snapshot_path is not None else root / "holdout_snapshot"
@@ -99,7 +102,7 @@ def seal_holdout(*, data_dir, root, environment_report, snapshot_path=None, repo
         try:
             if at >= first_close:
                 raise Refused("fixed start was missed; new dates require a new experiment ID")
-            calendar.description()
+            calendar.description(decision_day="2026-11-13")
             releases = ordering.lh003_releases(hc003.registry_rows(repo_root), repo_root)
             report = validate_environment(environment_report, at=at, identity=machine_id(), require_cycle=False)
             if verify_cycle is None and (not report.get("sync_manifest_path") or not report.get("restart_evidence_path")):
@@ -122,6 +125,7 @@ def seal_holdout(*, data_dir, root, environment_report, snapshot_path=None, repo
             if len(window) != 252:
                 raise Refused("environment cycle requires 252 price sessions before claim")
             preflight_price_sessions(data_dir, window[0], window[-1])
+            code_baseline = pins.capture(root, repo_root)
         except (ValueError, OSError) as exc:
             if at >= first_close:
                 not_started(root, str(exc), repo_root=repo_root, at=at)
@@ -150,7 +154,8 @@ def seal_holdout(*, data_dir, root, environment_report, snapshot_path=None, repo
                 report_path = root / "environment_at_start.json"
                 final_report = verify_cycle(data_dir=data_dir, snapshot_path=snapshot_path,
                     sync_manifest=report.get("sync_manifest_path"), restart_evidence=report.get("restart_evidence_path"),
-                    timeout=report["timing"]["call_timeout_seconds"], clock=clock, state_root=root)
+                    timeout=report["timing"]["call_timeout_seconds"], clock=clock, state_root=root,
+                    distribution_dir=distribution_dir)
                 seal(report_path, final_report)
                 report = validate_environment(report_path, at=clock(), identity=machine_id())
             frozen_calendar = calendar.check(root, at=at)
@@ -159,6 +164,7 @@ def seal_holdout(*, data_dir, root, environment_report, snapshot_path=None, repo
             value = {"experiment_id": EXPERIMENT_ID, "at": at.isoformat(), "machine_id": machine_id(),
                      "snapshot_path": str(snapshot_path.resolve()), "snapshot_sha256": digest(manifest),
                      "calendar_sha256": digest(frozen_calendar), "environment_sha256": digest(report),
+                     "code_baseline_sha256": code_baseline,
                      "call_timeout_seconds": report["timing"]["call_timeout_seconds"],
                      "research_ordering": releases, "prereg_commit": registration.commit_hash, "synthetic": False}
             from .runner import implementation_hashes, mechanical_data_hashes
@@ -188,7 +194,12 @@ def check_machine(root, start, *, at, operator_note):
     if current != previous:
         if not operator_note or not operator_note.strip():
             raise Refused("execution machine changed; explicit operator reason required")
-        remaining = sum(aware(row["deadline"]) > aware(at) for row in calendar.plan())
+        current_week = pd.Timestamp(aware(at)).tz_localize(None).to_period("W-FRI")
+        remaining = sum(week >= current_week for week in calendar.WEEKS)
+        prior = [week for week in calendar.WEEKS if week < current_week]
+        if prior:
+            last = calendar.plan(decision_day=prior[-1].end_time.date().isoformat())[0]
+            remaining += aware(last["deadline"]) > aware(at)
         seal(Path(root) / "machine_changes" / f"{len(changes):03d}.json", {
             "at": aware(at).isoformat(), "previous_machine_id": previous, "machine_id": current,
             "reason": operator_note, "subsequent_decisions": remaining})
@@ -202,6 +213,8 @@ def load_week(root, index):
     prepared, fallback = verified(input_path), verified(fallback_path)
     if fallback["input_sha256"] != digest(prepared):
         raise Refused("fallback differs from sealed A/common inputs")
+    if fallback["code_pins"] != prepared["code_pins"] or fallback["distribution"] != prepared["distribution"]:
+        raise Refused("decision code/amendments or distribution differs from sealed inputs")
     start = verified(Path(root) / "start.json")
     if prepared["snapshot_sha256"] != start["snapshot_sha256"]:
         raise Refused("decision input differs from the single start snapshot")
@@ -226,7 +239,7 @@ def load_week(root, index):
 
 
 def run_week(*, data_dir, root, decision_day, sync_manifest, runner, repo_root=PROJECT_ROOT,
-             clock=now, operator_note=None, simulation=False, prepared_loader=None):
+             clock=now, operator_note=None, simulation=False, prepared_loader=None, distribution_dir=None):
     root = Path(root)
     if simulation and "data" in root.resolve().parts:
         raise Refused("simulations must never write under data/")
@@ -247,8 +260,10 @@ def run_week(*, data_dir, root, decision_day, sync_manifest, runner, repo_root=P
             raise Refused("call timeout differs from the verified worst-case deadline budget")
         if not simulation and experiment_registry.verify_preregistration(EXPERIMENT_ID, repo_root).commit_hash != start["prereg_commit"]:
             raise Refused("preregistration differs from the immutable start record")
+        # This gate must precede A input generation and every reusable artifact.
+        applied = code_pins(root, repo_root, at=clock())
         check_machine(root, start, at=clock(), operator_note=operator_note)
-        current = calendar.check(root, at=clock(), operator_note=operator_note)
+        current = calendar.check(root, at=clock(), operator_note=operator_note, decision_day=decision_day)
         matches = [row for row in current["decisions"] if row["decision_date"] == decision_day]
         if len(matches) != 1:
             raise Refused("decision day is outside the 52 fixed XKRX weeks")
@@ -261,14 +276,22 @@ def run_week(*, data_dir, root, decision_day, sync_manifest, runner, repo_root=P
             prepared = verified(input_path)
             if prepared["schedule"] != schedule:
                 raise Refused("calendar update conflicts with an already sealed decision; preserve it for audit")
+            if prepared["code_pins"] != applied:
+                raise Refused("applied code/amendments differ from the sealed A input")
         else:
-            trigger = inputs.verify_day(data_dir, decision_day, at=clock(), sync_manifest=sync_manifest)
-            snapshot = Snapshot(start["snapshot_path"], expected_hash=start["snapshot_sha256"], allow_synthetic=simulation)
+            publication, receipt = latest_distribution(
+                root / "distributions" if distribution_dir is None else distribution_dir,
+                sync_manifest=sync_manifest, at=clock(), allow_synthetic=simulation)
+            trigger = inputs.verify_day(publication.root, decision_day, at=clock(), sync_manifest=sync_manifest)
+            snapshot = Snapshot(start["snapshot_path"], expected_hash=start["snapshot_sha256"], allow_synthetic=simulation,
+                                distribution=publication)
             loader = inputs.prepare if prepared_loader is None else prepared_loader
             try:
                 prepared = {**loader(data_dir, snapshot, decision_day), "schedule": schedule,
                             "trigger": trigger, "synthetic": simulation, "sealed_at": aware(clock()).isoformat(),
-                            "calendar_sha256": digest(current)}
+                            "calendar_sha256": digest(current), "code_pins": applied, "distribution": receipt}
+                if code_pins(root, repo_root, at=clock()) != applied:
+                    raise Refused("code/amendments changed during A input generation")
                 seal(input_path, prepared)
             except (ValueError, OSError) as exc:
                 failure = {"at": aware(clock()).isoformat(), "reason": str(exc), "a_reproducible": False}
@@ -278,6 +301,7 @@ def run_week(*, data_dir, root, decision_day, sync_manifest, runner, repo_root=P
         fallback_path = directory / "fallback.json"
         if not fallback_path.exists():
             fallback = {**schedule, "input_sha256": digest(prepared), "a_codes": bundle["a_codes"],
+                        "code_pins": applied, "distribution": prepared["distribution"], "sealed_at": prepared["sealed_at"],
                         "candidate_codes": [s["stock_code"] for s in sorted(
                             (s for s in bundle["stocks"] if s["stock_code"] in set(bundle["a_codes"])),
                             key=lambda s: (-s["adv_20"], s["stock_code"]))[:300]],
@@ -291,6 +315,8 @@ def run_week(*, data_dir, root, decision_day, sync_manifest, runner, repo_root=P
         if aware(clock()) >= aware(schedule["deadline"]):
             return load_week(root, schedule["index"])
         try:
+            if code_pins(root, repo_root, at=clock()) != prepared["code_pins"]:
+                raise Refused("code/amendments changed after A input seal")
             model_path = directory / "model_input.json"
             if model_path.exists():
                 payload = verified(model_path)

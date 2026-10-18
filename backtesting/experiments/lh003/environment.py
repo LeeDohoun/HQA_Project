@@ -12,9 +12,10 @@ from backtesting.experiment_registry import PROJECT_ROOT
 from . import EXPERIMENT_ID, Refused
 from .calendar import description, exchange, latest_completed_week, session_close
 from .inputs import price_path, verify_day, prepare, render
-from .runner import LlmRunner, implementation_hashes
+from .runner import LlmRunner, implementation_hashes, code_pins
+from .distribution import latest as latest_distribution
 from .resources import ProcessTreeMemory
-from .simulation import fake_cycle, synthetic_archive
+from .simulation import fake_cycle, synthetic_archive, synthetic_distribution
 from .snapshot import Snapshot, publish_snapshot
 from .storage import attempts, aware, digest, file_hash, now, read, seal, verified
 from .workflow import machine_id
@@ -65,6 +66,7 @@ def synthetic_format_trial(*, root, day, timeout, clock=now, subprocess_call=Non
         archive = synthetic_archive(scratch / "source", day=day, stocks=40)
         manifest = publish_snapshot(archive, scratch / "snapshot", at=clock(), synthetic=True)
         snapshot = Snapshot(scratch / "snapshot", expected_hash=digest(manifest), allow_synthetic=True)
+        snapshot.distribution, _ = synthetic_distribution(archive, scratch / "distributions", at=clock())
         payload = render(prepare(archive, snapshot, day)["bundle"])
         runner = LlmRunner(root, timeout=timeout, clock=clock, subprocess_call=subprocess_call, format_trial=True)
         deadline = aware(clock()) + pd.Timedelta(seconds=6 * (timeout + 20) + 60)
@@ -84,11 +86,12 @@ def synthetic_format_trial(*, root, day, timeout, clock=now, subprocess_call=Non
 
 def verify_environment(*, data_dir, report_path=None, snapshot_path=None, synthetic=False,
                        sync_manifest=None, restart_evidence=None, timeout=300, clock=now,
-                       real_format_trial=False, state_root=None, subprocess_call=None):
+                       real_format_trial=False, state_root=None, subprocess_call=None, distribution_dir=None):
     with ProcessTreeMemory() as memory:
         result = _verify_environment(data_dir=data_dir, snapshot_path=snapshot_path, synthetic=synthetic,
             sync_manifest=sync_manifest, restart_evidence=restart_evidence, timeout=timeout, clock=clock,
-            real_format_trial=real_format_trial, state_root=state_root, subprocess_call=subprocess_call)
+            real_format_trial=real_format_trial, state_root=state_root, subprocess_call=subprocess_call,
+            distribution_dir=distribution_dir)
     performance = result["performance"]
     trial = result["synthetic_format_trial"]
     performance.update(memory.report())
@@ -107,8 +110,11 @@ def verify_environment(*, data_dir, report_path=None, snapshot_path=None, synthe
 
 
 def _verify_environment(*, data_dir, snapshot_path, synthetic, sync_manifest, restart_evidence, timeout, clock,
-                        real_format_trial, state_root, subprocess_call):
+                        real_format_trial, state_root, subprocess_call, distribution_dir):
     started, at = time.perf_counter(), aware(clock())
+    # Check code before any A inputs, including environment measurements.
+    applied = code_pins(Path(state_root) if state_root is not None else Path(data_dir) / "research/lh003",
+                        PROJECT_ROOT, at=at)
     day = latest_completed_week(at)
     files = sorted(p for p in (Path(data_dir) / "market/krx_daily").glob("*/*.jsonl") if p.stem.isdigit())
     try:
@@ -118,12 +124,22 @@ def _verify_environment(*, data_dir, snapshot_path, synthetic, sync_manifest, re
     result = {"experiment_id": EXPERIMENT_ID, "at": at.isoformat(), "machine_id": machine_id(),
               "synthetic": synthetic, "latest_completed_week": day, "data_dir": str(Path(data_dir).resolve()),
               "implementation_hashes": implementation_hashes(PROJECT_ROOT),
+              "code_pins": applied,
               "archive_latest_day": pd.Timestamp(files[-1].stem).date().isoformat() if files else None,
-              "calendar": calendar, "sync": sync_check(data_dir, sync_manifest, at=at, day=day),
+              "calendar": calendar, "sync": {"verified": False, "reason": "completed distribution required"},
               "restart_resume": restart_check(restart_evidence), "real_model_calls": 0,
               "sync_manifest_path": str(Path(sync_manifest).resolve()) if sync_manifest is not None else None,
               "restart_evidence_path": str(Path(restart_evidence).resolve()) if restart_evidence is not None else None,
               "synthetic_format_budget_spent": 0, "holdout_opened": False}
+    publication = None
+    try:
+        publication, receipt = latest_distribution(distribution_dir if distribution_dir is not None
+            else Path(state_root) / "distributions" if state_root is not None else Path(data_dir) / "research/lh003/distributions",
+            sync_manifest=sync_manifest, at=at)
+        result["distribution"] = {"verified": True, **receipt}
+        result["sync"] = sync_check(publication.root, sync_manifest, at=at, day=day)
+    except (ValueError, OSError) as exc:
+        result["distribution"] = {"verified": False, "reason": str(exc)}
     trial_path = Path(state_root) / "synthetic_format_trial.json" if state_root is not None else None
     if real_format_trial:
         if state_root is None:
@@ -140,10 +156,19 @@ def _verify_environment(*, data_dir, snapshot_path, synthetic, sync_manifest, re
     result["synthetic_format_budget_spent"] = trial.get("attempts", 0)
     result["state_root"] = str(Path(state_root).resolve()) if state_root is not None else None
     identity = trial.get("identity", {})
+    trial_hashes = identity.get("implementation_hashes", {})
+    # A later data-only amendment leaves the measured implementation identity
+    # valid. Verify its original hashes against the same sealed history.
+    if state_root is not None and (Path(state_root) / "start.json").exists() and trial.get("at"):
+        from .pins import verify as verify_history
+        measured = verify_history(state_root, PROJECT_ROOT, at=trial["at"], current={}, historical=True)
+        identity_matches = trial_hashes == measured["implementation_hashes"]
+    else:
+        identity_matches = trial_hashes == result["implementation_hashes"]
     trial_verified = (trial.get("completed") is True and trial.get("real_call_path") is True
         and trial.get("attempts") == 6 and trial.get("synthetic_inputs") is True
         and identity.get("machine_id") == result["machine_id"]
-        and identity.get("implementation_hashes") == result["implementation_hashes"]
+        and identity_matches
         and identity.get("call_timeout_seconds") == timeout and identity.get("fake") is False
         and aware(trial["at"]) <= aware(clock()) and trial.get("memory", {}).get("verified") is True)
     cycle_started = time.perf_counter()
@@ -153,6 +178,7 @@ def _verify_environment(*, data_dir, snapshot_path, synthetic, sync_manifest, re
             archive = synthetic_archive(scratch / "source", day=day)
             manifest = publish_snapshot(archive, scratch / "synthetic_snapshot", at=at, synthetic=True)
             snapshot = Snapshot(scratch / "synthetic_snapshot", expected_hash=digest(manifest), allow_synthetic=True)
+            snapshot.distribution, _ = synthetic_distribution(archive, scratch / "distributions", at=at)
             # A fake historical clock exercises the deadline logic; it is not an observation.
             fake_at = session_close(day) + pd.Timedelta(minutes=1)
             cycle = fake_cycle(data_dir=archive, snapshot=snapshot, day=day, scratch=scratch / "cycle",
@@ -167,11 +193,13 @@ def _verify_environment(*, data_dir, snapshot_path, synthetic, sync_manifest, re
         elif snapshot_path is None:
             result["cycle"] = {"completed": False, "real_data": False,
                 "reason": "verified LH003 snapshot not supplied; no protected source reads and no session opened"}
+        elif publication is None:
+            result["cycle"] = {"completed": False, "real_data": False, "reason": result["distribution"]["reason"]}
         elif not result["sync"]["verified"]:
             result["cycle"] = {"completed": False, "real_data": False, "reason": result["sync"]["reason"]}
         else:
             manifest = verified(Path(snapshot_path) / "manifest.json")
-            snapshot = Snapshot(snapshot_path, expected_hash=digest(manifest))
+            snapshot = Snapshot(snapshot_path, expected_hash=digest(manifest), distribution=publication)
             # Model calls are faked; the input generation and source checks are real.
             fake_at = session_close(day) + pd.Timedelta(minutes=1)
             cycle = fake_cycle(data_dir=data_dir, snapshot=snapshot, day=day, scratch=scratch / "cycle",

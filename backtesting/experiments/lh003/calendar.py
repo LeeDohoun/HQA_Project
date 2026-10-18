@@ -33,48 +33,58 @@ def session_close(day):
     return shared.daily_session_close(pd.Timestamp(day).date().isoformat())
 
 
-def plan(sessions=None):
-    # Verify the entire fixed horizon before producing even the first week.
-    days = exchange(end="2027-12-17").sessions if sessions is None else pd.DatetimeIndex(sessions)
+def plan(sessions=None, *, decision_day=None):
+    # Resolve one needed slot in production. Asking for the full plan explicitly
+    # requires full coverage; it is never a start/weekly prerequisite.
+    days = exchange().sessions if sessions is None else pd.DatetimeIndex(sessions)
     days = days.tz_localize(None).normalize().sort_values().unique()
     days = days[days < pd.Timestamp(EVALUATION_AT).tz_localize(None)]
-    horizon = days[(days >= WEEKS[0].start_time) & (days <= pd.Timestamp("2027-12-17"))]
-    for day in horizon:
-        shared.require_verified_calendar(day)
-        shared._check_special_session_coverage(day.date().isoformat())
     rows = []
     for index, week in enumerate(WEEKS):
+        if decision_day is not None and pd.Timestamp(decision_day).to_period("W-FRI") != week:
+            continue
+        shared.require_verified_calendar(week.end_time.normalize())
         weekly = days[days.to_period("W-FRI") == week]
         if not len(weekly):
             raise Refused(f"no XKRX session in fixed week {week}")
         decision = weekly[-1]
         pos = days.get_loc(decision)
         if pos + 20 >= len(days):
+            if sessions is None:
+                shared.require_verified_calendar(pd.Timestamp(shared.CALENDAR_VERIFIED_THROUGH) + pd.Timedelta(days=1))
             raise Refused("calendar lacks the entry-inclusive twentieth session")
         entry, exit_day = days[pos + 1], days[pos + 20]
+        shared.require_verified_calendar(exit_day)
+        shared._check_special_session_coverage(decision.date().isoformat())
         rows.append({"index": index, "week": str(week), "decision_date": decision.date().isoformat(),
                      "entry_date": entry.date().isoformat(), "exit_date": exit_day.date().isoformat(),
                      "deadline": datetime.combine(entry.date(), time(8, 59), KST).isoformat()})
     return rows
 
 
-def description(sessions=None):
-    days = exchange(end="2027-12-17").sessions if sessions is None else pd.DatetimeIndex(sessions)
+def description(sessions=None, *, decision_day="2026-11-13"):
+    days = exchange().sessions if sessions is None else pd.DatetimeIndex(sessions)
     days = days.tz_localize(None).normalize().sort_values().unique()
-    window = days[(days >= WEEKS[0].start_time) & (days <= WEEKS[-1].end_time)]
-    horizon = days[(days >= WEEKS[0].start_time) & (days <= pd.Timestamp("2027-12-17"))]
-    return {"version": shared.CALENDAR_VERSION, "decisions": plan(days),
+    decisions = plan(None if sessions is None else days, decision_day=decision_day)
+    if len(decisions) != 1:
+        raise Refused("decision day is outside the 52 fixed XKRX weeks")
+    needed = decisions[0]
+    week = WEEKS[needed["index"]]
+    window = days[(days >= week.start_time) & (days <= week.end_time)]
+    horizon = days[(days >= week.start_time) & (days <= pd.Timestamp(needed["exit_date"]))]
+    return {"version": shared.CALENDAR_VERSION, "slots": [{"index": i, "week": str(w)} for i, w in enumerate(WEEKS)],
+            "decision_scope": needed["index"], "decisions": decisions,
             "sessions": [x.date().isoformat() for x in window],
             "sessions_sha256": digest([x.date().isoformat() for x in window]),
             "execution_sessions_sha256": digest([x.date().isoformat() for x in horizon])}
 
 
-def check(root, *, at, operator_note=None, sessions=None):
-    current = description(sessions)
+def check(root, *, at, operator_note=None, sessions=None, decision_day="2026-11-13"):
+    current = description(sessions, decision_day=decision_day)
     directory = Path(root) / "calendar"
     files = sorted(directory.glob("*.json"))
-    previous = verified(files[-1]) if files else None
-    if previous is None and (Path(root) / "start.json").exists():
+    previous = next((v for p in reversed(files) if (v := verified(p))["calendar"]["decision_scope"] == current["decision_scope"]), None)
+    if not files and (Path(root) / "start.json").exists():
         raise Refused("frozen calendar journal missing after start; refuse to recreate it")
     if previous is not None and previous["calendar"] == current:
         return current

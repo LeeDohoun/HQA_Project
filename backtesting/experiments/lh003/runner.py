@@ -16,12 +16,14 @@ from src.ingestion.storage import file_lock
 
 from . import CALL_CAP, CODEX_VERSION, EXPERIMENT_ID, MODEL, PROMPT_DIR, Refused
 from .inputs import prompt_hashes, validate
+from . import pins
 from .storage import attempts, aware, digest, file_hash, now, seal, verified
 
 
 def implementation_files(repo_root):
     root = Path(repo_root)
     files = [*sorted((root / "backtesting/experiments/lh003").glob("*.py")),
+             *sorted((root / "scripts/lh003").glob("*.py")),
              *sorted((root / "backtesting/experiments/lh001").glob("*.py")),
              *sorted((root / "research/experiments/LH003_llm_leader_forward/prompts").glob("v3*")),
              root / "backtesting/experiments/ordering.py", root / "backtesting/cost_model.py",
@@ -33,7 +35,7 @@ def implementation_files(repo_root):
                ("common", "d001", "hc001", "hc002", "hc003", "hf001", "av001", "av002")],
              *[root / ("src/ingestion/" + name + ".py") for name in
                ("dart_listing", "dart_financial_date_rules", "dart_filing_dates", "dart_financials",
-                "dart_quarterly", "storage", "incremental_versions", "krx_benchmarks")],
+                "dart_quarterly", "storage", "krx_benchmarks")],
              *[root / ("src/research/" + name + ".py") for name in
                ("industry_map", "industry_index", "market_regimes")],
              root / "scripts/ops/research_run.sh"]
@@ -49,19 +51,29 @@ def implementation_hashes(repo_root):
 
 def mechanical_data_hashes(repo_root):
     root = Path(repo_root)
-    return {name: file_hash(root / name) for name in
-            ("backtesting/statutory_rates.py", "src/krx_calendar_data.py")}
+    return {name: file_hash(root / name) for name in pins.MECHANICAL}
 
 
-def verify_pinned(root, repo_root):
+def verify_pinned(root, repo_root, *, at=None):
     start = verified(Path(root) / "start.json")
-    expected = start.get("implementation_hashes")
-    if not expected or implementation_hashes(repo_root) != expected:
-        raise Refused("pinned implementation hashes differ or are missing at evaluation")
+    current = implementation_hashes(repo_root)
+    receipt = pins.verify(root, repo_root, at=now() if at is None else at, current=current)
     manifest = Path(root) / "model_manifest.json"
-    if manifest.exists() and verified(manifest)["implementation_hashes"] != expected:
+    if manifest.exists() and verified(manifest)["implementation_hashes"] != start["implementation_hashes"]:
         raise Refused("model manifest differs from pinned start implementation")
-    return expected
+    return receipt
+
+
+def code_pins(root, repo_root, *, at):
+    if (Path(root) / "start.json").exists():
+        return verify_pinned(root, repo_root, at=at)
+    current = implementation_hashes(repo_root)
+    if any(pins.loaded_hashes()[n] != current.get(n) for n in pins.MECHANICAL):
+        raise Refused("pinned implementation differs from actually loaded modules")
+    manifest = Path(root) / "model_manifest.json"
+    if manifest.exists() and verified(manifest)["implementation_hashes"] != current:
+        raise Refused("pinned implementation differs from pre-start model identity")
+    return {"implementation_hashes": current, "amendment_hashes": [], "code_baseline_sha256": None}
 
 
 def check_committed(repo_root=PROJECT_ROOT):
@@ -105,6 +117,7 @@ class LlmRunner:
             raise Refused("model/version drift or unverifiable identity: " + verified(self.root / "model_stopped.json")["reason"])
         if self.model != MODEL:
             raise Refused(self.stop("model name drift"))
+        applied = code_pins(self.root, self.repo_root, at=self.clock())
         if not self.fake:
             check_committed(self.repo_root)
         with tempfile.TemporaryDirectory(prefix="lh003-version-", dir="/tmp") as cwd:
@@ -112,8 +125,10 @@ class LlmRunner:
                                   capture_output=True, text=True, timeout=min(self.timeout, 10), check=False)
         if result.returncode or result.stdout.strip() != CODEX_VERSION:
             raise Refused(self.stop("Codex version drift: " + result.stdout.strip()))
+        start = self.root / "start.json"
+        baseline = verified(start)["implementation_hashes"] if start.exists() else applied["implementation_hashes"]
         identity = {"experiment_id": EXPERIMENT_ID, "model": self.model, "codex_version": CODEX_VERSION,
-                    "prompt_files": prompt_hashes(self.prompt_dir), "implementation_hashes": implementation_hashes(self.repo_root),
+                    "prompt_files": prompt_hashes(self.prompt_dir), "implementation_hashes": baseline,
                     "fake": self.fake}
         path = self.root / "model_manifest.json"
         if not path.exists() and attempts(self.root):
@@ -121,7 +136,7 @@ class LlmRunner:
         if path.exists() and verified(path) != identity:
             raise Refused(self.stop("frozen model/version/prompt/implementation identity changed"))
         seal(path, identity)
-        return identity
+        return {**identity, "code_pins": applied}
 
     def call(self, payload, repeat, *, week, deadline):
         """A pending reservation on restart consumes an attempt as an interruption."""
@@ -144,7 +159,7 @@ class LlmRunner:
             if len(prior) > 2 or output is not None and history[-1]["state"] != "valid":
                 raise Refused("repeat journal is inconsistent")
             try:
-                self.identity()
+                identity = self.identity()
             except (Refused, OSError, subprocess.TimeoutExpired) as exc:
                 return {"valid": False, "reason": self.stop(str(exc)), "attempts": history, "output": None}
             if output is not None:
@@ -161,6 +176,7 @@ class LlmRunner:
                 index, number = len(history), used + 1
                 prompt = payload["prompt"] + ("\n" + payload["reask"] if index else "")
                 reservation = {"number": number, "key": key, "week": week, "repeat": repeat, "try": index,
+                               "code_pins": identity["code_pins"],
                                "synthetic_format": self.format_trial,
                                "started_at": aware(self.clock()).isoformat(), "deadline": deadline.isoformat(),
                                "prompt_sha256": digest(prompt), "schema_sha256": digest(payload["schema"])}

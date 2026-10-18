@@ -1,0 +1,76 @@
+{
+  "changed_at": "2026-10-17T21:14:34.758122+00:00",
+  "changes": {
+    "backtesting/cost_model.py": {
+      "after": "afed5ab3af5e892f36d8f0255de54979150f688db6ad3af8e28c147e74841ca9",
+      "before": "d83624a39ca5e14fee415f83a01da5a4582abc00bfcf5f0f0a1f05eb42b37481"
+    },
+    "backtesting/experiment_registry.py": {
+      "after": "875d20735698091060653294e5a182552cef78d98b6d6b4e6ca13299bfa9be9b",
+      "before": "9555653d68669e4707f3a47ab331ab7bd8f03dfc6b009d97a2ac41c271acaeed"
+    },
+    "backtesting/experiments/av001.py": {
+      "after": "be99accfc4016f0bcca57da51b4b4f4e6dc4fe42bc77c7cb598a5ed89f32509a",
+      "before": "2ecbf4d5427a27d11447f407bed72b557168b1fc0a6ddca1f4b16e5263f14d97"
+    },
+    "backtesting/experiments/common.py": {
+      "after": "e016a29278d3f2d0d79ff66c04e2940496beb440c0005d27a86b7a64b8acbdcf",
+      "before": "7b9903a08c5be6385d6aa6c0430523c7368d2428c9482a46bbb3d4611a3b7331"
+    },
+    "backtesting/experiments/ordering.py": {
+      "after": "c06b94fd40703fa48b2b3532ec8a58d30414c276bf0ccacc07a500dbc1161e5d",
+      "before": "d6f7ea36c0e538bc38b06584a0eb6d0506985114b8095eeabeec11c6f07c0ffc"
+    },
+    "backtesting/holdout.py": {
+      "after": "5943eb45c2967b8a42fb3966342b9fec31c482bde03caa446a1c90f49931ac1d",
+      "before": "100ba32ad62de13fd0b9c0b9a01bc966d6e1c4ce9872e1a5b4fee4f65ed81762"
+    },
+    "backtesting/statutory_rates.py": {
+      "after": "f380293e05c14b43a8ae277d6ff842ba08ec967feecb7c29b5699a20d6f29cf5",
+      "before": null
+    },
+    "scripts/data/dart_buyback.py": {
+      "after": "44d0c6f724a2b5e0f2dd75c57ead5dbf30fb1029a499ba0395c09d0711211362",
+      "before": "51ca3146efb664bba5bb1ef0d6d8514ef6b79a4f94cd6e43bd20de861ca7c43c"
+    },
+    "scripts/ops/collector_manifest.py": {
+      "after": "39e46e2eeabe211c79c5c3d84b52eed4b415feb69a047ccb326517fc26197b24",
+      "before": "a5e702b4f2244b9af1227780b20d9698e27ba819735dffcc0cfee6011353c4a2"
+    },
+    "scripts/ops/push_collector_code.sh": {
+      "after": "3ad2e394032cb8b3a392f25cb80f9b806f606dd17aa49edd110340e07fd35c64",
+      "before": "e11157e32cc1012d53489149c10e5fe1536d77c8a6eeb97670f54bcc797a01a9"
+    },
+    "scripts/ops/research_run.sh": {
+      "after": "e4e754266198293625682e631038a1bda5d8d735d59c310393688ed3b6de2e5d",
+      "before": "b0444abcf60ba16d10c74748df22d0123a5cf1724a583a41d22c7acaec7fcb15"
+    },
+    "src/ingestion/dart_listing.py": {
+      "after": "cc194ad29bceb0be8a3beb29f2624544a6f30de310c1eaf3b39cf3b771fe4a31",
+      "before": "f91e9c3aa76cd804103876cf60681af9827d61d2ecc3cae15e21fb56a05d528a"
+    },
+    "src/ingestion/dart_quarterly.py": {
+      "after": "f973765d8998a5acc25634baf207dbd813e4d653e661f188ff9b645d52d7c1b8",
+      "before": "e1e0edbbc783aeef2f5685d6a9746fa0c0b29fcd144572e71f0a38ccc0bdac7a"
+    },
+    "src/ingestion/incremental_versions.py": {
+      "after": "9d8b0cc9a253b060997c406dedcc050324da583e35f30b30f8d9fa37dc77061f",
+      "before": null
+    },
+    "src/ingestion/krx_benchmarks.py": {
+      "after": "cbfebd4112265ef9c88f8d66806cd28739da1c1e051bfc5d8a144d918416e5e6",
+      "before": "a1e883ee3f5a358bcd0f40de7ff0d5b7abdea3d3e63aa01f0ae085d35dc19d52"
+    },
+    "src/krx_calendar_data.py": {
+      "after": "e595db4118c8c8972b7674f81698d89a093ed005b4bc738fe0ec8edcd60e7395",
+      "before": null
+    },
+    "src/runner/trading_calendar.py": {
+      "after": "6237032c7fc72ffe715a518f465059070a37f6abf89e31b73062666de607e8fd",
+      "before": "f8571d2484ab11dc4c06ea16838a35f90e4d7e3bc7dbffe3b14b79da121a8e38"
+    }
+  },
+  "implementation_changes": {},
+  "previous_manifest_sha256": "2d9b62fa23a651716b9738e43fd8a174656696dcb10b4d5e5ab6c9b7634ae8aa",
+  "reason": "LH003 round 21: immutable non-H1 quarterly/benchmark version publishers; split statutory-rate and official-calendar data from pinned algorithms; include their deployed dependencies. Local worktree amendment only, no deployment or data access."
+}
