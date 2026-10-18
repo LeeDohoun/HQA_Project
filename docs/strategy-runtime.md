@@ -208,3 +208,36 @@ venv/bin/python -m scripts.ops.strategy_runtime submit --strategy hf001_f_both -
 - 처리량: 1 req/s 제한에서 586건은 약 10분입니다. 장전 창 30분 안에 들어가지만 같은 앱 키의 다른 호출과 나눠 씁니다.
 - 연속 리밸런싱(AV001)은 매도 대금으로 매수를 채우는 HC003 규칙입니다. 장전에는 매도 대금이 없어 매수 일부가 거부될 수 있습니다. 확인 결과에 따라 연구 쪽 판단이 필요합니다.
 - 2027년 1월 이후 세션은 공식 휴장일 공지 반영 전까지 연구 달력에서 막힙니다 (`research/experiments/OPS_TODO_2027_KRX_CALENDAR.md`, 기한 2026-11-27).
+
+## 하루 운영 일정과 알림
+
+| 시각 (평일 KST) | 작업 | 내용 |
+| --- | --- | --- |
+| 09:05 | `deploy/strategy-runtime/morning.sh` → `strategy_runtime daily --when morning --execute` | 수집 서버 자료 받기 → 진입일이면 FW001 결정의 완료 증명 확인(08:59 마감) → 백엔드 접수 불명 주문·위험 상태 확인 → 알림 |
+| 19:30 | `deploy/strategy-runtime/evening.sh` → `strategy_runtime daily --when evening --execute` | 수집 서버 자료 받기 → 섀도 장부 → 다음 세션 주문 계획 → 상태 → 백엔드 상태 게시 → 알림 |
+
+- 19:30은 KRX 일봉 수집과 결정일의 FW001 기록(18:35 전후)이 끝난 뒤입니다.
+- 자료 받기는 `scripts/ops/pull_collector_data.sh`(`rsync -a`, mtime 보존)이며, 실패하면 그 실행은 시작하지 않고 실패로 끝납니다. 각 단계는 따로 실행되고, 하나라도 실패하면 종료 코드가 1입니다. 실행 요약은 `data/live/runs/`에 남습니다.
+- 서비스가 실패하면 `hqa-strategy-runtime-failure@.service`가 `systemd_unit_failed` 긴급 알림을 보냅니다.
+
+알림 (`src/live/alerts.py`):
+
+- 긴급: `status_error`, `shadow_incident`, `incident_file`, `decision_not_final`, `daily_step_failed`, `systemd_unit_failed`, `unknown_orders`, `batch_problem`, `risk_buy_blocked`, `risk_full_review`, `trading_halted`
+- 주의: `calendar_review`, `funding_requires_sell_proceeds`, `adv_warnings`, `stage_blocked`(단계가 바뀔 때만)
+- 정보: `evening_summary`(매일 저녁 전략별 단계·순자산·사고·다음 할 일)
+- 중복 억제: 긴급은 같은 내용을 하루 한 번, 주의는 7일에 한 번 (`data/live/alerts/state.json`). 전송에 실패하면 다음 실행에서 다시 보냅니다.
+- 채널: `HQA_ALERT_CHANNELS=file,telegram`. `file`은 항상 `data/live/alerts/YYYYMMDD.jsonl`에 남깁니다.
+
+### 텔레그램 설정
+
+1. 텔레그램에서 @BotFather에 `/newbot` → 봇 토큰을 받습니다.
+2. 만든 봇에 메시지를 한 번 보냅니다. 브라우저에서 `https://api.telegram.org/bot<토큰>/getUpdates`를 열어 `"chat":{"id": ...}` 값을 확인합니다.
+3. 실행 서버의 `/etc/hqa/strategy-runtime.env`(권한 600)에 `HQA_TELEGRAM_BOT_TOKEN`, `HQA_TELEGRAM_CHAT_ID`, `HQA_ALERT_CHANNELS=file,telegram`을 넣습니다. 토큰은 저장소·로그·실행 요약에 남기지 않습니다.
+4. 수동 시험: `venv/bin/python -m scripts.ops.strategy_runtime alerts --execute` (실제 메시지가 나갑니다).
+
+### 설치 (사람 확인 필요)
+
+1. 실행 서버에 이 브랜치를 `/opt/hqa`로 받고 venv를 만듭니다. 자료 폴더는 `/opt/hqa/data`이며 `HQA_DATA_DIR=/opt/hqa/data`입니다 (자료 받기 스크립트가 `<프로젝트>/data`로 받기 때문).
+2. `deploy/strategy-runtime/strategy-runtime.env.example`의 이름대로 `/etc/hqa/strategy-runtime.env`를 만듭니다. `hqa` 사용자의 SSH `known_hosts`에 수집 서버를 미리 등록합니다 (BatchMode).
+3. `bash deploy/strategy-runtime/install.sh`로 할 일을 확인하고, `--execute`로 unit 파일만 복사합니다. 활성화는 출력된 `systemctl enable --now ...` 명령으로 운영자가 직접 합니다.
+4. 처음 며칠은 `journalctl -u hqa-strategy-runtime-*`와 `data/live/runs/`로 결과를 확인합니다.

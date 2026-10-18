@@ -685,7 +685,7 @@ def read_incidents(data_dir, strategy_id) -> list[dict]:
     for path in sorted(p for p in directory.iterdir() if p.is_file() and p.suffix == ".json"
                        and not p.name.startswith(".")):
         try:
-            rows.append(json.loads(path.read_text(encoding="utf-8")))
+            rows.append({**json.loads(path.read_text(encoding="utf-8")), "_file": path.name})
         except (OSError, json.JSONDecodeError) as error:
             raise LedgerError(f"unreadable incident file {path.name}: {error}") from None
     return rows

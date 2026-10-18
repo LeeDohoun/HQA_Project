@@ -73,6 +73,12 @@ def parse_account_snapshot(body, user_id, *, now=None) -> AccountState:
                         _number(row.get("orderableCash"), "orderableCash"), holdings, sellable, captured)
 
 
+def backend_configured(env=None) -> bool:
+    env = os.environ if env is None else env
+    return bool((env.get("BACKEND_INTERNAL_BASE_URL") or env.get("BACKEND_BASE_URL"))
+                and (env.get("HQA_INTERNAL_TOKEN") or "").strip())
+
+
 class StrategyBackendClient:
     def __init__(self, base_url=None, token=None, *, timeout=30, session=None):
         url = base_url or os.environ.get("BACKEND_INTERNAL_BASE_URL") or os.environ.get("BACKEND_BASE_URL")
@@ -118,14 +124,30 @@ class StrategyBackendClient:
         return body
 
     def get_batch(self, batch_id: str) -> dict:
-        return self._json(self.session.get(f"{self.base_url}/api/v1/internal/strategies/batches/{batch_id}",
-                                           headers=self._headers(), timeout=self.timeout))
+        return self._get(f"/api/v1/internal/strategies/batches/{batch_id}")
 
     def publish_status(self, strategy_id: str, generated_at: str, payload: dict) -> dict:
         body = self._post("/api/v1/internal/strategies/status",
                           {"strategyId": strategy_id, "generatedAt": generated_at, "payload": payload})
         if not isinstance(body, dict) or body.get("stored") is not True:
             raise BackendError("status was not stored")
+        return body
+
+    def _get(self, path):
+        return self._json(self.session.get(self.base_url + path, headers=self._headers(), timeout=self.timeout))
+
+    def unknown_orders(self) -> list:
+        """Strategy orders whose broker acceptance is uncertain (never resent by the backend)."""
+        body = self._get("/api/v1/internal/strategies/orders/unknown")
+        if not isinstance(body, dict) or not isinstance(body.get("orders"), list):
+            raise BackendError("unexpected unknown-orders response")
+        return body["orders"]
+
+    def risk(self, user_id: str) -> dict:
+        """Risk state of a strategy account (the backend reads a fresh PAPER balance)."""
+        body = self._get(f"/api/v1/internal/strategies/risk/{user_id}")
+        if not isinstance(body, dict) or "buyAllowed" not in body:
+            raise BackendError("unexpected risk response")
         return body
 
     def fetch_account(self, user_id: str) -> AccountState:

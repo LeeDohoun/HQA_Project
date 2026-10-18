@@ -48,6 +48,14 @@ def parser() -> argparse.ArgumentParser:
     submit.add_argument("--validate", action="store_true", help="with --execute: send dryRun=true")
     submit.add_argument("--max-buy-to-deposit", action="store_true",
                         help="refuse (never resize) when buys exceed deposit cash before sells settle")
+    daily = commands.add_parser("daily", parents=[common], help="scheduled morning/evening run")
+    daily.add_argument("--session", help="YYYY-MM-DD (default: today KST)")
+    daily.add_argument("--when", choices=("morning", "evening"),
+                       help="default: evening at/after 16:30 KST, otherwise morning")
+    daily.add_argument("--execute", action="store_true", help="write ledger/plans/run summary and send")
+    alert = commands.add_parser("alerts", parents=[common], help="evaluate and send operator alerts")
+    alert.add_argument("--execute", action="store_true", help="append to the alert file and configured channels")
+    alert.add_argument("--failure-unit", help="record a critical alert for a failed systemd unit")
     return root
 
 
@@ -66,6 +74,13 @@ def main(argv=None) -> int:
     elif args.command == "publish-status":
         result = runtime.publish_status_command(ctx, execute=args.execute)
         ok = result["status"] != "error"
+    elif args.command == "daily":
+        result, code = runtime.daily_command(ctx, session=args.session, when=args.when, execute=args.execute)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return code
+    elif args.command == "alerts":
+        result = runtime.alerts_command(ctx, execute=args.execute, failure_unit=args.failure_unit)
+        ok = result["status"] == "ok"
     else:
         if args.validate and not args.execute:
             print("--validate requires --execute", file=sys.stderr)

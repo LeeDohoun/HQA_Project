@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import json
 import os
+import uuid
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from src.runner import trading_calendar
@@ -233,7 +234,7 @@ def plan_command(ctx: Context, strategy_id, session, phase=None, *, execute=Fals
 # ---------------------------------------------------------------- shadow fill
 
 
-def shadow_fill_command(ctx: Context, session, strategy_id=None, *, execute=False) -> dict:
+def shadow_fill_command(ctx: Context, session, strategy_id=None, *, execute=False, now=None) -> dict:
     session = _iso(session)
     entries = [find_entry(ctx, strategy_id)] if strategy_id else list(ctx.entries)
     results = []
@@ -241,7 +242,7 @@ def shadow_fill_command(ctx: Context, session, strategy_id=None, *, execute=Fals
         stage = stage_for(ctx, entry)
         mode = mode_for(stage)
         try:
-            record = shadow.shadow_fill(entry, session, ctx.data_dir, mode=mode, execute=execute)
+            record = shadow.shadow_fill(entry, session, ctx.data_dir, mode=mode, execute=execute, now=now)
         except shadow.ShadowRefused as error:
             if execute and error.kind in ("price_file_missing", "price_file_unreadable"):
                 shadow.record_incident(ctx.data_dir, entry.strategy_id, session, error.kind, error.detail)
@@ -461,6 +462,267 @@ def submit_command(ctx: Context, strategy_id, session, phase, *, execute=False, 
         status = "deduplicated"
     else:
         status = "submitted"
+    if not validate and response.get("batchId"):
+        record_batch(ctx.data_dir, strategy_id, payload, response)
     return {"status": status, "strategyId": strategy_id, "dryRun": bool(validate), "batchStatus":
             response.get("status"), "reasons": reasons, "funding": funding, "payload": payload,
             "response": response}
+
+
+# ---------------------------------------------------------------- batch records (for later status reads)
+
+
+def batches_dir(data_dir, strategy_id) -> Path:
+    return Path(data_dir) / shadow.LIVE_DIR / strategy_id / "batches"
+
+
+def record_batch(data_dir, strategy_id, payload, response) -> Path:
+    """Static facts of an accepted batch; its live status is read back from the backend."""
+    record = {"strategyId": strategy_id, "batchId": response["batchId"], "userId": payload["userId"],
+              "sessionDate": payload["sessionDate"], "phase": payload["phase"],
+              "decisionHash": payload["decisionHash"], "idempotencyKey": payload["idempotencyKey"],
+              "recorded_at": shadow.now_kst().isoformat()}
+    path = batches_dir(data_dir, strategy_id) / (
+        f"{payload['sessionDate'].replace('-', '')}_{payload['phase']}_{response['batchId']}.json")
+    shadow.write_immutable(path, record)
+    return path
+
+
+def batch_records(data_dir, strategy_id, session) -> list[dict]:
+    directory = batches_dir(data_dir, strategy_id)
+    if not directory.is_dir():
+        return []
+    prefix = _iso(session).replace("-", "") + "_"
+    return [json.loads(p.read_text(encoding="utf-8")) for p in sorted(directory.glob(prefix + "*.json"))
+            if not p.name.startswith(".")]
+
+
+# ---------------------------------------------------------------- daily run and alerts
+
+RUNS_DIR = Path("live/runs")
+EVENING_AFTER = shadow.LEDGER_WRITE_AFTER
+
+
+class _Steps:
+    """Each step runs independently; a failure is recorded and later steps still run."""
+
+    def __init__(self):
+        self.items = []
+
+    def run(self, name, fn):
+        try:
+            result = fn()
+        except Exception as error:  # noqa: BLE001 - record and continue with independent steps
+            self.items.append({"step": name, "status": "failed", "error": f"{type(error).__name__}: {error}"})
+            return None
+        status = "ok"
+        if isinstance(result, dict) and result.get("_status"):
+            status = result.pop("_status")
+        item = {"step": name, "status": status, "result": result}
+        if status == "failed" and isinstance(result, dict) and result.get("_error"):
+            item["error"] = result.pop("_error")
+        self.items.append(item)
+        return result
+
+    def skip(self, name, note):
+        self.items.append({"step": name, "status": "skipped", "note": note})
+
+    @property
+    def failed(self):
+        return any(item["status"] == "failed" for item in self.items)
+
+
+def _first_session_month(session):
+    """The decision month whose trade date is this session, or None."""
+    previous = shadow.previous_session(session)
+    return previous[:7] if previous[:7] != session[:7] else None
+
+
+def decision_seal_check(ctx, session) -> dict:
+    month = _first_session_month(session) if shadow.is_session(session) else None
+    rows = []
+    if month is not None:
+        proof, reason, error = decisions.completion(ctx.data_dir, "decisions", month)
+        state = "final" if proof is not None else reason
+        for entry in ctx.entries:
+            rows.append({"strategyId": entry.strategy_id, "month": month, "tradeDate": session, "state": state,
+                         "sealedAt": (proof or {}).get("sealed_at"), "error": error})
+    result = {"tradeDateMonth": month, "strategies": rows}
+    if any(row["state"] != "final" for row in rows):
+        result.update(_status="failed", _error="decision_not_final:" + ",".join(
+            sorted({f"{row['month']}:{row['state']}" for row in rows if row["state"] != "final"})))
+    return result
+
+
+def backend_checks(ctx, session, client_factory=None, env=None) -> dict:
+    from .backend_client import StrategyBackendClient, backend_configured
+
+    if client_factory is None and not backend_configured(env):
+        return {"configured": False, "note": "backend_not_configured"}
+    client = (client_factory or StrategyBackendClient)()
+    result = {"configured": True, "unknown_orders": client.unknown_orders(), "risk": {}, "batches": [],
+              "notes": ["halts_read_via_risk_halted_flag", "batches_from_local_submit_records"]}
+    for entry in ctx.entries:
+        if entry.account_user_id:
+            result["risk"][entry.strategy_id] = client.risk(entry.account_user_id)
+        for record in batch_records(ctx.data_dir, entry.strategy_id, session):
+            batch = client.get_batch(record["batchId"])
+            result["batches"].append({**record, "status": batch.get("status")})
+    return result
+
+
+def _next_session(session):
+    later = [d for d in shadow.sessions_between(session, date.fromisoformat(session) + timedelta(days=14))
+             if d > session]
+    if not later:
+        raise ValueError(f"no next session after {session}")
+    return later[0]
+
+
+def plans_for_next_session(ctx, session, *, execute) -> dict:
+    target = _next_session(session)
+    plans, errors = [], []
+    for entry in ctx.entries:
+        for phase in due_phases(ctx, entry, target):
+            result = plan_command(ctx, entry.strategy_id, target, phase, execute=execute)
+            errors.extend({"strategyId": entry.strategy_id, **e} for e in result["errors"])
+            for record in result["plans"]:
+                plans.append({"strategyId": entry.strategy_id, "sessionDate": target, "phase": phase,
+                              "orders": len(record["orders"]), "advWarnings": record["summary"]["advWarnings"],
+                              "funding": record.get("funding"), "written": record.get("_written", False)})
+    out = {"sessionDate": target, "plans": plans, "errors": errors}
+    if errors:
+        out.update(_status="failed", _error="plan_errors:" + ";".join(f"{e['strategyId']}:{e['error']}" for e in errors))
+    return out
+
+
+def _ledgers(ctx):
+    return {e.strategy_id: shadow.read_ledger(ctx.data_dir, e.strategy_id) for e in ctx.entries}
+
+
+def _incident_files(ctx):
+    return {e.strategy_id: shadow.read_incidents(ctx.data_dir, e.strategy_id) for e in ctx.entries}
+
+
+def run_path(data_dir, session, when, now) -> Path:
+    base = Path(data_dir) / RUNS_DIR
+    path = base / f"{_iso(session).replace('-', '')}_{when}.json"
+    if path.exists():
+        path = base / f"{_iso(session).replace('-', '')}_{when}_{now:%H%M%S}-{uuid.uuid4().hex[:8]}.json"
+    return path
+
+
+def latest_run(data_dir) -> dict | None:
+    directory = Path(data_dir) / RUNS_DIR
+    if not directory.is_dir():
+        return None
+    files = sorted((p for p in directory.glob("*.json") if not p.name.startswith(".")),
+                   key=lambda p: p.stat().st_mtime_ns)
+    return json.loads(files[-1].read_text(encoding="utf-8")) if files else None
+
+
+def daily_command(ctx, *, session=None, when=None, execute=False, now=None, client_factory=None,
+                  env=None) -> tuple[dict, int]:
+    """One scheduled run. Returns (summary, exit code); non-zero when any step failed."""
+    from . import alerts
+
+    now = now or shadow.now_kst()
+    session = _iso(session or now.date().isoformat())
+    when = when or ("evening" if now.time() >= EVENING_AFTER else "morning")
+    if when not in ("morning", "evening"):
+        raise ValueError(f"unknown daily phase: {when}")
+    alerts.configured_channel_names(env)  # an unknown channel is a startup error, before any work
+    steps = _Steps()
+    summary = {"runId": f"{session.replace('-', '')}_{when}_{now:%H%M%S}", "session": session, "when": when,
+               "dryRun": not execute, "startedAt": now.isoformat(), "isSession": None}
+    warnings = steps.run("calendar_warnings", lambda: {
+        "warnings": trading_calendar.calendar_review_warnings(date.fromisoformat(session))}) or {}
+    is_session = steps.run("session_check", lambda: {"isSession": shadow.is_session(session)})
+    summary["isSession"] = None if is_session is None else is_session["isSession"]
+    status = backend = None
+    if when == "morning":
+        steps.run("decision_seals", lambda: decision_seal_check(ctx, session))
+        backend = steps.run("backend_checks", lambda: backend_checks(ctx, session, client_factory, env))
+    elif summary["isSession"]:
+        steps.run("shadow_fill", lambda: _shadow_step(ctx, session, execute, now))
+        steps.run("plans", lambda: plans_for_next_session(ctx, session, execute=execute))
+        status = steps.run("status", lambda: status_command(ctx, generated_at=now.isoformat()))
+        steps.run("publish_status", lambda: _publish_step(ctx, execute, client_factory, env))
+        backend = steps.run("backend_checks", lambda: backend_checks(ctx, session, client_factory, env))
+    else:
+        steps.skip("shadow_fill", "not_a_krx_session")
+    summary["steps"] = steps.items
+    inputs = alerts.AlertInputs(today=now.date(), when=when, session=session, summary=summary, status=status,
+                                ledgers=_ledgers(ctx) if status is not None else {},
+                                incident_files=_incident_files(ctx) if status is not None else {},
+                                backend=backend, calendar_warnings=warnings.get("warnings") or [])
+    steps.run("alerts", lambda: _alert_step(inputs, ctx, now, execute, env))
+    summary.update(steps=steps.items, status="failed" if steps.failed else "ok",
+                   finishedAt=shadow.now_kst().isoformat())
+    if execute:
+        path = run_path(ctx.data_dir, session, when, now)
+        shadow.write_immutable(path, summary, ignore=())
+        summary["runFile"] = str(path)
+    return summary, 1 if steps.failed else 0
+
+
+def _shadow_step(ctx, session, execute, now):
+    result = shadow_fill_command(ctx, session, execute=execute, now=now)
+    if result["status"] != "ok":
+        result.update(_status="failed", _error="shadow_fill:" + ";".join(
+            f"{r['strategyId']}:{r.get('reason') or r['status']}" for r in result["results"] if r["status"] != "ok"))
+    return result
+
+
+def _publish_step(ctx, execute, client_factory, env):
+    from .backend_client import backend_configured
+
+    if client_factory is None and not backend_configured(env):
+        return {"note": "backend_not_configured", "_status": "skipped"}
+    result = publish_status_command(ctx, execute=execute, client_factory=client_factory)
+    if result["status"] == "error":
+        result.update(_status="failed", _error="publish_status_failed")
+    return result
+
+
+def _alert_step(inputs, ctx, now, execute, env):
+    from . import alerts
+
+    result = alerts.dispatch(inputs, ctx.data_dir, now, execute=execute, env=env)
+    if result["status"] == "failed":
+        result.update(_status="failed", _error="alert_channel_failed")
+    return result
+
+
+def alerts_command(ctx, *, execute=False, failure_unit=None, now=None, client_factory=None, env=None) -> dict:
+    """Evaluate alerts from the last daily summary plus a fresh status (and backend if configured)."""
+    from . import alerts
+
+    alerts.configured_channel_names(env)
+    now = now or shadow.now_kst()
+    summary = latest_run(ctx.data_dir)
+    if summary is not None and not str(summary.get("startedAt", "")).startswith(now.date().isoformat()):
+        summary = None  # only today's run feeds step/seal alerts; older ones were handled on their day
+    errors, status, backend = [], None, None
+    try:
+        status = status_command(ctx, generated_at=now.isoformat())
+    except Exception as error:  # noqa: BLE001 - an alert must still go out
+        errors.append(f"status_failed:{type(error).__name__}: {error}")
+    try:
+        backend = backend_checks(ctx, now.date().isoformat(), client_factory, env)
+    except Exception as error:  # noqa: BLE001
+        errors.append(f"backend_checks_failed:{type(error).__name__}: {error}")
+    try:
+        warnings = trading_calendar.calendar_review_warnings(now.date())
+    except ValueError as error:
+        warnings, errors = [], errors + [f"calendar_warnings_failed:{error}"]
+    if status is not None:
+        status = {**status, "errors": list(status.get("errors") or []) + errors}
+    else:
+        status = {"strategies": [], "errors": errors}
+    inputs = alerts.AlertInputs(today=now.date(), when=None, session=(summary or {}).get("session"),
+                                summary=summary, status=status, ledgers=_ledgers(ctx),
+                                incident_files=_incident_files(ctx), backend=backend,
+                                calendar_warnings=warnings, failure_unit=failure_unit)
+    result = alerts.dispatch(inputs, ctx.data_dir, now, execute=execute, env=env)
+    return {**result, "dryRun": not execute, "summaryRunId": (summary or {}).get("runId")}
