@@ -338,7 +338,27 @@ class ReplayRunner:
             audit = PaperAudit(audit_path)
         self.service = SharedAnalysisService(data=data, accounts=self.accounts, models=models,
                                              max_workers=max_workers, clock=lambda: self.now, audit=audit)
+        # Every specialist answer of a cycle by (stock, role), including answers the service's own
+        # cache supplied, for the per-stock score study.
+        self.specialists: dict[str, dict] = {}
+        self._lock = threading.Lock()
+        inner = self.service._specialist
+
+        def recorded(role, payload, critical, priority=None):
+            try:
+                result = inner(role, payload, critical) if priority is None else inner(role, payload, critical, priority)
+            except Exception as exc:
+                with self._lock:
+                    self.specialists.setdefault(payload["stock_code"], {})[role] = {"error": f"{type(exc).__name__}: {exc}"[:200]}
+                raise
+            with self._lock:
+                self.specialists.setdefault(payload["stock_code"], {})[role] = {
+                    "score": result.score, "confidence": result.confidence}
+            return result
+
+        self.service._specialist = recorded
 
     def run(self, day: str) -> dict:
         self.now = decision_time(day)
+        self.specialists = {}
         return self.service._run_cycle([self.target], self.now)

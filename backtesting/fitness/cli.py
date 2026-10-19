@@ -149,6 +149,7 @@ class LLMArm:
                   "account_rows": account.get("global_ranked_leaders"), "plans": account.get("plans", []),
                   "rejected": account.get("rejected_plans", []), "omitted": account.get("omitted_candidates", []),
                   "reasoning": account.get("reasoning"), "holdings": sorted(view.positions),
+                  "specialists": self.runner.specialists,
                   "equity_at_open": view.equity_at_open, "cash": view.cash}
         with self.log_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
@@ -178,11 +179,14 @@ def run_llm(args) -> int:
     if not args.dry and not args.allow_market_hours and in_blocked_hours(datetime.now(timezone.utc)):
         raise SystemExit("refusing to start: KRX session hours (08:30-15:45 KST on a trading day)")
     pit = Path(args.pit)
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    # Nothing may default into the tracked data/ directory.
+    os.environ["HQA_DATA_DIR"] = str(pit.resolve())
+    os.environ.setdefault("HQA_LLM_BUDGET_PATH", str((out / "llm_budget.sqlite3").resolve()))
     allow_sessions_before_first_bar(FIRST_BAR_DAY)
     panel = PricePanel.from_pit(pit)
     data = ReplayAnalysisData(data_dir=str(pit), config_path="config/watchlist.yaml")
-    out = Path(args.out)
-    out.mkdir(parents=True, exist_ok=True)
     log = CallLog()
     guard = CallGuard(max_calls=args.max_calls, allow_market_hours=args.allow_market_hours)
     if args.dry:
@@ -193,7 +197,10 @@ def run_llm(args) -> int:
             raise SystemExit("CLAUDE_CODE_OAUTH_TOKEN is not set (load it the way run-ai.sh does)")
         cache = CallCache(Path(args.cache))
         skip = DecisionRelevance(data) if args.decision_calls_only else None
+        settings, seen = paper_role_settings(), set()
+        real = set(args.real_roles.split(",")) if args.real_roles else set(settings)
         models = {role: GuardedModel(model, role, cache, guard, log, salt=args.replicate, skip=skip)
+                  if role in real else DryModel(role, settings[role], log, seen)
                   for role, model in paper_role_models().items()}
     runner = ReplayRunner(data=data, models=models, state=lambda at: None,
                           audit_path=None if args.dry else out / "replay_audit.sqlite3")
@@ -248,6 +255,7 @@ def main(argv: list[str] | None = None) -> int:
     llm.add_argument("--decision-calls-only", action="store_true",
                      help="skip chartist/quant calls for stocks that cannot reach the RiskManager")
     llm.add_argument("--replicate", type=int, default=0, help="ask again for answered requests (nondeterminism)")
+    llm.add_argument("--real-roles", help="comma-separated roles that call the model; the others answer dry")
     llm.add_argument("--allow-market-hours", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if args.command == "build-data":
