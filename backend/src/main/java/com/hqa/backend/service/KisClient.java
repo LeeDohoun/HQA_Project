@@ -227,7 +227,7 @@ public class KisClient {
 
     /** The log names the path and status only, never the query, which holds the account number. */
     private static Retry readRetry(String path) {
-        return Retry.fixedDelay(READ_RETRIES, READ_RETRY_DELAY)
+        return Retry.backoff(READ_RETRIES, READ_RETRY_DELAY).maxBackoff(READ_RETRY_MAX_DELAY).jitter(0)
                 .filter(error -> (error instanceof WebClientResponseException response
                         && response.getStatusCode().is5xxServerError()) || error instanceof WebClientRequestException)
                 .doBeforeRetry(signal -> log.warn("[KisClient] transient KIS failure on {} (retry {} of {}): {}", path,
@@ -318,12 +318,15 @@ public class KisClient {
     /** No KIS call may block a request thread (or the token lock) indefinitely. */
     static final Duration KIS_CALL_TIMEOUT = Duration.ofSeconds(25);
     /**
-     * Read-only inquiries retry a transient broker failure twice: an HTTP 5xx (KIS paper also answers
-     * its per-second limit with one) or a dropped connection. Orders and cancellations are never
-     * retried, because a retry could place them twice.
+     * Read-only inquiries retry a transient broker failure three times: an HTTP 5xx (KIS paper also
+     * answers its per-second limit with one) or a dropped connection. The waits grow 1 s, 2 s, 4 s,
+     * because KIS paper's 500s come in bursts of several seconds (the 09:00 open above all) that
+     * 0.3 s retries all landed inside. Orders and cancellations are never retried, because a retry
+     * could place them twice.
      */
-    static final int READ_RETRIES = 2;
-    static final Duration READ_RETRY_DELAY = Duration.ofMillis(300);
+    static final int READ_RETRIES = 3;
+    static final Duration READ_RETRY_DELAY = Duration.ofSeconds(1);
+    static final Duration READ_RETRY_MAX_DELAY = Duration.ofSeconds(4);
     /** Covers the pacing filter's wait, the call and its retries. */
     static final Duration ACCOUNT_READ_TIMEOUT = Duration.ofSeconds(30);
     private static final Logger log = LoggerFactory.getLogger(KisClient.class);

@@ -114,12 +114,20 @@ class KisClientTest {
         assertThat(priceCalls).hasValue(1 + KisClient.READ_RETRIES);
 
         AtomicInteger downCalls = new AtomicInteger();
-        KisClient down = paperClient(request -> {
+        List<Long> downAt = new ArrayList<>();
+        KisClient down = paperClient(request -> Mono.fromSupplier(() -> {
             downCalls.incrementAndGet();
-            return Mono.just(json(HttpStatus.INTERNAL_SERVER_ERROR, "{}"));
-        });
+            downAt.add(System.nanoTime());
+            return json(HttpStatus.INTERNAL_SERVER_ERROR, "{}");
+        }));
         assertThat(down.inquireBalance("u1", secret, "token")).containsEntry("success", false);
         assertThat(downCalls).hasValue(1 + KisClient.READ_RETRIES);
+        // A burst of 500s lasting several seconds (the 09:00 open) must not swallow every retry.
+        for (int retry = 1; retry < downAt.size(); retry++) {
+            long expectedMillis = Math.min(KisClient.READ_RETRY_DELAY.toMillis() << (retry - 1),
+                    KisClient.READ_RETRY_MAX_DELAY.toMillis());
+            assertThat((downAt.get(retry) - downAt.get(retry - 1)) / 1_000_000).isGreaterThanOrEqualTo(expectedMillis - 50);
+        }
 
         AtomicInteger refusedCalls = new AtomicInteger();
         KisClient refused = paperClient(request -> {
