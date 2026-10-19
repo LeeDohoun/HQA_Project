@@ -1,0 +1,27 @@
+[Unit]
+Description=Admit BB003 after all higher-priority decision/fill obligations
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/hqa-bb003
+Environment=PYTHONDONTWRITEBYTECODE=1 PYTHON_DOTENV_DISABLED=1 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1
+ExecStart=/opt/hqa-bb003/venv/bin/python -B /opt/hqa-bb003/deploy/collector-bb003/runtime.py trigger
+MemoryMax=64M
+MemoryAccounting=true
+TimeoutStartSec=180
+TimeoutStopSec=5
+KillMode=control-group
+UMask=0027
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/
+ReadWritePaths=/var/lib/hqa/data/forward/bb003
+InaccessiblePaths=-/opt/hqa -/opt/hqa-fw002
+PrivateNetwork=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX

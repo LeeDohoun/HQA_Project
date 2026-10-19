@@ -1,0 +1,29 @@
+[Unit]
+Description=BB003 separate-root buyback forward recorder
+After=network-online.target hqa-fw001-daily.service hqa-shadow-daily.service
+Conflicts=hqa-fw001-daily.service hqa-shadow-daily.service
+
+[Service]
+Type=oneshot
+User=hqa
+Group=hqa
+WorkingDirectory=/opt/hqa-bb003
+EnvironmentFile=/etc/hqa/bb003.credentials
+Environment=PYTHONDONTWRITEBYTECODE=1 PYTHON_DOTENV_DISABLED=1 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1
+ExecStart=/opt/hqa-bb003/venv/bin/python -B /opt/hqa-bb003/deploy/collector-bb003/runtime.py
+MemoryMax=600M
+MemoryAccounting=true
+TimeoutStartSec=600
+TimeoutStopSec=5
+KillMode=control-group
+UMask=0027
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/
+ReadWritePaths=/var/lib/hqa/data/forward/bb003
+InaccessiblePaths=-/opt/hqa -/opt/hqa-fw002
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6

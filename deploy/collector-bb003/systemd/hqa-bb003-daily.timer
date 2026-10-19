@@ -1,0 +1,15 @@
+[Unit]
+Description=BB003 night preparation, minute morning seal checks and evening capture
+
+[Timer]
+OnCalendar=*-*-* 00..04:00/5:00 Asia/Seoul
+OnCalendar=*-*-* 05:00..30/5:00 Asia/Seoul
+OnCalendar=*-*-* 08:03..55:00 Asia/Seoul
+OnCalendar=*-*-* 09:01:00 Asia/Seoul
+OnCalendar=*-*-* 18..23:00/5:00 Asia/Seoul
+AccuracySec=1s
+Persistent=true
+Unit=hqa-bb003-check.service
+
+[Install]
+WantedBy=timers.target
