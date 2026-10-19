@@ -128,13 +128,14 @@ def _filter_steps(total, counts, reasons):
     return result
 
 
-def construct_events(listings, files, sessions, data_dir):
+def construct_events(listings, files, sessions, data_dir, *, start=DESIGN_START, end=END,
+                     period=None, structured_range=None, status=None):
     """Repeat clock is updated before *every* inclusion test; no price reads."""
     candidates = sorted((row for row in listings if dart.title_matches(row["report_nm"])),
                         key=lambda row: (row["rcept_dt"], row["rcept_no"]))
     events, audit, counts, previous, structured = [], [], Counter(), {}, {}
     availability = Counter()
-    status = dart.listing_status(data_dir)
+    status = dart.listing_status(data_dir) if status is None else status
     for item in candidates:
         corp, receipt = item["corp_code"], item["rcept_no"]
         public = pd.Timestamp(item["rcept_dt"])
@@ -143,7 +144,8 @@ def construct_events(listings, files, sessions, data_dir):
         previous[corp] = (clock, item["rcept_dt"])
         repeated = old is not None and 0 <= clock - old[0] <= 63
         if corp not in structured:
-            structured[corp] = dart.structured_record(data_dir, corp)
+            options = {} if structured_range is None else dict(zip(("from_date", "to_date"), structured_range))
+            structured[corp] = dart.structured_record(data_dir, corp, **options)
         archive = structured[corp]
         row = archive["rows"].get(receipt, {}).get("row") if archive and archive["complete"] else None
         document = dart.document_record(data_dir, receipt)
@@ -159,7 +161,7 @@ def construct_events(listings, files, sessions, data_dir):
         reason = None
         if repeated:
             reason = "same_day_repeat" if old[1] == item["rcept_dt"] else "repeat_0_63"
-        elif not DESIGN_START <= public <= END:
+        elif not start <= public <= end:
             reason = "outside_design_validation"
         elif not coverage["covered"]:
             reason = "incomplete_listing_window"
@@ -183,7 +185,7 @@ def construct_events(listings, files, sessions, data_dir):
         audit.append({"rcept_no": receipt, "corp_code": corp, "stock_code": code, "reason": reason,
                       "coverage": coverage, "repeated": repeated})
         if reason is None:
-            events.append({**item, "public_date": public.date().isoformat(), "period": "design" if public <= DESIGN_END else "validation",
+            events.append({**item, "public_date": public.date().isoformat(), "period": period or ("design" if public <= DESIGN_END else "validation"),
                            "cancel": dart.cancellation_matches(row["aq_pp"]), "structured": row,
                            "planned_amount": int(dart.digits(row["aqpln_prc_ostk"])),
                            "planned_quantity": int(dart.digits(row["aqpln_stk_ostk"]))})
@@ -196,12 +198,12 @@ def construct_events(listings, files, sessions, data_dir):
                     "stock_code_link_failed_all_candidates": sum(not is_stock_code(row.get("stock_code")) for row in candidates)}
 
 
-def schedule(event, horizon, sessions):
+def schedule(event, horizon, sessions, *, cutoff=CUTOFF):
     entry = int(sessions.searchsorted(pd.Timestamp(event["public_date"]), side="right"))
     exit_position = entry + horizon - 1
     if exit_position >= len(sessions):
         return None, "incomplete_calendar_horizon"
-    if sessions[exit_position] >= CUTOFF:
+    if cutoff is not None and sessions[exit_position] >= cutoff:
         return None, "holdout_horizon"
     return {**event, "entry_date": sessions[entry].date().isoformat(), "exit_date": sessions[exit_position].date().isoformat(),
             "entry_position": entry, "exit_position": exit_position, "horizon": horizon}, None
@@ -384,13 +386,13 @@ def match_controls(event, reader, listings):
             "control_weight": 1 / len(matched)}, None, counts
 
 
-def select_events(events, reader, listings, horizon, *, cancel=False):
+def select_events(events, reader, listings, horizon, *, cancel=False, cutoff=CUTOFF):
     selections, exclusions, counts = [], [], Counter()
     for event in events:
         if cancel and not event["cancel"]:
             counts["not_cancellation_purpose"] += 1
             continue
-        planned, reason = schedule(event, horizon, reader.sessions)
+        planned, reason = schedule(event, horizon, reader.sessions, cutoff=cutoff)
         # Forbidden horizons are removed before even a pre-entry price read.
         if reason is None:
             match, reason, detail = match_controls(planned, reader, listings)
@@ -407,9 +409,9 @@ def select_events(events, reader, listings, horizon, *, cancel=False):
         "excluded": exclusions}
 
 
-def value_position(reader, event, code, feature):
+def value_position(reader, event, code, feature, *, cutoff=CUTOFF):
     first, target = event["entry_position"], event["exit_position"]
-    if reader.sessions[target] >= CUTOFF:
+    if cutoff is not None and reader.sessions[target] >= cutoff:
         raise ValueError("holdout horizon must be excluded before valuation")
     rows = [reader.require(day).get(code) for day in reader.sessions[first:target + 1]]
     if not _traded(rows[0]):
@@ -448,11 +450,11 @@ def _field_date(value):
         return None
 
 
-def observations(selections, reader):
+def observations(selections, reader, *, cutoff=CUTOFF):
     results = []
     for event in selections:
-        stock = value_position(reader, event, event["stock_code"], event["event_features"])
-        controls = [value_position(reader, event, code, feature) for code, feature in event["control_features"].items()]
+        stock = value_position(reader, event, event["stock_code"], event["event_features"], cutoff=cutoff)
+        controls = [value_position(reader, event, code, feature, cutoff=cutoff) for code, feature in event["control_features"].items()]
         start, end = (_field_date(event["structured"][key]) for key in ("aqexpd_bgd", "aqexpd_edd"))
         complete_period = (start is not None and end is not None and start <= end and len(reader.sessions)
                            and start >= reader.sessions.min() and end <= reader.sessions.max())

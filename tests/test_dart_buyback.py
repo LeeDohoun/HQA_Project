@@ -444,6 +444,7 @@ def test_skip_documents_only_runs_structured_stage(tmp_path, short_range, execut
 @pytest.mark.parametrize("skip", [True, False])
 def test_buyback_cli_maintenance_exits_zero_and_passes_skip_documents(tmp_path, short_range, monkeypatch, capsys, skip):
     from scripts.data import dart_buyback as cli
+    monkeypatch.setattr(cli, "load_project_env", lambda: None)
     listing_archive(tmp_path, item())
     session = FakeSession(lambda url, params: {"status": "800"} if url.endswith("document.xml")
                           else {"status": "000", "list": [structured()]})
@@ -494,3 +495,60 @@ def test_shared_payload_classifies_800_as_distinct_maintenance():
     from src.ingestion.dart_api import DartProviderMaintenance, read_dart_payload
     with pytest.raises(DartProviderMaintenance, match="status=800"):
         read_dart_payload(FakeResponse({"status": "800", "message": KEY}))
+
+
+def test_explicit_2026_receipt_range_is_inclusive_and_preserves_bb001_cache(tmp_path):
+    rows = [item("20251231"), item("20260102", rcept_no="20251230000099"),
+            item("20260630", number=2), item("20260701", number=3)]
+    listing_archive(tmp_path, *rows)
+    historical = dart._path(tmp_path, "structured", CORP)
+    _write_json(historical, {"version": dart.VERSION, "corp_code": CORP, "from_date": dart.START,
+        "to_date": dart.END, "complete": True, "requests": [], "rows": {}})
+    before = historical.read_bytes()
+    options = {"from_date": "2026-01-02", "to_date": "2026-06-30"}
+    plan = dart.plan(tmp_path, **options)
+    assert (plan["from_date"], plan["to_date"]) == ("20260102", "20260630")
+    assert plan["counts"]["title_candidates"] == plan["estimated_structured_requests"] == 2
+    assert plan["estimated_document_requests"] == 2
+    assert dart.fetch(data_dir=tmp_path, **options)["requests_made"] == 0
+    candidates = rows[1:3]
+    def handler(url, params):
+        if url.endswith("document.xml"):
+            return zip_body()
+        return {"status": "000", "list": [structured(row) for row in candidates if row["rcept_dt"] == params["bgn_de"]]}
+    result, session = fetch(tmp_path, handler, **options)
+    assert result["requests_made"] == 4 and historical.read_bytes() == before
+    record = dart.structured_record(tmp_path, CORP, **options)
+    assert set(record["rows"]) == {row["rcept_no"] for row in candidates}
+    assert {params["rcept_no"] for url, params in session.calls if url.endswith("document.xml")} == set(record["rows"])
+    assert dart.plan(tmp_path, **options)["estimated_requests_still_needed"] == 0
+    assert dart.plan(tmp_path)["to_date"] == "20251231"
+
+
+def test_overlapping_explicit_ranges_cannot_change_original_receipt(tmp_path):
+    row = item("20260102")
+    listing_archive(tmp_path, row)
+    first = {"from_date": "20260102", "to_date": "20260630"}
+    second = {"from_date": "20260101", "to_date": "20260630"}
+    fetch(tmp_path, lambda url, params: zip_body() if url.endswith("document.xml")
+          else {"status": "000", "list": [structured(row)]}, **first)
+    before = snapshot(tmp_path)[str(dart._path(tmp_path, "documents", row["rcept_no"]).relative_to(tmp_path))]
+    with pytest.raises(DartAPIError, match="conflicting.*across ranges"):
+        fetch(tmp_path, lambda url, params: {"status": "000", "list": [structured(row, aqpln_prc_ostk="42")]}, **second)
+    assert dart.document_record(tmp_path, row["rcept_no"])["verification"]["verified"]
+    assert dart._path(tmp_path, "documents", row["rcept_no"]).read_bytes() == before
+
+
+@pytest.mark.parametrize("command", ["plan", "fetch"])
+def test_cli_range_is_forwarded_and_dry_by_default(tmp_path, monkeypatch, capsys, command):
+    from scripts.data import dart_buyback as cli
+    monkeypatch.setattr(cli, "load_project_env", lambda: pytest.fail("dry-run must not read .env"))
+    assert cli.main([command, "--data-dir", str(tmp_path), "--from", "2026-01-02", "--to", "2026-06-30"]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["from_date"] == "20260102" and result["to_date"] == "20260630" and result["dry_run"]
+
+
+@pytest.mark.parametrize("start,end", [("20260230", "20260630"), ("20260701", "20260630"), ("x", "20260630")])
+def test_invalid_explicit_range_fails_before_requests(tmp_path, start, end):
+    with pytest.raises(ValueError):
+        dart.fetch(data_dir=tmp_path, from_date=start, to_date=end)
