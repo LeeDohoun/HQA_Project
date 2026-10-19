@@ -1,0 +1,12 @@
+# Private BB003 environment. All installation is from an offline wheelhouse.
+# Exact installed file bytes and interpreter are pinned in its own manifest.
+python-dotenv>=1.0.0
+pandas>=2.0.0
+numpy>=1.24.0
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+PyYAML>=6.0.1
+pydantic>=2.0.0
+rank-bm25>=0.2.2
+exchange-calendars==4.13.2
