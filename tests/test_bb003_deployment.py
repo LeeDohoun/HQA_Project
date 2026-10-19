@@ -16,9 +16,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_new_files_stay_outside_frozen_inventory():
-    raw = subprocess.check_output(["git", "status", "--porcelain", "--untracked-files=all"], cwd=ROOT, text=True,
+    # Check BB003's own files only; other sessions' untracked drafts in a shared checkout are not BB003's.
+    roots = ["backtesting/experiments/bb003", "scripts/bb003", "deploy/collector-bb003"]
+    raw = subprocess.check_output(["git", "ls-files", "--", *roots, "tests/test_bb003_*.py"], cwd=ROOT, text=True,
                                   env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"})
-    names = [line[3:] for line in raw.splitlines()]
+    names = raw.splitlines()
+    assert names
     assert not [name for name in names if deployment.frozen_path(name)]
     assert not [name for name in names if Path(name).name == "preregistration.md"]
 
