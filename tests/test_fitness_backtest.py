@@ -238,3 +238,30 @@ def test_written_rows_keep_their_key_order_for_dart_structured_field_checks(tmp_
     path = tmp_path / "rows.jsonl"
     _write_jsonl(path, [{"metadata": {"structured_row": {"z": 1, "a": 2}}}])
     assert list(json.loads(path.read_text())["metadata"]["structured_row"]) == ["z", "a"]
+
+
+def test_a_day_that_lost_calls_is_discarded_and_a_day_without_room_is_not_started():
+    from backtesting.fitness.cli import LLMArm, StopRun
+
+    guard = CallGuard(max_calls=100, allow_market_hours=True, token_budget=1_000_000)
+
+    class Runner:
+        accounts = SimpleNamespace(state=None)
+        target = {"userId": "dohoon"}
+        specialists = {}
+
+        def run(self, day):
+            guard.refused += 1  # a call refused inside the live service, which swallows it
+            return {}
+
+    arm = LLMArm(Runner(), panel({"000001": flat(100)}), None, guard=guard)
+    view = SimpleNamespace(day=DAYS[0], positions={}, opens={})
+    with pytest.raises(StopRun, match="during"):
+        arm(view)
+    guard.tokens = 900_000
+    with pytest.raises(StopRun, match="before"):
+        arm(view)
+    assert guard.room_for_day(1, 10, 1) is None
+    guard.deadline = datetime.now(KST) - timedelta(minutes=1)
+    with pytest.raises(CallRefused, match="deadline"):
+        guard.admit("chartist")

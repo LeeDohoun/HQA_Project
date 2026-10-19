@@ -115,12 +115,21 @@ class DecisionRelevance:
         return not self._known[code]
 
 
+class StopRun(RuntimeError):
+    """The replay stopped at a day boundary; everything before it is cached and complete."""
+
+
+# A heavy decision day in the pilot (16 completed stocks, RiskManager included); a day is started
+# only when the run's limits leave this much room.
+DAY_RESERVE = {"calls": 60, "tokens": 700_000, "minutes": 8}
+
+
 class LLMArm:
     """The PAPER pipeline as a strategy: on each decision day the replayed cycle reviews the
     simulated account, and its accepted plans are executed by the shared simulator."""
 
-    def __init__(self, runner, panel: PricePanel, log_path: Path):
-        self.runner, self.panel, self.log_path = runner, panel, log_path
+    def __init__(self, runner, panel: PricePanel, log_path: Path, guard=None):
+        self.runner, self.panel, self.log_path, self.guard = runner, panel, log_path, guard
         self.view: DecisionView | None = None
         runner.accounts.state = self.state
 
@@ -140,7 +149,16 @@ class LLMArm:
 
     def __call__(self, view: DecisionView):
         self.view = view
+        if self.guard is not None:
+            reason = self.guard.room_for_day(DAY_RESERVE["calls"], DAY_RESERVE["tokens"], DAY_RESERVE["minutes"])
+            if reason:
+                raise StopRun(f"stopped before {view.day}: {reason}")
+            refused_before = self.guard.refused
         cycle = self.runner.run(view.day)
+        if self.guard is not None and (self.guard.refused > refused_before or self.guard.stopped):
+            # The live service records a refused call like any failure and carries on; a day that
+            # lost calls is not a PAPER day, so it is discarded (its paid answers stay cached).
+            raise StopRun(f"stopped during {view.day}: {self.guard.stopped or 'calls refused'}")
         account = cycle["accounts"][self.runner.target["userId"]]
         record = {"day": view.day, "status": account.get("status"), "reason": account.get("reason"),
                   "error": account.get("error"), "prefilter": cycle["prefilter_count"],
@@ -188,7 +206,13 @@ def run_llm(args) -> int:
     panel = PricePanel.from_pit(pit)
     data = ReplayAnalysisData(data_dir=str(pit), config_path="config/watchlist.yaml")
     log = CallLog()
-    guard = CallGuard(max_calls=args.max_calls, allow_market_hours=args.allow_market_hours)
+    deadline = None
+    if args.deadline:
+        deadline = datetime.fromisoformat(args.deadline)
+        if deadline.tzinfo is None:
+            raise SystemExit("--deadline needs a timezone, e.g. 2026-10-20T03:30:00+09:00")
+    guard = CallGuard(max_calls=args.max_calls, allow_market_hours=args.allow_market_hours, deadline=deadline,
+                      token_budget=args.token_budget)
     if args.dry:
         settings, seen = paper_role_settings(), set()
         models = {role: DryModel(role, settings[role], log, seen) for role in settings}
@@ -205,7 +229,7 @@ def run_llm(args) -> int:
     runner = ReplayRunner(data=data, models=models, state=lambda at: None,
                           audit_path=None if args.dry else out / "replay_audit.sqlite3")
     days = args.days.split(",") if args.days else schedule(panel, args.start, args.end, args.schedule)
-    arm = LLMArm(runner, panel, out / "decisions.jsonl")
+    arm = LLMArm(runner, panel, out / "decisions.jsonl", guard=None if args.dry else guard)
     if not args.dry and args.decision_calls_only:
         skip.arm = arm
     (out / "decisions.jsonl").unlink(missing_ok=True)
@@ -213,7 +237,7 @@ def run_llm(args) -> int:
     status = "completed"
     try:
         result = simulator.run(arm, start=args.start, end=args.end, decision_days=days)
-    except (UsageLimitStop, CallRefused) as exc:
+    except (StopRun, UsageLimitStop, CallRefused) as exc:
         status, result = f"stopped: {exc}", None
     finally:
         events = log.events
@@ -221,11 +245,13 @@ def run_llm(args) -> int:
         for event in events:
             kinds.setdefault(event["role"], {}).setdefault(event["kind"], 0)
             kinds[event["role"]][event["kind"]] += 1
-        _dump(out / "calls.json", {"status": status, "guard_calls": guard.calls, "stopped": guard.stopped,
+        _dump(out / "calls.json", {"status": status, "guard_calls": guard.calls, "guard_tokens": guard.tokens,
+                                   "refused": guard.refused, "stopped": guard.stopped,
                                    "by_role": kinds, "events": events})
     if result is not None:
         _dump(out / "result.json", result)
-    print(json.dumps({"status": status, "calls": kinds, "guard_calls": guard.calls}, ensure_ascii=False))
+    print(json.dumps({"status": status, "calls": kinds, "guard_calls": guard.calls, "guard_tokens": guard.tokens},
+                     ensure_ascii=False))
     return 0 if result is not None else 3
 
 
@@ -250,6 +276,8 @@ def main(argv: list[str] | None = None) -> int:
     llm.add_argument("--schedule", choices=("daily", "weekly", "monthly"), default="daily")
     llm.add_argument("--days", help="comma-separated decision days instead of a schedule")
     llm.add_argument("--max-calls", type=int, default=0, help="hard cap on paid calls in this run")
+    llm.add_argument("--token-budget", type=int, help="stop before a day once paid tokens near this total")
+    llm.add_argument("--deadline", help="no new paid call after this time, e.g. 2026-10-20T03:30:00+09:00")
     llm.add_argument("--cache", default=".local/fitness/llm_cache.sqlite3")
     llm.add_argument("--dry", action="store_true", help="no LLM: uninformative answers, to count calls")
     llm.add_argument("--decision-calls-only", action="store_true",

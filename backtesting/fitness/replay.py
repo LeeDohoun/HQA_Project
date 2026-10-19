@@ -60,22 +60,59 @@ class CallRefused(RuntimeError):
 
 @dataclass
 class CallGuard:
+    """Admits paid calls within the run's limits. A refusal inside a cycle is swallowed by the live
+    service like any failed call, so the replay checks `refused` after every cycle and discards a
+    day that lost calls; `room_for_day` stops a run cleanly before a day it cannot finish."""
     max_calls: int
     allow_market_hours: bool = False
+    deadline: datetime | None = None  # no new paid call after this time
+    token_budget: int | None = None  # input + output tokens of paid calls
     calls: int = 0
+    tokens: int = 0
+    refused: int = 0
     stopped: str | None = None
     lock: Any = field(default_factory=threading.Lock)
 
     def admit(self, role: str) -> None:
         with self.lock:
-            if self.stopped:
-                raise CallRefused(f"run stopped: {self.stopped}")
-            if not self.allow_market_hours and in_blocked_hours(datetime.now(KST)):
-                self.stopped = "KRX session hours (08:30-15:45 KST on a trading day)"
-                raise CallRefused(self.stopped)
-            if self.calls >= self.max_calls:
-                raise CallRefused(f"call cap {self.max_calls} reached")
+            reason = self._refusal()
+            if reason:
+                self.refused += 1
+                raise CallRefused(reason)
             self.calls += 1
+
+    def _refusal(self) -> str | None:
+        now = datetime.now(KST)
+        if self.stopped:
+            return f"run stopped: {self.stopped}"
+        if not self.allow_market_hours and in_blocked_hours(now):
+            self.stopped = "KRX session hours (08:30-15:45 KST on a trading day)"
+            return self.stopped
+        if self.deadline is not None and now >= self.deadline:
+            return f"deadline {self.deadline.isoformat()} passed"
+        if self.calls >= self.max_calls:
+            return f"call cap {self.max_calls} reached"
+        if self.token_budget is not None and self.tokens >= self.token_budget:
+            return f"token budget {self.token_budget} spent"
+        return None
+
+    def record(self, tokens: int) -> None:
+        with self.lock:
+            self.tokens += int(tokens)
+
+    def room_for_day(self, calls: int, tokens: int, minutes: float) -> str | None:
+        """Why a day needing about this many calls, tokens and minutes should not start, or None."""
+        with self.lock:
+            reason = self._refusal()
+            if reason:
+                return reason
+            if self.calls + calls > self.max_calls:
+                return f"call cap {self.max_calls} would be passed"
+            if self.token_budget is not None and self.tokens + tokens > self.token_budget:
+                return f"token budget {self.token_budget} would be passed"
+            if self.deadline is not None and datetime.now(KST) + timedelta(minutes=minutes) > self.deadline:
+                return f"deadline {self.deadline.isoformat()} would be passed"
+            return None
 
     def stop(self, reason: str) -> None:
         with self.lock:
@@ -219,6 +256,7 @@ class GuardedModel(_RoleModelBase):
             self.log.add(role=self.role, key=key, kind="failure", error=f"parsing: {result['parsing_error']}"[:300], **meta)
             raise result["parsing_error"]
         self.cache.put(key, self.role, raw.content, meta)
+        self.guard.record((meta["usage"].get("input_tokens") or 0) + (meta["usage"].get("output_tokens") or 0))
         self.log.add(role=self.role, key=key, kind="paid", **meta)
         return result["parsed"]
 
