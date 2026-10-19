@@ -128,8 +128,9 @@ class LLMArm:
     """The PAPER pipeline as a strategy: on each decision day the replayed cycle reviews the
     simulated account, and its accepted plans are executed by the shared simulator."""
 
-    def __init__(self, runner, panel: PricePanel, log_path: Path, guard=None):
+    def __init__(self, runner, panel: PricePanel, log_path: Path, guard=None, reserve: dict | None = None):
         self.runner, self.panel, self.log_path, self.guard = runner, panel, log_path, guard
+        self.reserve = reserve or DAY_RESERVE
         self.view: DecisionView | None = None
         runner.accounts.state = self.state
 
@@ -150,7 +151,7 @@ class LLMArm:
     def __call__(self, view: DecisionView):
         self.view = view
         if self.guard is not None:
-            reason = self.guard.room_for_day(DAY_RESERVE["calls"], DAY_RESERVE["tokens"], DAY_RESERVE["minutes"])
+            reason = self.guard.room_for_day(self.reserve["calls"], self.reserve["tokens"], self.reserve["minutes"])
             if reason:
                 raise StopRun(f"stopped before {view.day}: {reason}")
             refused_before = self.guard.refused
@@ -229,7 +230,8 @@ def run_llm(args) -> int:
     runner = ReplayRunner(data=data, models=models, state=lambda at: None,
                           audit_path=None if args.dry else out / "replay_audit.sqlite3")
     days = args.days.split(",") if args.days else schedule(panel, args.start, args.end, args.schedule)
-    arm = LLMArm(runner, panel, out / "decisions.jsonl", guard=None if args.dry else guard)
+    arm = LLMArm(runner, panel, out / "decisions.jsonl", guard=None if args.dry else guard,
+                 reserve={**DAY_RESERVE, "tokens": args.day_reserve_tokens})
     if not args.dry and args.decision_calls_only:
         skip.arm = arm
     (out / "decisions.jsonl").unlink(missing_ok=True)
@@ -277,6 +279,8 @@ def main(argv: list[str] | None = None) -> int:
     llm.add_argument("--days", help="comma-separated decision days instead of a schedule")
     llm.add_argument("--max-calls", type=int, default=0, help="hard cap on paid calls in this run")
     llm.add_argument("--token-budget", type=int, help="stop before a day once paid tokens near this total")
+    llm.add_argument("--day-reserve-tokens", type=int, default=DAY_RESERVE["tokens"],
+                     help="start a day only with this many budget tokens left")
     llm.add_argument("--deadline", help="no new paid call after this time, e.g. 2026-10-20T03:30:00+09:00")
     llm.add_argument("--cache", default=".local/fitness/llm_cache.sqlite3")
     llm.add_argument("--dry", action="store_true", help="no LLM: uninformative answers, to count calls")
