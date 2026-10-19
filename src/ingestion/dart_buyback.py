@@ -70,14 +70,24 @@ def verify_values(row, text):
             "structured_row_sha256": row_digest(row) if row is not None else None}
 
 
-def listing_files(data_dir):
-    return listing_paths(data_dir, START, END)
+def receipt_range(from_date=None, to_date=None):
+    start, end = (_date(value).strftime("%Y%m%d") for value in
+                  (START if from_date is None else from_date, END if to_date is None else to_date))
+    if start > end:
+        raise ValueError("buyback from_date must not exceed to_date")
+    return start, end
 
 
-def load_listings(data_dir, *, candidates_only=False, require_complete=False):
+def listing_files(data_dir, *, from_date=None, to_date=None):
+    return listing_paths(data_dir, *receipt_range(from_date, to_date))
+
+
+def load_listings(data_dir, *, candidates_only=False, require_complete=False,
+                  from_date=None, to_date=None):
+    start, end = receipt_range(from_date, to_date)
     if require_complete:
-        require_supplement(data_dir, (START, END))
-    files, receipts = listing_files(data_dir), {}
+        require_supplement(data_dir, (start, end))
+    files, receipts = listing_files(data_dir, from_date=start, to_date=end), {}
     identities = {} if candidates_only else receipts
     raw_count = prefix_differs = withdrawals = title_count = 0
     for day, path in files.items():
@@ -117,8 +127,12 @@ def load_listings(data_dir, *, candidates_only=False, require_complete=False):
                         "withdrawal_titles": withdrawals}
 
 
-def _path(data_dir, kind, identity):
-    return Path(data_dir) / "disclosures/dart_buyback" / kind / f"{identity}.json"
+def _path(data_dir, kind, identity, *, from_date=None, to_date=None):
+    directory = Path(data_dir) / "disclosures/dart_buyback" / kind
+    start, end = receipt_range(from_date, to_date)
+    if kind == "structured" and (start, end) != (START, END):
+        directory /= f"{start}_{end}"
+    return directory / f"{identity}.json"
 
 
 def _read_record(path):
@@ -130,11 +144,12 @@ def _read_record(path):
     return value
 
 
-def structured_record(data_dir, corp_code):
-    value = _read_record(_path(data_dir, "structured", corp_code))
+def structured_record(data_dir, corp_code, *, from_date=None, to_date=None):
+    start, end = receipt_range(from_date, to_date)
+    value = _read_record(_path(data_dir, "structured", corp_code, from_date=start, to_date=end))
     if value is not None:
-        if (value.get("corp_code") != corp_code or value.get("from_date") != START
-                or value.get("to_date") != END or not isinstance(value.get("requests"), list)
+        if (value.get("corp_code") != corp_code or value.get("from_date") != start
+                or value.get("to_date") != end or not isinstance(value.get("requests"), list)
                 or type(value.get("complete")) is not bool or not isinstance(value.get("rows"), dict)):
             raise ValueError("invalid buyback corporate archive")
         for request in value["requests"]:
@@ -159,24 +174,25 @@ def document_record(data_dir, receipt):
     return value
 
 
-def plan(data_dir=DEFAULT_DATA_DIR):
-    listings, files, counts = load_listings(data_dir, candidates_only=True)
+def plan(data_dir=DEFAULT_DATA_DIR, *, from_date=None, to_date=None, status=None):
+    start, end = receipt_range(from_date, to_date)
+    listings, files, counts = load_listings(data_dir, candidates_only=True, from_date=start, to_date=end)
     candidates = [row for row in listings if title_matches(row["report_nm"])]
     corporations = sorted({row["corp_code"] for row in candidates})
-    saved = {corp: structured_record(data_dir, corp) for corp in corporations}
+    saved = {corp: structured_record(data_dir, corp, from_date=start, to_date=end) for corp in corporations}
     complete = [corp for corp, record in saved.items() if record and record["complete"]]
     missing = [row["rcept_no"] for row in candidates if document_record(data_dir, row["rcept_no"]) is None]
     targets = {(row["corp_code"], row["rcept_dt"]) for row in candidates}
     requests = sum(not any(request["bgn_de"] == request["end_de"] == day
                            and request["page_no"] == 1 for request in (saved[corp] or {}).get("requests", []))
                    for corp, day in targets if corp not in complete)
-    required_days = (_date(END) - _date(START)).days + 1
-    covered = covered_listing_days(data_dir, files)
-    return {"status": "dry_run", "dry_run": True, "from_date": START, "to_date": END,
+    required_days = (_date(end) - _date(start)).days + 1
+    covered = covered_listing_days(data_dir, files, status=status)
+    return {"status": "dry_run", "dry_run": True, "from_date": start, "to_date": end,
             "listing_coverage": {"required_calendar_days": required_days, "stored_days": len(files),
                 "covered_days": len(covered), "missing_days": required_days - len(covered), "first_day": min(files) if files else None,
                 "last_day": max(files) if files else None,
-                "days_by_year": {str(year): sum(day.startswith(str(year)) for day in covered) for year in range(2016, 2026)}},
+                "days_by_year": {str(year): sum(day.startswith(str(year)) for day in covered) for year in range(int(start[:4]), int(end[:4]) + 1)}},
             "counts": counts, "corp_codes": corporations, "structured_corporations_complete": len(complete),
             "original_documents_stored": len(candidates) - len(missing), "original_documents_missing": len(missing),
             "estimated_requests_still_needed": requests + len(missing),
@@ -201,10 +217,11 @@ def _merge_rows(rows, items, corp, start, end, source_hash):
             entry["response_sha256"].append(source_hash)
 
 
-def _fetch_structured(collector, corp, candidates, data_dir):
-    path = _path(data_dir, "structured", corp)
-    record = structured_record(data_dir, corp) or {"version": VERSION, "corp_code": corp,
-        "from_date": START, "to_date": END, "complete": False, "requests": [], "rows": {}}
+def _fetch_structured(collector, corp, candidates, data_dir, *, from_date=None, to_date=None):
+    start, end = receipt_range(from_date, to_date)
+    path = _path(data_dir, "structured", corp, from_date=start, to_date=end)
+    record = structured_record(data_dir, corp, from_date=start, to_date=end) or {"version": VERSION, "corp_code": corp,
+        "from_date": start, "to_date": end, "complete": False, "requests": [], "rows": {}}
     if record["complete"]:
         return record
     cached = {(item["bgn_de"], item["end_de"], item["page_no"]): item for item in record["requests"]}
@@ -267,6 +284,14 @@ def _fetch_structured(collector, corp, candidates, data_dir):
         for entry in collect(day, day).values():
             for digest in entry["response_sha256"]:
                 _merge_rows(rows, [entry["row"]], corp, day, day, digest)
+    # A new range must never replace an original receipt's previously saved values.
+    directory = Path(data_dir) / "disclosures/dart_buyback/structured"
+    for previous in directory.rglob(f"{corp}.json"):
+        archive = _read_record(previous)
+        old = structured_record(data_dir, corp, from_date=archive["from_date"], to_date=archive["to_date"])
+        for receipt in rows.keys() & old["rows"].keys():
+            if rows[receipt]["row"] != old["rows"][receipt]["row"]:
+                raise DartAPIError("DART conflicting structured original receipt across ranges")
     record.update(rows=rows, complete=True, fetched_at=collector.clock().isoformat(),
                   sha256=row_digest([request["payload"] for request in record["requests"]]))
     _write_json(path, record)
@@ -315,10 +340,12 @@ def _fetch_document(collector, receipt, row):
 
 
 def fetch(*, data_dir=DEFAULT_DATA_DIR, execute=False, api_key=None, session=None,
-          max_requests=DEFAULT_MAX_REQUESTS, clock=None, sleeper=None, skip_documents=False):
+          max_requests=DEFAULT_MAX_REQUESTS, clock=None, sleeper=None, skip_documents=False,
+          from_date=None, to_date=None):
+    start, end = receipt_range(from_date, to_date)
     if type(max_requests) is not int or max_requests < 1:
         raise ValueError("DART max_requests must be a positive integer")
-    summary = {**plan(data_dir), "requests_made": 0, "structured_saved": 0, "documents_saved": 0}
+    summary = {**plan(data_dir, from_date=start, to_date=end), "requests_made": 0, "structured_saved": 0, "documents_saved": 0}
     summary["stages"] = {
         "structured": {"status": "dry_run", "requests_made": 0, "saved": 0},
         "documents": {"status": "skipped" if skip_documents else "dry_run", "requests_made": 0, "saved": 0}}
@@ -328,7 +355,7 @@ def fetch(*, data_dir=DEFAULT_DATA_DIR, execute=False, api_key=None, session=Non
         raise ValueError("DART API key is required for execution")
     directory = Path(data_dir) / "disclosures/dart_full"
     with file_lock(directory / ".backfill.lock"):
-        listings, _, _ = load_listings(data_dir, candidates_only=True)
+        listings, _, _ = load_listings(data_dir, candidates_only=True, from_date=start, to_date=end)
         candidates = [item for item in listings if title_matches(item["report_nm"])]
         collector = DartBackfillCollector(api_key, directory, {}, {}, session=session,
             clock=clock or (lambda: datetime.now(KST)), sleeper=sleeper or time.sleep,
@@ -342,8 +369,8 @@ def fetch(*, data_dir=DEFAULT_DATA_DIR, execute=False, api_key=None, session=Non
         try:
             for corp in sorted({item["corp_code"] for item in candidates}):
                 items = [item for item in candidates if item["corp_code"] == corp]
-                previous = structured_record(data_dir, corp)
-                _fetch_structured(collector, corp, items, data_dir)
+                previous = structured_record(data_dir, corp, from_date=start, to_date=end)
+                _fetch_structured(collector, corp, items, data_dir, from_date=start, to_date=end)
                 summary["structured_saved"] += not previous or not previous["complete"]
             summary["stages"][stage].update(requests_made=collector.requests_made, saved=summary["structured_saved"])
             stage = "documents"
@@ -354,7 +381,7 @@ def fetch(*, data_dir=DEFAULT_DATA_DIR, execute=False, api_key=None, session=Non
                     receipt = item["rcept_no"]
                     if document_record(data_dir, receipt) is not None:
                         continue
-                    archive = structured_record(data_dir, item["corp_code"])
+                    archive = structured_record(data_dir, item["corp_code"], from_date=start, to_date=end)
                     row = archive["rows"].get(receipt, {}).get("row")
                     _write_json(_path(data_dir, "documents", receipt), _fetch_document(collector, receipt, row))
                     summary["documents_saved"] += 1
@@ -370,7 +397,7 @@ def fetch(*, data_dir=DEFAULT_DATA_DIR, execute=False, api_key=None, session=Non
             summary["requests_made"] = collector.requests_made
             if collector._owns_session and collector.session is not None:
                 collector.session.close()
-    remaining = plan(data_dir)
+    remaining = plan(data_dir, from_date=start, to_date=end)
     for key in ("estimated_requests_still_needed", "estimated_structured_requests", "estimated_document_requests",
                 "structured_corporations_complete", "original_documents_stored", "original_documents_missing"):
         summary[key] = remaining[key]
