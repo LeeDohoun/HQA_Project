@@ -265,3 +265,23 @@ def test_a_day_that_lost_calls_is_discarded_and_a_day_without_room_is_not_starte
     guard.deadline = datetime.now(KST) - timedelta(minutes=1)
     with pytest.raises(CallRefused, match="deadline"):
         guard.admit("chartist")
+
+
+def test_equal_payloads_in_any_key_order_share_one_cache_entry(tmp_path):
+    from backtesting.fitness.replay import request_key
+
+    settings = {"model": "claude-opus-5-5", "effort": "medium", "max_tokens": 16000, "input_limit": 128000}
+    first = [("system", "s"), ("human", json.dumps({"specialists": {"analyst": 1, "quant": 2}}))]
+    second = [("system", "s"), ("human", json.dumps({"specialists": {"quant": 2, "analyst": 1}}))]
+    assert request_key("risk_manager", settings, SpecialistResult, first) == request_key(
+        "risk_manager", settings, SpecialistResult, second)
+    # Answers stored under the first keys (text as sent) are still found and copied over.
+    inner, guard = FakeInner(), CallGuard(max_calls=5, allow_market_hours=True)
+    cache = CallCache(tmp_path / "c.sqlite3")
+    legacy = request_key("chartist", {"model": "claude-opus-5-5", "effort": "low", "max_tokens": 4000,
+                                      "input_limit": 12000}, SpecialistResult, MESSAGES, canonical=False)
+    answer = SpecialistResult(stock_code="000001", role="chartist", score=42.0, confidence=50, thesis="t", risks=[],
+                              data_gaps=[], citations=[{"source_id": "s", "claim": "c"}])
+    cache.put(legacy, "chartist", answer.model_dump_json(), {})
+    model = GuardedModel(inner, "chartist", cache, guard, CallLog())
+    assert model.with_structured_output(SpecialistResult).invoke(MESSAGES).score == 42.0 and inner.calls == 0

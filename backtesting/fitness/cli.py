@@ -284,6 +284,7 @@ def main(argv: list[str] | None = None) -> int:
     llm.add_argument("--deadline", help="no new paid call after this time, e.g. 2026-10-20T03:30:00+09:00")
     llm.add_argument("--cache", default=".local/fitness/llm_cache.sqlite3")
     llm.add_argument("--dry", action="store_true", help="no LLM: uninformative answers, to count calls")
+    llm.add_argument("--cache-only", action="store_true", help="replay cached answers only; never call")
     llm.add_argument("--decision-calls-only", action="store_true",
                      help="skip chartist/quant calls for stocks that cannot reach the RiskManager")
     llm.add_argument("--replicate", type=int, default=0, help="ask again for answered requests (nondeterminism)")
@@ -302,7 +303,9 @@ def main(argv: list[str] | None = None) -> int:
         run_rules(args)
         return 0
     if args.command == "llm":
-        if not args.dry and args.max_calls <= 0:
+        if args.cache_only:
+            args.max_calls = 0  # every answer must come from the cache; a missing one stops the run
+        elif not args.dry and args.max_calls <= 0:
             raise SystemExit("set --max-calls for a paid run")
         return run_llm(args)
     return 2

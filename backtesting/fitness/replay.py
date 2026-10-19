@@ -103,6 +103,8 @@ class CallGuard:
     def room_for_day(self, calls: int, tokens: int, minutes: float) -> str | None:
         """Why a day needing about this many calls, tokens and minutes should not start, or None."""
         with self.lock:
+            if self.max_calls == 0:  # cache-only: any missing answer is refused and stops the day
+                return self.stopped
             reason = self._refusal()
             if reason:
                 return reason
@@ -158,9 +160,18 @@ class CallCache:
                     for k, r, c, m in db.execute("SELECT key, role, created_at, meta FROM calls ORDER BY created_at")]
 
 
-def request_key(role: str, settings: dict, schema: Any, messages: list) -> str:
+def canonical_payload(text: str) -> str:
+    """The payload with sorted keys. The live service fills each candidate's specialist results in
+    the order the calls finish, so equal RiskManager payloads come in different key orders."""
+    return json.dumps(json.loads(text), ensure_ascii=False, sort_keys=True, allow_nan=False)
+
+
+def request_key(role: str, settings: dict, schema: Any, messages: list, *, canonical: bool = True) -> str:
+    """Content hash of one request. `canonical=False` gives the first keys, which hashed the text
+    as sent; they are still read so earlier answers are reused."""
     body = {"role": role, "settings": settings, "schema": schema.model_json_schema(),
-            "messages": [[kind, text] for kind, text in messages]}
+            "messages": [[kind, canonical_payload(text) if canonical and kind == "human" else text]
+                         for kind, text in messages]}
     return hashlib.sha256(json.dumps(body, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
 
@@ -226,6 +237,11 @@ class GuardedModel(_RoleModelBase):
     def _call(self, schema, messages, method, strict):
         key = request_key(self.role, self.settings, schema, messages)
         cached = self.cache.get(key)
+        if cached is None:
+            legacy = request_key(self.role, self.settings, schema, messages, canonical=False)
+            cached = self.cache.get(legacy)
+            if cached is not None:
+                self.cache.put(key, self.role, cached, {"migrated_from": legacy})
         if cached is not None:
             self.log.add(role=self.role, key=key, kind="cache_hit")
             return schema.model_validate_json(cached)
@@ -400,3 +416,36 @@ class ReplayRunner:
         self.now = decision_time(day)
         self.specialists = {}
         return self.service._run_cycle([self.target], self.now)
+
+
+def import_audit_answers(audit_path: Path, cache: CallCache, roles: set[str]) -> dict:
+    """Store a replay audit's answers under canonical keys (requests and responses are paired by
+    request id). A RiskManager answer is rebuilt as the model returned it: its valid plans and the
+    plans the contract set aside."""
+    settings = paper_role_settings()
+    db = sqlite3.connect(str(audit_path))
+    requests = {rid: json.loads(body) for rid, body in
+                db.execute("SELECT id, payload FROM paper_events WHERE kind='llm_request'")}
+    counts = {"imported": 0, "present": 0}
+    for (body,) in db.execute("SELECT payload FROM paper_events WHERE kind='llm_response' ORDER BY id"):
+        response = json.loads(body)
+        request = requests.get(response["request_id"])
+        if request is None or request["role"] not in roles:
+            continue
+        role = request["role"]
+        schema = AccountDecision if role == "risk_manager" else SpecialistResult
+        messages = [("system", request["instructions"]),
+                    ("human", json.dumps(request["payload"], ensure_ascii=False, allow_nan=False))]
+        key = request_key(role, settings[role], schema, messages)
+        output = dict(response["output"])
+        invalid = output.pop("invalid_plans", [])
+        if role == "risk_manager":
+            output["plans"] = output["plans"] + [row["plan"] for row in invalid]
+        raw = json.dumps(output, ensure_ascii=False)
+        schema.model_validate_json(raw)
+        if cache.get(key) is not None:
+            counts["present"] += 1
+            continue
+        cache.put(key, role, raw, {"imported_from": str(audit_path), "request_id": response["request_id"]})
+        counts["imported"] += 1
+    return counts
