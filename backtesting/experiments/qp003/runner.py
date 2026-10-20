@@ -392,7 +392,7 @@ def main(argv=None):
         if args.recover_registry:
             args.recover_registry = safe_path(args.recover_registry, args.data_dir)
         soft, hard = resource.getrlimit(resource.RLIMIT_AS)
-        cap = min(1_490_000_000, hard) if hard != resource.RLIM_INFINITY else 1_490_000_000
+        cap = min(6_000_000_000, hard) if hard != resource.RLIM_INFINITY else 6_000_000_000
         resource.setrlimit(resource.RLIMIT_AS, (min(soft, cap) if soft != resource.RLIM_INFINITY else cap, hard))
         if args.precheck:
             payload = precheck(data_dir=args.data_dir)
