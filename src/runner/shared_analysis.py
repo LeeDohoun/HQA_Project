@@ -351,9 +351,15 @@ def _role_models() -> dict[str, Any]:
 
 
 class SharedAnalysisService:
+    # KIS mock trading answers balance reads with bursts of HTTP 500 that can outlast the
+    # backend's own 1 s/2 s/4 s read retries, so an account that fails at cycle start is read
+    # once more after this pause instead of losing the whole 15-minute cycle. Only a failed
+    # account waits; the cycle start time and the healthy accounts are unchanged.
+    ACCOUNT_RETRY_DELAY_SECONDS = 5
+
     def __init__(self, *, data: Any, accounts: Any, models: dict[str, Any] | None = None,
                  max_workers: int = 6, cache_entries: int = 512, clock: Callable[[], datetime] | None = None,
-                 audit: Any = None):
+                 audit: Any = None, sleep: Callable[[float], None] | None = None):
         self.data = data
         self.accounts = accounts
         self.models = models if models is not None else _role_models()
@@ -362,6 +368,16 @@ class SharedAnalysisService:
         self._cycles = SingleFlightCache(8)
         self.clock = clock or (lambda: datetime.now(UTC))
         self.audit = audit
+        self.sleep = sleep or time.sleep
+
+    def _fetch_account(self, user_id: str) -> dict:
+        try:
+            return self.accounts.fetch_accounts([user_id])
+        except ValueError as exc:
+            if not str(exc).startswith("account_snapshot_failed:"):
+                raise
+            self.sleep(self.ACCOUNT_RETRY_DELAY_SECONDS)
+            return self.accounts.fetch_accounts([user_id])
 
     def _invoke(self, role: str, schema: Any, payload: dict, *, critical: bool = False,
                 priority: LLMTaskPriority = LLMTaskPriority.SCHEDULED):
@@ -462,7 +478,7 @@ class SharedAnalysisService:
         snapshots, account_errors = {}, {}
         for user_id in ids:
             try:
-                snapshots.update(self.accounts.fetch_accounts([user_id]))
+                snapshots.update(self._fetch_account(user_id))
             except Exception as exc:
                 target = next(t for t in targets if str(t.get("userId")) == user_id)
                 account_errors[user_id] = {"schema_version": 2, "user_id": user_id,

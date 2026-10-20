@@ -150,7 +150,8 @@ class Model:
 def service(data=None, accounts=None, invalid_role=None):
     calls = []
     models = {role: Model(role, calls, role == invalid_role) for role in ("analyst", "quant", "chartist", "risk_manager")}
-    return SharedAnalysisService(data=data or Data(), accounts=accounts or Accounts(), models=models, clock=lambda: NOW), calls
+    return SharedAnalysisService(data=data or Data(), accounts=accounts or Accounts(), models=models, clock=lambda: NOW,
+                                 sleep=lambda seconds: None), calls
 
 
 def test_held_specialists_enter_worker_queue_before_new_candidates():
@@ -230,6 +231,48 @@ def test_initial_account_failure_does_not_block_healthy_account_analysis():
     risk = [payload for role, payload in calls if role == "risk_manager"]
     assert len(risk) == 1 and risk[0]["account"]["userId"] == "b"
     assert len(calls) == 4
+
+
+def test_failed_account_snapshot_is_read_once_more_after_a_pause():
+    attempts, pauses = [], []
+
+    class FlakyAccounts(Accounts):
+        def fetch_accounts(self, ids):
+            attempts.append(ids[0])
+            if ids == ["a"] and attempts.count("a") == 1:
+                raise ValueError("account_snapshot_failed:a:KIS_BALANCE_UNAVAILABLE")
+            return super().fetch_accounts(ids)
+
+    engine, _ = service(Data(1), FlakyAccounts())
+    engine.sleep = pauses.append
+    cycle = engine.run_cycle([{"userId": "a"}, {"userId": "b"}])
+    assert cycle["accounts"]["a"]["status"] == "completed"
+    assert cycle["accounts"]["b"]["status"] == "completed"
+    assert attempts[:3] == ["a", "a", "b"]
+    assert pauses == [SharedAnalysisService.ACCOUNT_RETRY_DELAY_SECONDS]
+
+
+def test_account_snapshot_is_retried_only_once_and_only_for_snapshot_failures():
+    attempts, pauses = [], []
+
+    class BrokenAccounts(Accounts):
+        def fetch_accounts(self, ids):
+            attempts.append(ids[0])
+            if ids == ["a"]:
+                raise ValueError("account_snapshot_failed:a:KIS_BALANCE_UNAVAILABLE")
+            if ids == ["b"]:
+                raise ValueError("stale_account_snapshot:b")
+            return super().fetch_accounts(ids)
+
+    engine, _ = service(Data(1), BrokenAccounts())
+    engine.sleep = pauses.append
+    cycle = engine.run_cycle([{"userId": "a"}, {"userId": "b"}, {"userId": "c"}])
+    assert cycle["accounts"]["a"]["status"] == "failed"
+    assert cycle["accounts"]["a"]["error"] == "account_snapshot_failed:a:KIS_BALANCE_UNAVAILABLE"
+    assert cycle["accounts"]["b"]["error"] == "stale_account_snapshot:b"
+    assert cycle["accounts"]["c"]["status"] == "completed"
+    assert attempts[:4] == ["a", "a", "b", "c"]
+    assert len(pauses) == 1
 
 
 def test_role_caches_invalidate_independently():
