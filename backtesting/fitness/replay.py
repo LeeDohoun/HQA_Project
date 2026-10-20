@@ -224,7 +224,8 @@ class GuardedModel(_RoleModelBase):
     """`salt` > 0 asks again for a request already answered (a replicate for nondeterminism);
     `skip(role, payload)` may decline a call whose answer no decision can use."""
 
-    def __init__(self, inner: Any, role: str, cache: CallCache, guard: CallGuard, log: CallLog, *, salt: int = 0,
+    def __init__(self, inner: Any, role: str, cache: CallCache, guard: CallGuard, log: CallLog, *,
+                 salt: int | Callable[[], int] = 0,
                  skip: Callable[[str, dict], bool] | None = None):
         super().__init__(role, model_name=inner.model_name, effort=inner.reasoning_effort,
                          max_tokens=inner.max_tokens, input_limit=inner.hqa_input_limit)
@@ -232,7 +233,8 @@ class GuardedModel(_RoleModelBase):
 
     @property
     def settings(self) -> dict:
-        return {**super().settings, **({"replicate": self.salt} if self.salt else {})}
+        salt = self.salt() if callable(self.salt) else self.salt
+        return {**super().settings, **({"replicate": salt} if salt else {})}
 
     def _call(self, schema, messages, method, strict):
         key = request_key(self.role, self.settings, schema, messages)

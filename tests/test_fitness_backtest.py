@@ -285,3 +285,33 @@ def test_equal_payloads_in_any_key_order_share_one_cache_entry(tmp_path):
     cache.put(legacy, "chartist", answer.model_dump_json(), {})
     model = GuardedModel(inner, "chartist", cache, guard, CallLog())
     assert model.with_structured_output(SpecialistResult).invoke(MESSAGES).score == 42.0 and inner.calls == 0
+
+
+def test_a_plan_segment_may_not_reach_into_paper_hours(tmp_path):
+    from backtesting.fitness.nightly import load_plan
+
+    path = tmp_path / "plan.json"
+    segment = {"id": "s", "start": "2026-10-21T00:30:00+09:00", "deadline": "2026-10-21T03:30:00+09:00",
+               "budget_tokens": 1}
+    path.write_text(json.dumps({"segments": [segment], "jobs": []}))
+    assert load_plan(path)["segments"][0]["id"] == "s"
+    for start, deadline in (("2026-10-21T02:00:00+09:00", "2026-10-21T03:31:00+09:00"),
+                            ("2026-10-21T15:00:00+09:00", "2026-10-21T17:00:00+09:00")):
+        path.write_text(json.dumps({"segments": [{**segment, "start": start, "deadline": deadline}], "jobs": []}))
+        with pytest.raises(ValueError, match="03:30-15:45"):
+            load_plan(path)
+
+
+def test_a_segment_counts_only_paid_answers_recorded_inside_its_window(tmp_path):
+    from backtesting.fitness.nightly import spent
+
+    cache = CallCache(tmp_path / "c.sqlite3")
+    rows = [("a", {"usage": {"input_tokens": 100, "output_tokens": 10}}, "2026-10-20T10:30:00+00:00"),
+            ("b", {"usage": {"input_tokens": 200, "output_tokens": 20}}, "2026-10-20T11:30:00+00:00"),
+            ("c", {"imported_from": "audit"}, "2026-10-20T10:40:00+00:00")]
+    import sqlite3
+    with sqlite3.connect(tmp_path / "c.sqlite3") as db:
+        for key, meta, created in rows:
+            db.execute("INSERT INTO calls VALUES (?,?,?,?,?)", (key, "chartist", created, "{}", json.dumps(meta)))
+    start = datetime(2026, 10, 20, 19, 15, tzinfo=KST)
+    assert spent(tmp_path / "c.sqlite3", start, start + timedelta(hours=1)) == (1, 110)

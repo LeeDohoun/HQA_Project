@@ -234,6 +234,12 @@ def run_llm(args) -> int:
                  reserve={**DAY_RESERVE, "tokens": args.day_reserve_tokens})
     if not args.dry and args.decision_calls_only:
         skip.arm = arm
+    if not args.dry and args.replicate and args.replicate_days:
+        # Ask again only on these days; every other day replays its cached answers.
+        replicate_days = set(args.replicate_days.split(","))
+        for model in models.values():
+            if isinstance(model, GuardedModel):
+                model.salt = lambda: args.replicate if arm.view is not None and arm.view.day in replicate_days else 0
     (out / "decisions.jsonl").unlink(missing_ok=True)
     simulator = Simulator(panel, cost_bps=args.cost_bps, initial_cash=args.cash)
     status = "completed"
@@ -288,6 +294,7 @@ def main(argv: list[str] | None = None) -> int:
     llm.add_argument("--decision-calls-only", action="store_true",
                      help="skip chartist/quant calls for stocks that cannot reach the RiskManager")
     llm.add_argument("--replicate", type=int, default=0, help="ask again for answered requests (nondeterminism)")
+    llm.add_argument("--replicate-days", help="comma-separated days to ask again (with --replicate)")
     llm.add_argument("--real-roles", help="comma-separated roles that call the model; the others answer dry")
     llm.add_argument("--allow-market-hours", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
