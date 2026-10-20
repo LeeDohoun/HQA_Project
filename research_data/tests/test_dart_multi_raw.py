@@ -293,16 +293,24 @@ def test_transport_failure_is_charged_and_never_retried(tmp_path):
     assert not session.calls and result["reason"] == "daily_cap"
 
 
-@pytest.mark.parametrize("field,value", [("corp_code", "00000001"), ("bsns_year", "2023"),
-    ("reprt_code", "11011"), ("fs_div", "bad"), ("rcept_no", "bad"), ("currency", 1),
-    ("account_nm", ""), ("sj_div", None)])
-def test_bad_accounts_fail_but_complete_raw_never_refetched(tmp_path, field, value):
-    row = account(**{field: value})
+def test_malformed_receipt_fails_but_complete_raw_never_refetched(tmp_path):
+    row = account(rcept_no="bad")
     with pytest.raises(ValueError):
         run(tmp_path, payload(row))
     assert m.plan(tmp_path, from_year=2024, to_year=2024, universe_source=UNIVERSE)["completed_requests"] == 1
     with pytest.raises(ValueError):
         run(tmp_path)
+
+
+@pytest.mark.parametrize("field,value,reason", [("corp_code", "00000001", "corp_not_in_batch"),
+    ("bsns_year", "2023", "bsns_year"), ("reprt_code", "11011", "reprt_code"), ("fs_div", "bad", "fs_div"),
+    ("currency", 1, "currency_type"), ("account_nm", "", "account_nm"), ("sj_div", None, "sj_div")])
+def test_out_of_request_or_unusable_rows_are_skipped_and_recorded(tmp_path, field, value, reason):
+    # Same row-level rule as dart_quarterly: skip and count; the raw response stays preserved.
+    run(tmp_path, payload(account(), account(**{field: value})), max_requests=1)
+    assert m.plan(tmp_path, from_year=2024, to_year=2024, universe_source=UNIVERSE)["completed_requests"] == 1
+    side = next((root(tmp_path) / "derived").glob("*.skipped.json"))
+    assert json.loads(side.read_text(encoding="utf-8"))["skipped_rows"] == {reason: 1}
 
 
 def test_corrected_filings_link_only_the_same_version_and_keep_S_O_dates(tmp_path):
@@ -491,3 +499,17 @@ main(["--help"])
         cwd=Path(__file__).resolve().parents[2], capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stderr
     assert "link-check" in result.stdout
+
+
+def test_rows_outside_the_request_are_skipped_and_counted():
+    # DART can return a later fiscal year's rows (seen 2026-10-20: a 2024 annual request returned bsns_year 2025).
+    job = m.Job(2024, "11011", ("00442455",))
+    base = {"corp_code": "00442455", "reprt_code": "11011", "fs_div": "CFS", "sj_div": "BS",
+            "account_nm": "자산총계", "currency": "KRW", "rcept_no": "20250320000001", "thstrm_amount": "100"}
+    payload = {"status": "000", "list": [dict(base, bsns_year="2024"),
+                                         dict(base, bsns_year="2025", rcept_no="20260324000091"),
+                                         dict(base, bsns_year="2024", corp_code="99999999")]}
+    skipped = {}
+    rows = m.derive_rows(payload, job, {"00442455": ["123450"]}, "0" * 64, skipped)
+    assert [row["rcept_no"] for row in rows] == ["20250320000001"]
+    assert skipped == {"bsns_year": 1, "corp_not_in_batch": 1}

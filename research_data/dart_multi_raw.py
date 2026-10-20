@@ -208,17 +208,28 @@ def _version(row):
     return tuple(str(row[field]) for field in VERSION_FIELDS)
 
 
-def derive_rows(payload, job, universe, checksum):
+def _skip_reason(account, job):
+    """Same row-level rules as dart_quarterly: rows DART returns outside the request are skipped and counted."""
+    checks = (("corp_not_in_batch", account.get("corp_code") not in job.corps),
+              ("bsns_year", str(account.get("bsns_year")) != str(job.year)),
+              ("reprt_code", account.get("reprt_code") != job.report),
+              ("fs_div", account.get("fs_div") not in {"CFS", "OFS"}),
+              ("account_nm", not isinstance(account.get("account_nm"), str) or not account["account_nm"].strip()),
+              ("sj_div", not isinstance(account.get("sj_div"), str) or not account["sj_div"].strip()),
+              ("currency_type", account.get("currency") is not None and not isinstance(account["currency"], str)))
+    return next((reason for reason, invalid in checks if invalid), None)
+
+
+def derive_rows(payload, job, universe, checksum, skipped=None):
     if payload["status"] == "013":
         return []
     groups = {}
     for account in payload["list"]:
-        if (account.get("corp_code") not in job.corps or str(account.get("bsns_year")) != str(job.year)
-                or account.get("reprt_code") != job.report or account.get("fs_div") not in {"CFS", "OFS"}
-                or not isinstance(account.get("account_nm"), str) or not account["account_nm"].strip()
-                or not isinstance(account.get("sj_div"), str) or not account["sj_div"].strip()
-                or account.get("currency") is not None and not isinstance(account["currency"], str)):
-            raise ValueError("DART account identifiers do not match the request")
+        reason = _skip_reason(account, job)
+        if reason is not None:
+            if skipped is not None:
+                skipped[reason] = skipped.get(reason, 0) + 1
+            continue
         available = quarterly._filing_date(account.get("rcept_no"))
         if account.get("sj_div") != "BS":
             continue
@@ -235,11 +246,18 @@ def derive_rows(payload, job, universe, checksum):
 
 def _derive(directory, job, universe, stored):
     record, payload = stored
-    rows = derive_rows(payload, job, universe, record["sha256"])
+    skipped = {}
+    rows = derive_rows(payload, job, universe, record["sha256"], skipped)
     body = b"".join(_encoded(row) for row in rows)
     path = directory / "derived" / f"{job.key}.jsonl"
     if not path.exists() or path.read_bytes() != body:
         atomic_write(path, body.decode())
+    if skipped:
+        # Deterministic from the raw bytes; recorded so skipped rows stay visible in reports.
+        side = directory / "derived" / f"{job.key}.skipped.json"
+        content = _encoded({"request_key": job.key, "source_sha256": record["sha256"], "skipped_rows": skipped}).decode()
+        if not side.exists() or side.read_text(encoding="utf-8") != content:
+            atomic_write(side, content)
     return len(rows)
 
 
