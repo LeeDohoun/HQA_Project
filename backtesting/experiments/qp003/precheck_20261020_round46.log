@@ -1,0 +1,44 @@
+precheck: design/S through 2018-04
+precheck: design/S through 2019-04
+precheck: design/S through 2020-04
+precheck: design/S through 2021-04
+precheck: design/S through 2022-04
+precheck: design/S through 2023-04
+precheck: design/S through 2023-12
+precheck: design/O through 2018-04
+precheck: design/O through 2019-04
+precheck: design/O through 2020-04
+precheck: design/O through 2021-04
+precheck: design/O through 2022-04
+precheck: design/O through 2023-04
+precheck: design/O through 2023-12
+precheck: validation/S through 2024-04
+precheck: validation/S through 2025-04
+precheck: validation/S through 2025-11
+precheck: validation/O through 2024-04
+precheck: validation/O through 2025-04
+precheck: validation/O through 2025-11
+{"file": "/home/are01/src/HQA_Project/HQA_qp001/backtesting/experiments/qp003/precheck_20261020_round46.json", "sha256": "904430af33ac674d0cb80e44341b0f7ead6826563a4872e18a079d344c0f04ec", "status": "ok"}
+	Command being timed: "venv/bin/python -B -m backtesting.experiments.qp003 --precheck --data-dir /home/are01/src/HQA_Project/HQA_Project/data --output backtesting/experiments/qp003/precheck_20261020_round46.json"
+	User time (seconds): 1639.40
+	System time (seconds): 12.62
+	Percent of CPU this job got: 99%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 27:32.53
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 1103448
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 2
+	Minor (reclaiming a frame) page faults: 545239
+	Voluntary context switches: 1456
+	Involuntary context switches: 3923
+	Swaps: 0
+	File system inputs: 769800
+	File system outputs: 7576
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

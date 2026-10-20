@@ -1,0 +1,51 @@
+QP003 mixed memory probe: real_selection_12_of_206; peak RSS 960,520,192 bytes
+QP003 mixed memory probe: real_selection_24_of_206; peak RSS 982,683,648 bytes
+QP003 mixed memory probe: real_selection_36_of_206; peak RSS 1,006,608,384 bytes
+QP003 mixed memory probe: real_selection_48_of_206; peak RSS 1,041,199,104 bytes
+QP003 mixed memory probe: real_selection_60_of_206; peak RSS 1,068,228,608 bytes
+QP003 mixed memory probe: real_selection_72_of_206; peak RSS 1,096,482,816 bytes
+QP003 mixed memory probe: real_selection_84_of_206; peak RSS 1,110,814,720 bytes
+QP003 mixed memory probe: real_selection_96_of_206; peak RSS 1,110,814,720 bytes
+QP003 mixed memory probe: real_selection_108_of_206; peak RSS 1,110,814,720 bytes
+QP003 mixed memory probe: real_selection_120_of_206; peak RSS 1,112,776,704 bytes
+QP003 mixed memory probe: real_selection_132_of_206; peak RSS 1,144,635,392 bytes
+QP003 mixed memory probe: real_selection_144_of_206; peak RSS 1,173,884,928 bytes
+QP003 mixed memory probe: real_selection_156_of_206; peak RSS 1,203,638,272 bytes
+QP003 mixed memory probe: real_selection_168_of_206; peak RSS 1,324,978,176 bytes
+QP003 mixed memory probe: real_selection_180_of_206; peak RSS 1,351,421,952 bytes
+QP003 mixed memory probe: real_selection_192_of_206; peak RSS 1,351,421,952 bytes
+QP003 mixed memory probe: real_selection_204_of_206; peak RSS 1,374,646,272 bytes
+QP003 mixed memory probe: real_selection_206_of_206; peak RSS 1,377,660,928 bytes
+QP003 mixed memory probe: real_selections_retained; peak RSS 1,377,660,928 bytes
+QP003 mixed memory probe: synthetic_prices_with_real_selections; peak RSS 1,377,660,928 bytes
+QP003 accounting: S_main complete; peak RSS 1,377,660,928 bytes
+QP003 accounting: S_vanished complete; peak RSS 1,377,660,928 bytes
+QP003 accounting: O_main complete; peak RSS 1,377,660,928 bytes
+QP003 accounting: O_vanished complete; peak RSS 1,377,660,928 bytes
+QP003 mixed memory probe: all_eight_200_path_scenarios_retained; peak RSS 1,377,660,928 bytes
+QP003 mixed memory probe: fsynced_result_with_real_selections; peak RSS 1,377,660,928 bytes
+QP003 stopped: 
+Command exited with non-zero status 2
+	Command being timed: "venv/bin/python -B -m backtesting.experiments.qp003 --memory-probe --data-dir /home/are01/src/HQA_Project/HQA_Project/data --output backtesting/experiments/qp003/memory_probe_20261020_round46.json"
+	User time (seconds): 2047.92
+	System time (seconds): 15.34
+	Percent of CPU this job got: 99%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 34:23.99
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 1358772
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 45
+	Minor (reclaiming a frame) page faults: 569632
+	Voluntary context switches: 3549
+	Involuntary context switches: 5912
+	Swaps: 0
+	File system inputs: 2911808
+	File system outputs: 370600
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 2
