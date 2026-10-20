@@ -1,0 +1,28 @@
+QP003 accounting: S_main complete; peak RSS 1,386,438,656 bytes
+QP003 accounting: S_vanished complete; peak RSS 1,386,438,656 bytes
+QP003 accounting: O_main complete; peak RSS 1,386,438,656 bytes
+QP003 accounting: O_vanished complete; peak RSS 1,386,438,656 bytes
+{"file": "/home/are01/src/HQA_Project/HQA_Project/research/experiments/QP003_profitability_on_av_coverage_hold/results/design_validation_20261020_rerun.json", "sha256": "d1cce492402c488efe72791427e9e323b1993e5f9fcf87f212f08a06081b45ec", "status": "fail"}
+	Command being timed: "venv/bin/python -B -m backtesting.experiments.qp003 --execute --data-dir /home/are01/src/HQA_Project/HQA_Project/data --precheck-file backtesting/experiments/qp003/precheck_20261020_rerun.json --output research/experiments/QP003_profitability_on_av_coverage_hold/results/design_validation_20261020_rerun.json"
+	User time (seconds): 1964.99
+	System time (seconds): 12.50
+	Percent of CPU this job got: 99%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 32:58.94
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 1353944
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 1554
+	Minor (reclaiming a frame) page faults: 519925
+	Voluntary context switches: 4164
+	Involuntary context switches: 5413
+	Swaps: 0
+	File system inputs: 46592
+	File system outputs: 371280
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
