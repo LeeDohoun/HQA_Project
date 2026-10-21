@@ -48,8 +48,8 @@
 
 사람의 승인이 필요한 것에는 **[승인]** 표시를 했습니다.
 
-1. **[승인]** `hqa-server`에 `/opt/hqa-runtime` 설치, `/etc/hqa/strategy-runtime.env` 작성, systemd 등록 ([설치 절차](strategy-runtime.md#설치-사람-확인-필요--연구실-hqa-server)).
-2. **[승인]** 텔레그램 봇 토큰·채팅 ID를 환경 파일에 넣은 뒤 시험 발송 (`strategy_runtime alerts --execute`).
+1. ~~`hqa-server` 설치~~ **완료 (2026-10-21)**: `/opt/hqa-runtime`(f0946ca, root:hqa 750), venv(수집기와 같은 패키지 버전), `/etc/hqa/strategy-runtime.env`(root:hqa 640, 같은 서버 수집 자료 복사, 백엔드·텔레그램 미설정), 타이머 `hqa-strategy-runtime-morning.timer`(평일 09:10)·`-evening.timer`(평일 16:30) 활성. 첫 실행(systemd) 성공: 10-20 관찰 장부, `data/live/runs/20261021_morning.json`. 코드 갱신은 이 PC에서 `git bundle`을 보내 `/opt/hqa-runtime`에서 `git fetch`/`checkout` 합니다 (서버에 GitHub 인증 없음).
+2. **[승인, 보류 중]** 텔레그램 봇 토큰·채팅 ID를 환경 파일에 넣은 뒤 시험 발송 (`strategy_runtime alerts --execute`). 그때까지 알림은 `data/live/alerts/*.jsonl` 파일에만 남습니다.
 3. 10-30 FW001 첫 결정(10-30 일봉이 공개되는 11-02 아침 08:00~08:59에 기록·봉인), 11-02 진입일부터 관찰 기록 (11-02 장부는 11-03 아침 09:10에 작성).
 4. 11-27까지 2027년 KRX 휴장일과 거래세율을 공식 자료로 반영 (`research/experiments/OPS_TODO_2027_KRX_CALENDAR.md`). 연구 쪽 작업입니다.
 5. 보류 구간 평가: AV002(AV001 재평가), HF001. 연구 세션 몫이며 **[승인]**.
