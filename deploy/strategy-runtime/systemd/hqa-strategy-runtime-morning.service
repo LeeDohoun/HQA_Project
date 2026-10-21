@@ -1,5 +1,5 @@
 [Unit]
-Description=HQA strategy runtime morning check (FW001 decision seal on trade dates, backend orders)
+Description=HQA strategy runtime morning run (data pull, shadow catch-up of past sessions, FW001 decision seal, plans, status, alerts, daily summary)
 Wants=network-online.target
 After=network-online.target
 OnFailure=hqa-strategy-runtime-failure@%n.service

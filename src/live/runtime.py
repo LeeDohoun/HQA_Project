@@ -579,20 +579,68 @@ def _next_session(session):
     return later[0]
 
 
-def plans_for_next_session(ctx, session, *, execute) -> dict:
+def _plan_rows(ctx, entry, target, *, execute, scope):
+    rows, errors = [], []
+    for phase in due_phases(ctx, entry, target):
+        result = plan_command(ctx, entry.strategy_id, target, phase, execute=execute)
+        errors.extend({"strategyId": entry.strategy_id, "sessionDate": target, **e} for e in result["errors"])
+        for record in result["plans"]:
+            rows.append({"strategyId": entry.strategy_id, "sessionDate": target, "phase": phase, "scope": scope,
+                         "orders": len(record["orders"]), "advWarnings": record["summary"]["advWarnings"],
+                         "funding": record.get("funding"), "written": record.get("_written", False)})
+    return rows, errors
+
+
+def plans_for_today_and_next(ctx, session, *, execute) -> dict:
+    """Today's due phases (written with execute; the state before today is final after the
+    catch-up) and the next session's phases (preview only: today's fills are not known yet)."""
     target = _next_session(session)
     plans, errors = [], []
     for entry in ctx.entries:
-        for phase in due_phases(ctx, entry, target):
-            result = plan_command(ctx, entry.strategy_id, target, phase, execute=execute)
-            errors.extend({"strategyId": entry.strategy_id, **e} for e in result["errors"])
-            for record in result["plans"]:
-                plans.append({"strategyId": entry.strategy_id, "sessionDate": target, "phase": phase,
-                              "orders": len(record["orders"]), "advWarnings": record["summary"]["advWarnings"],
-                              "funding": record.get("funding"), "written": record.get("_written", False)})
-    out = {"sessionDate": target, "plans": plans, "errors": errors}
+        for day, write, scope in ((session, execute, "today"), (target, False, "next")):
+            rows, errs = _plan_rows(ctx, entry, day, execute=write, scope=scope)
+            plans.extend(rows)
+            errors.extend(errs)
+    out = {"sessionDate": session, "nextSessionDate": target, "plans": plans, "errors": errors}
     if errors:
         out.update(_status="failed", _error="plan_errors:" + ";".join(f"{e['strategyId']}:{e['error']}" for e in errors))
+    return out
+
+
+def catch_up_shadow(ctx, today, *, execute, now) -> dict:
+    """Fill every past session without a ledger entry, oldest first, per strategy.
+
+    KRX publishes day D's file around 08:00 on the next business day, so a missing file for
+    the previous session (or later) is only pending: no ledger write, no incident. A file
+    still missing for an older session is an incident (price_file_missing, written by
+    shadow_fill_command). A strategy's catch-up stops at its first pending or refused
+    session: the ledger never skips a session and writes a newer one after it.
+    A strategy without any ledger starts at the previous session.
+    """
+    previous = shadow.previous_session(today)
+    filled, pending, problems = [], [], []
+    for entry in ctx.entries:
+        ledger = shadow.read_ledger(ctx.data_dir, entry.strategy_id)
+        last = ledger[-1]["date"] if ledger else None
+        candidates = [previous] if last is None else [
+            d for d in shadow.sessions_between(last, today) if last < d < today]
+        for day in candidates:
+            if day >= previous and not shadow.krx_path(ctx.data_dir, day).is_file():
+                pending.append({"strategyId": entry.strategy_id, "session": day, "reason": "price_file_pending"})
+                break
+            result = shadow_fill_command(ctx, day, entry.strategy_id, execute=execute, now=now)["results"][0]
+            result["session"] = day
+            if result["status"] != "ok":
+                problems.append(result)
+                break
+            filled.append({k: result.get(k) for k in ("strategyId", "session", "mode", "written", "navCloseKrw",
+                                                       "incidents", "filledCount")})
+            if not execute:
+                break  # a dry run cannot chain sessions: the next one would not see this entry
+    out = {"previousSession": previous, "filled": filled, "pending": pending, "problems": problems}
+    if problems:
+        out.update(_status="failed", _error="shadow_fill:" + ";".join(
+            f"{r['strategyId']}:{r['session']}:{r.get('reason') or r['status']}" for r in problems))
     return out
 
 
@@ -640,21 +688,30 @@ def daily_command(ctx, *, session=None, when=None, execute=False, now=None, clie
     is_session = steps.run("session_check", lambda: {"isSession": shadow.is_session(session)})
     summary["isSession"] = None if is_session is None else is_session["isSession"]
     status = backend = None
-    if when == "morning":
+    if not summary["isSession"]:
+        if when == "morning":
+            steps.run("decision_seals", lambda: decision_seal_check(ctx, session))
+        steps.skip("shadow_catch_up", "not_a_krx_session")
+    elif when == "morning":
+        # Day D's KRX file arrives ~08:00 on D+1: the morning fills past sessions, never today.
+        steps.run("shadow_catch_up", lambda: catch_up_shadow(ctx, session, execute=execute, now=now))
         steps.run("decision_seals", lambda: decision_seal_check(ctx, session))
-        backend = steps.run("backend_checks", lambda: backend_checks(ctx, session, client_factory, env))
-    elif summary["isSession"]:
-        steps.run("shadow_fill", lambda: _shadow_step(ctx, session, execute, now))
-        steps.run("plans", lambda: plans_for_next_session(ctx, session, execute=execute))
+        steps.run("plans", lambda: plans_for_today_and_next(ctx, session, execute=execute))
         status = steps.run("status", lambda: status_command(ctx, generated_at=now.isoformat()))
         steps.run("publish_status", lambda: _publish_step(ctx, execute, client_factory, env))
         backend = steps.run("backend_checks", lambda: backend_checks(ctx, session, client_factory, env))
     else:
-        steps.skip("shadow_fill", "not_a_krx_session")
+        # Evening: the day's batch results (CLOSE after 15:30) and a retry of pending sessions;
+        # today's own session is filled tomorrow morning.
+        backend = steps.run("backend_checks", lambda: backend_checks(ctx, session, client_factory, env))
+        steps.run("shadow_catch_up", lambda: catch_up_shadow(ctx, session, execute=execute, now=now))
     summary["steps"] = steps.items
+    try:
+        ledgers, incident_files = _ledgers(ctx), _incident_files(ctx)
+    except (OSError, ValueError):
+        ledgers, incident_files = {}, {}  # status/alerts report an unreadable ledger
     inputs = alerts.AlertInputs(today=now.date(), when=when, session=session, summary=summary, status=status,
-                                ledgers=_ledgers(ctx) if status is not None else {},
-                                incident_files=_incident_files(ctx) if status is not None else {},
+                                ledgers=ledgers, incident_files=incident_files,
                                 backend=backend, calendar_warnings=warnings.get("warnings") or [])
     steps.run("alerts", lambda: _alert_step(inputs, ctx, now, execute, env))
     summary.update(steps=steps.items, status="failed" if steps.failed else "ok",
@@ -664,14 +721,6 @@ def daily_command(ctx, *, session=None, when=None, execute=False, now=None, clie
         shadow.write_immutable(path, summary, ignore=())
         summary["runFile"] = str(path)
     return summary, 1 if steps.failed else 0
-
-
-def _shadow_step(ctx, session, execute, now):
-    result = shadow_fill_command(ctx, session, execute=execute, now=now)
-    if result["status"] != "ok":
-        result.update(_status="failed", _error="shadow_fill:" + ";".join(
-            f"{r['strategyId']}:{r.get('reason') or r['status']}" for r in result["results"] if r["status"] != "ok"))
-    return result
 
 
 def _publish_step(ctx, execute, client_factory, env):

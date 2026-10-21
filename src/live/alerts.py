@@ -210,8 +210,9 @@ def rule_stage(inputs, state):
                            f"stage_blocked:{sid}:{effective}")
 
 
-def rule_evening_summary(inputs, state):
-    if inputs.when != "evening" or not inputs.status:
+def rule_daily_summary(inputs, state):
+    """Once per morning run: stage, NAV/return, sessions, incidents and next action per strategy."""
+    if inputs.when != "morning" or not inputs.status:
         return
     rows = []
     plans = _plans(inputs.summary)
@@ -225,12 +226,12 @@ def rule_evening_summary(inputs, state):
     text = "; ".join(f"{r['strategyId']} {r['stage']} 순자산 {r['navKrw']} ({r['returnPct']}%) 사고 {r['incidents']}"
                      for r in rows)
     run = (inputs.summary or {}).get("runId") or inputs.today.isoformat()
-    yield Alert("info", "evening_summary", None, f"저녁 요약 {inputs.session}: {text}", {"strategies": rows},
-                f"evening_summary:{inputs.session}:{run}")
+    yield Alert("info", "daily_summary", None, f"일일 요약 {inputs.session}: {text}", {"strategies": rows},
+                f"daily_summary:{inputs.session}:{run}")
 
 
 RULES = (rule_status_errors, rule_shadow_incidents, rule_decision_not_final, rule_step_failures,
-         rule_failure_unit, rule_backend, rule_calendar, rule_plans, rule_stage, rule_evening_summary)
+         rule_failure_unit, rule_backend, rule_calendar, rule_plans, rule_stage, rule_daily_summary)
 
 
 def evaluate(inputs: AlertInputs, state: dict) -> list[Alert]:

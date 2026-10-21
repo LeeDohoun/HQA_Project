@@ -72,17 +72,17 @@ def test_warning_rules_and_stage_change_only():
     assert [a.code for a in moved].count("stage_blocked") == 1
 
 
-def test_evening_info_summary_and_backend_not_configured():
+def test_morning_daily_summary_and_backend_not_configured():
     summary = {"runId": "r1", "steps": [{"step": "plans", "status": "ok", "result": {"plans": [
         {"strategyId": "hf001_f_both", "sessionDate": "2026-11-02", "phase": "OPEN"}]}}]}
-    inputs = alerts.AlertInputs(today=NOW.date(), when="evening", session="2026-10-30", summary=summary,
+    inputs = alerts.AlertInputs(today=NOW.date(), when="morning", session="2026-11-02", summary=summary,
                                 status=_status(stages=(("hf001_f_both", "shadow", "shadow", []),)),
                                 backend={"configured": False, "note": "backend_not_configured"})
     (info,) = alerts.evaluate(inputs, {})
-    assert (info.severity, info.code) == ("info", "evening_summary")
+    assert (info.severity, info.code) == ("info", "daily_summary")
     assert info.details["strategies"][0]["nextAction"] == "2026-11-02 OPEN"
-    assert info.message.startswith("저녁 요약 2026-10-30")
-    inputs.when = "morning"
+    assert info.message.startswith("일일 요약 2026-11-02")
+    inputs.when = "evening"
     assert alerts.evaluate(inputs, {}) == []
 
 
@@ -210,7 +210,7 @@ def _alert(severity, code, sid=None, message="메시지"):
 
 def test_telegram_payload_and_grouping_critical_first():
     fake = FakeTelegram()
-    result = _channel(fake).send([_alert("info", "evening_summary", message="요약"),
+    result = _channel(fake).send([_alert("info", "daily_summary", message="요약"),
                                   _alert("critical", "unknown_orders", message="확인 필요 주문 1건"),
                                   _alert("warning", "stage_blocked", "av001_av_all", "단계")])
     (call,) = fake.calls
@@ -221,7 +221,7 @@ def test_telegram_payload_and_grouping_critical_first():
     assert lines[0] == "[HQA 전략] 긴급 1 · 주의 1 · 정보 1 (2026-11-02 저녁)"
     assert lines[1:] == ["긴급 | 전체 | 확인 필요 주문 1건", "주의 | av001_av_all | 단계", "정보 | 전체 | 요약"]
     assert result == {"channel": "telegram", "sent": 3, "messages": 1,
-                      "delivered": ["unknown_orders:None", "stage_blocked:av001_av_all", "evening_summary:None"]}
+                      "delivered": ["unknown_orders:None", "stage_blocked:av001_av_all", "daily_summary:None"]}
 
 
 def test_telegram_chunks_under_limit():
@@ -295,8 +295,8 @@ def test_daily_exit_code_nonzero_when_telegram_fails(tmp_path, monkeypatch):
     write_flat_days(data, "2026-10-30", "2026-11-02", ["000010"])
     ctx = runtime.load_context(root, data)
     monkeypatch.setattr(alerts, "requests", FakeTelegram([FakeResponse(500, {"ok": False})] * 5))
-    summary, code = runtime.daily_command(ctx, session="2026-10-30", execute=True,
-                                          now=datetime(2026, 10, 30, 18, 30, tzinfo=KST), env=TG_ENV)
+    summary, code = runtime.daily_command(ctx, session="2026-11-02", execute=True,
+                                          now=datetime(2026, 11, 2, 9, 10, tzinfo=KST), env=TG_ENV)
     step = next(s for s in summary["steps"] if s["step"] == "alerts")
     assert code == 1 and step["status"] == "failed" and step["error"] == "alert_channel_failed"
-    assert TOKEN not in (data / "live/runs/20261030_evening.json").read_text(encoding="utf-8")
+    assert TOKEN not in (data / "live/runs/20261102_morning.json").read_text(encoding="utf-8")

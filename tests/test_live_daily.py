@@ -43,18 +43,18 @@ def at(day, hhmm):
 
 def test_non_session_day_only_checks_and_exits_zero(tmp_path):
     ctx = _ctx(tmp_path)
-    summary, code = runtime.daily_command(ctx, session="2026-10-31", execute=True, now=at("2026-10-31", "18:30"),
+    summary, code = runtime.daily_command(ctx, session="2026-10-31", execute=True, now=at("2026-10-31", "09:10"),
                                           env={})
     steps = _steps(summary)
-    assert code == 0 and summary["isSession"] is False and summary["when"] == "evening"
-    assert steps["shadow_fill"]["status"] == "skipped" and "plans" not in steps
+    assert code == 0 and summary["isSession"] is False and summary["when"] == "morning"
+    assert steps["shadow_catch_up"]["status"] == "skipped" and "plans" not in steps and "decision_seals" in steps
     assert not (ctx.data_dir / "live/hf001_f_both").exists()
-    assert (ctx.data_dir / "live/runs/20261031_evening.json").is_file()
+    assert (ctx.data_dir / "live/runs/20261031_morning.json").is_file()
 
 
 def test_morning_seal_check_final(tmp_path):
     ctx = _ctx(tmp_path)
-    summary, code = runtime.daily_command(ctx, session="2026-11-02", when="morning", now=at("2026-11-02", "09:05"),
+    summary, code = runtime.daily_command(ctx, session="2026-11-02", when="morning", now=at("2026-11-02", "09:10"),
                                           env={})
     rows = _steps(summary)["decision_seals"]["result"]["strategies"]
     assert code == 0 and {r["state"] for r in rows} == {"final"} and len(rows) == 2
@@ -78,7 +78,7 @@ def test_morning_seal_check_not_final_fails_and_alerts(tmp_path, case, state):
             shutil.rmtree(marker.parent)
             (ctx.data_dir / "forward/fw001/decisions/202610.json").unlink()
     summary, code = runtime.daily_command(ctx, session="2026-11-02", when="morning", execute=True,
-                                          now=at("2026-11-02", "09:05"), env={})
+                                          now=at("2026-11-02", "09:10"), env={})
     step = _steps(summary)["decision_seals"]
     assert code == 1 and step["status"] == "failed" and step["error"] == f"decision_not_final:2026-10:{state}"
     assert {r["state"] for r in step["result"]["strategies"]} == {state}
@@ -89,35 +89,96 @@ def test_morning_seal_check_not_final_fails_and_alerts(tmp_path, case, state):
     assert all(a["code"] != "daily_step_failed" for a in sent)
 
 
-def test_evening_run_writes_ledger_plans_status_alerts_and_run_summary(tmp_path):
+def test_morning_run_catches_up_plans_status_alerts_and_run_summary(tmp_path):
     ctx = _ctx(tmp_path)
-    now = at("2026-10-30", "18:30")
-    summary, code = runtime.daily_command(ctx, session="2026-10-30", execute=True, now=now, env={})
+    summary, code = runtime.daily_command(ctx, session="2026-11-02", execute=True, now=at("2026-11-02", "09:10"),
+                                          env={})
     steps = _steps(summary)
     assert code == 0, summary
-    assert steps["shadow_fill"]["status"] == "ok"
+    catch_up = steps["shadow_catch_up"]["result"]
+    assert catch_up["previousSession"] == "2026-10-30" and catch_up["pending"] == []
+    assert [(f["strategyId"], f["session"]) for f in catch_up["filled"]] == [
+        ("hf001_f_both", "2026-10-30"), ("av001_av_all", "2026-10-30")]
     assert shadow.ledger_path(ctx.data_dir, "hf001_f_both", "2026-10-30").is_file()
+    assert not shadow.ledger_path(ctx.data_dir, "hf001_f_both", "2026-11-02").exists()  # today: tomorrow morning
     plans = steps["plans"]["result"]
-    assert plans["sessionDate"] == "2026-11-02"
-    assert {(p["strategyId"], p["phase"]) for p in plans["plans"]} == {("hf001_f_both", "OPEN"),
-                                                                      ("av001_av_all", "OPEN")}
+    assert (plans["sessionDate"], plans["nextSessionDate"]) == ("2026-11-02", "2026-11-03")
+    assert {(p["strategyId"], p["sessionDate"], p["phase"], p["scope"]) for p in plans["plans"]} == {
+        ("hf001_f_both", "2026-11-02", "OPEN", "today"), ("av001_av_all", "2026-11-02", "OPEN", "today")}
     assert runtime.plan_path(ctx.data_dir, "av001_av_all", "2026-11-02", "OPEN").is_file()
     assert steps["status"]["status"] == "ok"
-    assert steps["publish_status"]["status"] == "skipped" and steps["publish_status"]["result"]["note"] == "backend_not_configured"
+    assert steps["publish_status"]["status"] == "skipped"
+    assert steps["publish_status"]["result"]["note"] == "backend_not_configured"
     sent = steps["alerts"]["result"]["alerts"]
-    assert ("info", "evening_summary") in {(a["severity"], a["code"]) for a in sent}
+    assert ("info", "daily_summary") in {(a["severity"], a["code"]) for a in sent}
     assert ("warning", "stage_blocked") in {(a["severity"], a["code"]) for a in sent}  # AV001 has no holdout pass
-    assert (ctx.data_dir / "live/alerts/20261030.jsonl").is_file()
-    first = ctx.data_dir / "live/runs/20261030_evening.json"
+    assert (ctx.data_dir / "live/alerts/20261102.jsonl").is_file()
+    first = ctx.data_dir / "live/runs/20261102_morning.json"
     original = first.read_text(encoding="utf-8")
     assert json.loads(original)["runId"] == summary["runId"]
-    again, code = runtime.daily_command(ctx, session="2026-10-30", execute=True, now=at("2026-10-30", "18:45"),
+    again, code = runtime.daily_command(ctx, session="2026-11-02", execute=True, now=at("2026-11-02", "09:25"),
                                         env={})
     assert code == 0 and first.read_text(encoding="utf-8") == original  # immutable per run
+    assert _steps(again)["shadow_catch_up"]["result"]["filled"] == []
     runs = sorted(p.name for p in (ctx.data_dir / "live/runs").iterdir())
-    assert len(runs) == 2 and runs[1].startswith("20261030_evening_184500-")
-    stage_alerts = [a for a in _steps(again)["alerts"]["result"]["alerts"] if a["code"] == "stage_blocked"]
-    assert stage_alerts == []  # unchanged stage is not re-alerted
+    assert len(runs) == 2 and runs[1].startswith("20261102_morning_092500-")
+    assert [a for a in _steps(again)["alerts"]["result"]["alerts"] if a["code"] == "stage_blocked"] == []
+
+
+def test_monday_morning_catches_up_in_order_through_friday(tmp_path):
+    ctx = _ctx(tmp_path)
+    runtime.daily_command(ctx, session="2026-11-05", execute=True, now=at("2026-11-05", "09:10"), env={})
+    assert [e["date"] for e in shadow.read_ledger(ctx.data_dir, "hf001_f_both")] == ["2026-11-04"]
+    summary, code = runtime.daily_command(ctx, session="2026-11-09", execute=True, now=at("2026-11-09", "09:10"),
+                                          env={})
+    filled = _steps(summary)["shadow_catch_up"]["result"]["filled"]
+    assert code == 0 and [(f["strategyId"], f["session"]) for f in filled] == [
+        ("hf001_f_both", "2026-11-05"), ("hf001_f_both", "2026-11-06"),
+        ("av001_av_all", "2026-11-05"), ("av001_av_all", "2026-11-06")]
+    assert [e["date"] for e in shadow.read_ledger(ctx.data_dir, "av001_av_all")] == [
+        "2026-11-04", "2026-11-05", "2026-11-06"]
+
+
+def test_pending_previous_session_vs_incident_a_business_day_later(tmp_path):
+    ctx = _ctx(tmp_path)
+    runtime.daily_command(ctx, session="2026-11-05", execute=True, now=at("2026-11-05", "09:10"), env={})
+    (ctx.data_dir / "market/krx_daily/2026/20261106.jsonl").unlink()  # Friday's file is late
+    monday, code = runtime.daily_command(ctx, session="2026-11-09", execute=True, now=at("2026-11-09", "09:10"),
+                                         env={})
+    catch_up = _steps(monday)["shadow_catch_up"]
+    assert code == 0 and catch_up["status"] == "ok"
+    assert catch_up["result"]["pending"] == [
+        {"strategyId": "hf001_f_both", "session": "2026-11-06", "reason": "price_file_pending"},
+        {"strategyId": "av001_av_all", "session": "2026-11-06", "reason": "price_file_pending"}]
+    assert [e["date"] for e in shadow.read_ledger(ctx.data_dir, "hf001_f_both")] == ["2026-11-04", "2026-11-05"]
+    assert shadow.read_incidents(ctx.data_dir, "hf001_f_both") == []
+    evening, code = runtime.daily_command(ctx, session="2026-11-09", execute=True, now=at("2026-11-09", "16:30"),
+                                          env={})
+    steps = _steps(evening)
+    assert code == 0 and evening["when"] == "evening"
+    assert len(steps["shadow_catch_up"]["result"]["pending"]) == 2
+    assert shadow.read_incidents(ctx.data_dir, "hf001_f_both") == []
+    tuesday, code = runtime.daily_command(ctx, session="2026-11-10", execute=True, now=at("2026-11-10", "09:10"),
+                                          env={})
+    step = _steps(tuesday)["shadow_catch_up"]
+    assert code == 1 and step["status"] == "failed" and "2026-11-06:price_file_missing" in step["error"]
+    assert [i["kind"] for i in shadow.read_incidents(ctx.data_dir, "hf001_f_both")] == ["price_file_missing"]
+    # Never skip the missing session to write a newer one after it.
+    assert [e["date"] for e in shadow.read_ledger(ctx.data_dir, "hf001_f_both")] == ["2026-11-04", "2026-11-05"]
+    assert "incident_file" in {a["code"] for a in _steps(tuesday)["alerts"]["result"]["alerts"]}
+
+
+def test_evening_checks_backend_and_never_fills_today(tmp_path):
+    ctx = _ctx(tmp_path)
+    runtime.daily_command(ctx, session="2026-11-02", execute=True, now=at("2026-11-02", "09:10"), env={})
+    summary, code = runtime.daily_command(ctx, session="2026-11-02", execute=True, now=at("2026-11-02", "16:30"),
+                                          env={})
+    steps = _steps(summary)
+    assert code == 0 and list(steps) == ["calendar_warnings", "session_check", "backend_checks", "shadow_catch_up",
+                                         "alerts"]
+    assert steps["shadow_catch_up"]["result"]["filled"] == []
+    assert not shadow.ledger_path(ctx.data_dir, "hf001_f_both", "2026-11-02").exists()
+    assert all(a["code"] != "daily_summary" for a in steps["alerts"]["result"]["alerts"])
 
 
 def test_default_phase_by_time(tmp_path):
@@ -135,26 +196,15 @@ def test_step_failure_does_not_stop_independent_steps(tmp_path, monkeypatch):
         raise RuntimeError("status exploded")
 
     monkeypatch.setattr(runtime, "status_command", broken)
-    summary, code = runtime.daily_command(ctx, session="2026-10-30", execute=True, now=at("2026-10-30", "18:30"),
+    summary, code = runtime.daily_command(ctx, session="2026-11-02", execute=True, now=at("2026-11-02", "09:10"),
                                           env={})
     steps = _steps(summary)
     assert code == 1 and summary["status"] == "failed"
     assert steps["status"] == {"step": "status", "status": "failed", "error": "RuntimeError: status exploded"}
-    assert steps["shadow_fill"]["status"] == "ok" and steps["plans"]["status"] == "ok"
+    assert steps["shadow_catch_up"]["status"] == "ok" and steps["plans"]["status"] == "ok"
     assert steps["publish_status"]["status"] == "skipped" and steps["alerts"]["status"] == "ok"
     failed = [a for a in steps["alerts"]["result"]["alerts"] if a["code"] == "daily_step_failed"]
     assert failed and "status exploded" in failed[0]["message"]
-
-
-def test_evening_refusal_is_a_failed_step(tmp_path):
-    ctx = _ctx(tmp_path)
-    (ctx.data_dir / "market/krx_daily/2026/20261102.jsonl").unlink()
-    summary, code = runtime.daily_command(ctx, session="2026-11-02", execute=True, now=at("2026-11-02", "18:30"),
-                                          env={})
-    step = _steps(summary)["shadow_fill"]
-    assert code == 1 and step["status"] == "failed" and "price_file_missing" in step["error"]
-    codes = [a["code"] for a in _steps(summary)["alerts"]["result"]["alerts"]]
-    assert "incident_file" in codes and "daily_step_failed" in codes
 
 
 class FakeBackend:
@@ -175,19 +225,22 @@ class FakeBackend:
         return {"stored": True}
 
 
-def test_evening_with_backend_publishes_and_alerts(tmp_path):
+@pytest.mark.parametrize("when", ["morning", "evening"])
+def test_backend_checks_and_publish(tmp_path, when):
     ctx = _ctx(tmp_path)
     import dataclasses
     ctx = dataclasses.replace(ctx, entries=tuple(
         dataclasses.replace(e, account_user_id="u1") if e.strategy_id == "hf001_f_both" else e for e in ctx.entries))
     runtime.record_batch(ctx.data_dir, "hf001_f_both",
-                         {"userId": "u1", "sessionDate": "2026-10-30", "phase": "CLOSE", "decisionHash": "h",
+                         {"userId": "u1", "sessionDate": "2026-11-02", "phase": "CLOSE", "decisionHash": "h",
                           "idempotencyKey": "k"}, {"batchId": "b-1"})
     fake = FakeBackend()
-    summary, code = runtime.daily_command(ctx, session="2026-10-30", execute=True, now=at("2026-10-30", "18:30"),
+    summary, code = runtime.daily_command(ctx, session="2026-11-02", when=when, execute=True,
+                                          now=at("2026-11-02", "09:10" if when == "morning" else "16:30"),
                                           client_factory=lambda: fake, env={})
     steps = _steps(summary)
-    assert code == 0 and fake.published == ["hf001_f_both", "av001_av_all"]
+    assert code == 0
+    assert fake.published == (["hf001_f_both", "av001_av_all"] if when == "morning" else [])
     backend = steps["backend_checks"]["result"]
     assert backend["configured"] and backend["batches"][0]["status"] == "REJECTED"
     codes = {a["code"] for a in steps["alerts"]["result"]["alerts"]}
@@ -197,7 +250,7 @@ def test_evening_with_backend_publishes_and_alerts(tmp_path):
 def test_unknown_alert_channel_fails_before_any_work(tmp_path):
     ctx = _ctx(tmp_path)
     with pytest.raises(ValueError, match="unknown_alert_channel:pigeon"):
-        runtime.daily_command(ctx, session="2026-10-30", execute=True, now=at("2026-10-30", "18:30"),
+        runtime.daily_command(ctx, session="2026-11-02", execute=True, now=at("2026-11-02", "09:10"),
                               env={"HQA_ALERT_CHANNELS": "pigeon"})
     assert not (ctx.data_dir / "live").exists()
 
@@ -244,8 +297,8 @@ def test_service_units(name, command):
 
 
 @pytest.mark.parametrize("name, calendar, service", [
-    ("hqa-strategy-runtime-morning.timer", "Mon..Fri *-*-* 09:05 Asia/Seoul", "hqa-strategy-runtime-morning.service"),
-    ("hqa-strategy-runtime-evening.timer", "Mon..Fri *-*-* 19:30 Asia/Seoul", "hqa-strategy-runtime-evening.service"),
+    ("hqa-strategy-runtime-morning.timer", "Mon..Fri *-*-* 09:10 Asia/Seoul", "hqa-strategy-runtime-morning.service"),
+    ("hqa-strategy-runtime-evening.timer", "Mon..Fri *-*-* 16:30 Asia/Seoul", "hqa-strategy-runtime-evening.service"),
 ])
 def test_timer_units(name, calendar, service):
     unit = _unit(name)

@@ -213,18 +213,17 @@ venv/bin/python -m scripts.ops.strategy_runtime submit --strategy hf001_f_both -
 
 | 시각 (평일 KST) | 작업 | 내용 |
 | --- | --- | --- |
-| 09:05 | `deploy/strategy-runtime/morning.sh` → `strategy_runtime daily --when morning --execute` | 수집 서버 자료 받기 → 진입일이면 FW001 결정의 완료 증명 확인(08:59 마감) → 백엔드 접수 불명 주문·위험 상태 확인 → 알림 |
-| 19:30 | `deploy/strategy-runtime/evening.sh` → `strategy_runtime daily --when evening --execute` | 수집 서버 자료 받기 → 섀도 장부 → 다음 세션 주문 계획 → 상태 → 백엔드 상태 게시 → 알림 |
+| 09:10 | `deploy/strategy-runtime/morning.sh` → `strategy_runtime daily --when morning --execute` | 수집 자료 복사 → 지난 세션 섀도 장부 작성(오래된 순) → 오늘이 진입일이면 FW001 완료 증명 확인(08:59 마감) → 오늘 할 주문 계획 → 상태 → 상태 게시 → 백엔드 확인 → 알림(일일 요약 포함) |
+| 16:30 | `deploy/strategy-runtime/evening.sh` → `strategy_runtime daily --when evening --execute` | 수집 자료 복사 → 백엔드 확인(그날 일괄 주문·종가 동시호가 결과, 접수 불명 주문, 위험) → 아침에 일봉이 없던 세션 재시도 → 알림 |
 
-- 19:30은 KRX 일봉 수집과 결정일의 FW001 기록(18:35 전후)이 끝난 뒤입니다.
-- 자료 받기는 `scripts/ops/pull_collector_data.sh`(`rsync -a`, mtime 보존)이며, 실패하면 그 실행은 시작하지 않고 실패로 끝납니다. 각 단계는 따로 실행되고, 하나라도 실패하면 종료 코드가 1입니다. 실행 요약은 `data/live/runs/`에 남습니다.
-- 서비스가 실패하면 `hqa-strategy-runtime-failure@.service`가 `systemd_unit_failed` 긴급 알림을 보냅니다.
-
+- KRX는 D일 일봉을 **다음 영업일 08:00**에 공개합니다 (수집기 08:02~08:40 수집). 그래서 D일 섀도 장부는 D+1일 아침에 씁니다. 월요일 아침에는 금요일을 씁니다. FW001 월말 결정도 진입일 아침 08:00~08:59에 기록·봉인됩니다.
+- 아침에 직전 세션 일봉이 아직 없으면 `price_file_pending`으로 기다리고 사고로 세지 않습니다. 하루가 더 지나도 없으면 `price_file_missing` 사고이며, 그 전략의 장부는 그 세션에서 멈춥니다 (빈 칸 뒤에 새 세션을 쓰지 않음).
+- 첫 실행에서 장부가 없는 전략은 직전 세션부터 시작합니다.
 알림 (`src/live/alerts.py`):
 
 - 긴급: `status_error`, `shadow_incident`, `incident_file`, `decision_not_final`, `daily_step_failed`, `systemd_unit_failed`, `unknown_orders`, `batch_problem`, `risk_buy_blocked`, `risk_full_review`, `trading_halted`
 - 주의: `calendar_review`, `funding_requires_sell_proceeds`, `adv_warnings`, `stage_blocked`(단계가 바뀔 때만)
-- 정보: `evening_summary`(매일 저녁 전략별 단계·순자산·사고·다음 할 일)
+- 정보: `daily_summary`(매일 아침 전략별 단계·순자산·사고·다음 할 일)
 - 중복 억제: 긴급은 같은 내용을 하루 한 번, 주의는 7일에 한 번 (`data/live/alerts/state.json`). 전송에 실패하면 다음 실행에서 다시 보냅니다.
 - 채널: `HQA_ALERT_CHANNELS=file,telegram`. `file`은 항상 `data/live/alerts/YYYYMMDD.jsonl`에 남깁니다.
 

@@ -1,8 +1,8 @@
 [Unit]
-Description=HQA strategy runtime morning check, weekdays 09:05 KST (after the 08:59 FW001 deadline)
+Description=HQA strategy runtime morning run, weekdays 09:10 KST (after KRX publishes the previous session ~08:00 and the 08:59 FW001 deadline)
 
 [Timer]
-OnCalendar=Mon..Fri *-*-* 09:05 Asia/Seoul
+OnCalendar=Mon..Fri *-*-* 09:10 Asia/Seoul
 Persistent=true
 Unit=hqa-strategy-runtime-morning.service
 

@@ -1,8 +1,8 @@
 [Unit]
-Description=HQA strategy runtime evening run, weekdays 19:30 KST (after KRX collection and the FW001 decision-day recording)
+Description=HQA strategy runtime evening check, weekdays 16:30 KST (day's batch results after the 15:30 close, pending-session retry)
 
 [Timer]
-OnCalendar=Mon..Fri *-*-* 19:30 Asia/Seoul
+OnCalendar=Mon..Fri *-*-* 16:30 Asia/Seoul
 Persistent=true
 Unit=hqa-strategy-runtime-evening.service
 

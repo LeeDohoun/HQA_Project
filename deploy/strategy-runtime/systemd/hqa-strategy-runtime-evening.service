@@ -1,5 +1,5 @@
 [Unit]
-Description=HQA strategy runtime evening run (data pull, shadow fill, plans, status, alerts)
+Description=HQA strategy runtime evening check (data pull, backend batch results, pending-session retry, alerts)
 Wants=network-online.target
 After=network-online.target
 OnFailure=hqa-strategy-runtime-failure@%n.service
