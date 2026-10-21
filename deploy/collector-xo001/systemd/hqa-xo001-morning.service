@@ -1,0 +1,37 @@
+[Unit]
+Description=XO001 separate PAPER measurement recorder
+After=network-online.target hqa-fw001-daily.service hqa-shadow-daily.service hqa-bb003-daily.service
+
+[Service]
+Type=oneshot
+User=hqa
+Group=hqa
+WorkingDirectory=/opt/hqa-xo001
+EnvironmentFile=/etc/hqa/xo001.env
+Environment=PYTHONDONTWRITEBYTECODE=1 PYTHON_DOTENV_DISABLED=1 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1
+ExecStart=/opt/hqa-xo001/venv/bin/python -B -m scripts.xo001 morning --execute
+MemoryMax=384M
+MemorySwapMax=0
+MemoryAccounting=true
+TasksMax=32
+Nice=19
+CPUWeight=1
+IOWeight=1
+TimeoutStartSec=3h
+TimeoutStopSec=5
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/var/lib/hqa/data /var/lib/hqa-xo001/activation-control
+ReadWritePaths=/var/lib/hqa-xo001
+InaccessiblePaths=-/opt/hqa
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
