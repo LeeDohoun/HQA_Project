@@ -1,0 +1,12 @@
+[Unit]
+Description=LD002 input retries before 10 KST
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 08:45,50,55:00 Asia/Seoul
+OnCalendar=Mon..Fri *-*-* 09:00/5:00 Asia/Seoul
+Persistent=true
+AccuracySec=1s
+Unit=hqa-ld002-input.service
+
+[Install]
+WantedBy=timers.target

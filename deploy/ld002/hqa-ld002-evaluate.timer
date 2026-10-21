@@ -1,0 +1,11 @@
+[Unit]
+Description=LD002 fixed final freeze
+
+[Timer]
+OnCalendar=2027-11-23 00:05:00 Asia/Seoul
+Persistent=true
+AccuracySec=1s
+Unit=hqa-ld002-evaluate.service
+
+[Install]
+WantedBy=timers.target

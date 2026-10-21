@@ -1,0 +1,12 @@
+[Unit]
+Description=LD002 decision retries before 12 KST
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 10:05/5:00 Asia/Seoul
+OnCalendar=Mon..Fri *-*-* 11:00/5:00 Asia/Seoul
+Persistent=true
+AccuracySec=1s
+Unit=hqa-ld002-decide.service
+
+[Install]
+WantedBy=timers.target

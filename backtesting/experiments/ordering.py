@@ -25,6 +25,7 @@ DESIGN_FINAL = {"pass", "fail", "insufficient", "risk_only", "version_sensitive"
 AV002_ID = "AV002_avoidance_holdout_recovery"
 AV002_TERMINAL = TERMINAL | {"sensitivity_unavailable"}
 AV002_SUCCESSORS = {"EV001_earnings_filing_entry", "LH003_llm_leader_forward", "LH002_llm_hegemony_judge"}
+AV002_SUCCESSORS.add("LD002_llm_delegated_virtual")
 _LOCKS = ContextVar("research_ordering_locks", default=())
 
 
@@ -168,6 +169,14 @@ def _registered(experiment_id, repo_root):
             and bool(experiment_registry._git(Path(repo_root), "ls-files", "--", path.as_posix()))))
 
 
+def ld002_releases(rows, repo_root):
+    """LD002 has exactly LH003's mandatory predecessor releases."""
+    try:
+        return lh003_releases(rows, repo_root)
+    except ValueError as exc:
+        raise ValueError(str(exc).replace("LH003 start blocked", "LD002 start blocked")) from exc
+
+
 def av002_release(rows, repo_root):
     """Verify both terminal rows against one sealed result and its AV001 parent."""
     from backtesting.experiments import av002, common, hc003
@@ -220,7 +229,8 @@ def av002_release(rows, repo_root):
 @contextmanager
 def protected_claim(experiment_id, repo_root):
     """Also guard direct sessions/reads, including LH003's future seal runner."""
-    if experiment_id not in AV002_SUCCESSORS or not _registered(AV002_ID, repo_root):
+    if (experiment_id not in AV002_SUCCESSORS
+            or experiment_id != "LD002_llm_delegated_virtual" and not _registered(AV002_ID, repo_root)):
         yield
         return
     from backtesting.experiments import hc003
@@ -229,6 +239,8 @@ def protected_claim(experiment_id, repo_root):
         rows = hc003.registry_rows(repo_root)
         if experiment_id == "EV001_earnings_filing_entry":
             av002_release(rows, repo_root)
+        elif experiment_id == "LD002_llm_delegated_virtual":
+            ld002_releases(rows, repo_root)
         else:
             registered_releases(rows, repo_root)
         yield
@@ -236,7 +248,8 @@ def protected_claim(experiment_id, repo_root):
 
 def holdout_execution_lock(experiment_id, repo_root):
     """Keep a successor's lock through its entire session, including an LH003 seal."""
-    if (experiment_id not in AV002_SUCCESSORS or not _registered(AV002_ID, repo_root)
+    if (experiment_id not in AV002_SUCCESSORS
+            or experiment_id != "LD002_llm_delegated_virtual" and not _registered(AV002_ID, repo_root)
             or _lock_target(repo_root)[1] in _LOCKS.get()):
         return nullcontext()
     return execution_lock(repo_root)

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["invest_level", "holdings", "rationale", "memo"],
+  "properties": {
+    "invest_level": {"type": "integer", "enum": [0, 25, 50, 75, 100]},
+    "holdings": {
+      "type": "array", "minItems": 0, "maxItems": 20,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["code", "conviction"],
+        "properties": {"code": {"type": "string", "enum": []}, "conviction": {"type": "integer", "enum": [1, 2, 3]}}
+      }
+    },
+    "rationale": {"type": "string", "maxLength": 600},
+    "memo": {"type": "string", "maxLength": 800}
+  }
+}

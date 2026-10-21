@@ -1,0 +1,172 @@
+{
+  "experiment_id": "LD002_llm_delegated_virtual",
+  "branch": "claude/ld002-impl",
+  "preregistration_commit": "78174f5",
+  "preregistration_sha256": "46982e5f8716332c661b208989515a319f343f69efa1509b22f06b2803154332",
+  "ld002": {
+    "passed": 185,
+    "failures": 0,
+    "errors": 0,
+    "evidence": "combined_validation"
+  },
+  "regression": {
+    "passed": 381,
+    "failures": 0,
+    "errors": 0,
+    "evidence": "combined_validation"
+  },
+  "systemd_syntax": {
+    "units": 8,
+    "exit_code": 0,
+    "method": "systemd-analyze verify --man=no on temporary copies with only ExecStart Python path replaced by the existing worktree interpreter",
+    "installed": false,
+    "literal_deployment_path_available": false,
+    "evidence_path": "/tmp/ld002-round61-systemd.txt"
+  },
+  "constraints": {
+    "network_calls": false,
+    "real_model_calls": false,
+    "real_price_files_read": false,
+    "holdout_acquisition_fixture_only": true,
+    "secrets_read": false,
+    "staging_or_commits": false,
+    "deployed": false
+  },
+  "ambiguities_documented": 32,
+  "activation_ready": false,
+  "pending_live_evidence": [
+    "reviewed code/prompt commit",
+    "lab account authentication and identity",
+    "real cycle process-tree memory and timing",
+    "no higher-priority seal delay",
+    "reboot/logout automatic resume",
+    "official limit/halt/action feed",
+    "permanent disclosure-list policy",
+    "predecessor releases and one real H1 seal",
+    "synthetic format checks on the actual call path"
+  ],
+  "pending_mechanical_data": [
+    "official 2027 calendar coverage",
+    "2026-11-19 special-session notice",
+    "official 2027 trade/settlement tax data"
+  ],
+  "files_sha256": {
+    "backtesting/experiments/ld002/__init__.py": "9872d932c20ae0df6de3994b1af697183813d66174bb95a49c6179a74daba39b",
+    "backtesting/experiments/ld002/activation.py": "4867410e4b7cbae489bb1b3b9d8d159435b332d99e0ce7c479fd171e8d75d1b1",
+    "backtesting/experiments/ld002/calendar.py": "873fce3bd1f5a6c0b1953d2e3de1221f3959f5b4b0258b6758f94487f5358d1b",
+    "backtesting/experiments/ld002/controls.py": "268e2da7448bbb0deb344835b018d3eae753d66f588991e0c05e539a1e514c1a",
+    "backtesting/experiments/ld002/data.py": "afa3b4b144818a0c0d044473265a6de317a08b2426f3dfbb86f99267439cf24a",
+    "backtesting/experiments/ld002/evaluate.py": "e1f7fb6c7b4572c3a17c6d825a313a62cbb6c0309e54ca800696d2f78e3db297",
+    "backtesting/experiments/ld002/execution.py": "90e506b6ceeb82428dc8c363a0fb7cc9b7e56027f36634b65c57bcc714a5377f",
+    "backtesting/experiments/ld002/inputs.py": "77f8a42d1b54a09d14db6e951c211d790fa1f2321375ba85c804cf29e91cf73e",
+    "backtesting/experiments/ld002/ledger.py": "c87e0eed550b47633d3031e2101bc4d942b2c418872a2f99e64046febdd8f844",
+    "backtesting/experiments/ld002/runner.py": "ca088cda12c69b64823f160f2a2ecca78ea8ff3d40939dde93a0e10d4ea3394b",
+    "backtesting/experiments/ld002/storage.py": "831676178e8736c744fb2cfa1e96d848c298cdfe4b022581c468b213b093730f",
+    "backtesting/experiments/ld002/workflow.py": "a59d51106ebe179d83b55be4e320878fd502d76039d7fa6d22375a50c7750535",
+    "backtesting/experiments/ordering.py": "2fe537ef7b9e1f60a1363df05f1ac3828c91808e6fb277b74d4a49e7454fc103",
+    "deploy/ld002/INSTALL.md": "f79b0c2132ed0b57512fd389f4d9e8404d1df674fc05479aaea7b32a6808d356",
+    "deploy/ld002/hqa-ld002-decide.service": "30a398777825f3c26f285ee953156a7e42dd7b960987e8a1f08eeb390bef7be5",
+    "deploy/ld002/hqa-ld002-decide.timer": "54a3af2bb5a278bbbf9535c089b4c0230f3aa7759a15545c1d3521a16197cd78",
+    "deploy/ld002/hqa-ld002-evaluate.service": "9b1a10bd86938ea9d388aeef70b59b303b52f730c898398bdab2f3c9fbdda548",
+    "deploy/ld002/hqa-ld002-evaluate.timer": "872abf2042e6f1d322527258dd3222930c70fea44e243363a2316115256c87d9",
+    "deploy/ld002/hqa-ld002-finalize.service": "27b175692931cb9893691eb9288d0de2878263f421c9b12cc7f6fa88960dbc26",
+    "deploy/ld002/hqa-ld002-finalize.timer": "4619ad2d8bd9f63c4539f53bef641cc6fffec8d5c62564276e54128b7bde4ca4",
+    "deploy/ld002/hqa-ld002-input.service": "2b441c35d32b1dd93c945194e3bcca347397b134842e65c6ebca4ec0585852db",
+    "deploy/ld002/hqa-ld002-input.timer": "7e24e90287627a292863f46b0c4d565e0c3101445b32d5158c3a5568afaf6f36",
+    "research/experiments/LD002_llm_delegated_virtual/distribution_code_reference.json": "c89f61de69ac23d35d75d52987832bc0ccf4422c0b21855022c41b7e7737fff1",
+    "research/experiments/LD002_llm_delegated_virtual/implementation_notes.md": "ce9c1a45c499c2122789d938f715472e4c83d4ece1db1b1495a0b1f8fb2e3c58",
+    "research/experiments/LD002_llm_delegated_virtual/prompts/v1_prompt.txt": "ec023c6dea3c97fd362089a616e324c8de6bc24c98a8642489094f0d992237e6",
+    "research/experiments/LD002_llm_delegated_virtual/prompts/v1_reask.txt": "00ca0fb166fc9458d7f99b05a4b383aa0955b29c46c2e30aa9e2b19885670783",
+    "research/experiments/LD002_llm_delegated_virtual/prompts/v1_renderer.py": "a78def7630f8970477dae873d5bea07459f5cad2f8640701fc4ea0041d1623fd",
+    "research/experiments/LD002_llm_delegated_virtual/prompts/v1_schema.json": "db36f551caab6a387f8a7322f603ea1453e95083a0917097ed098a0f75540396",
+    "scripts/ld002/__init__.py": "e1dcd57917bd3b480141fa4b595c9000db16d87192c0abef3fd72f889250b5cd",
+    "scripts/ld002/__main__.py": "d7cc5d05e63a93d1e02d4cd3fca411b450e0694b5a4941cdfa0f46191088d617",
+    "tests/ld002_fixtures.py": "e9075cb92ae5dbd1e6140aeb63dc8d87b5223c1c89abf6a323b5e115681e5afa",
+    "tests/test_experiments_ld002_evaluate_activation.py": "3e3ab26bca317adc43f555de2b4d03d674e32fbbcbc3f46480bdd17dabf0bcb6",
+    "tests/test_experiments_ld002_inputs_data.py": "be7fd5c5b60e82eb572c4de88afbceece48ba1d620ac128e14ca1331a03094d2",
+    "tests/test_experiments_ld002_ledger.py": "a1905bc423a1c4e2044e7eed217cbd5ef6af76b015a46973606d492e42cd9539",
+    "tests/test_experiments_ld002_runner.py": "fa7bd2ac2d9165823131c79cf839aaa79ea97d5579c786d9053c91a17b72f5c3",
+    "tests/test_experiments_ld002_workflow.py": "df111acfeeefbf0214849c77afad2b2922121e99f0f8873bd9ba696201d9e79d"
+  },
+  "combined_validation": {
+    "command": "venv/bin/python -B -m pytest -q -p no:cacheprovider tests/test_experiments_ld002_*.py tests/test_experiments_ordering.py tests/test_backtesting_experiment_registry.py tests/test_backtesting_cost_model.py tests/test_experiments_lh003_runner.py tests/test_experiments_lh003_evaluate.py --junitxml=/tmp/ld002-round61-all-tests.xml",
+    "passed": 566,
+    "failures": 0,
+    "errors": 0,
+    "pytest_seconds": 104.803,
+    "max_rss_kib": 212320,
+    "max_rss_mib": 207.34375,
+    "swaps": 0,
+    "measurement_scope": "Offline test process maximum RSS; not a measured real model process-tree capacity bound",
+    "resource_log": "\tCommand being timed: \"venv/bin/python -B -m pytest -q -p no:cacheprovider tests/test_experiments_ld002_evaluate_activation.py tests/test_experiments_ld002_inputs_data.py tests/test_experiments_ld002_ledger.py tests/test_experiments_ld002_runner.py tests/test_experiments_ld002_workflow.py tests/test_experiments_ordering.py tests/test_backtesting_experiment_registry.py tests/test_backtesting_cost_model.py tests/test_experiments_lh003_runner.py tests/test_experiments_lh003_evaluate.py --junitxml=/tmp/ld002-round61-all-tests.xml\"\n\tUser time (seconds): 76.80\n\tSystem time (seconds): 11.16\n\tPercent of CPU this job got: 83%\n\tElapsed (wall clock) time (h:mm:ss or m:ss): 1:45.74\n\tAverage shared text size (kbytes): 0\n\tAverage unshared data size (kbytes): 0\n\tAverage stack size (kbytes): 0\n\tAverage total size (kbytes): 0\n\tMaximum resident set size (kbytes): 212320\n\tAverage resident set size (kbytes): 0\n\tMajor (requiring I/O) page faults: 1\n\tMinor (reclaiming a frame) page faults: 1149448\n\tVoluntary context switches: 43833\n\tInvoluntary context switches: 1030\n\tSwaps: 0\n\tFile system inputs: 0\n\tFile system outputs: 634536\n\tSocket messages sent: 0\n\tSocket messages received: 0\n\tSignals delivered: 0\n\tPage size (bytes): 4096\n\tExit status: 0\n",
+    "junit_path": "/tmp/ld002-round61-all-tests.xml",
+    "junit_sha256": "7a25e28d52666510d5d773e4049c68e492eb064ee049985ad6e07608d5cbe5d3",
+    "tests_per_file": {
+      "tests.test_backtesting_cost_model": 235,
+      "tests.test_backtesting_experiment_registry": 66,
+      "tests.test_experiments_ld002_evaluate_activation": 37,
+      "tests.test_experiments_ld002_inputs_data": 22,
+      "tests.test_experiments_ld002_ledger": 36,
+      "tests.test_experiments_ld002_runner": 46,
+      "tests.test_experiments_ld002_workflow": 44,
+      "tests.test_experiments_lh003_evaluate": 19,
+      "tests.test_experiments_lh003_runner": 30,
+      "tests.test_experiments_ordering": 31
+    },
+    "output_path": "/tmp/ld002-round61-all-tests.txt"
+  },
+  "environment": {
+    "python": "3.12.3",
+    "numpy": "2.4.4",
+    "pandas": "3.0.2",
+    "exchange-calendars": "4.13.2",
+    "jsonschema": "4.26.0",
+    "pytest": "9.0.3"
+  },
+  "review_round_61": {
+    "P1-1": {
+      "status": "fixed",
+      "behaviour": "Both verified markets required before primary finalization; ledger_not_final gates next-day input/model; audits never restore incomplete primary judgement eligibility.",
+      "regression_tests": [
+        "test_close_reader_refuses_single_market_fixture",
+        "test_incomplete_market_day_stays_unfinalized_and_blocks_next_llm",
+        "test_audit_file_recovery_never_promotes_incomplete_primary_ledger",
+        "test_published_evaluation_preserves_legacy_incomplete_primary_despite_audit"
+      ]
+    },
+    "P1-2": {
+      "status": "fixed",
+      "behaviour": "Recover earliest durable ledger approval/model-change recognition under state lock before evaluation and finalizer resume; preserve original recognition and sealed liquidation date, including final-day crash.",
+      "regression_tests": [
+        "test_last_day_crash_after_ack_recovers_stop_before_evaluation",
+        "test_recovery_selects_model_change_earlier_than_drawdown_approval"
+      ]
+    },
+    "P1-3": {
+      "status": "fixed",
+      "behaviour": "Fixed reviewed pre-activation reference and start/amendment pins verified against disk and distributor import-time hashes before raw access, manifest seal and completion; fw001.py pinned; reference must be committed.",
+      "regression_tests": [
+        "test_distribution_reference_includes_fw001_and_rejects_current_code_as_baseline",
+        "test_distribution_rejects_imported_code_even_after_source_restoration",
+        "test_distribution_rechecks_loaded_code_before_manifest_seal"
+      ]
+    },
+    "P2": {
+      "status": "fixed",
+      "behaviour": "Retry prior-ledger readiness and input building before 10:00, no permanent 08:45 omission; finalizer ordered before input unit.",
+      "regression_tests": [
+        "test_prior_ledger_ready_at_nine_allows_retry_after_0845_deferral",
+        "test_input_build_failure_can_retry_before_ten",
+        "test_input_deployment_orders_finalizer_before_each_retry"
+      ]
+    },
+    "interpretations_amended": [
+      15,
+      22,
+      25,
+      28
+    ],
+    "unresolved_findings": [],
+    "git_scope": "No worktree staging or commits. Existing registry/ordering tests may stage and commit only their isolated temporary fixture repositories."
+  }
+}

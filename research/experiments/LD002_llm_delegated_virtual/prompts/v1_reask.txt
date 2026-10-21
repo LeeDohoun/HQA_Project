@@ -1,0 +1,1 @@
+출력이 검증에 실패했습니다. 같은 입력과 규칙으로 JSON을 다시 제출하세요. 도구 사용 금지. 종목코드는 후보 enum 안에서 중복 없이 최대 20개, conviction은 1·2·3, invest_level은 0·25·50·75·100입니다. invest_level=0이면 holdings=[], 양수이면 holdings가 비어 있으면 안 됩니다. rationale 600자, memo 800자 이하입니다. 이것이 마지막 시도입니다.

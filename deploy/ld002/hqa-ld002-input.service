@@ -1,0 +1,26 @@
+[Unit]
+Description=LD002 close-known input seal
+After=local-fs.target hqa-ld002-finalize.service
+Wants=hqa-ld002-finalize.service
+
+[Service]
+Type=oneshot
+User=hqa-research
+Group=hqa-research
+WorkingDirectory=/opt/hqa-ld002
+ExecStart=/opt/hqa-ld002/venv/bin/python -B -m scripts.ld002 input-seal --execute --state-dir /var/lib/hqa-ld002 --fw001-dir /srv/ld002-feed/fw001
+Environment=PYTHONDONTWRITEBYTECODE=1
+MemoryMax=1536M
+MemoryHigh=1024M
+TasksMax=64
+Nice=15
+CPUWeight=10
+IOWeight=10
+TimeoutStartSec=600
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=/opt/hqa-ld002 /srv/ld002-feed /run/hqa-heavy/run.lock
+ReadWritePaths=/var/lib/hqa-ld002

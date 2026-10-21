@@ -1,0 +1,25 @@
+[Unit]
+Description=LD002 tool-free daily decision
+After=local-fs.target
+
+[Service]
+Type=oneshot
+User=hqa-research
+Group=hqa-research
+WorkingDirectory=/opt/hqa-ld002
+ExecStart=/opt/hqa-ld002/venv/bin/python -B -m scripts.ld002 decide --execute --state-dir /var/lib/hqa-ld002
+Environment=PYTHONDONTWRITEBYTECODE=1
+MemoryMax=1536M
+MemoryHigh=1024M
+TasksMax=64
+Nice=15
+CPUWeight=10
+IOWeight=10
+TimeoutStartSec=1100
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=/opt/hqa-ld002 /srv/ld002-feed
+ReadWritePaths=/var/lib/hqa-ld002 /home/hqa-research/.codex
