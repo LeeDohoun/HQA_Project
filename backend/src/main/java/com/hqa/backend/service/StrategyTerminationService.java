@@ -77,6 +77,8 @@ public class StrategyTerminationService {
         }
     }
 
+    static final LocalDate NO_ACTIVATION_LOWER_BOUND = LocalDate.of(2000, 1, 1);
+
     public boolean applies(String strategyId) {
         return properties.profile(strategyId).getTerminationDrawdownPct() != null;
     }
@@ -86,7 +88,9 @@ public class StrategyTerminationService {
         if (account == null || !applies(account.getStrategyId())) {
             return new TerminationView(false, false, null, null, null, null, null, null, null, null, false, null, false);
         }
-        LocalDate from = account.getActivatedAt() == null ? LocalDate.MIN
+        // Lower bound for a not-yet-activated account. Never LocalDate.MIN: PostgreSQL rejects dates
+        // outside its range ("date out of range"), which broke GET risk before activation.
+        LocalDate from = account.getActivatedAt() == null ? NO_ACTIVATION_LOWER_BOUND
                 : account.getActivatedAt().atZoneSameInstant(StrategySessionClock.KST).toLocalDate();
         List<StrategyNavClose> rows = binding == null ? List.of()
                 : closes.findByAccountBindingAndSessionDateGreaterThanEqualOrderBySessionDateAsc(binding, from);

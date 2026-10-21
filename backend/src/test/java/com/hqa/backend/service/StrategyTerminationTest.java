@@ -220,4 +220,16 @@ class StrategyTerminationTest {
                 f.sessions, f.properties, f.transactions);
         assertThatThrownBy(() -> accounts.unbind("u1")).hasMessage("STRATEGY_TERMINATED_CANNOT_UNBIND");
     }
+
+    @Test
+    void viewBeforeActivationQueriesWithADatabaseSafeLowerBound() {
+        StrategyAccount fresh = new StrategyAccount("u1", "pf001", "paper", false, f.now());
+        f.termination.view(fresh, "binding-1", f.now());
+        org.mockito.ArgumentCaptor<LocalDate> from = org.mockito.ArgumentCaptor.forClass(LocalDate.class);
+        org.mockito.Mockito.verify(f.navCloses, org.mockito.Mockito.atLeastOnce())
+                .findByAccountBindingAndSessionDateGreaterThanEqualOrderBySessionDateAsc(
+                        org.mockito.ArgumentMatchers.eq("binding-1"), from.capture());
+        // PostgreSQL's date range starts at 4713 BC; LocalDate.MIN (-999999999) is rejected at runtime.
+        assertThat(from.getAllValues()).allSatisfy(day -> assertThat(day.getYear()).isBetween(1900, 2100));
+    }
 }
