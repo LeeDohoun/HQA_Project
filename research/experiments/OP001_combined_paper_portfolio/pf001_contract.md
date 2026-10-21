@@ -23,7 +23,10 @@ targets. M8 keeps a per-sleeve internal ledger from T0.
 
 ## 2. Execution stages (normal sessions)
 
-1. Before 08:59: seal the input reference: target record hash, account snapshot, and the algorithm/config hashes.
+1. Before 08:59: seal the input reference: target record hash, account snapshot, and the algorithm/config hashes. The
+   timer starts at 08:57 and retries every 15-30 s until 08:58:59. If no valid seal exists before 08:59:00, the decision
+   is late (preregistration §5): no new rebalance that day, existing holdings kept, logged as
+   `input_not_sealed_before_deadline`.
 2. 09:05-09:20 SELL stage: market orders (ORD_DVSN 01) for sells:
    - names outside the AV target set, with no band;
    - band breaches computed on AV sleeve NAV;
@@ -53,7 +56,10 @@ targets. M8 keeps a per-sleeve internal ledger from T0.
   validations.
 - Cancel-ratio limit: exempt only for scheduled BB exits and termination liquidation.
 - **D = 25%**:
-  - NAV = reconciled cash + actual holdings × official unadjusted close, computed daily.
+  - NAV = reconciled cash + actual holdings × official unadjusted close, computed daily. Reconciled cash = KIS D+2
+    settlement cash (`prvs_rcdl_excc_amt`), so unsettled trades are netted; fees and taxes are counted once. The backend
+    records it after the close, and Python recomputes it from the KRX official close the next morning. Python's value is
+    binding; a mismatch blocks buys and raises an alert.
   - Breach = close NAV ≤ 0.75 × max(close NAV since T0, including the initial NAV).
   - On breach, write an immutable record and block all buys. From the next session, attempt to sell everything in each
     sell window; state is `liquidating` until fully reconciled, then cash until 2028-11-01.
