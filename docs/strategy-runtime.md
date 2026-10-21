@@ -189,7 +189,9 @@ venv/bin/python -m scripts.ops.strategy_runtime submit --strategy hf001_f_both -
 
 `observe → shadow`: 실험 대장의 설계·검증 `pass`와 지정한 보류 판정 행의 `pass`.
 `shadow → paper`: 위 조건 + 섀도 단계 연속 20거래일·28일 이상 + 운영 사고 0건 + 섀도 체결이 FW001 체결 기록과 독립 대조로 일치(`shadow_independent_check_failed`/`_unavailable`이 없어야 함) + `config/strategy_approvals.yaml`의 사람 승인.
-2026-10-18 현재 두 전략 모두 `observe`입니다 (HF001 보류 구간 미평가, AV001 보류 구간 `holdout_aborted`, AV002 재평가 예정).
+**조기 PAPER (사용자 결정 예외)**: `config/strategy_book.yaml`의 전략 항목에 `early_paper: {decided_by, decided_at, reason}`이 있고 `requested_stage: paper`이면, 위 조건 없이 실제 단계가 `paper`가 됩니다. 충족하지 않은 조건은 `stage.reasons`에 `early_paper_override`와 `gate_bypassed:<원래 이유>`로 계속 남고, 화면에 "조기 PAPER" 안내가 뜹니다. 이 기간 성과는 실계좌 판단 근거로 바로 쓰지 않습니다. 모의투자 단계에만 해당하며, 주문 전송(`orders-enabled`)·KIS 확인·계좌 연결 조건은 그대로입니다.
+
+2026-10-21 사용자 결정으로 두 전략(HF001 f_both, AV001 av_all) 모두 조기 PAPER입니다. 보류 구간은 HF001 미평가, AV001 `holdout_aborted`(AV002 재평가 예정)입니다.
 
 ## 처음 가동 순서 (모두 사람 확인 필요)
 

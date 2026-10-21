@@ -21,7 +21,8 @@ STRATEGY_ID = re.compile(r"^[a-z0-9][a-z0-9_]{0,63}$")
 
 _REQUIRED = {"title", "description", "experiment_id", "variant", "holdout", "decision_source",
              "execution", "cost_model_version", "requested_stage", "shadow_nav_krw", "account_user_id"}
-_OPTIONAL = {"band", "preregistration"}
+_OPTIONAL = {"band", "preregistration", "early_paper"}
+_EARLY_PAPER_KEYS = {"decided_by", "decided_at", "reason"}
 _APPROVAL_KEYS = {"strategy_id", "stage", "approved_by", "approved_at", "evidence"}
 
 
@@ -79,6 +80,9 @@ class StrategyEntry:
     shadow_nav_krw: int
     account_user_id: str | None
     preregistration: str | None
+    # Explicit user decision to run PAPER (mock) before the roadmap gates: {decided_by, decided_at, reason}.
+    # It never applies to real-money stages, which this runtime does not have.
+    early_paper: dict | None = None
 
 
 def _text(value, name, sid) -> str:
@@ -140,6 +144,21 @@ def _entry(sid, raw) -> StrategyEntry:
     prereg = raw.get("preregistration")
     if prereg is not None:
         prereg = _text(prereg, "preregistration", sid)
+    early = raw.get("early_paper")
+    if early is not None:
+        if not isinstance(early, dict) or set(early) != _EARLY_PAPER_KEYS:
+            raise BookError(f"{sid}: early_paper must have exactly {sorted(_EARLY_PAPER_KEYS)}")
+        if raw["requested_stage"] != "paper":
+            raise BookError(f"{sid}: early_paper requires requested_stage paper")
+        decided_at = _text(early["decided_at"], "early_paper.decided_at", sid)
+        try:
+            stamp = datetime.fromisoformat(decided_at)
+        except ValueError as error:
+            raise BookError(f"{sid}: early_paper.decided_at is not ISO 8601") from error
+        if stamp.tzinfo is None:
+            raise BookError(f"{sid}: early_paper.decided_at needs a timezone")
+        early = {"decided_by": _text(early["decided_by"], "early_paper.decided_by", sid),
+                 "decided_at": stamp.isoformat(), "reason": _text(early["reason"], "early_paper.reason", sid)}
     return StrategyEntry(
         strategy_id=sid, title=_text(raw["title"], "title", sid),
         description=_text(raw["description"], "description", sid),
@@ -149,7 +168,7 @@ def _entry(sid, raw) -> StrategyEntry:
         holdout_variants=_names(holdout["variants"], "holdout.variants", sid),
         decision_kind=source["kind"], decision_rule=source["rule"], execution=execution,
         cost_model_version=raw["cost_model_version"], band=band, requested_stage=raw["requested_stage"],
-        shadow_nav_krw=nav, account_user_id=user, preregistration=prereg)
+        shadow_nav_krw=nav, account_user_id=user, preregistration=prereg, early_paper=early)
 
 
 def load_book(path: str | Path) -> tuple[StrategyEntry, ...]:

@@ -56,7 +56,12 @@ export type StrategyStatusPayload = {
   title: string;
   description: string;
   generatedAt: string;
-  stage: { requested: StrategyStage; effective: StrategyStage; reasons: string[] };
+  stage: {
+    requested: StrategyStage;
+    effective: StrategyStage;
+    reasons: string[];
+    earlyPaper?: { decided_by: string; decided_at: string; reason: string } | null;
+  };
   research: {
     experimentId: string;
     variant: string;

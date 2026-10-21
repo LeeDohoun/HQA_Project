@@ -68,6 +68,8 @@ const REASON_TEXT: Record<string, string> = {
   decision_missing: "결정 기록이 없습니다",
   no_decision: "결정 기록이 없습니다",
   account_not_bound: "전략 계좌가 연결되지 않았습니다",
+  early_paper_override: "사용자 결정으로 단계 조건 전에 PAPER(모의투자)를 시작했습니다",
+  gate_bypassed: "충족하지 않은 채 넘어간 단계 조건 (아래 원문)",
   shadow_independent_check_failed: "섀도 체결이 FW001 체결 기록과 다릅니다",
   shadow_independent_check_unavailable: "FW001 체결 기록과 대조하지 못한 섀도 기록이 있습니다",
   decision_not_sealed: "결정 기록이 아직 봉인되지 않았습니다",

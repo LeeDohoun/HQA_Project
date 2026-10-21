@@ -338,7 +338,8 @@ def status_payload(ctx: Context, entry, *, generated_at: str, errors: list | Non
         "strategyId": entry.strategy_id, "title": entry.title, "description": entry.description,
         "generatedAt": generated_at,
         "stage": {"requested": stage.requested, "effective": stage.effective,
-                  "reasons": list(stage.reasons) + decision_reasons},
+                  "reasons": list(stage.reasons) + decision_reasons,
+                  "earlyPaper": stage.evidence.get("early_paper")},
         "research": {
             "experimentId": entry.experiment_id, "variant": entry.variant,
             "design": {"verdict": design.get("verdict"), "recordedAt": design.get("recorded_at")},

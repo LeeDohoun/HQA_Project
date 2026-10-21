@@ -166,6 +166,13 @@ def compute_stage(entry: book.StrategyEntry, *, registry_rows=None, registry_err
             paper_ok = False
 
     allowed = "paper" if paper_ok else "shadow" if shadow_ok else "observe"
+    if entry.early_paper is not None and not paper_ok:
+        # User decision recorded in the strategy book: PAPER before the gates. The unmet gate
+        # reasons stay in the decision so the exception is never mistaken for gate evidence.
+        evidence["early_paper"] = dict(entry.early_paper)
+        unmet = ([] if shadow_ok else list(reasons)) + paper_reasons
+        return StageDecision(entry.strategy_id, entry.requested_stage, "paper", "paper",
+                             ("early_paper_override",) + tuple(f"gate_bypassed:{r}" for r in unmet), evidence)
     requested = entry.requested_stage
     effective = book.STAGES[min(book.stage_rank(requested), book.stage_rank(allowed))]
     blocking = []

@@ -66,7 +66,7 @@ def test_offline_end_to_end_plan_fill_status(tmp_path, capsys, monkeypatch):
     payloads = {p["strategyId"]: p for p in status["strategies"]}
     hf = payloads["hf001_f_both"]
     assert set(hf) == PAYLOAD_KEYS
-    assert hf["stage"] == {"requested": "shadow", "effective": "shadow", "reasons": []}
+    assert hf["stage"] == {"requested": "shadow", "effective": "shadow", "reasons": [], "earlyPaper": None}
     assert set(hf["research"]) == {"experimentId", "variant", "design", "holdout"}
     assert hf["research"]["holdout"] == {"experimentId": "HF001_hegemony_filters", "variant": "holdout_f_both",
                                          "verdict": "pass", "recordedAt": "2026-10-18T00:00:00+00:00"}

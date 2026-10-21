@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 import os
 import shutil
 from datetime import datetime, timedelta
@@ -17,11 +18,24 @@ EXIT_DATE = "2026-11-27"
 REGISTRY_HEADER = ["recorded_at", "experiment_id", "prereg_commit", "variant", "verdict", "metrics_json", "note"]
 
 
-def make_repo(tmp_path, rows=None, approvals=None) -> Path:
-    """Copy the real strategy book into a temporary repo with a chosen registry."""
+def gate_only_book_text() -> str:
+    """The real strategy book with the early-PAPER override removed (requested stage shadow)."""
+    text = (REPO / "config/strategy_book.yaml").read_text(encoding="utf-8")
+    return re.sub(r"    requested_stage: paper\n    early_paper:\n(?:      .*\n){3}", "    requested_stage: shadow\n", text)
+
+
+def make_repo(tmp_path, rows=None, approvals=None, early_paper=False) -> Path:
+    """Copy the real strategy book into a temporary repo with a chosen registry.
+
+    By default the copy has no early-PAPER override, so tests exercise the roadmap gates;
+    early_paper=True keeps the real book unchanged.
+    """
     root = tmp_path / "repo"
     (root / "config").mkdir(parents=True)
-    shutil.copy(REPO / "config/strategy_book.yaml", root / "config/strategy_book.yaml")
+    if early_paper:
+        shutil.copy(REPO / "config/strategy_book.yaml", root / "config/strategy_book.yaml")
+    else:
+        (root / "config/strategy_book.yaml").write_text(gate_only_book_text(), encoding="utf-8")
     (root / "config/strategy_approvals.yaml").write_text(
         "approvals: []\n" if approvals is None else approvals, encoding="utf-8")
     write_registry(root, rows if rows is not None else [

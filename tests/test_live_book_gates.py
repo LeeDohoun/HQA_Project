@@ -9,7 +9,12 @@ import pytest
 from src.live import book, gates, shadow
 from test_live_fixtures import REPO, make_repo, write_ledger_entry, write_registry
 
-BOOK_TEXT = (REPO / "config/strategy_book.yaml").read_text(encoding="utf-8")
+REAL_BOOK_TEXT = (REPO / "config/strategy_book.yaml").read_text(encoding="utf-8")
+_OVERRIDE = ('    requested_stage: paper\n    early_paper:\n      decided_by: "user"\n'
+             '      decided_at: "2026-10-21T18:30:00+09:00"\n'
+             '      reason: "모의투자이므로 섀도 20거래일·승인 없이 PAPER로 시작 (2026-10-21 사용자 결정)"\n')
+assert REAL_BOOK_TEXT.count(_OVERRIDE) == 2
+BOOK_TEXT = REAL_BOOK_TEXT.replace(_OVERRIDE, "    requested_stage: shadow\n")
 
 
 def _book(tmp_path, text):
@@ -26,7 +31,8 @@ def test_real_book_and_approvals_load():
     assert hf.holdout_experiment_ids == ("HF001_hegemony_filters",) and hf.holdout_variants == ("holdout_f_both",)
     assert (av.execution, av.cost_model_version, av.band, av.decision_rule) == ("continuous", "v2", 0.001, "av_all")
     assert av.holdout_experiment_ids == ("AV002_avoidance_holdout_recovery", "AV001_avoidance_portfolio")
-    assert all(e.requested_stage == "shadow" and e.shadow_nav_krw == 100_000_000 and e.account_user_id is None
+    assert all(e.requested_stage == "paper" and e.shadow_nav_krw == 100_000_000 and e.account_user_id is None
+               and e.early_paper["decided_by"] == "user" and e.early_paper["decided_at"] == "2026-10-21T18:30:00+09:00"
                for e in entries.values())
     for entry in entries.values():
         assert (REPO / entry.preregistration).is_file()
@@ -80,7 +86,9 @@ def test_approvals_validation(tmp_path):
 
 
 def _entries():
-    return {e.strategy_id: e for e in book.load_book(REPO / book.BOOK_PATH)}
+    """The real book's strategies without the early-PAPER override, for the gate rules themselves."""
+    return {e.strategy_id: dataclasses.replace(e, requested_stage="shadow", early_paper=None)
+            for e in book.load_book(REPO / book.BOOK_PATH)}
 
 
 def test_current_reality_both_strategies_observe(tmp_path):
@@ -224,3 +232,36 @@ def test_paper_requires_independent_fw001_checks_on_trading_entries(tmp_path, ch
     result = gates.evaluate_stage(entry, repo_root=root, data_dir=data)
     assert result.reasons == (() if reason is None else (reason,))
     assert result.effective == ("paper" if reason is None else "shadow")
+
+
+def test_early_paper_override_reaches_paper_and_keeps_unmet_gates_visible(tmp_path):
+    """The real book (2026-10-21 user decision): PAPER before the holdout and shadow evidence."""
+    entries = {e.strategy_id: e for e in book.load_book(REPO / book.BOOK_PATH)}
+    hf = gates.evaluate_stage(entries["hf001_f_both"], repo_root=REPO, data_dir=tmp_path)
+    assert (hf.requested, hf.allowed, hf.effective) == ("paper", "paper", "paper")
+    assert hf.reasons[0] == "early_paper_override"
+    assert "gate_bypassed:holdout_not_passed:HF001_hegemony_filters/holdout_f_both:none" in hf.reasons
+    assert "gate_bypassed:paper_approval_missing" in hf.reasons
+    assert hf.evidence["early_paper"]["reason"].startswith("모의투자")
+    av = gates.evaluate_stage(entries["av001_av_all"], repo_root=REPO, data_dir=tmp_path)
+    assert av.effective == "paper" and any(r.startswith("gate_bypassed:holdout_not_passed:AV001") for r in av.reasons)
+
+
+@pytest.mark.parametrize("old, new, message", [
+    ('      decided_by: "user"\n', "", "early_paper must have exactly"),
+    ('"2026-10-21T18:30:00+09:00"', '"2026-10-21T18:30:00"', "timezone"),
+    ('"2026-10-21T18:30:00+09:00"', '"yesterday"', "ISO 8601"),
+    ("    requested_stage: paper\n    early_paper:", "    requested_stage: shadow\n    early_paper:",
+     "requires requested_stage paper"),
+])
+def test_early_paper_record_is_strict(tmp_path, old, new, message):
+    assert old in REAL_BOOK_TEXT
+    with pytest.raises(book.BookError, match=message):
+        book.load_book(_book(tmp_path, REAL_BOOK_TEXT.replace(old, new, 1)))
+
+
+def test_full_evidence_without_override_has_no_override_marks(tmp_path):
+    entry = _entries()["hf001_f_both"]
+    decision = gates.compute_stage(dataclasses.replace(entry, requested_stage="observe"), registry_rows=[], ledger=[],
+                                   approvals=())
+    assert "early_paper_override" not in decision.reasons and "early_paper" not in decision.evidence

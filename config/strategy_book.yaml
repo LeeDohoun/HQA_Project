@@ -2,6 +2,8 @@
 # src/live/book.py가 엄격하게 검증합니다. 알 수 없는 키·단계·실행 방식은 오류입니다.
 # requested_stage는 요청 단계일 뿐이며, 실제 단계는 src/live/gates.py가
 # 실험 대장·섀도 장부·승인 기록으로 계산합니다 (observe < shadow < paper).
+# early_paper는 단계 조건을 채우기 전에 PAPER(모의투자)를 시작하는 사용자 결정의 기록입니다.
+# 충족하지 않은 조건은 상태에 gate_bypassed:로 계속 표시되며, 실계좌 단계에는 적용되지 않습니다.
 strategies:
   hf001_f_both:
     title: "HF001 f_both"
@@ -16,7 +18,11 @@ strategies:
       rule: f_both
     execution: basket_20
     cost_model_version: v1
-    requested_stage: shadow
+    requested_stage: paper
+    early_paper:
+      decided_by: "user"
+      decided_at: "2026-10-21T18:30:00+09:00"
+      reason: "모의투자이므로 섀도 20거래일·승인 없이 PAPER로 시작 (2026-10-21 사용자 결정)"
     shadow_nav_krw: 100000000
     account_user_id: null
     preregistration: research/experiments/HF001_hegemony_filters/preregistration.md
@@ -34,7 +40,11 @@ strategies:
     execution: continuous
     cost_model_version: v2
     band: 0.001
-    requested_stage: shadow
+    requested_stage: paper
+    early_paper:
+      decided_by: "user"
+      decided_at: "2026-10-21T18:30:00+09:00"
+      reason: "모의투자이므로 섀도 20거래일·승인 없이 PAPER로 시작 (2026-10-21 사용자 결정)"
     shadow_nav_krw: 100000000
     account_user_id: null
     preregistration: research/experiments/AV001_avoidance_portfolio/preregistration.md

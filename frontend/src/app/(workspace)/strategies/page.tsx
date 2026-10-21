@@ -166,9 +166,15 @@ function StageSection({ payload }: { payload: StrategyStatusPayload }) {
         <span className={styles.stageItem}><span className={styles.label}>실제</span>
           <StatusPill label={stageLabel(stage?.effective)} tone={effectiveStageTone(stage?.requested ?? "", stage?.effective ?? "")} /></span>
       </div>
+      {stage?.earlyPaper ? (
+        <p className={styles.fine} data-alert="true">
+          조기 PAPER: 단계 조건을 채우기 전에 모의투자를 시작했습니다 ({stage.earlyPaper.decided_at.slice(0, 10)}, {stage.earlyPaper.reason}).
+          이 기간 성과는 실계좌 판단 근거로 바로 쓰지 않습니다.
+        </p>
+      ) : null}
       {reasons.length ? (
         <>
-          <p className={styles.label}>막힌 이유</p>
+          <p className={styles.label}>{stage?.earlyPaper ? "충족하지 않은 단계 조건" : "막힌 이유"}</p>
           <ul className={styles.reasons}>
             {reasons.map(code => {
               const text = stageReasonText(code);
