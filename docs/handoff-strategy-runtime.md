@@ -78,3 +78,21 @@ git -C HQA_Project switch claude/strategy-paper-runtime
 3. `.env`와 KIS 키는 새 컴퓨터에서 직접 설정합니다. 저장소에는 없습니다.
 4. Claude Code에게는 이 문서와 `AGENTS.md`, `docs/strategy-runtime.md`부터 읽게 합니다. 이전 PC의 메모리(`~/.claude/projects/<프로젝트 경로>/memory/`)를 옮기면 맥락이 더 이어집니다.
 5. 테스트 명령은 `AGENTS.md`의 오프라인 명령을 씁니다. 실시간 KIS, DART, KRX 호출이나 서비스 실행은 하지 않습니다.
+
+## 배포 상태 (2026-10-21 저녁)
+
+| 구성 | 버전·상태 |
+| --- | --- |
+| 실행기 `/opt/hqa-runtime` | 096125c. 타이머 morning 09:10·evening 16:30 켜짐. inputs 08:57·submit 09:01은 설치만 하고 꺼짐 (pf001 활성화 때 켬) |
+| 백엔드 `hqa-backend` | jar `hqa-backend-ad2e8f1.jar` (V16 적용). 배포 전 DB 백업 `/var/backups/hqa/hqa_runtime-20261021T190033-pre-3d0fd3a.dump`. `HQA_STRATEGY_ORDERS_ENABLED=false` |
+| 화면 `hqa-frontend` | 096125c, `https://hqa-server.taild9dfb2.ts.net` (Tailnet 전용) |
+| 계좌 | `are01`(메인 PAPER, 모의투자 확인) → `pf001`, `enabled: false`, 현금 1억 원, 보유·대기 주문 없음 |
+
+실제 계좌로 확인한 것: pf001 위험 프로필(2%·10/15% 매수 차단 꺼짐, 25% 종료), KIS 모의투자 D+2 정산 예수금(`prvs_rcdl_excc_amt`) 제공, V16 마이그레이션.
+
+pf001 활성화까지 남은 일 (11-01 23:59:59 KST 기한, OP001 계약 §5):
+1. XO001 시험(10-27~29) 결과 검토. 경쟁 계좌에서 M8 준비 시험을 할지는 **[승인]**이 필요하고, 10-26까지 결정해야 합니다.
+2. 장중 시장가 주문, 잔량 취소, VTTC8908R 동작 확인.
+3. **[승인]** 활성화: 계좌 `enabled: true` → `strategy_runtime activate --strategy pf001 --execute` → `HQA_STRATEGY_ORDERS_ENABLED=true`(백엔드 재시작) → inputs·submit 타이머 켜기.
+4. 취소 비율 면제(BB 청산·종료 청산 한정)는 **[승인]** 대기 중이며, 아직 구현하지 않았습니다.
+5. 롤백: 백엔드는 `hqa-backend.jar` 링크를 이전 jar로 돌리고 재시작합니다. DB는 위 백업으로 복원합니다. 실행기·화면은 이전 커밋으로 `git checkout`합니다.
