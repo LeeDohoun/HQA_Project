@@ -1,0 +1,26 @@
+[Unit]
+Description=HQA frontend (Next.js) for the strategy runtime, loopback only (127.0.0.1:3000; tailscale serve adds HTTPS)
+Wants=network-online.target
+After=network-online.target hqa-backend.service
+
+[Service]
+Type=simple
+User=hqa-frontend
+Group=hqa-frontend
+WorkingDirectory=/opt/hqa-frontend/src/frontend
+Environment=NODE_ENV=production
+Environment=NEXT_TELEMETRY_DISABLED=1
+Environment=BACKEND_PROXY_TARGET=http://127.0.0.1:8000
+ExecStart=/opt/hqa-frontend/node/bin/node node_modules/next/dist/bin/next start -p 3000 -H 127.0.0.1
+Restart=on-failure
+RestartSec=10
+MemoryMax=1G
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/hqa-frontend/src/frontend/.next/cache
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target
