@@ -89,10 +89,13 @@ public class StrategyBatchReconciler {
         List<StrategyBatch> active = batches.findBySessionDateAndStatusInOrderByCreatedAtAsc(today,
                 List.of("SUBMITTED", "PARTIAL", "HALTED"));
         for (Map.Entry<String, List<StrategyBatch>> entry : byUser(active).entrySet()) {
-            // Leave the account's KIS request budget to the executor while it is sending a batch.
-            if (sending.contains(entry.getKey())) continue;
+            // Leave the account's KIS request budget to the executor while it is sending a batch,
+            // except for batches whose remainders are due to be cancelled.
+            List<StrategyBatch> userBatches = sending.contains(entry.getKey())
+                    ? entry.getValue().stream().filter(batch -> cancelDue(batch, now)).toList() : entry.getValue();
+            if (userBatches.isEmpty()) continue;
             try {
-                reconcileUser(entry.getKey(), entry.getValue(), now);
+                reconcileUser(entry.getKey(), userBatches, now);
             } catch (ObjectOptimisticLockingFailureException ex) {
                 log.warn("[StrategyBatchReconciler] batch changed concurrently for {}; retrying next tick", entry.getKey());
             } catch (RuntimeException ex) {
@@ -116,9 +119,20 @@ public class StrategyBatchReconciler {
         Set<String> users = new HashSet<>();
         if (!properties.isOrdersEnabled()) return users;
         for (StrategyBatch batch : batches.findBySessionDateAndStatusInOrderByCreatedAtAsc(today, List.of("QUEUED", "SUBMITTING"))) {
-            if (sessions.inPhaseWindow(batch.getSessionDate(), batch.getPhase(), now)) users.add(batch.getUserId());
+            // A CONT_BUY batch waiting for its CONT_SELL batch is not sending; the sells must be reconciled.
+            if (sessions.inPhaseWindow(batch.getSessionDate(), batch.getPhase(), now) && !batchService.awaitingSells(batch, now)) {
+                users.add(batch.getUserId());
+            }
         }
         return users;
+    }
+
+    /** The batch has broker-tracked remainders whose cancel time has come but no cancel request yet. */
+    private boolean cancelDue(StrategyBatch batch, OffsetDateTime now) {
+        OffsetDateTime cancelAt = sessions.cancelAt(batch.getSessionDate(), batch.getPhase());
+        if (cancelAt == null || now.isBefore(cancelAt)) return false;
+        return batchOrders.findByBatchIdOrderBySeqAsc(batch.getId()).stream()
+                .anyMatch(order -> tracked(order) && order.getCancelRequestedAt() == null);
     }
 
     private static Map<String, List<StrategyBatch>> byUser(List<StrategyBatch> list) {
@@ -138,6 +152,7 @@ public class StrategyBatchReconciler {
             ordersByBatch.put(batch, orders);
             tracked |= orders.stream().anyMatch(StrategyBatchReconciler::tracked);
         }
+        Set<StrategyBatch> readBatches = new HashSet<>();
         if (tracked) {
             User user = snapshots.paperUser(userId);
             String binding = snapshots.binding(user);
@@ -150,13 +165,22 @@ public class StrategyBatchReconciler {
                     log.error("[StrategyBatchReconciler] batch {} belongs to another PAPER account binding; not reconciled", batch.getId());
                     continue;
                 }
+                boolean read = false;
                 for (StrategyBatchOrder order : entry.getValue()) {
-                    if (tracked(order)) reconcileOrder(batch, order, rows, user, token, now, false);
+                    if (tracked(order)) {
+                        reconcileOrder(batch, order, rows, user, token, now, false);
+                        read = true;
+                    }
                 }
+                // When the broker list was last read for this batch (CONT_BUY sizing waits for a read after cancels);
+                // saved by finalizeStatus below.
+                if (read) readBatches.add(batch);
             }
         }
         for (Map.Entry<StrategyBatch, List<StrategyBatchOrder>> entry : ordersByBatch.entrySet()) {
-            batchService.finalizeStatus(entry.getKey(), entry.getValue(), now);
+            boolean read = readBatches.contains(entry.getKey());
+            if (read) entry.getKey().setLastReconciledAt(now);
+            batchService.finalizeStatus(entry.getKey(), entry.getValue(), now, read);
         }
     }
 
@@ -260,15 +284,16 @@ public class StrategyBatchReconciler {
             boolean brokerRejected = order.getFilledQuantity() == 0 && rejectedQuantity == order.getQuantity();
             order.setStatus(brokerRejected ? "REJECTED" : "CANCELLED");
             order.setRejectReason(brokerRejected ? "KIS_ORDER_REJECTED"
-                    : order.getCancelRequestedAt() != null ? "CANCELLED_AFTER_OPEN" : "CANCELLED_AT_BROKER");
+                    : order.getCancelRequestedAt() == null ? "CANCELLED_AT_BROKER"
+                    : "OPEN".equals(batch.getPhase()) ? "CANCELLED_AFTER_OPEN" : "CANCELLED_AT_WINDOW_END");
         } else if (settled) {
             // Day orders do not survive the session; the broker list may lag the expiry.
             order.setStatus("CANCELLED");
             order.setRejectReason("UNFILLED_AT_SESSION_CLOSE");
         } else {
             order.setStatus(order.getFilledQuantity() > 0 ? "PARTIALLY_FILLED" : "SUBMITTED");
-            OffsetDateTime cancelAt = sessions.openCancelAt(batch.getSessionDate());
-            if ("OPEN".equals(batch.getPhase()) && cancelAt != null && !now.isBefore(cancelAt)
+            OffsetDateTime cancelAt = sessions.cancelAt(batch.getSessionDate(), batch.getPhase());
+            if (cancelAt != null && !now.isBefore(cancelAt)
                     && order.getCancelRequestedAt() == null && remaining > 0) {
                 order.setCancelRequestedAt(now);
                 save(order, now); // the cancel is counted even if the process stops during the call

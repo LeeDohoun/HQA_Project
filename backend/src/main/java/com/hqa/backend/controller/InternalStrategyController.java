@@ -4,6 +4,7 @@ import com.hqa.backend.config.HqaProperties;
 import com.hqa.backend.dto.ErrorCode;
 import com.hqa.backend.dto.StrategyAccountRequest;
 import com.hqa.backend.dto.StrategyBatchRequest;
+import com.hqa.backend.dto.StrategyNavCloseRequest;
 import com.hqa.backend.dto.StrategyOrderResolutionRequest;
 import com.hqa.backend.dto.StrategyStatusRequest;
 import com.hqa.backend.dto.TradingHaltRequest;
@@ -13,6 +14,7 @@ import com.hqa.backend.service.StrategyBatchService;
 import com.hqa.backend.service.StrategyOrderResolver;
 import com.hqa.backend.service.StrategyRiskGuard;
 import com.hqa.backend.service.StrategyStatusService;
+import com.hqa.backend.service.StrategyTerminationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.Map;
@@ -37,9 +39,12 @@ public class InternalStrategyController {
     private final StrategyStatusService statuses;
     private final HqaProperties properties;
     private final StrategyOrderResolver resolver;
+    private final StrategyTerminationService termination;
 
     public InternalStrategyController(StrategyBatchService batches, StrategyAccountService accounts, StrategyRiskGuard risk,
-            StrategyStatusService statuses, StrategyOrderResolver resolver, HqaProperties properties) {
+            StrategyStatusService statuses, StrategyOrderResolver resolver, StrategyTerminationService termination,
+            HqaProperties properties) {
+        this.termination = termination;
         this.resolver = resolver;
         this.batches = batches;
         this.accounts = accounts;
@@ -102,6 +107,17 @@ public class InternalStrategyController {
     public Map<String, Object> unbind(@PathVariable String userId, @RequestHeader(value = TOKEN, required = false) String token) {
         requireInternalToken(token);
         return accounts.unbind(userId);
+    }
+
+    @Operation(summary = "확정 종가 순자산 게시",
+            description = "종료 규칙(termination-drawdown-pct)이 있는 전략 계좌만. 세션별 1건, 같은 내용은 같은 결과, 다른 내용은 409 NAV_CLOSE_CONFLICT.")
+    @PostMapping("/accounts/{userId}/nav-close")
+    public Map<String, Object> navClose(@PathVariable String userId, @RequestBody StrategyNavCloseRequest request,
+            @RequestHeader(value = TOKEN, required = false) String token) {
+        requireInternalToken(token);
+        if (request == null) throw new IllegalArgumentException("request body is required");
+        return termination.recordOfficialClose(userId, request.sessionDate(), request.navKrw(), request.cashKrw(),
+                request.holdingsValueKrw(), request.source(), request.inputHash());
     }
 
     @Operation(summary = "중단 스위치", description = "scope는 GLOBAL 또는 userId. 켜지면 새 일괄 주문 접수와 미전송 주문 전송이 멈춘다.")

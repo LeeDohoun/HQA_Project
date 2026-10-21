@@ -247,3 +247,28 @@ venv/bin/python -m scripts.ops.strategy_runtime submit --strategy hf001_f_both -
 5. 백엔드: `deploy/strategy-runtime/systemd/hqa-backend.service`(사용자 `hqa-backend`, `127.0.0.1:8000`만, `/etc/hqa/backend.env`, 이름은 `backend.env.example`). jar는 이 PC에서 `mvn -f backend/pom.xml -DskipTests package`로 만든 것을 `/opt/hqa-backend/hqa-backend-<commit>.jar`로 두고 `hqa-backend.jar` 링크를 바꿉니다. 비밀값(DB 비밀번호, 내부 토큰, KIS 암호화 키, SECRET_KEY)은 서버에서 `openssl rand`로 만들고 밖으로 복사하지 않습니다. 실행기 환경 파일의 `HQA_INTERNAL_TOKEN`은 백엔드와 같은 값입니다.
 6. 처음 며칠은 `journalctl -u 'hqa-strategy-runtime-*'`와 `data/live/runs/`로 결과를 확인합니다.
 7. 화면: `deploy/strategy-runtime/systemd/hqa-frontend.service`(사용자 `hqa-frontend`, 전용 Node 22 `/opt/hqa-frontend/node`, 소스 `/opt/hqa-frontend/src/frontend`, `127.0.0.1:3000`). Tailscale HTTPS는 `sudo tailscale serve --bg --https=443 http://127.0.0.1:3000`이며 Tailnet 안에서만 `https://hqa-server.taild9dfb2.ts.net`으로 열립니다 (끄기: `sudo tailscale serve --https=443 off`). 백엔드는 운영 모드라 HTTPS로 전달된 요청만 받고, `SESSION_COOKIE_SECURE=true`, `CORS_ORIGINS=https://hqa-server.taild9dfb2.ts.net`입니다. 내부 API(`/api/v1/internal/**`)는 이 경로로도 토큰 없이는 401입니다.
+
+## pf001 결합 포트폴리오 (OP001)
+
+규칙은 사전 등록 `research/experiments/OP001_combined_paper_portfolio/preregistration.md`(cb8e64a)와 계약 `pf001_contract.md`(96cf2be, 연구 브랜치)가 정합니다. 사용자 메인 PAPER 계좌 `are01`이 `pf001`에 연결돼 있습니다 (2026-10-21, `enabled: false`, 현금 1억 원).
+
+- 실행 방식 `continuous_intraday`. AV 80%(FW001 `av_all`, 11월은 AV만) + BB 20%(12월부터 OP001 결합 목표 기록, 그 전엔 현금).
+- 하루 순서 (평일):
+  - 08:57: `submit-due --inputs-only`가 입력 기준을 봉인합니다. 08:58:59까지 20초 간격으로 재시도하며, 08:59 전에 봉인하지 못하면 그날은 리밸런싱하지 않습니다 (`input_not_sealed_before_deadline`).
+  - 09:01: `submit-due --execute`가 다음을 차례로 합니다.
+    1. 공식 종가 순자산(D+2 정산 예수금 + 보유 × KRX 비수정 종가)을 백엔드 `nav-close`에 게시합니다 (판정 기준값).
+    2. 낙폭 25%를 확인합니다.
+    3. `CONT_SELL`·`CONT_BUY` 일괄 주문을 제출합니다.
+- 백엔드 실행:
+  - `CONT_SELL` 09:05~09:20 시장가 매도, 09:20 잔량 취소.
+  - `CONT_BUY` 09:20~10:00. 매도 대조가 끝난 뒤 주문가능금액(VTTC8908R)으로 수량을 줄이기만 하고(`sizing` 기록 봉인), 시장가로 매수한 뒤 10:00에 잔량을 취소합니다.
+  - 특별 세션은 공식 개장·폐장 기준으로 밉니다.
+- 계획 한도: 종목당 주문 후 순자산 2%, 종목당 하루 매수+매도 ≤ ADV20의 1%, 비용 예비 후 정수 주 내림, 남는 현금 재배분 없음.
+- 위험 프로필 `hqa.strategy.profiles.[pf001]` (2026-10-21 사용자 승인):
+  - 일일 손실 2%·낙폭 10/15% 매수 차단 없음.
+  - 종가 순자산이 T0 이후 최고값의 75% 이하이면 종료합니다. 매수를 금지하고, 다음 세션부터 매 매도 창에서 전량 매도하며(`liquidating`), 이후 현금(`terminated_drawdown`)이고 재개하지 않습니다.
+  - 공식 종가와 백엔드 스냅숏 종가가 0.5% 넘게 다르거나 공식 종가가 없으면 매수를 막습니다 (`NAV_CROSSCHECK_MISMATCH`, `NAV_CLOSE_MISSING`).
+  - 중단 스위치·주문당 상한·하루 주문 수·취소 비율은 그대로입니다. 취소 비율 면제는 승인 대기입니다.
+- 화면: 계좌 전체 순자산·낙폭·지수만 보입니다 (`sleeveDetailSealed`). 부문별 손익은 저장만 합니다.
+- 활성화 (11-01 23:59까지, 사용자 승인): 계좌 `enabled: true` → 백엔드가 활성화 순자산을 기록하고, `strategy_runtime activate --strategy pf001 --execute`로 `activation.json`을 봉인합니다. 그다음 `HQA_STRATEGY_ORDERS_ENABLED=true`, `hqa-strategy-runtime-inputs.timer`·`-submit.timer`를 켭니다.
+- 준비 시험 명령 `readiness --strategy op001_readiness`는 일정에 넣지 않았고 승인 전에는 실행하지 않습니다.

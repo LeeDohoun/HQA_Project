@@ -86,7 +86,12 @@ class StrategyRiskGuardTest {
         f.peakRows.put("binding-1", 101_000_000L);
         Map<String, Object> map = f.risk.evaluate("u1").toMap();
         assertThat(map.keySet()).containsExactly("userId", "equityKrw", "dailyPnlPct", "peakEquityKrw", "drawdownPct",
-                "buyAllowed", "fullReviewRequired", "halted", "reasons", "ordersToday", "cancelsToday", "limits");
+                "buyAllowed", "fullReviewRequired", "halted", "reasons", "ordersToday", "cancelsToday", "limits", "profile",
+                "settledCashD2Krw", "cashD1Krw", "totalEvaluationKrw", "netAssetKrw",
+                "terminated", "terminatedAt", "terminationReason", "terminationState", "activatedAt", "activationNavKrw",
+                "closeNavMaxKrw", "closeDrawdownPct", "latestOfficialCloseDate", "navCloseMissing", "navCrosscheck");
+        assertThat(map).containsEntry("terminated", false).containsEntry("terminationState", null)
+                .containsEntry("navCloseMissing", false);
         assertThat(map).containsEntry("equityKrw", 100_000_000L).containsEntry("dailyPnlPct", -0.4)
                 .containsEntry("drawdownPct", 0.9901).containsEntry("reasons", List.of()).containsEntry("ordersToday", 0L);
         @SuppressWarnings("unchecked") Map<String, Object> limits = (Map<String, Object>) map.get("limits");

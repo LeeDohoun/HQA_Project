@@ -13,6 +13,8 @@ public interface StrategyBatchRepository extends JpaRepository<StrategyBatch, UU
     List<StrategyBatch> findBySessionDateAndStatusInOrderByCreatedAtAsc(LocalDate sessionDate, List<String> statuses);
     Optional<StrategyBatch> findFirstByStrategyIdOrderByCreatedAtDesc(String strategyId);
     boolean existsByUserIdAndStatusIn(String userId, List<String> statuses);
+    Optional<StrategyBatch> findFirstByUserIdAndSessionDateAndPhaseAndStatusNot(String userId, LocalDate sessionDate,
+            String phase, String status);
     boolean existsByUserIdAndSessionDateAndPhaseAndStatusNot(String userId, LocalDate sessionDate, String phase, String status);
     boolean existsByUserIdAndSessionDateAndStatusIn(String userId, LocalDate sessionDate, List<String> statuses);
 

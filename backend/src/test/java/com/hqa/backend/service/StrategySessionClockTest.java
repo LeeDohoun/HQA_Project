@@ -54,4 +54,28 @@ class StrategySessionClockTest {
         assertThat(properties.getOrderType()).isEqualTo("MARKET");
         assertThat(properties.isOrdersEnabled()).isFalse();
     }
+
+    @Test
+    void continuousPhasesAreOffsetsFromTheOfficialOpen() {
+        assertThat(sessions.inPhaseWindow(DAY, "CONT_SELL", at("2026-11-02T09:04:59+09:00"))).isFalse();
+        assertThat(sessions.inPhaseWindow(DAY, "CONT_SELL", at("2026-11-02T09:05:00+09:00"))).isTrue();
+        assertThat(sessions.inPhaseWindow(DAY, "CONT_SELL", at("2026-11-02T09:20:00+09:00"))).isFalse();
+        assertThat(sessions.inPhaseWindow(DAY, "CONT_BUY", at("2026-11-02T09:20:00+09:00"))).isTrue();
+        assertThat(sessions.inPhaseWindow(DAY, "CONT_BUY", at("2026-11-02T10:00:00+09:00"))).isFalse();
+        assertThat(sessions.cancelAt(DAY, "CONT_SELL")).isEqualTo(at("2026-11-02T09:20:00+09:00"));
+        assertThat(sessions.cancelAt(DAY, "CONT_BUY")).isEqualTo(at("2026-11-02T10:00:00+09:00"));
+        assertThat(sessions.cancelAt(DAY, "OPEN")).isEqualTo(at("2026-11-02T09:05:00+09:00"));
+        assertThat(sessions.cancelAt(DAY, "CLOSE")).isNull();
+        assertThat(sessions.navCloseRecordAt(DAY)).isEqualTo(at("2026-11-02T15:45:00+09:00"));
+
+        // CSAT day, official 10:00-16:30: open +5..+20 sell, +20..+60 buy, +60 cancel; close -10..-1 exits.
+        LocalDate csat = LocalDate.parse("2026-11-19");
+        assertThat(sessions.phaseWindow(csat, "CONT_SELL")).containsExactly(at("2026-11-19T10:05:00+09:00"), at("2026-11-19T10:20:00+09:00"));
+        assertThat(sessions.phaseWindow(csat, "CONT_BUY")).containsExactly(at("2026-11-19T10:20:00+09:00"), at("2026-11-19T11:00:00+09:00"));
+        assertThat(sessions.cancelAt(csat, "CONT_BUY")).isEqualTo(at("2026-11-19T11:00:00+09:00"));
+        assertThat(sessions.cancelAt(csat, "CONT_SELL")).isEqualTo(at("2026-11-19T10:20:00+09:00"));
+        assertThat(sessions.phaseWindow(csat, "CLOSE")).containsExactly(at("2026-11-19T16:20:00+09:00"), at("2026-11-19T16:29:00+09:00"));
+        assertThat(sessions.navCloseRecordAt(csat)).isEqualTo(at("2026-11-19T16:45:00+09:00"));
+        assertThat(sessions.phaseWindow(DAY, "MIDDAY")).isNull();
+    }
 }

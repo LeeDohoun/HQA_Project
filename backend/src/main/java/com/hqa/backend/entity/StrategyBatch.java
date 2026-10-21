@@ -36,6 +36,8 @@ public class StrategyBatch {
     private Long expectedNavKrw;
     @Column(columnDefinition = "TEXT")
     private String reasons;
+    private Double costReserveRate;
+    private OffsetDateTime lastReconciledAt;
     @Column(nullable = false)
     private OffsetDateTime createdAt;
     private OffsetDateTime submittedAt;
@@ -70,6 +72,10 @@ public class StrategyBatch {
     public Long getExpectedNavKrw() { return expectedNavKrw; }
     public void setExpectedNavKrw(Long expectedNavKrw) { this.expectedNavKrw = expectedNavKrw; }
     public String getReasons() { return reasons; }
+    public Double getCostReserveRate() { return costReserveRate; }
+    public OffsetDateTime getLastReconciledAt() { return lastReconciledAt; }
+    public void setLastReconciledAt(OffsetDateTime lastReconciledAt) { this.lastReconciledAt = lastReconciledAt; }
+    public void setCostReserveRate(Double costReserveRate) { this.costReserveRate = costReserveRate; }
     public void setReasons(String reasons) { this.reasons = reasons; }
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(OffsetDateTime createdAt) { this.createdAt = createdAt; }

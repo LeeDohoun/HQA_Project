@@ -21,15 +21,10 @@ class StrategyAccountServiceTest {
     private final TradeSignalExecutionRepository executions = mock(TradeSignalExecutionRepository.class);
     private final StrategyBatchRepository batches = mock(StrategyBatchRepository.class);
     private final StrategyAccountService service = new StrategyAccountService(f.accounts, f.snapshots, signals, executions,
-            batches, f.orders, f.guard, f.peaks, f.sessions);
+            batches, f.orders, f.guard, f.peaks, f.sessions, f.properties, f.transactions);
 
     StrategyAccountServiceTest() {
         f.accountRows.clear();
-        when(f.accounts.save(any())).thenAnswer(inv -> {
-            StrategyAccount account = inv.getArgument(0);
-            f.accountRows.put(account.getUserId(), account);
-            return account;
-        });
         when(f.accounts.findByStrategyId(anyString())).thenAnswer(inv -> f.accountRows.values().stream()
                 .filter(account -> account.getStrategyId().equals(inv.getArgument(0))).findFirst());
     }

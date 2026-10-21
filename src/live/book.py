@@ -10,7 +10,9 @@ from pathlib import Path
 import yaml
 
 STAGES = ("observe", "shadow", "paper")
-EXECUTIONS = ("basket_20", "continuous")
+EXECUTIONS = ("basket_20", "continuous", "continuous_intraday")
+# Executions that rebalance continuously against target weights (band required).
+BANDED_EXECUTIONS = ("continuous", "continuous_intraday")
 COST_MODEL_VERSIONS = ("v1", "v2")
 DECISION_KINDS = ("fw001",)
 DECISION_RULES = ("f_both", "av_all")
@@ -21,7 +23,9 @@ STRATEGY_ID = re.compile(r"^[a-z0-9][a-z0-9_]{0,63}$")
 
 _REQUIRED = {"title", "description", "experiment_id", "variant", "holdout", "decision_source",
              "execution", "cost_model_version", "requested_stage", "shadow_nav_krw", "account_user_id"}
-_OPTIONAL = {"band", "preregistration", "early_paper"}
+_OPTIONAL = {"band", "preregistration", "early_paper", "sleeves", "limits", "t0"}
+_LIMIT_KEYS = {"max_name_weight", "max_adv_share"}
+_SLEEVE_KEYS = {"weight", "source"}
 _EARLY_PAPER_KEYS = {"decided_by", "decided_at", "reason"}
 _APPROVAL_KEYS = {"strategy_id", "stage", "approved_by", "approved_at", "evidence"}
 
@@ -83,6 +87,25 @@ class StrategyEntry:
     # Explicit user decision to run PAPER (mock) before the roadmap gates: {decided_by, decided_at, reason}.
     # It never applies to real-money stages, which this runtime does not have.
     early_paper: dict | None = None
+    # continuous_intraday only: capital sleeves and per-name limits.
+    sleeves: tuple = ()
+    limits: dict | None = None
+    t0: str | None = None  # fixed start session (OP001: 2026-11-02), never sliding
+
+    @property
+    def traded_sleeve(self):
+        """The sleeve whose source is the book's decision_source (the only one that trades now)."""
+        return next((s for s in self.sleeves if s.source is not None), None)
+
+
+@dataclass(frozen=True)
+class Sleeve:
+    name: str
+    weight: float
+    # {"kind", "rule"} or None: a sleeve without a source holds cash until its source exists.
+    # Extension point: a future source kind (e.g. a sealed OP001 combined-target record) is
+    # added to DECISION_KINDS and read by the runtime; nothing here needs to change.
+    source: dict | None
 
 
 def _text(value, name, sid) -> str:
@@ -91,13 +114,68 @@ def _text(value, name, sid) -> str:
     return value
 
 
-def _names(value, name, sid) -> tuple[str, ...]:
-    if not isinstance(value, list) or not value:
+def _names(value, name, sid, *, allow_empty=False) -> tuple[str, ...]:
+    if not isinstance(value, list) or (not value and not allow_empty):
         raise BookError(f"{sid}: {name} must be a nonempty list")
     items = tuple(_text(item, name, sid) for item in value)
     if len(set(items)) != len(items):
         raise BookError(f"{sid}: {name} has duplicates")
     return items
+
+
+def _fraction(value, *, upper_inclusive=True) -> bool:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return False
+    return 0 <= value <= 1 if upper_inclusive else 0 <= value < 1
+
+
+def _sleeves_and_limits(sid, raw, execution, source):
+    """continuous_intraday requires sleeves and limits; other executions must not have them."""
+    if execution != "continuous_intraday":
+        if "sleeves" in raw or "limits" in raw or "t0" in raw:
+            raise BookError(f"{sid}: sleeves, limits and t0 apply only to continuous_intraday")
+        return (), None
+    sleeves_raw, limits_raw = raw.get("sleeves"), raw.get("limits")
+    if not isinstance(limits_raw, dict) or set(limits_raw) != _LIMIT_KEYS:
+        raise BookError(f"{sid}: limits must have exactly {sorted(_LIMIT_KEYS)}")
+    for key in _LIMIT_KEYS:
+        if not _fraction(limits_raw[key]) or limits_raw[key] == 0:
+            raise BookError(f"{sid}: limits.{key} must be in (0, 1]")
+    if not isinstance(sleeves_raw, dict) or not sleeves_raw:
+        raise BookError(f"{sid}: continuous_intraday requires a nonempty sleeves mapping")
+    sleeves = []
+    for name, body in sleeves_raw.items():
+        if not isinstance(name, str) or not STRATEGY_ID.match(name):
+            raise BookError(f"{sid}: invalid sleeve name {name!r}")
+        if not isinstance(body, dict) or set(body) != _SLEEVE_KEYS:
+            raise BookError(f"{sid}: sleeve {name} must have exactly {sorted(_SLEEVE_KEYS)}")
+        if not _fraction(body["weight"]) or body["weight"] == 0:
+            raise BookError(f"{sid}: sleeve {name} weight must be in (0, 1]")
+        sleeve_source = body["source"]
+        if sleeve_source is not None:
+            if (not isinstance(sleeve_source, dict) or set(sleeve_source) != {"kind", "rule"}
+                    or sleeve_source["kind"] not in DECISION_KINDS or sleeve_source["rule"] not in DECISION_RULES):
+                raise BookError(f"{sid}: sleeve {name} source must be null or a known {{kind, rule}}")
+            sleeve_source = {"kind": sleeve_source["kind"], "rule": sleeve_source["rule"]}
+        sleeves.append(Sleeve(name, float(body["weight"]), sleeve_source))
+    if sum(s.weight for s in sleeves) > 1 + 1e-9:
+        raise BookError(f"{sid}: sleeve weights sum above 1")
+    sourced = [s for s in sleeves if s.source is not None]
+    if len(sourced) != 1 or sourced[0].source != {"kind": source["kind"], "rule": source["rule"]}:
+        raise BookError(f"{sid}: exactly one sleeve must trade, with the book's decision_source")
+    return tuple(sleeves), {key: float(limits_raw[key]) for key in sorted(_LIMIT_KEYS)}
+
+
+def _t0(sid, raw, execution):
+    if execution != "continuous_intraday":
+        return None
+    value = raw.get("t0")
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value.isoformat()
+    try:
+        return date.fromisoformat(value).isoformat()
+    except (TypeError, ValueError):
+        raise BookError(f"{sid}: continuous_intraday requires t0 as YYYY-MM-DD") from None
 
 
 def _entry(sid, raw) -> StrategyEntry:
@@ -128,13 +206,13 @@ def _entry(sid, raw) -> StrategyEntry:
     if raw["requested_stage"] not in STAGES:
         raise BookError(f"{sid}: unknown requested_stage {raw['requested_stage']!r}")
     band = raw.get("band")
-    if execution == "continuous":
-        if (isinstance(band, bool) or not isinstance(band, (int, float)) or not math.isfinite(band)
-                or not 0 <= band < 1):
-            raise BookError(f"{sid}: continuous execution requires band in [0, 1)")
+    if execution in BANDED_EXECUTIONS:
+        if not _fraction(band, upper_inclusive=False):
+            raise BookError(f"{sid}: {execution} execution requires band in [0, 1)")
         band = float(band)
     elif band is not None:
-        raise BookError(f"{sid}: band applies only to continuous execution")
+        raise BookError(f"{sid}: band applies only to continuous executions")
+    sleeves, limits = _sleeves_and_limits(sid, raw, execution, source)
     nav = raw["shadow_nav_krw"]
     if isinstance(nav, bool) or not isinstance(nav, int) or nav <= 0:
         raise BookError(f"{sid}: shadow_nav_krw must be a positive integer")
@@ -159,16 +237,20 @@ def _entry(sid, raw) -> StrategyEntry:
             raise BookError(f"{sid}: early_paper.decided_at needs a timezone")
         early = {"decided_by": _text(early["decided_by"], "early_paper.decided_by", sid),
                  "decided_at": stamp.isoformat(), "reason": _text(early["reason"], "early_paper.reason", sid)}
+    holdout_ids = _names(holdout["experiment_ids"], "holdout.experiment_ids", sid, allow_empty=early is not None)
+    holdout_variants = _names(holdout["variants"], "holdout.variants", sid, allow_empty=early is not None)
+    if bool(holdout_ids) != bool(holdout_variants):
+        raise BookError(f"{sid}: holdout experiment_ids and variants must both be empty or both nonempty")
     return StrategyEntry(
         strategy_id=sid, title=_text(raw["title"], "title", sid),
         description=_text(raw["description"], "description", sid),
         experiment_id=_text(raw["experiment_id"], "experiment_id", sid),
         variant=_text(raw["variant"], "variant", sid),
-        holdout_experiment_ids=_names(holdout["experiment_ids"], "holdout.experiment_ids", sid),
-        holdout_variants=_names(holdout["variants"], "holdout.variants", sid),
+        holdout_experiment_ids=holdout_ids, holdout_variants=holdout_variants,
         decision_kind=source["kind"], decision_rule=source["rule"], execution=execution,
         cost_model_version=raw["cost_model_version"], band=band, requested_stage=raw["requested_stage"],
-        shadow_nav_krw=nav, account_user_id=user, preregistration=prereg, early_paper=early)
+        shadow_nav_krw=nav, account_user_id=user, preregistration=prereg, early_paper=early,
+        sleeves=sleeves, limits=limits, t0=_t0(sid, raw, execution))
 
 
 def load_book(path: str | Path) -> tuple[StrategyEntry, ...]:

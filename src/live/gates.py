@@ -111,14 +111,18 @@ def compute_stage(entry: book.StrategyEntry, *, registry_rows=None, registry_err
             reasons.append(f"design_not_passed:{entry.experiment_id}/{entry.variant}:"
                            f"{design['verdict'] if design else 'none'}")
             shadow_ok = False
-        holdout = latest_row(registry_rows, entry.holdout_experiment_ids, entry.holdout_variants)
+        holdout = (latest_row(registry_rows, entry.holdout_experiment_ids, entry.holdout_variants)
+                   if entry.holdout_experiment_ids else None)
         evidence["holdout"] = None if holdout is None else {
             "experiment_id": holdout["experiment_id"], "variant": holdout["variant"],
             "verdict": holdout["verdict"], "recorded_at": holdout["recorded_at"]}
         if holdout is None or holdout["verdict"] != "pass":
-            name = (f"{holdout['experiment_id']}/{holdout['variant']}" if holdout else
-                    f"{entry.holdout_experiment_ids[0]}/{entry.holdout_variants[0]}")
-            reasons.append(f"holdout_not_passed:{name}:{holdout['verdict'] if holdout else 'none'}")
+            if not entry.holdout_experiment_ids:
+                reasons.append("holdout_not_defined")  # only allowed with an early_paper record
+            else:
+                name = (f"{holdout['experiment_id']}/{holdout['variant']}" if holdout else
+                        f"{entry.holdout_experiment_ids[0]}/{entry.holdout_variants[0]}")
+                reasons.append(f"holdout_not_passed:{name}:{holdout['verdict'] if holdout else 'none'}")
             shadow_ok = False
 
     paper_ok = shadow_ok

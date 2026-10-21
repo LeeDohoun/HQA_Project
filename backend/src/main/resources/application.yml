@@ -100,3 +100,24 @@ hqa:
     # announced special-session dates until HQA_KRX_SPECIAL_SESSIONS configures them.
     calendar-reviewed-through: ${HQA_STRATEGY_CALENDAR_REVIEWED_THROUGH:2027-09-30}
     pending-special-sessions: ${HQA_STRATEGY_PENDING_SPECIAL_SESSIONS:2026-11-19}
+    # Continuous-session phases (MARKET orders): CONT_SELL sells only, CONT_BUY buys only. Unfilled
+    # remainders are cancelled at the cancel times. All shift with the session open on special sessions.
+    cont-sell-window: ${HQA_STRATEGY_CONT_SELL_WINDOW:09:05-09:20}
+    cont-buy-window: ${HQA_STRATEGY_CONT_BUY_WINDOW:09:20-10:00}
+    cont-sell-cancel-at: ${HQA_STRATEGY_CONT_SELL_CANCEL_AT:09:20}
+    cont-buy-cancel-at: ${HQA_STRATEGY_CONT_BUY_CANCEL_AT:10:00}
+    # Snapshot close-NAV recording for terminating profiles (shifts with the session close).
+    nav-close-record-at: ${HQA_STRATEGY_NAV_CLOSE_RECORD_AT:15:45}
+    nav-close-poll-ms: ${HQA_STRATEGY_NAV_CLOSE_POLL_MS:60000}
+    # Termination uses the binding krx_official closes posted by the Python runtime; the snapshot closes
+    # above are a cross-check, and a gap beyond this percent of NAV blocks buys (NAV_CROSSCHECK_MISMATCH).
+    nav-crosscheck-tolerance-pct: ${HQA_STRATEGY_NAV_CROSSCHECK_TOLERANCE_PCT:0.5}
+    # Per-strategy risk profiles; unlisted strategies keep daily-loss and drawdown buy blocks and no
+    # termination. Use "[id]" keys for ids with characters other than letters, digits, - and .
+    # pf001 (user-approved 2026-10-21): no daily-loss/drawdown buy blocks; terminated at a 25%
+    # close-to-close drawdown from the running maximum of the activation NAV and recorded closes.
+    profiles:
+      "[pf001]":
+        daily-loss-buy-block: false
+        drawdown-buy-block: false
+        termination-drawdown-pct: 25

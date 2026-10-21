@@ -14,7 +14,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.springframework.stereotype.Service;
+import com.hqa.backend.config.StrategyProperties;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /** Binds PAPER users to strategies: one strategy per user and one user per strategy. */
 @Service
@@ -34,11 +37,15 @@ public class StrategyAccountService {
     private final StrategyBatchOrderRepository batchOrders;
     private final PaperAccountGuard accountGuard;
     private final AccountEquityPeakRepository peaks;
+    private final StrategyProperties properties;
+    private final TransactionTemplate transactions;
 
     public StrategyAccountService(StrategyAccountRepository accounts, PaperAccountSnapshotService snapshots,
             TradeSignalRepository signals, TradeSignalExecutionRepository executions, StrategyBatchRepository batches,
             StrategyBatchOrderRepository batchOrders, PaperAccountGuard accountGuard, AccountEquityPeakRepository peaks,
-            StrategySessionClock sessions) {
+            StrategySessionClock sessions, StrategyProperties properties, PlatformTransactionManager transactionManager) {
+        this.properties = properties;
+        this.transactions = new TransactionTemplate(transactionManager);
         this.batchOrders = batchOrders;
         this.accountGuard = accountGuard;
         this.peaks = peaks;
@@ -50,12 +57,33 @@ public class StrategyAccountService {
         this.sessions = sessions;
     }
 
-    @Transactional
+    /**
+     * Binds or updates a strategy account. The first time it is enabled at stage paper, the PAPER equity
+     * is recorded as the activation NAV (termination base); a strategy with a termination profile cannot
+     * be enabled without it. The equity read happens before the account lock and transaction.
+     */
     public Map<String, Object> bind(String userId, String strategyId, String stage, Boolean enabled) {
         if (userId == null || userId.isBlank()) throw new IllegalArgumentException("userId is required");
         if (strategyId == null || !strategyId.matches(STRATEGY_ID_PATTERN)) throw new IllegalArgumentException("INVALID_STRATEGY_ID");
         if (stage == null || !STAGES.contains(stage)) throw new IllegalArgumentException("INVALID_STAGE");
         snapshots.paperUser(userId); // PAPER KIS account with complete credentials only
+        boolean activating = "paper".equals(stage) && Boolean.TRUE.equals(enabled);
+        boolean terminating = properties.profile(strategyId).getTerminationDrawdownPct() != null;
+        Long activationNav = null;
+        if (activating && accounts.findById(userId).map(account -> account.getActivatedAt() == null).orElse(true)) {
+            Map<String, Object> snapshot = snapshots.snapshot(userId);
+            if (Boolean.TRUE.equals(snapshot.get("success")) && snapshot.get("equity") instanceof Number equity && equity.longValue() > 0) {
+                activationNav = equity.longValue();
+            } else if (terminating) {
+                throw new IllegalStateException("ACTIVATION_NAV_UNAVAILABLE");
+            }
+        }
+        Long nav = activationNav;
+        return transactions.execute(status -> bindLocked(userId, strategyId, stage, enabled, activating, terminating, nav));
+    }
+
+    private Map<String, Object> bindLocked(String userId, String strategyId, String stage, Boolean enabled, boolean activating,
+            boolean terminating, Long activationNav) {
         // Same account lock as PaperTradeStore.save, so no LLM plan can slip in while the account is bound.
         User user = accountGuard.lock(userId);
         Optional<StrategyAccount> byStrategy = accounts.findByStrategyId(strategyId);
@@ -85,14 +113,27 @@ public class StrategyAccountService {
             if (peaks.existsById(binding)) peaks.deleteById(binding);
             peakReset = true;
         }
+        boolean activated = false;
+        if (activating && account.getActivatedAt() == null) {
+            if (activationNav != null) {
+                account.activate(sessions.now(), activationNav);
+                activated = true;
+            } else if (terminating) {
+                throw new IllegalStateException("ACTIVATION_NAV_UNAVAILABLE");
+            }
+        }
         Map<String, Object> view = view(accounts.save(account));
+        view.put("accountBinding", accountGuard.binding(user));
         view.put("equityPeakReset", peakReset);
+        view.put("activatedNow", activated);
         return view;
     }
 
     @Transactional
     public Map<String, Object> unbind(String userId) {
         StrategyAccount account = accounts.findById(userId).orElseThrow(() -> new IllegalArgumentException("STRATEGY_ACCOUNT_NOT_FOUND"));
+        // The termination record must survive: no resume under the same strategy ID by rebinding.
+        if (account.isTerminated()) throw new IllegalStateException("STRATEGY_TERMINATED_CANNOT_UNBIND");
         if (batches.existsByUserIdAndStatusIn(userId, LIVE_BATCH_STATUSES)) throw new IllegalStateException("STRATEGY_BATCH_IN_PROGRESS");
         if (batchOrders.existsOrderForUserWithStatusIn(userId, OPEN_ORDER_STATUSES)) {
             throw new IllegalStateException("STRATEGY_ORDERS_OPEN");
@@ -103,7 +144,20 @@ public class StrategyAccountService {
 
     @Transactional(readOnly = true)
     public Map<String, Object> list() {
-        return Map.of("accounts", accounts.findAllByOrderByStrategyIdAsc().stream().map(StrategyAccountService::view).toList());
+        return Map.of("accounts", accounts.findAllByOrderByStrategyIdAsc().stream().map(account -> {
+            Map<String, Object> row = view(account);
+            row.put("accountBinding", bindingOf(account.getUserId()));
+            return row;
+        }).toList());
+    }
+
+    /** The PAPER account fingerprint (never the account number), or null when the user's secret is unusable. */
+    private String bindingOf(String userId) {
+        try {
+            return accountGuard.binding(snapshots.paperUser(userId));
+        } catch (RuntimeException ex) {
+            return null;
+        }
     }
 
     public boolean isStrategyAccount(String userId) {
@@ -121,6 +175,10 @@ public class StrategyAccountService {
         row.put("stage", account.getStage());
         row.put("enabled", account.isEnabled());
         row.put("updatedAt", account.getUpdatedAt());
+        row.put("activatedAt", account.getActivatedAt());
+        row.put("activationNavKrw", account.getActivationNavKrw());
+        row.put("terminatedAt", account.getTerminatedAt());
+        row.put("terminationReason", account.getTerminationReason());
         return row;
     }
 }

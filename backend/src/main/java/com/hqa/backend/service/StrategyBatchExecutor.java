@@ -10,10 +10,17 @@ import com.hqa.backend.entity.User;
 import com.hqa.backend.repository.StrategyAccountRepository;
 import com.hqa.backend.repository.StrategyBatchOrderRepository;
 import com.hqa.backend.repository.StrategyBatchRepository;
+import com.hqa.backend.entity.StrategyBatchSizing;
+import com.hqa.backend.repository.StrategyBatchSizingRepository;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
@@ -41,6 +48,7 @@ public class StrategyBatchExecutor {
     private final PaperAccountSnapshotService snapshots;
     private final KisClient kis;
     private final ObjectMapper mapper;
+    private final StrategyBatchSizingRepository sizings;
     private final Map<String, CachedRisk> riskCache = new ConcurrentHashMap<>();
     private final StrategyWorker worker = new StrategyWorker("strategy-batch-executor");
 
@@ -51,7 +59,8 @@ public class StrategyBatchExecutor {
     public StrategyBatchExecutor(StrategyProperties properties, StrategyBatchRepository batches,
             StrategyBatchOrderRepository batchOrders, StrategyAccountRepository accounts, StrategyBatchService batchService,
             StrategyRiskGuard risk, StrategySessionClock sessions, PaperAccountSnapshotService snapshots, KisClient kis,
-            ObjectMapper mapper) {
+            ObjectMapper mapper, StrategyBatchSizingRepository sizings) {
+        this.sizings = sizings;
         this.properties = properties;
         this.batches = batches;
         this.batchOrders = batchOrders;
@@ -129,6 +138,8 @@ public class StrategyBatchExecutor {
             halt(batch, orders, now);
             return true;
         }
+        // CONT_BUY waits for the session's CONT_SELL batch (terminal, or cancelled and reconciled after its window).
+        if (batchService.awaitingSells(batch, now)) return true;
         if ("QUEUED".equals(batch.getStatus())) {
             batch.setStatus("SUBMITTING");
             batch = batches.saveAndFlush(batch);
@@ -137,6 +148,13 @@ public class StrategyBatchExecutor {
         if (token == null || token.isBlank()) {
             log.warn("[StrategyBatchExecutor] KIS token unavailable for batch {}", batch.getId());
             return true;
+        }
+        if ("CONT_BUY".equals(batch.getPhase())) {
+            Optional<StrategyBatchSizing> sizing = sizings.findById(batch.getId());
+            if (sizing.isEmpty()) sizing = size(batch, user, token, orders);
+            // orderable cash unreadable: nothing is sent, retried next tick until the window closes
+            if (sizing.isEmpty()) return true;
+            applySizing(sizing.get(), orders); // also after a restart between sealing and applying
         }
         List<StrategyBatchOrder> pending = orders.stream().filter(order -> "PENDING".equals(order.getStatus()))
                 .sorted(Comparator.comparing(StrategyBatchOrder::isBuy).thenComparingInt(StrategyBatchOrder::getSeq)).toList();
@@ -183,7 +201,91 @@ public class StrategyBatchExecutor {
         return cached.state();
     }
 
+    /**
+     * Seals the CONT_BUY sizing record: reads orderable cash once (VTTC8908R, nrcvb_buy_amt) and, if the buy
+     * total with the cost reserve exceeds it, scales every buy quantity down by cash/total (floor). Quantities
+     * are never raised; an order scaled to 0 is SKIPPED (SCALED_TO_ZERO).
+     */
+    Optional<StrategyBatchSizing> size(StrategyBatch batch, User user, String token, List<StrategyBatchOrder> orders) {
+        List<StrategyBatchOrder> buys = orders.stream().filter(StrategyBatchOrder::isBuy).toList();
+        if (buys.isEmpty()) return Optional.empty();
+        StrategyBatchOrder first = buys.get(0);
+        Map<String, Object> reading;
+        try {
+            reading = kis.paperOrderableCash(batch.getUserId(), user.getSecret(), token, first.getStockCode(), first.getRefPrice());
+        } catch (RuntimeException ex) {
+            log.warn("[StrategyBatchExecutor] orderable cash unavailable for batch {}: {}", batch.getId(), ex.getMessage());
+            return Optional.empty();
+        }
+        OffsetDateTime now = sessions.now();
+        long cash = ((Number) reading.get("cash")).longValue();
+        double rate = batch.getCostReserveRate() == null ? StrategyBatchService.DEFAULT_COST_RESERVE_RATE : batch.getCostReserveRate();
+        BigDecimal reserve = BigDecimal.ONE.add(BigDecimal.valueOf(rate));
+        BigDecimal required = BigDecimal.ZERO;
+        for (StrategyBatchOrder order : buys) {
+            required = required.add(BigDecimal.valueOf(planned(order)).multiply(BigDecimal.valueOf(order.getRefPrice())).multiply(reserve));
+        }
+        boolean scaled = required.compareTo(BigDecimal.valueOf(cash)) > 0;
+        BigDecimal factor = scaled ? BigDecimal.valueOf(cash).divide(required, 12, RoundingMode.DOWN) : BigDecimal.ONE;
+        List<Map<String, Object>> quantities = new ArrayList<>();
+        for (StrategyBatchOrder order : buys) {
+            long planned = planned(order);
+            long sized = planned;
+            if (scaled) {
+                // floor(planned x cash / required), exact; only ever scaled down
+                sized = BigDecimal.valueOf(planned).multiply(BigDecimal.valueOf(cash)).divide(required, 0, RoundingMode.DOWN).longValueExact();
+                sized = Math.min(planned, Math.max(0, sized));
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("seq", order.getSeq());
+            row.put("stockCode", order.getStockCode());
+            row.put("refPrice", order.getRefPrice());
+            row.put("plannedQuantity", planned);
+            row.put("finalQuantity", sized);
+            quantities.add(row);
+        }
+        return Optional.of(sizings.saveAndFlush(new StrategyBatchSizing(batch.getId(), cash, now, json(reading.get("raw")),
+                required.setScale(0, RoundingMode.CEILING).longValueExact(), rate, factor.doubleValue(), scaled, json(quantities))));
+    }
+
+    /** Applies the sealed final quantities to unsent BUY orders; 0 becomes SKIPPED (SCALED_TO_ZERO). */
+    void applySizing(StrategyBatchSizing sizing, List<StrategyBatchOrder> orders) {
+        Map<Integer, Long> finals = new java.util.HashMap<>();
+        try {
+            for (Map<String, Object> row : mapper.readValue(sizing.getQuantities(),
+                    new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() { })) {
+                finals.put(((Number) row.get("seq")).intValue(), ((Number) row.get("finalQuantity")).longValue());
+            }
+        } catch (JsonProcessingException ex) {
+            throw new IllegalStateException("UNREADABLE_SIZING_RECORD", ex);
+        }
+        OffsetDateTime now = sessions.now();
+        for (StrategyBatchOrder order : orders) {
+            if (!order.isBuy() || !"PENDING".equals(order.getStatus())) continue;
+            Long sized = finals.get(order.getSeq());
+            if (sized == null || sized > planned(order)) throw new IllegalStateException("SIZING_RECORD_MISMATCH");
+            if (sized == 0) {
+                order.setStatus("SKIPPED");
+                order.setRejectReason("SCALED_TO_ZERO");
+            } else if (sized != order.getQuantity()) {
+                order.setQuantity(sized);
+            } else {
+                continue;
+            }
+            order.setUpdatedAt(now);
+            batchOrders.saveAndFlush(order);
+        }
+    }
+
+    private static long planned(StrategyBatchOrder order) {
+        return order.getPlannedQuantity() == null ? order.getQuantity() : order.getPlannedQuantity();
+    }
+
     Outcome send(StrategyBatch batch, User user, String token, StrategyBatchOrder order) {
+        if (batch.getPhase().startsWith("CONT_")) {
+            // Live price just before a continuous-session order, kept next to the plan reference price.
+            order.setRefPriceAtSubmit(kis.inquireCurrentPrice(batch.getUserId(), user.getSecret(), token, order.getStockCode()));
+        }
         OffsetDateTime now = sessions.now();
         // Intent first: if the process dies during the call the order stays UNKNOWN and is never resent.
         order.setStatus("UNKNOWN");

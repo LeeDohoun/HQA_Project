@@ -8,10 +8,12 @@ import com.hqa.backend.dto.StrategyBatchRequest;
 import com.hqa.backend.entity.StrategyAccount;
 import com.hqa.backend.entity.StrategyBatch;
 import com.hqa.backend.entity.StrategyBatchOrder;
+import com.hqa.backend.entity.StrategyBatchSizing;
 import com.hqa.backend.entity.User;
 import com.hqa.backend.repository.StrategyAccountRepository;
 import com.hqa.backend.repository.StrategyBatchOrderRepository;
 import com.hqa.backend.repository.StrategyBatchRepository;
+import com.hqa.backend.repository.StrategyBatchSizingRepository;
 import com.hqa.backend.util.StockCodes;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -39,7 +41,11 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 public class StrategyBatchService {
     public static final String HEX64 = "[0-9a-fA-F]{64}";
-    public static final Set<String> PHASES = Set.of("OPEN", "CLOSE");
+    public static final Set<String> PHASES = Set.of("OPEN", "CLOSE", "CONT_SELL", "CONT_BUY");
+    public static final double DEFAULT_COST_RESERVE_RATE = 0.003;
+    public static final double MAX_COST_RESERVE_RATE = 0.05;
+    /** Batch states before the executor finished sending. */
+    public static final Set<String> UNSENT_BATCH_STATUSES = Set.of("QUEUED", "SUBMITTING");
     /** Order states with quantity that may still fill at the broker. */
     public static final Set<String> OPEN_ORDER_STATUSES = Set.of("PENDING", "SUBMITTED", "PARTIALLY_FILLED");
     private final StrategyAccountRepository accounts;
@@ -52,11 +58,13 @@ public class StrategyBatchService {
     private final StrategyProperties properties;
     private final ObjectMapper mapper;
     private final TransactionTemplate transactions;
+    private final StrategyBatchSizingRepository sizings;
 
     public StrategyBatchService(StrategyAccountRepository accounts, StrategyBatchRepository batches,
-            StrategyBatchOrderRepository batchOrders, PaperAccountSnapshotService snapshots, PaperAccountGuard accountGuard,
-            StrategyRiskGuard risk, StrategySessionClock sessions, StrategyProperties properties, ObjectMapper mapper,
-            PlatformTransactionManager transactionManager) {
+            StrategyBatchOrderRepository batchOrders, StrategyBatchSizingRepository sizings, PaperAccountSnapshotService snapshots,
+            PaperAccountGuard accountGuard, StrategyRiskGuard risk, StrategySessionClock sessions, StrategyProperties properties,
+            ObjectMapper mapper, PlatformTransactionManager transactionManager) {
+        this.sizings = sizings;
         this.accounts = accounts;
         this.batches = batches;
         this.batchOrders = batchOrders;
@@ -87,7 +95,10 @@ public class StrategyBatchService {
                 || !request.decisionHash().matches(HEX64) || request.idempotencyKey() == null
                 || !request.idempotencyKey().matches(HEX64) || request.decisionDate() == null || request.sessionDate() == null
                 || request.phase() == null || !PHASES.contains(request.phase()) || request.orders() == null
-                || !request.decisionDate().isBefore(request.sessionDate())) {
+                || !request.decisionDate().isBefore(request.sessionDate())
+                || (request.costReserveRate() != null && (!"CONT_BUY".equals(request.phase())
+                        || !Double.isFinite(request.costReserveRate()) || request.costReserveRate() < 0
+                        || request.costReserveRate() >= MAX_COST_RESERVE_RATE))) {
             return rejected(List.of("INVALID_REQUEST"), orderCount, List.of());
         }
         String expectedKey = idempotencyKey(request.strategyId(), request.decisionHash(), request.sessionDate().toString(),
@@ -127,6 +138,21 @@ public class StrategyBatchService {
 
         List<Map<String, Object>> rejectedOrders = new ArrayList<>();
         List<StrategyBatchRequest.Order> valid = validateOrders(request.orders(), reasons, rejectedOrders);
+        String onlySide = "CONT_SELL".equals(request.phase()) ? "SELL" : "CONT_BUY".equals(request.phase()) ? "BUY" : null;
+        if (onlySide != null) {
+            for (StrategyBatchRequest.Order order : valid) {
+                if (!onlySide.equals(order.side())) {
+                    reasons.add("PHASE_SIDE_MISMATCH");
+                    rejectedOrders.add(rejectedOrder(order.seq(), "PHASE_SIDE_MISMATCH"));
+                }
+            }
+        }
+        if (account.get().isTerminated() && valid.stream().anyMatch(order -> "BUY".equals(order.side()))) {
+            // Terminated (close-to-close drawdown): only SELL batches, i.e. liquidation, are accepted.
+            reasons.add("STRATEGY_TERMINATED");
+            valid.stream().filter(order -> "BUY".equals(order.side()))
+                    .forEach(order -> rejectedOrders.add(rejectedOrder(order.seq(), "STRATEGY_TERMINATED")));
+        }
 
         if (reasons.isEmpty()) {
             StrategyRiskGuard.RiskState state = risk.evaluate(request.userId());
@@ -190,6 +216,9 @@ public class StrategyBatchService {
         batch.setStatus("QUEUED");
         batch.setIdempotencyKey(key);
         batch.setExpectedNavKrw(request.expectedNavKrw());
+        if ("CONT_BUY".equals(request.phase())) {
+            batch.setCostReserveRate(request.costReserveRate() == null ? DEFAULT_COST_RESERVE_RATE : request.costReserveRate());
+        }
         batch.setReasons(json(List.of()));
         batch.setCreatedAt(now);
         StrategyBatch saved = batches.saveAndFlush(batch);
@@ -201,6 +230,7 @@ public class StrategyBatchService {
             order.setStockCode(line.stockCode());
             order.setSide(line.side());
             order.setQuantity(line.quantity());
+            order.setPlannedQuantity(line.quantity());
             order.setRefPrice(line.refPrice());
             order.setAdv20Krw(line.adv20Krw());
             order.setOrderType(properties.getOrderType());
@@ -211,6 +241,29 @@ public class StrategyBatchService {
         }
         batchOrders.saveAllAndFlush(rows);
         return response(saved.getId(), saved.getStatus(), false, List.of(), rows.size(), List.of());
+    }
+
+    /**
+     * True while a CONT_BUY batch must wait for the same account's CONT_SELL batch of the session: until it
+     * is terminal (sent, no order open at the broker), or its window has ended, every open remainder has a
+     * cancel request and the reconciler has read the broker list after the last cancel request.
+     */
+    public boolean awaitingSells(StrategyBatch buyBatch, OffsetDateTime now) {
+        if (!"CONT_BUY".equals(buyBatch.getPhase())) return false;
+        Optional<StrategyBatch> found = batches.findFirstByUserIdAndSessionDateAndPhaseAndStatusNot(buyBatch.getUserId(),
+                buyBatch.getSessionDate(), "CONT_SELL", "REJECTED");
+        if (found.isEmpty()) return false;
+        StrategyBatch sell = found.get();
+        if (UNSENT_BATCH_STATUSES.contains(sell.getStatus())) {
+            return !sessions.phaseWindowClosed(sell.getSessionDate(), "CONT_SELL", now);
+        }
+        List<StrategyBatchOrder> orders = batchOrders.findByBatchIdOrderBySeqAsc(sell.getId());
+        List<StrategyBatchOrder> open = orders.stream().filter(order -> OPEN_ORDER_STATUSES.contains(order.getStatus())).toList();
+        if (open.isEmpty()) return false;
+        if (!sessions.phaseWindowClosed(sell.getSessionDate(), "CONT_SELL", now)) return true;
+        if (open.stream().anyMatch(order -> order.getCancelRequestedAt() == null)) return true;
+        OffsetDateTime lastCancel = open.stream().map(StrategyBatchOrder::getCancelRequestedAt).max(OffsetDateTime::compareTo).orElseThrow();
+        return sell.getLastReconciledAt() == null || !sell.getLastReconciledAt().isAfter(lastCancel);
     }
 
     /** Another stored (not REJECTED) batch already covers this account, session and phase. */
@@ -291,6 +344,11 @@ public class StrategyBatchService {
 
     /** Final or interim batch status from its orders; HALTED stays HALTED. Returns true when it changed. */
     public boolean finalizeStatus(StrategyBatch batch, List<StrategyBatchOrder> orders, OffsetDateTime now) {
+        return finalizeStatus(batch, orders, now, false);
+    }
+
+    /** As above; {@code save} also stores other field changes (e.g. lastReconciledAt) when the status did not change. */
+    public boolean finalizeStatus(StrategyBatch batch, List<StrategyBatchOrder> orders, OffsetDateTime now, boolean save) {
         boolean open = orders.stream().anyMatch(order -> OPEN_ORDER_STATUSES.contains(order.getStatus()));
         boolean anyFilled = orders.stream().anyMatch(order -> order.getFilledQuantity() > 0);
         boolean allFilled = !orders.isEmpty() && orders.stream().allMatch(order -> "FILLED".equals(order.getStatus()));
@@ -310,7 +368,7 @@ public class StrategyBatchService {
             batch.setCompletedAt(null); // an adopted UNKNOWN order reopened it
             changed = true;
         }
-        if (changed) batches.saveAndFlush(batch);
+        if (changed || save) batches.saveAndFlush(batch);
         return changed;
     }
 
@@ -329,6 +387,8 @@ public class StrategyBatchService {
         view.put("createdAt", batch.getCreatedAt());
         view.put("submittedAt", batch.getSubmittedAt());
         view.put("completedAt", batch.getCompletedAt());
+        view.put("costReserveRate", batch.getCostReserveRate());
+        view.put("sizing", sizings.findById(batch.getId()).map(this::sizingView).orElse(null));
         view.put("orders", batchOrders.findByBatchIdOrderBySeqAsc(batch.getId()).stream().map(StrategyBatchService::orderView).toList());
         return view;
     }
@@ -339,7 +399,9 @@ public class StrategyBatchService {
         row.put("stockCode", order.getStockCode());
         row.put("side", order.getSide());
         row.put("quantity", order.getQuantity());
+        row.put("plannedQuantity", order.getPlannedQuantity() == null ? order.getQuantity() : order.getPlannedQuantity());
         row.put("refPrice", order.getRefPrice());
+        row.put("refPriceAtSubmit", order.getRefPriceAtSubmit());
         row.put("adv20Krw", order.getAdv20Krw());
         row.put("status", order.getStatus());
         row.put("brokerOrderId", order.getBrokerOrderId());
@@ -347,6 +409,27 @@ public class StrategyBatchService {
         row.put("averageFillPrice", order.getAverageFillPrice() == null ? null : order.getAverageFillPrice().doubleValue());
         row.put("rejectReason", order.getRejectReason());
         return row;
+    }
+
+    public Map<String, Object> sizingView(StrategyBatchSizing sizing) {
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("orderableCashKrw", sizing.getOrderableCashKrw());
+        view.put("readAt", sizing.getReadAt());
+        view.put("requiredKrw", sizing.getRequiredKrw());
+        view.put("costReserveRate", sizing.getCostReserveRate());
+        view.put("scaleFactor", sizing.getScaleFactor());
+        view.put("scaled", sizing.isScaled());
+        view.put("kisFields", readJson(sizing.getKisFields()));
+        view.put("quantities", readJson(sizing.getQuantities()));
+        return view;
+    }
+
+    private Object readJson(String text) {
+        try {
+            return mapper.readValue(text, Object.class);
+        } catch (JsonProcessingException ex) {
+            return text;
+        }
     }
 
     private Map<String, Object> deduplicated(StrategyBatch batch) {

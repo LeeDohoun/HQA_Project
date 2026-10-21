@@ -12,8 +12,9 @@ import org.springframework.stereotype.Component;
 
 /**
  * KST session and auction-phase times for strategy batches. The configured windows are for a regular
- * session (09:00-15:30); on an official special session the OPEN window and the open cancel time move
- * with the session's open, and the CLOSE window with its close. Window ends are exclusive.
+ * session (09:00-15:30); on an official special session the OPEN, CONT_SELL and CONT_BUY windows and
+ * their cancel times move with the session's open, and the CLOSE window with its close. Window ends
+ * are exclusive.
  */
 @Component
 public class StrategySessionClock {
@@ -62,9 +63,16 @@ public class StrategySessionClock {
     public OffsetDateTime[] phaseWindow(LocalDate day, String phase) {
         LocalTime[] hours = calendar.sessionHours(day);
         if (hours == null || !calendarVerified(day)) return null;
-        boolean open = "OPEN".equals(phase);
-        LocalTime[] window = open ? properties.openWindowTimes() : properties.closeWindowTimes();
-        Duration shift = open ? Duration.between(REGULAR_OPEN, hours[0]) : Duration.between(REGULAR_CLOSE, hours[1]);
+        LocalTime[] window = switch (phase) {
+            case "OPEN" -> properties.openWindowTimes();
+            case "CLOSE" -> properties.closeWindowTimes();
+            case "CONT_SELL" -> properties.contSellWindowTimes();
+            case "CONT_BUY" -> properties.contBuyWindowTimes();
+            default -> null;
+        };
+        if (window == null) return null;
+        // Everything but the closing auction moves with the session open.
+        Duration shift = "CLOSE".equals(phase) ? Duration.between(REGULAR_CLOSE, hours[1]) : Duration.between(REGULAR_OPEN, hours[0]);
         return new OffsetDateTime[] {at(day, window[0]).plus(shift), at(day, window[1]).plus(shift)};
     }
 
@@ -83,6 +91,26 @@ public class StrategySessionClock {
         LocalTime[] hours = calendar.sessionHours(day);
         if (hours == null) return null;
         return at(day, properties.openCancelAfterTime()).plus(Duration.between(REGULAR_OPEN, hours[0]));
+    }
+
+    /** When unfilled remainders of the phase are cancelled; null for CLOSE (they expire with the session). */
+    public OffsetDateTime cancelAt(LocalDate day, String phase) {
+        LocalTime[] hours = calendar.sessionHours(day);
+        if (hours == null) return null;
+        LocalTime time = switch (phase) {
+            case "OPEN" -> properties.openCancelAfterTime();
+            case "CONT_SELL" -> properties.contSellCancelAtTime();
+            case "CONT_BUY" -> properties.contBuyCancelAtTime();
+            default -> null;
+        };
+        return time == null ? null : at(day, time).plus(Duration.between(REGULAR_OPEN, hours[0]));
+    }
+
+    /** When the close-of-session NAV is recorded (moves with the session close); null when not a session. */
+    public OffsetDateTime navCloseRecordAt(LocalDate day) {
+        LocalTime[] hours = calendar.sessionHours(day);
+        if (hours == null) return null;
+        return at(day, properties.navCloseRecordAtTime()).plus(Duration.between(REGULAR_CLOSE, hours[1]));
     }
 
     public OffsetDateTime sessionOpenAt(LocalDate day) {

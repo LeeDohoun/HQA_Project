@@ -84,6 +84,22 @@ class PaperAccountSnapshotServiceTest {
         assertThat(service.snapshot("u1")).containsEntry("success", true);
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void snapshotExposesTheSettlementCashBasesWithoutSubstitution() {
+        Map<String, Object> withSettlement = new HashMap<>(balance(10000L));
+        Map<String, Object> summary = new HashMap<>((Map<String, Object>) withSettlement.get("summary"));
+        summary.put("settledCashD2", 8_700L);
+        summary.put("cashD1", 8_800L);
+        summary.put("totalEvalAmount", 9_600L);
+        withSettlement.put("summary", summary);
+        when(kis.inquireBalance(anyString(), any(), anyString())).thenReturn(withSettlement);
+        assertThat(service.snapshot("u1")).containsEntry("settledCashD2Krw", 8_700L).containsEntry("cashD1Krw", 8_800L)
+                .containsEntry("totalEvaluationKrw", 9_600L).containsEntry("netAssetKrw", 9_400L).containsEntry("orderableCash", 9_000L);
+        when(kis.inquireBalance(anyString(), any(), anyString())).thenReturn(balance(10000L));
+        assertThat(service.snapshot("u1")).containsEntry("settledCashD2Krw", null).containsEntry("cashD1Krw", null);
+    }
+
     private Map<String, Object> balance(Long previous) {
         Map<String, Object> summary = new HashMap<>(Map.of("netAssetAmount", 9400L, "deposit", 9000L));
         if (previous != null) summary.put("previousDayTotalAssets", previous);

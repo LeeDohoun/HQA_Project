@@ -11,6 +11,10 @@ import com.hqa.backend.entity.AccountEquityPeak;
 import com.hqa.backend.entity.StrategyAccount;
 import com.hqa.backend.entity.StrategyBatch;
 import com.hqa.backend.entity.StrategyBatchOrder;
+import com.hqa.backend.entity.StrategyBatchSizing;
+import com.hqa.backend.entity.StrategyNavClose;
+import com.hqa.backend.repository.StrategyBatchSizingRepository;
+import com.hqa.backend.repository.StrategyNavCloseRepository;
 import com.hqa.backend.entity.TradingHalt;
 import com.hqa.backend.entity.User;
 import com.hqa.backend.repository.AccountEquityPeakRepository;
@@ -60,6 +64,8 @@ final class StrategyTestFixture {
     final Map<UUID, StrategyBatchOrder> orderRows = new LinkedHashMap<>();
     final Map<String, TradingHalt> haltRows = new HashMap<>();
     final Map<String, Long> peakRows = new HashMap<>();
+    final Map<UUID, StrategyBatchSizing> sizingRows = new LinkedHashMap<>();
+    final Map<StrategyNavClose.Key, StrategyNavClose> closeRows = new LinkedHashMap<>();
 
     final StrategyAccountRepository accounts = mock(StrategyAccountRepository.class);
     final StrategyBatchRepository batches = mock(StrategyBatchRepository.class);
@@ -70,17 +76,27 @@ final class StrategyTestFixture {
     final PaperAccountGuard guard = mock(PaperAccountGuard.class);
     final KisClient kis = mock(KisClient.class);
     final PlatformTransactionManager transactions = mock(PlatformTransactionManager.class);
+    final StrategyBatchSizingRepository sizings = mock(StrategyBatchSizingRepository.class);
+    final StrategyNavCloseRepository navCloses = mock(StrategyNavCloseRepository.class);
     final User user = PaperTradeStoreTest.user();
     final Map<String, Object> snapshot = new HashMap<>();
 
-    final StrategyRiskGuard risk = new StrategyRiskGuard(snapshots, peaks, orders, halts, properties, sessions);
-    final StrategyBatchService service = new StrategyBatchService(accounts, batches, orders, snapshots, guard, risk,
+    final StrategyTerminationService termination = new StrategyTerminationService(accounts, navCloses, orders, snapshots,
+            sessions, properties);
+    final StrategyRiskGuard risk = new StrategyRiskGuard(snapshots, peaks, orders, halts, properties, sessions, accounts,
+            termination);
+    final StrategyBatchService service = new StrategyBatchService(accounts, batches, orders, sizings, snapshots, guard, risk,
             sessions, properties, mapper, transactions);
-    final StrategyBatchExecutor executor = new StrategyBatchExecutor(properties, batches, orders, accounts, service, risk,
-            sessions, snapshots, kis, mapper);
+    final StrategyBatchExecutor executor = newExecutor();
     final StrategyBatchReconciler reconciler = new StrategyBatchReconciler(properties, batches, orders, service, sessions,
             snapshots, kis);
     final StrategyOrderResolver resolver = new StrategyOrderResolver(orders, batches, service, snapshots, kis, sessions, mapper);
+
+    /** A fresh executor over the same repositories, as after a process restart. */
+    StrategyBatchExecutor newExecutor() {
+        return new StrategyBatchExecutor(properties, batches, orders, accounts, service, risk, sessions, snapshots, kis, mapper,
+                sizings);
+    }
 
     StrategyTestFixture() {
         accountRows.put("u1", new StrategyAccount("u1", "hf001_f_both", "paper", true, now()));
@@ -93,6 +109,37 @@ final class StrategyTestFixture {
         when(kis.fetchAccessToken(eq("u1"), any())).thenReturn("token");
 
         when(accounts.findById(anyString())).thenAnswer(inv -> Optional.ofNullable(accountRows.get(inv.<String>getArgument(0))));
+        when(accounts.save(any())).thenAnswer(inv -> {
+            StrategyAccount account = inv.getArgument(0);
+            accountRows.put(account.getUserId(), account);
+            return account;
+        });
+        when(accounts.findAll()).thenAnswer(inv -> List.copyOf(accountRows.values()));
+        when(sizings.saveAndFlush(any())).thenAnswer(inv -> {
+            StrategyBatchSizing sizing = inv.getArgument(0);
+            if (sizingRows.containsKey(sizing.getBatchId())) throw new org.springframework.dao.DataIntegrityViolationException("dup");
+            sizingRows.put(sizing.getBatchId(), sizing);
+            return sizing;
+        });
+        when(sizings.findById(any())).thenAnswer(inv -> Optional.ofNullable(sizingRows.get(inv.<UUID>getArgument(0))));
+        when(sizings.existsById(any())).thenAnswer(inv -> sizingRows.containsKey(inv.<UUID>getArgument(0)));
+        when(navCloses.saveAndFlush(any())).thenAnswer(inv -> {
+            StrategyNavClose row = inv.getArgument(0);
+            StrategyNavClose.Key key = new StrategyNavClose.Key(row.getAccountBinding(), row.getSessionDate(), row.getSource());
+            if (closeRows.containsKey(key)) throw new org.springframework.dao.DataIntegrityViolationException("dup");
+            closeRows.put(key, row);
+            return row;
+        });
+        when(navCloses.findByAccountBindingAndSessionDateAndSource(anyString(), any(), anyString())).thenAnswer(inv ->
+                Optional.ofNullable(closeRows.get(new StrategyNavClose.Key(inv.getArgument(0), inv.getArgument(1), inv.getArgument(2)))));
+        when(navCloses.findByAccountBindingAndSessionDateGreaterThanEqualOrderBySessionDateAsc(anyString(), any())).thenAnswer(inv ->
+                closeRows.values().stream().filter(row -> row.getAccountBinding().equals(inv.getArgument(0))
+                        && !row.getSessionDate().isBefore(inv.getArgument(1)))
+                        .sorted(Comparator.comparing(StrategyNavClose::getSessionDate)).toList());
+        when(batches.findFirstByUserIdAndSessionDateAndPhaseAndStatusNot(anyString(), any(), anyString(), anyString()))
+                .thenAnswer(inv -> batchRows.values().stream().filter(batch -> batch.getUserId().equals(inv.getArgument(0))
+                        && batch.getSessionDate().equals(inv.getArgument(1)) && batch.getPhase().equals(inv.getArgument(2))
+                        && !batch.getStatus().equals(inv.getArgument(3))).findFirst());
         when(accounts.existsById(anyString())).thenAnswer(inv -> accountRows.containsKey(inv.<String>getArgument(0)));
 
         when(batches.saveAndFlush(any())).thenAnswer(inv -> {

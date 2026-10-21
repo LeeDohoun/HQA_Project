@@ -29,6 +29,12 @@ class AccountState:
     holdings: dict
     sellable: dict
     captured_at: datetime
+    reserved: float = 0.0
+    # KIS prvs_rcdl_excc_amt: D+2 settled cash, the cash of the binding NAV (None when not reported).
+    settled_cash_d2: float | None = None
+    cash_d1: float | None = None
+    net_asset: float | None = None
+    total_evaluation: float | None = None
 
 
 def _number(value, name, *, positive=False):
@@ -69,8 +75,13 @@ def parse_account_snapshot(body, user_id, *, now=None) -> AccountState:
             raise BackendError(f"invalid holding in account snapshot: {code}")
         if qty:
             holdings[code], sellable[code] = qty, free
+    reserved = row.get("reservedCash", 0.0)
+    optional = {name: None if row.get(field) is None else _number(row.get(field), field)
+                for name, field in (("settled_cash_d2", "settledCashD2Krw"), ("cash_d1", "cashD1Krw"),
+                                    ("net_asset", "netAssetKrw"), ("total_evaluation", "totalEvaluationKrw"))}
     return AccountState(user_id, _number(row.get("equity"), "equity", positive=True),
-                        _number(row.get("orderableCash"), "orderableCash"), holdings, sellable, captured)
+                        _number(row.get("orderableCash"), "orderableCash"), holdings, sellable, captured,
+                        _number(reserved if reserved is not None else 0.0, "reservedCash"), **optional)
 
 
 def backend_configured(env=None) -> bool:
@@ -149,6 +160,29 @@ class StrategyBackendClient:
         if not isinstance(body, dict) or "buyAllowed" not in body:
             raise BackendError("unexpected risk response")
         return body
+
+    def accounts(self) -> list:
+        body = self._get("/api/v1/internal/strategies/accounts")
+        if not isinstance(body, dict) or not isinstance(body.get("accounts"), list):
+            raise BackendError("unexpected accounts response")
+        return body["accounts"]
+
+    def post_nav_close(self, user_id: str, body: dict) -> dict:
+        """Python's official-close NAV (binding for D=25%); idempotent, 409 NAV_CLOSE_CONFLICT if different."""
+        response = self.session.post(f"{self.base_url}/api/v1/internal/strategies/accounts/{user_id}/nav-close",
+                                     json=body, headers=self._headers(), timeout=self.timeout)
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = None
+        if response.status_code == 409:
+            reason = (payload or {}).get("reason") or (payload or {}).get("code") or "NAV_CLOSE_CONFLICT"
+            return {"stored": False, "conflict": True, "reason": reason, "body": payload}
+        if response.status_code >= 400:
+            return self._json(response)
+        if not isinstance(payload, dict):
+            raise BackendError("unexpected nav-close response")
+        return payload
 
     def fetch_account(self, user_id: str) -> AccountState:
         body = self._post("/api/v1/internal/trading/account-snapshots", {"userIds": [user_id]})

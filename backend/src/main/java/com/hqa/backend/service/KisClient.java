@@ -157,6 +157,7 @@ public class KisClient {
      */
     public Map<String, Object> buy(String userId, UserSecret secret, String token,
                                    String stockCode, int quantity, long limitPrice) {
+        requirePaper(secret); // PAPER accounts only: the REAL order endpoint is never reached
         return order(userId, secret, token, stockCode, quantity, limitPrice, /* isBuy = */ true);
     }
 
@@ -165,6 +166,7 @@ public class KisClient {
      */
     public Map<String, Object> sell(String userId, UserSecret secret, String token,
                                     String stockCode, int quantity, long limitPrice) {
+        requirePaper(secret); // PAPER accounts only: the REAL order endpoint is never reached
         return order(userId, secret, token, stockCode, quantity, limitPrice, /* isBuy = */ false);
     }
 
@@ -202,6 +204,25 @@ public class KisClient {
         requireSuccess(body);
         Map<?, ?> output = PaperAccountSnapshotService.requireMap(body.get("output"));
         return Map.of("cash", strictLong(output.get("nrcvb_buy_amt")), "quantity", strictLong(output.get("nrcvb_buy_qty")));
+    }
+
+    /**
+     * Orderable cash for a strategy CONT_BUY batch: the same VTTC8908R inquiry and field
+     * (nrcvb_buy_amt) as {@link #paperPurchasingPower}, plus the raw output fields for the record.
+     */
+    public Map<String, Object> paperOrderableCash(String userId, UserSecret secret, String token,
+            String stockCode, long price) {
+        requirePaper(secret);
+        Map<String, String> query = accountQuery(secret);
+        query.putAll(Map.of("PDNO", stockCode, "ORD_UNPR", Long.toString(price), "ORD_DVSN", "01",
+                "CMA_EVLU_AMT_ICLD_YN", "N", "OVRS_ICLD_YN", "N"));
+        Map<String, Object> body = accountGet(secret, token,
+                "/uapi/domestic-stock/v1/trading/inquire-psbl-order", "VTTC8908R", query, "").getBody();
+        requireSuccess(body);
+        Map<?, ?> output = PaperAccountSnapshotService.requireMap(body.get("output"));
+        Map<String, Object> raw = new java.util.TreeMap<>();
+        output.forEach((key, value) -> raw.put(String.valueOf(key), value));
+        return Map.of("cash", strictLong(output.get("nrcvb_buy_amt")), "raw", raw);
     }
 
     public List<Map<String, Object>> paperOrders(String userId, UserSecret secret, String token,
@@ -544,6 +565,11 @@ public class KisClient {
             summary.put("totalEvalProfit", strictLong(raw.get("evlu_pfls_smtl_amt")));
             summary.put("stockEvalAmount", strictLong(raw.get("scts_evlu_amt")));
             summary.put("netAssetAmount", strictLong(raw.get("nass_amt")));
+            // Settlement-basis cash (T+2 / T+1); passed through when KIS returns them, never substituted.
+            Object settledD2 = raw.get("prvs_rcdl_excc_amt");
+            if (settledD2 != null && !String.valueOf(settledD2).isBlank()) summary.put("settledCashD2", strictLong(settledD2));
+            Object cashD1 = raw.get("nxdy_excc_amt");
+            if (cashD1 != null && !String.valueOf(cashD1).isBlank()) summary.put("cashD1", strictLong(cashD1));
             Object previous = raw.get("bfdy_tot_asst_evlu_amt");
             if (previous != null && !String.valueOf(previous).isBlank()) {
                 summary.put("previousDayTotalAssets", strictLong(previous));

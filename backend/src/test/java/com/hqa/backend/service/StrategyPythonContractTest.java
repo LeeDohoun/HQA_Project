@@ -46,4 +46,21 @@ class StrategyPythonContractTest {
         assertThat(response.get("status")).isEqualTo("VALIDATED");
         assertThat(response.get("orderCount")).isEqualTo(12);
     }
+
+    @Test
+    void pythonContBuyPayloadValidatesWithItsCostReserve() throws Exception {
+        StrategyBatchRequest request;
+        try (InputStream in = getClass().getResourceAsStream("/strategy/python_cont_buy_payload.json")) {
+            assertThat(in).as("run tests/test_live_contract.py to generate the payload").isNotNull();
+            request = production.readValue(in, StrategyBatchRequest.class);
+        }
+        assertThat(request.phase()).isEqualTo("CONT_BUY");
+        assertThat(request.costReserveRate()).isNotNull().isBetween(0.0, 0.05);
+        assertThat(request.orders()).allSatisfy(order -> assertThat(order.side()).isEqualTo("BUY"));
+
+        Map<String, Object> response = f.service.create(request);
+
+        assertThat(response.get("reasons")).isEqualTo(List.of());
+        assertThat(response.get("status")).isEqualTo("VALIDATED");
+    }
 }

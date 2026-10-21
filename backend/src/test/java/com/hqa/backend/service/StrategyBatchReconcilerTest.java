@@ -153,6 +153,7 @@ class StrategyBatchReconcilerTest {
         String id = (String) f.service.create(request(false, "CLOSE", SESSION, List.of(sell(1, "000660", 1, 100_000)))).get("batchId");
         StrategyBatch close = f.batchRows.get(java.util.UUID.fromString(id));
         close.setStatus("SUBMITTING"); // the CLOSE batch is being sent inside its window
+        f.ordersOf(batch).forEach(order -> order.setCancelRequestedAt(f.now().minusHours(6))); // no cancel is due
         f.reconciler.runOnce();
         verify(f.kis, never()).paperOrders(any(), any(), any(), any(), any());
 
@@ -199,5 +200,19 @@ class StrategyBatchReconcilerTest {
             assertThat(order.getRejectReason()).isEqualTo("UNRESOLVED_AFTER_SESSION");
         });
         assertThat(batch.getStatus()).isEqualTo("PARTIAL");
+    }
+
+    @Test
+    void aDueCancelIsSentEvenWhileTheAccountIsSendingAnotherBatch() {
+        f.clock.set("2026-11-02T15:21:00+09:00");
+        String id = (String) f.service.create(request(false, "CLOSE", SESSION, List.of(sell(1, "000660", 1, 100_000)))).get("batchId");
+        f.batchRows.get(java.util.UUID.fromString(id)).setStatus("SUBMITTING");
+        when(f.kis.paperOrders(any(), any(), any(), any(), any())).thenReturn(List.of(
+                row("11111", "005930", "01", 10, 0, 10, "0", "N", 0), row("22222", "0126Z0", "02", 3, 0, 3, "0", "N", 0)));
+        when(f.kis.cancelPaperOrder(any(), any(), any(), any(), any(), anyInt()))
+                .thenReturn(Map.of("success", true, "response", Map.of("rt_cd", "0")));
+        f.reconciler.runOnce();
+        verify(f.kis, times(2)).cancelPaperOrder(any(), any(), any(), any(), any(), anyInt());
+        assertThat(batch.getLastReconciledAt()).isEqualTo(f.now());
     }
 }

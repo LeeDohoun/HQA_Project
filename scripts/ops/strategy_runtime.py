@@ -32,7 +32,7 @@ def parser() -> argparse.ArgumentParser:
     plan = commands.add_parser("plan", parents=[common], help="order list for one strategy and session")
     plan.add_argument("--strategy", required=True)
     plan.add_argument("--session", required=True)
-    plan.add_argument("--phase", choices=("OPEN", "CLOSE"))
+    plan.add_argument("--phase", choices=("OPEN", "CLOSE", "CONT_SELL", "CONT_BUY"))
     plan.add_argument("--execute", action="store_true", help="write data/live/<id>/plans/<date>_<phase>.json")
     fill = commands.add_parser("shadow-fill", parents=[common], help="virtual fills and NAV for one session")
     fill.add_argument("--session", required=True)
@@ -43,7 +43,7 @@ def parser() -> argparse.ArgumentParser:
     submit = commands.add_parser("submit", parents=[common], help="PAPER batch order (effective stage paper only)")
     submit.add_argument("--strategy", required=True)
     submit.add_argument("--session", required=True)
-    submit.add_argument("--phase", choices=("OPEN", "CLOSE"), required=True)
+    submit.add_argument("--phase", choices=("OPEN", "CLOSE", "CONT_SELL", "CONT_BUY"), required=True)
     submit.add_argument("--execute", action="store_true", help="fetch the account and send the batch")
     submit.add_argument("--validate", action="store_true", help="with --execute: send dryRun=true")
     submit.add_argument("--max-buy-to-deposit", action="store_true",
@@ -53,6 +53,18 @@ def parser() -> argparse.ArgumentParser:
     daily.add_argument("--when", choices=("morning", "evening"),
                        help="default: evening at/after 16:30 KST, otherwise morning")
     daily.add_argument("--execute", action="store_true", help="write ledger/plans/run summary and send")
+    due = commands.add_parser("submit-due", parents=[common],
+                              help="submit today's due batches for bound PAPER strategies")
+    due.add_argument("--session", help="YYYY-MM-DD (default: today KST)")
+    due.add_argument("--execute", action="store_true", help="fetch accounts and send the batches")
+    due.add_argument("--inputs-only", action="store_true", help="seal the input reference without submitting")
+    act = commands.add_parser("activate", parents=[common], help="seal activation.json (continuous_intraday)")
+    act.add_argument("--strategy", required=True)
+    act.add_argument("--execute", action="store_true", help="read the backend and write activation.json")
+    ready = commands.add_parser("readiness", parents=[common], help="one-off OP001 readiness order (never scheduled)")
+    ready.add_argument("--strategy", required=True)
+    ready.add_argument("--step", choices=("buy", "flatten"), required=True)
+    ready.add_argument("--execute", action="store_true")
     alert = commands.add_parser("alerts", parents=[common], help="evaluate and send operator alerts")
     alert.add_argument("--execute", action="store_true", help="append to the alert file and configured channels")
     alert.add_argument("--failure-unit", help="record a critical alert for a failed systemd unit")
@@ -78,6 +90,16 @@ def main(argv=None) -> int:
         result, code = runtime.daily_command(ctx, session=args.session, when=args.when, execute=args.execute)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return code
+    elif args.command == "submit-due":
+        result = runtime.submit_due_command(ctx, session=args.session, execute=args.execute,
+                                            inputs_only=args.inputs_only)
+        ok = result["status"] == "ok"
+    elif args.command == "activate":
+        result = runtime.activate_command(ctx, args.strategy, execute=args.execute)
+        ok = result["status"] in ("dry_run", "activated", "already_activated")
+    elif args.command == "readiness":
+        result = runtime.readiness_command(ctx, args.strategy, args.step, execute=args.execute)
+        ok = result["status"] in ("dry_run", "submitted", "deduplicated", "nothing_to_submit")
     elif args.command == "alerts":
         result = runtime.alerts_command(ctx, execute=args.execute, failure_unit=args.failure_unit)
         ok = result["status"] == "ok"
@@ -87,7 +109,7 @@ def main(argv=None) -> int:
             return 2
         result = runtime.submit_command(ctx, args.strategy, args.session, args.phase, execute=args.execute,
                                         validate=args.validate, max_buy_to_deposit=args.max_buy_to_deposit)
-        ok = result["status"] in ("preview", "submitted", "deduplicated")
+        ok = result["status"] in runtime.SUBMIT_OK
     print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=False))
     return 0 if ok else 1
 

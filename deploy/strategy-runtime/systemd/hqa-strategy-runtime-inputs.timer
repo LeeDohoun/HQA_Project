@@ -1,0 +1,10 @@
+[Unit]
+Description=HQA strategy runtime input seal, weekdays 08:57 KST (contract: input reference before 08:59)
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 08:57 Asia/Seoul
+Persistent=true
+Unit=hqa-strategy-runtime-inputs.service
+
+[Install]
+WantedBy=timers.target

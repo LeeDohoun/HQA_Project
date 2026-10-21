@@ -8,6 +8,7 @@ are recorded and leave the position/cash unchanged. Incidents are recorded, neve
 from __future__ import annotations
 
 import copy
+import dataclasses
 import hashlib
 import json
 import math
@@ -38,6 +39,8 @@ LIMIT_TOLERANCE = 0.005  # same as HF001/HC003: price_limit(day) - 0.005
 LEDGER_WRITE_AFTER = time(16, 30)
 # Reasons a shadow order did not fill that are not about the session's price row.
 NON_PRICE_REASONS = ("cash_limited", "insufficient_cash", "cost_model_error")
+# Phases filled at the session open (continuous phases use the open as a proxy).
+OPEN_PRICED_PHASES = ("OPEN", "CONT_SELL", "CONT_BUY")
 _LEDGER_FILE = re.compile(r"^\d{8}\.json$")
 
 
@@ -357,7 +360,7 @@ def _fill_prices_match(rows, quotes) -> bool:
     for row in rows:
         if row["filled"]:
             q = quotes.get(row["stock_code"]) if quotes else None
-            expected = None if q is None else (q.open if row["phase"] == "OPEN" else q.close)
+            expected = None if q is None else (q.open if row["phase"] in OPEN_PRICED_PHASES else q.close)
             if expected is None or row["fill_price"] != expected:
                 return False
     return True
@@ -414,7 +417,7 @@ def independent_check(entry, decision, order_rows, data_dir):
 
 
 def _compare_execution(entry, record, order_rows):
-    tried = [r for r in order_rows if not r.get("skipped") and r.get("phase") == "OPEN"]
+    tried = [r for r in order_rows if not r.get("skipped") and r.get("phase") in OPEN_PRICED_PHASES]
     if entry.execution == "basket_20":
         slots = (record.get("f_both") or {}).get("slots")
         if not isinstance(slots, dict):
@@ -554,26 +557,43 @@ def shadow_fill(entry, session_date, data_dir, *, mode, execute=False, recorded_
                     markets.setdefault(code, state.get("markets", {}).get(code))
                     if markets[code] is None:
                         del markets[code]
-                plan = rebalance.plan_continuous(entry.strategy_id, acting, holdings=holdings, cash=cash,
-                                                 ref_prices=ref, markets=markets, adv20=adv,
-                                                 model_version=version, band=entry.band)
+                if entry.execution == "continuous_intraday":
+                    # Virtual mode: sleeve capital from shadow_nav_krw; CONT_SELL then CONT_BUY,
+                    # both filled at the session open as a proxy for the 09:05-10:00 window.
+                    reserved = sum(x.weight for x in entry.sleeves if x.source is None) * entry.shadow_nav_krw
+                    plans = rebalance.plan_intraday(
+                        entry.strategy_id, acting, session_date=session, reserved_krw=reserved,
+                        holdings=holdings, cash=cash, ref_prices=ref,
+                        markets=markets, adv20=adv, model_version=version, band=entry.band,
+                        max_name_weight=entry.limits["max_name_weight"],
+                        max_adv_share=entry.limits["max_adv_share"])
+                else:
+                    plans = (rebalance.plan_continuous(entry.strategy_id, acting, holdings=holdings, cash=cash,
+                                                       ref_prices=ref, markets=markets, adv20=adv,
+                                                       model_version=version, band=entry.band),)
             except (rebalance.PlanError, ValueError) as error:
                 incidents.append(f"plan_failed:OPEN:{error}")
                 match["targets_match"] = False
             else:
-                match["targets_match"] &= _targets_match(entry, plan, acting, holdings)
-                for order in plan.orders:  # sells precede buys by seq
-                    row, delta = _fill(order, "OPEN", quotes, session, cash, version, incidents)
-                    order_rows.append(row)
-                    if row["filled"]:
-                        cash += delta
-                        sign = 1 if order.side == "BUY" else -1
-                        holdings[order.stock_code] = holdings.get(order.stock_code, 0) + sign * row["quantity"]
-                        if holdings[order.stock_code] <= 0:
-                            del holdings[order.stock_code]
-                        state.setdefault("markets", {})[order.stock_code] = order.market
-                order_rows.extend({"stock_code": s["stock_code"], "side": s["side"], "phase": "OPEN",
-                                   "filled": False, "reason": s["reason"], "skipped": True} for s in plan.skipped)
+                merged = dataclasses.replace(plans[0], orders=tuple(o for p in plans for o in p.orders),
+                                             skipped=tuple(x for p in plans for x in p.skipped))
+                match["targets_match"] &= _targets_match(entry, merged, acting, holdings)
+                for plan in plans:  # sells precede buys
+                    for order in plan.orders:
+                        row, delta = _fill(order, "OPEN", quotes, session, cash, version, incidents)
+                        if plan.phase != "OPEN":
+                            row.update(phase=plan.phase, fill_basis="open_proxy", binding=order.binding)
+                        order_rows.append(row)
+                        if row["filled"]:
+                            cash += delta
+                            sign = 1 if order.side == "BUY" else -1
+                            holdings[order.stock_code] = holdings.get(order.stock_code, 0) + sign * row["quantity"]
+                            if holdings[order.stock_code] <= 0:
+                                del holdings[order.stock_code]
+                            state.setdefault("markets", {})[order.stock_code] = order.market
+                    order_rows.extend({"stock_code": s["stock_code"], "side": s["side"], "phase": plan.phase,
+                                       "filled": False, "reason": s["reason"], "skipped": True}
+                                      for s in plan.skipped)
                 state["last_decision_hash"] = acting.record_hash
 
     # CLOSE: basket exits on (or, as retries, after) the 20th session.
@@ -640,6 +660,14 @@ def shadow_fill(entry, session_date, data_dir, *, mode, execute=False, recorded_
                 incidents.append(f"unvalued_holding:{code}")
                 marks_close[code] = 0.0
     nav = cash + sum(qty * marks_close[code] for code, qty in holdings.items())
+    sleeves = None
+    if entry.sleeves:
+        # Attribution stays in the ledger; the status payload never shows per-sleeve results.
+        invested = sum(qty * marks_close[code] for code, qty in holdings.items())
+        sleeves = {s.name: {"weight": s.weight, "capital_krw": s.weight * entry.shadow_nav_krw,
+                            "source": s.source,
+                            "holdings_value_krw": invested if s.source is not None else 0.0}
+                   for s in entry.sleeves}
     record = {"strategy_id": entry.strategy_id, "date": session, "mode": mode,
               "execution": entry.execution, "cost_model_version": version,
               "decision_hash": decision_hashes[0] if decision_hashes else None,
@@ -648,6 +676,7 @@ def shadow_fill(entry, session_date, data_dir, *, mode, execute=False, recorded_
               "cash_after": cash, "marks_close": marks_close, "nav_close_krw": nav,
               "state_after": state, "match": match, "incidents": incidents, "warnings": warnings,
               "previous_date": None if prior is None else prior["date"],
+              **({"sleeves": sleeves} if sleeves is not None else {}),
               "recorded_at": (recorded_at or now_kst()).isoformat()}
     record = json.loads(encoded(record))
     if execute:

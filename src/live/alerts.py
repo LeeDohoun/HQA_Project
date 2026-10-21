@@ -230,7 +230,14 @@ def rule_daily_summary(inputs, state):
                 f"daily_summary:{inputs.session}:{run}")
 
 
-RULES = (rule_status_errors, rule_shadow_incidents, rule_decision_not_final, rule_step_failures,
+def rule_extra_alerts(inputs, state):
+    """Alerts produced by a step itself (e.g. submit-due: drawdown_breach, nav_close_conflict)."""
+    for item in (inputs.summary or {}).get("extraAlerts") or []:
+        yield Alert(item["severity"], item["code"], item.get("strategy_id"), item["message"],
+                    item.get("details") or {}, item.get("dedupe_key") or "")
+
+
+RULES = (rule_extra_alerts, rule_status_errors, rule_shadow_incidents, rule_decision_not_final, rule_step_failures,
          rule_failure_unit, rule_backend, rule_calendar, rule_plans, rule_stage, rule_daily_summary)
 
 

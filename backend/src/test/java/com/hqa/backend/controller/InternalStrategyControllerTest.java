@@ -22,6 +22,7 @@ import com.hqa.backend.service.StrategyBatchService;
 import com.hqa.backend.service.StrategyOrderResolver;
 import com.hqa.backend.service.StrategyRiskGuard;
 import com.hqa.backend.service.StrategyStatusService;
+import com.hqa.backend.service.StrategyTerminationService;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -44,8 +45,9 @@ class InternalStrategyControllerTest {
     private final StrategyRiskGuard risk = mock(StrategyRiskGuard.class);
     private final StrategyStatusService statuses = mock(StrategyStatusService.class);
     private final StrategyOrderResolver resolver = mock(StrategyOrderResolver.class);
+    private final StrategyTerminationService termination = mock(StrategyTerminationService.class);
     private final InternalStrategyController controller = new InternalStrategyController(batches, accounts, risk, statuses,
-            resolver, properties);
+            resolver, termination, properties);
 
     InternalStrategyControllerTest() {
         properties.setInternalToken("contract-test");
@@ -147,5 +149,41 @@ class InternalStrategyControllerTest {
         StrategyController publicController = new StrategyController(auth, statuses);
         assertThatThrownBy(() -> publicController.strategies(session)).isInstanceOf(ApiException.class);
         verifyNoInteractions(statuses);
+    }
+
+    @Test
+    void navCloseUsesCamelCaseAndAConflictIs409() throws Exception {
+        when(termination.recordOfficialClose("u1", LocalDate.parse("2026-11-02"), 101_000_000L, 40_000_000L, 61_000_000L,
+                "krx_official", "abc")).thenReturn(Map.of("deduplicated", false, "terminated", false));
+        MockMvc mvc = mvc();
+        String body = """
+                {"sessionDate":"2026-11-02","navKrw":101000000,"cashKrw":40000000,"holdingsValueKrw":61000000,
+                 "source":"krx_official","inputHash":"abc"}
+                """;
+        mvc.perform(post("/api/v1/internal/strategies/accounts/u1/nav-close").header("X-HQA-Internal-Token", "contract-test")
+                .contentType("application/json").content(body))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.terminated").value(false));
+        when(termination.recordOfficialClose(any(), any(), any(), any(), any(), any(), any()))
+                .thenThrow(new IllegalStateException("NAV_CLOSE_CONFLICT"));
+        mvc.perform(post("/api/v1/internal/strategies/accounts/u1/nav-close").header("X-HQA-Internal-Token", "contract-test")
+                .contentType("application/json").content(body))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.message").value("NAV_CLOSE_CONFLICT"));
+        mvc.perform(post("/api/v1/internal/strategies/accounts/u1/nav-close").contentType("application/json").content(body))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void contBuyCostReserveRateIsReadFromCamelCase() throws Exception {
+        when(batches.create(any())).thenReturn(Map.of("status", "VALIDATED"));
+        mvc().perform(post("/api/v1/internal/strategies/batches").header("X-HQA-Internal-Token", "contract-test")
+                .contentType("application/json").content("""
+                {"strategyId":"pf001","userId":"u1","decisionHash":"%s","decisionDate":"2026-10-30","sessionDate":"2026-11-02",
+                 "phase":"CONT_BUY","idempotencyKey":"%s","dryRun":true,"costReserveRate":0.004,
+                 "orders":[{"seq":1,"stockCode":"005930","side":"BUY","quantity":1,"refPrice":70000}]}
+                """.formatted("a".repeat(64), "b".repeat(64)))).andExpect(status().isOk());
+        ArgumentCaptor<StrategyBatchRequest> captor = ArgumentCaptor.forClass(StrategyBatchRequest.class);
+        verify(batches).create(captor.capture());
+        assertThat(captor.getValue().costReserveRate()).isEqualTo(0.004);
+        assertThat(captor.getValue().phase()).isEqualTo("CONT_BUY");
     }
 }

@@ -182,6 +182,10 @@ public class TradingController {
             throw new ApiException(ErrorCode.KIS_SECRET_NOT_CONFIGURED, 400,
                     "KIS API 키가 설정되어 있지 않습니다", null);
         }
+        if (secret.isKisIsReal()) {
+            // PAPER accounts only (AGENTS.md): a REAL secret never reaches the order endpoints.
+            throw new ApiException(ErrorCode.PAPER_ACCOUNT_REQUIRED, 409, "모의투자 계좌만 주문할 수 있습니다", null);
+        }
         String token = kisClient.fetchAccessToken(user.getUserId(), secret);
         if (token == null) {
             throw new ApiException(ErrorCode.SERVICE_UNAVAILABLE, 503,

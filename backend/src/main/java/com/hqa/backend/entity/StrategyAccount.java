@@ -22,6 +22,12 @@ public class StrategyAccount {
     private OffsetDateTime createdAt;
     @Column(nullable = false)
     private OffsetDateTime updatedAt;
+    /** First time the account was enabled at stage paper, with the PAPER equity then (termination base). */
+    private OffsetDateTime activatedAt;
+    private Long activationNavKrw;
+    /** Set once by the close-to-close termination check; never cleared (no resume under the same ID). */
+    private OffsetDateTime terminatedAt;
+    private String terminationReason;
 
     protected StrategyAccount() { }
 
@@ -43,4 +49,19 @@ public class StrategyAccount {
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public OffsetDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(OffsetDateTime updatedAt) { this.updatedAt = updatedAt; }
+    public OffsetDateTime getActivatedAt() { return activatedAt; }
+    public Long getActivationNavKrw() { return activationNavKrw; }
+    public void activate(OffsetDateTime at, Long navKrw) {
+        if (activatedAt != null) throw new IllegalStateException("STRATEGY_ACCOUNT_ALREADY_ACTIVATED");
+        this.activatedAt = at;
+        this.activationNavKrw = navKrw;
+    }
+    public OffsetDateTime getTerminatedAt() { return terminatedAt; }
+    public String getTerminationReason() { return terminationReason; }
+    public boolean isTerminated() { return terminatedAt != null; }
+    public void terminate(OffsetDateTime at, String reason) {
+        if (terminatedAt != null) return;
+        this.terminatedAt = at;
+        this.terminationReason = reason;
+    }
 }

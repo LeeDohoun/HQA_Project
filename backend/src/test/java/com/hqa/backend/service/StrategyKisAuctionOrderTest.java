@@ -66,4 +66,27 @@ class StrategyKisAuctionOrderTest {
                 .hasMessage("PAPER_ACCOUNT_REQUIRED");
         assertThat(transactionIds).hasSize(2);
     }
+
+    @Test
+    void balanceSummaryPassesSettlementCashThroughOnlyWhenKisReturnsIt() {
+        SecretCipher cipher = mock(SecretCipher.class);
+        when(cipher.decrypt(anyString())).thenAnswer(inv -> inv.getArgument(0));
+        String withSettlement = "{\"rt_cd\":\"0\",\"output1\":[],\"output2\":[{\"dnca_tot_amt\":\"10000000\","
+                + "\"tot_evlu_amt\":\"10000000\",\"pchs_amt_smtl_amt\":\"0\",\"evlu_pfls_smtl_amt\":\"0\","
+                + "\"scts_evlu_amt\":\"0\",\"nass_amt\":\"10000000\",\"prvs_rcdl_excc_amt\":\"9500000\",\"nxdy_excc_amt\":\"9800000\"}]}";
+        KisClient client = new KisClient(WebClient.builder().exchangeFunction(request -> Mono.just(ClientResponse.create(HttpStatus.OK)
+                .header(HttpHeaders.CONTENT_TYPE, "application/json").body(withSettlement).build())).build(),
+                new ObjectMapper(), mock(ErrorLogger.class), cipher);
+        Map<?, ?> summary = (Map<?, ?>) client.inquireBalance("u1", PaperTradeStoreTest.user().getSecret(), "token").get("summary");
+        assertThat(summary.get("settledCashD2")).isEqualTo(9_500_000L);
+        assertThat(summary.get("cashD1")).isEqualTo(9_800_000L);
+        assertThat(summary.get("deposit")).isEqualTo(10_000_000L);
+
+        String without = withSettlement.replace(",\"prvs_rcdl_excc_amt\":\"9500000\",\"nxdy_excc_amt\":\"9800000\"", "");
+        KisClient older = new KisClient(WebClient.builder().exchangeFunction(request -> Mono.just(ClientResponse.create(HttpStatus.OK)
+                .header(HttpHeaders.CONTENT_TYPE, "application/json").body(without).build())).build(),
+                new ObjectMapper(), mock(ErrorLogger.class), cipher);
+        Map<?, ?> plain = (Map<?, ?>) older.inquireBalance("u1", PaperTradeStoreTest.user().getSecret(), "token").get("summary");
+        assertThat(plain.containsKey("settledCashD2")).isFalse(); // missing stays missing, no fallback
+    }
 }

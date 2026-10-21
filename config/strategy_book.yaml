@@ -48,3 +48,43 @@ strategies:
     shadow_nav_krw: 100000000
     account_user_id: null
     preregistration: research/experiments/AV001_avoidance_portfolio/preregistration.md
+  pf001:
+    title: "PF001 결합 포트폴리오"
+    description: "AV001 회피 포트폴리오 80%와 BB 슬리브 20%를 한 PAPER 계좌에서 운용. 진입일 장중 연속매매로 매도(09:05~09:20) 후 매수(09:20~10:00), 종목당 순자산 2%·20일 평균 거래대금 1% 상한"
+    experiment_id: OP001_combined_paper_portfolio
+    variant: pf001
+    holdout:
+      experiment_ids: []
+      variants: []
+    decision_source:
+      kind: fw001
+      rule: av_all
+    execution: continuous_intraday
+    cost_model_version: v2
+    # 0.1% 밴드는 AV 부문 NAV 기준(목표 밖 종목은 밴드 없이 매도). T0는 고정(이동하지 않음).
+    band: 0.001
+    t0: "2026-11-02"
+    # 부문 자본 = 비중 × T0 계좌 순자산(activation.json의 t0_nav_krw; 가상 모드는 shadow_nav_krw).
+    # bb 부문은 출처(12월부터 봉인된 OP001 결합 목표 기록)가 생길 때까지 현금으로 둡니다.
+    sleeves:
+      av:
+        weight: 0.8
+        source:
+          kind: fw001
+          rule: av_all
+      bb:
+        weight: 0.2
+        source: null
+    limits:
+      max_name_weight: 0.02
+      max_adv_share: 0.01
+    requested_stage: paper
+    early_paper:
+      decided_by: "user"
+      decided_at: "2026-10-21T19:00:00+09:00"
+      reason: "결합 포트폴리오 AV80+BB20, 섀도 없이 PAPER (사용자 결정)"
+    shadow_nav_krw: 100000000
+    # 메인 PAPER 계좌 (실험실 백엔드에 pf001로 연결, 2026-10-21; enabled=false로 시작)
+    account_user_id: are01
+    # 연구 브랜치의 사전 등록 경로(이 작업 트리에는 없음; early_paper 항목이라 존재 확인을 하지 않음).
+    preregistration: research/experiments/OP001_combined_paper_portfolio/preregistration.md

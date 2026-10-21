@@ -19,8 +19,13 @@ REGISTRY_HEADER = ["recorded_at", "experiment_id", "prereg_commit", "variant", "
 
 
 def gate_only_book_text() -> str:
-    """The real strategy book with the early-PAPER override removed (requested stage shadow)."""
+    """The real strategy book with the early-PAPER override removed (requested stage shadow).
+
+    pf001 exists only through its early_paper record (no holdout rows), so it is dropped here;
+    tests that need it use make_repo(early_paper=True).
+    """
     text = (REPO / "config/strategy_book.yaml").read_text(encoding="utf-8")
+    text = re.sub(r"\n  pf001:\n(?:(?:    .*|\s*)\n)*", "\n", text + "\n").rstrip("\n") + "\n"
     return re.sub(r"    requested_stage: paper\n    early_paper:\n(?:      .*\n){3}", "    requested_stage: shadow\n", text)
 
 

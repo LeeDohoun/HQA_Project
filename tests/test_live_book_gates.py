@@ -25,7 +25,8 @@ def _book(tmp_path, text):
 
 def test_real_book_and_approvals_load():
     entries = {e.strategy_id: e for e in book.load_book(REPO / book.BOOK_PATH)}
-    assert set(entries) == {"hf001_f_both", "av001_av_all"}
+    assert set(entries) == {"hf001_f_both", "av001_av_all", "pf001"}
+    pf = entries.pop("pf001")
     hf, av = entries["hf001_f_both"], entries["av001_av_all"]
     assert (hf.execution, hf.cost_model_version, hf.band, hf.decision_rule) == ("basket_20", "v1", None, "f_both")
     assert hf.holdout_experiment_ids == ("HF001_hegemony_filters",) and hf.holdout_variants == ("holdout_f_both",)
@@ -37,6 +38,17 @@ def test_real_book_and_approvals_load():
     for entry in entries.values():
         assert (REPO / entry.preregistration).is_file()
     assert book.load_approvals(REPO / book.APPROVALS_PATH) == ()
+    # pf001: the preregistration lives on the research branch; its path is a reference only.
+    assert (pf.experiment_id, pf.variant, pf.execution, pf.t0) == (
+        "OP001_combined_paper_portfolio", "pf001", "continuous_intraday", "2026-11-02")
+    assert pf.preregistration == "research/experiments/OP001_combined_paper_portfolio/preregistration.md"
+    assert pf.holdout_experiment_ids == () and pf.holdout_variants == ()
+    assert [(s.name, s.weight, s.source) for s in pf.sleeves] == [
+        ("av", 0.8, {"kind": "fw001", "rule": "av_all"}), ("bb", 0.2, None)]
+    assert pf.traded_sleeve.name == "av" and pf.limits == {"max_adv_share": 0.01, "max_name_weight": 0.02}
+    assert (pf.band, pf.cost_model_version, pf.requested_stage, pf.account_user_id) == (0.001, "v2", "paper", "are01")
+    assert pf.early_paper == {"decided_by": "user", "decided_at": "2026-10-21T19:00:00+09:00",
+                              "reason": "결합 포트폴리오 AV80+BB20, 섀도 없이 PAPER (사용자 결정)"}
 
 
 @pytest.mark.parametrize("old, new, message", [

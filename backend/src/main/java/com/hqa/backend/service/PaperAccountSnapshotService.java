@@ -130,6 +130,13 @@ public class PaperAccountSnapshotService {
         result.put("orderableCashSource", "deposit_upper_bound; per_order_purchasing_power_checked_at_entry");
         result.put("reservedCash", executions.reservedCashForUser(userId));
         result.put("equity", equity);
+        // Cash bases from the same balance read: orderableCash above is the D+0 deposit (dnca_tot_amt), which
+        // does not yet reflect unsettled trades; D+2 settled cash (prvs_rcdl_excc_amt) and D+1 (nxdy_excc_amt)
+        // are null when KIS does not return them.
+        result.put("settledCashD2Krw", summary.get("settledCashD2") instanceof Number n ? n.longValue() : null);
+        result.put("cashD1Krw", summary.get("cashD1") instanceof Number n ? n.longValue() : null);
+        result.put("totalEvaluationKrw", summary.get("totalEvalAmount") instanceof Number n ? n.longValue() : null);
+        result.put("netAssetKrw", equity);
         result.put("dailyPnlPct", dailyPnl);
         result.put("dailyPnlBaselineSource", baseline == null ? null : baseline.getSource());
         result.put("entryEligible", dailyPnl != null && dailyPnl > -5.0 && user.isAutoTradeEnabled());

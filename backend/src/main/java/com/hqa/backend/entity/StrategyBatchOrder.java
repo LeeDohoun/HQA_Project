@@ -27,6 +27,8 @@ public class StrategyBatchOrder {
     private long quantity;
     @Column(nullable = false)
     private long refPrice;
+    private Long plannedQuantity;
+    private Long refPriceAtSubmit;
     @Column(name = "adv20_krw")
     private Double adv20Krw;
     @Column(nullable = false)
@@ -67,6 +69,10 @@ public class StrategyBatchOrder {
     public long getQuantity() { return quantity; }
     public void setQuantity(long quantity) { this.quantity = quantity; }
     public long getRefPrice() { return refPrice; }
+    public Long getPlannedQuantity() { return plannedQuantity; }
+    public void setPlannedQuantity(Long plannedQuantity) { this.plannedQuantity = plannedQuantity; }
+    public Long getRefPriceAtSubmit() { return refPriceAtSubmit; }
+    public void setRefPriceAtSubmit(Long refPriceAtSubmit) { this.refPriceAtSubmit = refPriceAtSubmit; }
     public void setRefPrice(long refPrice) { this.refPrice = refPrice; }
     public Double getAdv20Krw() { return adv20Krw; }
     public void setAdv20Krw(Double adv20Krw) { this.adv20Krw = adv20Krw; }

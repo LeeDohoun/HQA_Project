@@ -2,6 +2,8 @@ package com.hqa.backend.config;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
@@ -24,6 +26,19 @@ public class StrategyProperties {
     private LocalTime[] openWindow = window("08:30-08:59");
     private LocalTime[] closeWindow = window("15:20-15:29");
     private LocalTime openCancelAfter = LocalTime.of(9, 5);
+    /** Continuous-session phases: SELL orders only, then BUY orders only; MARKET orders. */
+    private LocalTime[] contSellWindow = window("09:05-09:20");
+    private LocalTime[] contBuyWindow = window("09:20-10:00");
+    /** When unfilled remainders of the continuous-session phases are cancelled. */
+    private LocalTime contSellCancelAt = LocalTime.of(9, 20);
+    private LocalTime contBuyCancelAt = LocalTime.of(10, 0);
+    /** When the close-of-session NAV is recorded for terminating profiles (shifted with the close). */
+    private LocalTime navCloseRecordAt = LocalTime.of(15, 45);
+    private long navClosePollMs = 60000;
+    /** Largest allowed gap between the binding (krx_official) and snapshot close NAV, percent of the binding NAV. */
+    private double navCrosscheckTolerancePct = 0.5;
+    /** Per-strategy risk profiles; strategies without an entry use the defaults of {@link Profile}. */
+    private Map<String, Profile> profiles = new HashMap<>();
     private long executorPollMs = 2000;
     private long reconcilePollMs = 20000;
     private double dailyLossLimitPct = 2.0;
@@ -58,6 +73,45 @@ public class StrategyProperties {
         return result;
     }
 
+    /**
+     * Per-strategy risk profile ({@code hqa.strategy.profiles.<strategyId>.*}). Defaults keep the
+     * standard behaviour: daily-loss and drawdown buy blocks on, no termination. The halt switch,
+     * per-order equity cap, daily order cap and cancel ratio apply to every profile.
+     */
+    public static class Profile {
+        private boolean dailyLossBuyBlock = true;
+        private boolean drawdownBuyBlock = true;
+        private Double terminationDrawdownPct;
+
+        public boolean isDailyLossBuyBlock() { return dailyLossBuyBlock; }
+        public void setDailyLossBuyBlock(boolean value) { this.dailyLossBuyBlock = value; }
+        public boolean isDrawdownBuyBlock() { return drawdownBuyBlock; }
+        public void setDrawdownBuyBlock(boolean value) { this.drawdownBuyBlock = value; }
+        public Double getTerminationDrawdownPct() { return terminationDrawdownPct; }
+        public void setTerminationDrawdownPct(Double value) {
+            if (value != null && (!Double.isFinite(value) || value <= 0 || value >= 100)) {
+                throw new IllegalArgumentException("termination-drawdown-pct must be within (0, 100)");
+            }
+            this.terminationDrawdownPct = value;
+        }
+
+        public Map<String, Object> view() {
+            Map<String, Object> view = new LinkedHashMap<>();
+            view.put("dailyLossBuyBlock", dailyLossBuyBlock);
+            view.put("drawdownBuyBlock", drawdownBuyBlock);
+            view.put("terminationDrawdownPct", terminationDrawdownPct);
+            return view;
+        }
+    }
+
+    public Map<String, Profile> getProfiles() { return profiles; }
+    public void setProfiles(Map<String, Profile> profiles) { this.profiles = profiles == null ? new HashMap<>() : profiles; }
+
+    public Profile profile(String strategyId) {
+        Profile profile = strategyId == null ? null : profiles.get(strategyId);
+        return profile == null ? new Profile() : profile;
+    }
+
     public Map<String, Object> limits() {
         return Map.of("dailyLossLimitPct", dailyLossLimitPct, "drawdownStopPct", drawdownStopPct,
                 "fullReviewPct", fullReviewPct, "maxOrdersPerDay", maxOrdersPerDay,
@@ -78,6 +132,25 @@ public class StrategyProperties {
     public void setCloseWindow(String value) { this.closeWindow = window(value); }
     public LocalTime[] openWindowTimes() { return openWindow.clone(); }
     public LocalTime[] closeWindowTimes() { return closeWindow.clone(); }
+    public String getContSellWindow() { return contSellWindow[0] + "-" + contSellWindow[1]; }
+    public void setContSellWindow(String value) { this.contSellWindow = window(value); }
+    public String getContBuyWindow() { return contBuyWindow[0] + "-" + contBuyWindow[1]; }
+    public void setContBuyWindow(String value) { this.contBuyWindow = window(value); }
+    public LocalTime[] contSellWindowTimes() { return contSellWindow.clone(); }
+    public LocalTime[] contBuyWindowTimes() { return contBuyWindow.clone(); }
+    public String getContSellCancelAt() { return contSellCancelAt.toString(); }
+    public void setContSellCancelAt(String value) { this.contSellCancelAt = LocalTime.parse(value.trim()); }
+    public LocalTime contSellCancelAtTime() { return contSellCancelAt; }
+    public String getContBuyCancelAt() { return contBuyCancelAt.toString(); }
+    public void setContBuyCancelAt(String value) { this.contBuyCancelAt = LocalTime.parse(value.trim()); }
+    public LocalTime contBuyCancelAtTime() { return contBuyCancelAt; }
+    public String getNavCloseRecordAt() { return navCloseRecordAt.toString(); }
+    public void setNavCloseRecordAt(String value) { this.navCloseRecordAt = LocalTime.parse(value.trim()); }
+    public LocalTime navCloseRecordAtTime() { return navCloseRecordAt; }
+    public double getNavCrosscheckTolerancePct() { return navCrosscheckTolerancePct; }
+    public void setNavCrosscheckTolerancePct(double value) { this.navCrosscheckTolerancePct = positive(value, "nav-crosscheck-tolerance-pct"); }
+    public long getNavClosePollMs() { return navClosePollMs; }
+    public void setNavClosePollMs(long value) { this.navClosePollMs = positive(value, "nav-close-poll-ms"); }
     public String getOpenCancelAfter() { return openCancelAfter.toString(); }
     public LocalTime openCancelAfterTime() { return openCancelAfter; }
     public void setOpenCancelAfter(String value) { this.openCancelAfter = LocalTime.parse(value.trim()); }
