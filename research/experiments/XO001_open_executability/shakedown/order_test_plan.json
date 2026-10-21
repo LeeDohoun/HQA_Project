@@ -1,0 +1,14 @@
+{
+  "experiment_id": "XO001_open_executability",
+  "purpose": "Section 6 order-diagnostic activation test, sealed before the first shakedown (quote-only shakedown starts 2026-10-22)",
+  "account": "user's KIS mock-trading competition account (ends 2026-11-20), PAPER domain only; identifiers stay in /etc/hqa/xo001.env and are not recorded here",
+  "test_days": ["2026-10-27", "2026-10-28", "2026-10-29"],
+  "all_test_days_count": true,
+  "open_order": {"stock_code": "005930", "side": "buy", "quantity": 1, "order_division": "01 market", "submit_at_kst": "08:59:05", "no_new_submission_after_kst": "08:59:30"},
+  "fill_check": {"inquire_after_kst": "09:01", "read_fields": ["odno", "ord_dt", "tot_ccld_qty", "rmn_qty", "avg_prvs", "cncl_yn"]},
+  "cancel_test": {"stock_code": "005930", "side": "buy", "quantity": 1, "order_division": "00 limit", "limit_price_rule": "that session's lower price limit (cannot fill unless limit-down)", "submit_at_kst": "09:10:00", "cancel_at_kst": "09:11:00", "success": "final remaining quantity 0 and order status cancelled, confirmed by inquiry"},
+  "flatten": {"at_kst": "15:20", "rule": "market sell of all confirmed holdings from these tests; no new buys while holdings or UNKNOWN orders remain"},
+  "pass_rule": "all three test days must show: open order accepted with order number; fill price and quantity readable; cancel test confirmed cancelled. Any failure on any listed day -> diagnostic stays OFF for the main period.",
+  "main_account_check": "separately required before 2026-11-30 per preregistration section 6",
+  "sealed_on": "2026-10-21"
+}
