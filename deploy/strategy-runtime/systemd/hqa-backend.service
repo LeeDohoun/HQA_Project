@@ -1,0 +1,27 @@
+[Unit]
+Description=HQA backend (Spring Boot) for the strategy runtime, loopback only (127.0.0.1:8000)
+Wants=network-online.target
+After=network-online.target postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=hqa-backend
+Group=hqa-backend
+WorkingDirectory=/opt/hqa-backend
+# DATABASE_*, HQA_INTERNAL_TOKEN, HQA_KIS_ENC_KEY, SECRET_KEY, SERVER_ADDRESS=127.0.0.1,
+# HQA_STRATEGY_ORDERS_ENABLED (names: deploy/strategy-runtime/backend.env.example).
+EnvironmentFile=/etc/hqa/backend.env
+Environment=TZ=Asia/Seoul
+ExecStart=/usr/bin/java -Xms256m -Xmx1g -XX:+ExitOnOutOfMemoryError -jar /opt/hqa-backend/hqa-backend.jar
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=60
+MemoryMax=1536M
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target
