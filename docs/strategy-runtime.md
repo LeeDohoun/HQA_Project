@@ -244,5 +244,5 @@ venv/bin/python -m scripts.ops.strategy_runtime submit --strategy hf001_f_both -
 2. 같은 서버의 수집 자료는 `HQA_COLLECTOR_LOCAL_DIR=/var/lib/hqa/data`로 지정합니다. 실행 전에 `rsync -a`로 필요한 폴더(disclosures, market, ops, forward, fundamentals, reference)만 복사하므로 mtime(FW001 완료 증명)이 보존되고, 수집기 트리에는 쓰지 않습니다 (unit의 `ReadOnlyPaths=/var/lib/hqa/data`). 다른 서버에서 받을 때만 `HQA_COLLECTOR_HOST`·`HQA_COLLECTOR_SSH_KEY`를 씁니다 (둘 중 하나만).
 3. `deploy/strategy-runtime/strategy-runtime.env.example`의 이름대로 `/etc/hqa/strategy-runtime.env`(root:hqa 0640)를 만듭니다. 텔레그램 토큰은 여기에만 둡니다.
 4. `bash deploy/strategy-runtime/install.sh`로 할 일을 확인하고, `--execute`로 unit 파일만 복사합니다. 활성화는 출력된 `systemctl enable --now ...`로 운영자가 직접 합니다.
-5. 백엔드(상태 게시·주문 대조)는 아직 이 서버에 없습니다. 올리기 전까지 `BACKEND_INTERNAL_BASE_URL`을 비워 두면 백엔드 단계는 `backend_not_configured`로 건너뜁니다.
+5. 백엔드: `deploy/strategy-runtime/systemd/hqa-backend.service`(사용자 `hqa-backend`, `127.0.0.1:8000`만, `/etc/hqa/backend.env`, 이름은 `backend.env.example`). jar는 이 PC에서 `mvn -f backend/pom.xml -DskipTests package`로 만든 것을 `/opt/hqa-backend/hqa-backend-<commit>.jar`로 두고 `hqa-backend.jar` 링크를 바꿉니다. 비밀값(DB 비밀번호, 내부 토큰, KIS 암호화 키, SECRET_KEY)은 서버에서 `openssl rand`로 만들고 밖으로 복사하지 않습니다. 실행기 환경 파일의 `HQA_INTERNAL_TOKEN`은 백엔드와 같은 값입니다.
 6. 처음 며칠은 `journalctl -u 'hqa-strategy-runtime-*'`와 `data/live/runs/`로 결과를 확인합니다.
