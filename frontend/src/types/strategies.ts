@@ -72,6 +72,28 @@ export type StrategyStatusPayload = {
   shadow: StrategyShadow;
   plan: StrategyPlan | null;
   account: { userId: string | null; bound: boolean };
+  /** pf001 (OP001): per-sleeve P&L is stored but never sent to the page. */
+  sleeveDetailSealed?: boolean;
+  portfolio?: StrategyPortfolio | null;
+  termination?: StrategyTermination | null;
+};
+
+export type StrategyIndexLevel = { name: string; date: string; close: number };
+
+export type StrategyPortfolio = {
+  navKrw: number | null;
+  runningMaxNavKrw: number | null;
+  drawdownPct: number | null;
+  source: string | null;
+  indices: StrategyIndexLevel[] | Record<string, unknown> | null;
+};
+
+export type StrategyTermination = {
+  terminated: boolean;
+  state: "liquidating" | "terminated_drawdown" | null;
+  terminatedAt: string | null;
+  reason: string | null;
+  source: string | null;
 };
 
 export type StrategyBatchStatus =

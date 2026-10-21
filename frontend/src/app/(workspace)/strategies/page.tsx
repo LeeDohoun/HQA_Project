@@ -145,6 +145,7 @@ function StrategyCard({ strategy }: { strategy: StrategySummary }) {
         <StageSection payload={payload} />
         <ResearchSection payload={payload} />
         <DecisionSection payload={payload} />
+        {payload.portfolio ? <PortfolioSection payload={payload} /> : null}
         <ShadowSection shadow={payload.shadow} />
         <PlanSection payload={payload} />
         <BatchSection batch={strategy.latestBatch} />
@@ -227,6 +228,58 @@ function DecisionSection({ payload }: { payload: StrategyStatusPayload }) {
           <div><dt>기록 구분</dt><dd><code className={styles.code}>{decision.label}</code>{decision.month ? <span className={styles.muted}> {decision.month}</span> : null}</dd></div>
         </dl>
       ) : <p className={styles.muted}>결정 기록 없음</p>}
+    </section>
+  );
+}
+
+const TERMINATION_TEXT: Record<string, string> = {
+  liquidating: "종료됨 · 보유 종목 청산 중",
+  terminated_drawdown: "종료됨 · 청산 완료 (현금 보유)"
+};
+
+function indexRows(indices: unknown): { name: string; date: string; close: number }[] {
+  if (Array.isArray(indices)) {
+    return indices.filter((row): row is { name: string; date: string; close: number } =>
+      !!row && typeof row === "object" && typeof (row as { close?: unknown }).close === "number");
+  }
+  if (indices && typeof indices === "object") {
+    return Object.entries(indices as Record<string, unknown>).flatMap(([name, value]) => {
+      if (value && typeof value === "object") {
+        const row = value as { close?: unknown; date?: string };
+        const close = typeof row.close === "number" ? row.close : Number(String(row.close ?? "").replace(/,/g, ""));
+        return Number.isFinite(close) && row.close != null ? [{ name, date: row.date ?? "", close }] : [];
+      }
+      return typeof value === "number" ? [{ name, date: "", close: value }] : [];
+    });
+  }
+  return [];
+}
+
+function PortfolioSection({ payload }: { payload: StrategyStatusPayload }) {
+  const portfolio = payload.portfolio;
+  const termination = payload.termination;
+  if (!portfolio) return null;
+  const indices = indexRows(portfolio.indices);
+  const drawdown = portfolio.drawdownPct;
+  return (
+    <section className={styles.block}>
+      <h3>계좌 전체</h3>
+      {termination?.terminated ? (
+        <p className={styles.fine} data-alert="true">
+          {TERMINATION_TEXT[termination.state ?? ""] ?? "종료됨"} ({termination.reason ?? "사유 미기록"}, {day(termination.terminatedAt)})
+        </p>
+      ) : null}
+      <p className={styles.figure}>{won(portfolio.navKrw)}</p>
+      <dl className={styles.info}>
+        <div><dt>고점</dt><dd>{won(portfolio.runningMaxNavKrw)}</dd></div>
+        <div><dt>고점 대비 낙폭</dt><dd data-alert={drawdown != null && drawdown >= 20 ? "true" : undefined}>
+          {drawdown == null ? "—" : `${drawdown.toFixed(2)}%`} <span className={styles.muted}>(25%에서 종료)</span></dd></div>
+        <div><dt>기준</dt><dd>{portfolio.source === "krx_official_close" || portfolio.source === "krx_official" ? "공식 종가 순자산" : portfolio.source === "shadow_ledger" ? "가상 장부 (활성화 전)" : (portfolio.source ?? "—")}</dd></div>
+        {indices.map(row => (
+          <div key={row.name}><dt>{row.name}</dt><dd>{number(row.close)}{row.date ? <span className={styles.muted}> {row.date}</span> : null}</dd></div>
+        ))}
+      </dl>
+      {payload.sleeveDetailSealed ? <p className={styles.fine}>부문별 손익과 비교 원장은 최종 평가 전까지 공개하지 않습니다 (OP001·BB003 열람 분리).</p> : null}
     </section>
   );
 }
