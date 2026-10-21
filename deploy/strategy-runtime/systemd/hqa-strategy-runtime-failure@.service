@@ -5,17 +5,18 @@ Description=HQA strategy runtime failure alert for %i
 Type=oneshot
 User=hqa
 Group=hqa
-WorkingDirectory=/opt/hqa
+WorkingDirectory=/opt/hqa-runtime
 EnvironmentFile=/etc/hqa/strategy-runtime.env
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=TZ=Asia/Seoul
-ExecStart=/opt/hqa/venv/bin/python -m scripts.ops.strategy_runtime alerts --execute --failure-unit %i
+ExecStart=/opt/hqa-runtime/venv/bin/python -m scripts.ops.strategy_runtime alerts --execute --failure-unit %i
 MemoryMax=1G
 TimeoutStartSec=10min
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/hqa/data
+ReadWritePaths=/opt/hqa-runtime/data
+ReadOnlyPaths=/var/lib/hqa/data
 PrivateTmp=true
 UMask=0027

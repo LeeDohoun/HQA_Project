@@ -235,9 +235,13 @@ venv/bin/python -m scripts.ops.strategy_runtime submit --strategy hf001_f_both -
 3. 실행 서버의 `/etc/hqa/strategy-runtime.env`(권한 600)에 `HQA_TELEGRAM_BOT_TOKEN`, `HQA_TELEGRAM_CHAT_ID`, `HQA_ALERT_CHANNELS=file,telegram`을 넣습니다. 토큰은 저장소·로그·실행 요약에 남기지 않습니다.
 4. 수동 시험: `venv/bin/python -m scripts.ops.strategy_runtime alerts --execute` (실제 메시지가 나갑니다).
 
-### 설치 (사람 확인 필요)
+### 설치 (사람 확인 필요) — 연구실 hqa-server
 
-1. 실행 서버에 이 브랜치를 `/opt/hqa`로 받고 venv를 만듭니다. 자료 폴더는 `/opt/hqa/data`이며 `HQA_DATA_DIR=/opt/hqa/data`입니다 (자료 받기 스크립트가 `<프로젝트>/data`로 받기 때문).
-2. `deploy/strategy-runtime/strategy-runtime.env.example`의 이름대로 `/etc/hqa/strategy-runtime.env`를 만듭니다. `hqa` 사용자의 SSH `known_hosts`에 수집 서버를 미리 등록합니다 (BatchMode).
-3. `bash deploy/strategy-runtime/install.sh`로 할 일을 확인하고, `--execute`로 unit 파일만 복사합니다. 활성화는 출력된 `systemctl enable --now ...` 명령으로 운영자가 직접 합니다.
-4. 처음 며칠은 `journalctl -u hqa-strategy-runtime-*`와 `data/live/runs/`로 결과를 확인합니다.
+실행 서버는 연구실 `hqa-server`(Tailscale, `ssh hqa-lab`)입니다. 수집기와 FW001도 2026-10-21부터 이 서버에서 돌며, 그 코드(`/opt/hqa`)는 FW001 봉인본이라 건드리지 않습니다.
+
+1. 이 브랜치를 `/opt/hqa-runtime`에 받고 venv를 만듭니다 (`/opt/hqa`가 아님). 자료 폴더는 `/opt/hqa-runtime/data`, `HQA_DATA_DIR=/opt/hqa-runtime/data`입니다.
+2. 같은 서버의 수집 자료는 `HQA_COLLECTOR_LOCAL_DIR=/var/lib/hqa/data`로 지정합니다. 실행 전에 `rsync -a`로 필요한 폴더(disclosures, market, ops, forward, fundamentals, reference)만 복사하므로 mtime(FW001 완료 증명)이 보존되고, 수집기 트리에는 쓰지 않습니다 (unit의 `ReadOnlyPaths=/var/lib/hqa/data`). 다른 서버에서 받을 때만 `HQA_COLLECTOR_HOST`·`HQA_COLLECTOR_SSH_KEY`를 씁니다 (둘 중 하나만).
+3. `deploy/strategy-runtime/strategy-runtime.env.example`의 이름대로 `/etc/hqa/strategy-runtime.env`(root:hqa 0640)를 만듭니다. 텔레그램 토큰은 여기에만 둡니다.
+4. `bash deploy/strategy-runtime/install.sh`로 할 일을 확인하고, `--execute`로 unit 파일만 복사합니다. 활성화는 출력된 `systemctl enable --now ...`로 운영자가 직접 합니다.
+5. 백엔드(상태 게시·주문 대조)는 아직 이 서버에 없습니다. 올리기 전까지 `BACKEND_INTERNAL_BASE_URL`을 비워 두면 백엔드 단계는 `backend_not_configured`로 건너뜁니다.
+6. 처음 며칠은 `journalctl -u 'hqa-strategy-runtime-*'`와 `data/live/runs/`로 결과를 확인합니다.

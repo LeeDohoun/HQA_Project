@@ -8,17 +8,18 @@ OnFailure=hqa-strategy-runtime-failure@%n.service
 Type=oneshot
 User=hqa
 Group=hqa
-WorkingDirectory=/opt/hqa
+WorkingDirectory=/opt/hqa-runtime
 EnvironmentFile=/etc/hqa/strategy-runtime.env
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=TZ=Asia/Seoul
-ExecStart=/usr/bin/env bash /opt/hqa/deploy/strategy-runtime/evening.sh
+ExecStart=/usr/bin/env bash /opt/hqa-runtime/deploy/strategy-runtime/evening.sh
 MemoryMax=2G
 TimeoutStartSec=45min
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/opt/hqa/data
+ReadWritePaths=/opt/hqa-runtime/data
+ReadOnlyPaths=/var/lib/hqa/data
 PrivateTmp=true
 UMask=0027

@@ -233,9 +233,9 @@ def test_service_units(name, command):
     unit = _unit(name)
     service = unit["Service"]
     assert command in service["ExecStart"]
-    for key, value in {"Type": "oneshot", "User": "hqa", "Group": "hqa", "WorkingDirectory": "/opt/hqa",
+    for key, value in {"Type": "oneshot", "User": "hqa", "Group": "hqa", "WorkingDirectory": "/opt/hqa-runtime",
                        "EnvironmentFile": "/etc/hqa/strategy-runtime.env", "NoNewPrivileges": "true",
-                       "ProtectSystem": "strict", "ReadWritePaths": "/opt/hqa/data", "PrivateTmp": "true"}.items():
+                       "ProtectSystem": "strict", "ReadWritePaths": "/opt/hqa-runtime/data", "PrivateTmp": "true"}.items():
         assert service[key] == value, key
     assert service["MemoryMax"] and service["TimeoutStartSec"]
     assert "PrivateNetwork" not in service  # the runtime talks to the backend
@@ -257,7 +257,7 @@ def test_env_example_lists_names_only():
     lines = [line for line in (DEPLOY / "strategy-runtime.env.example").read_text(encoding="utf-8").splitlines()
              if line and not line.startswith("#")]
     assert lines == ["HQA_DATA_DIR=", "BACKEND_INTERNAL_BASE_URL=", "HQA_INTERNAL_TOKEN=", "HQA_ALERT_CHANNELS=",
-                     "HQA_TELEGRAM_BOT_TOKEN=", "HQA_TELEGRAM_CHAT_ID=", "HQA_COLLECTOR_HOST=",
+                     "HQA_TELEGRAM_BOT_TOKEN=", "HQA_TELEGRAM_CHAT_ID=", "HQA_COLLECTOR_LOCAL_DIR=", "HQA_COLLECTOR_HOST=",
                      "HQA_COLLECTOR_SSH_KEY="]
 
 
@@ -306,6 +306,45 @@ def test_morning_wrapper_pulls_before_the_seal_check_and_run_sh_needs_a_phase(tm
     assert result.returncode == 1 and "morning run did not start" in result.stderr and "RAN" not in result.stdout
     result = _bash([str(DEPLOY / "run.sh")], {"HQA_PYTHON": str(fake)}, tmp_path)
     assert result.returncode == 2 and "Usage" in result.stderr
+
+
+def test_same_host_collector_copy_preserves_mtimes_and_never_writes_the_source(tmp_path):
+    project = tmp_path / "proj"
+    shutil.copytree(DEPLOY, project / "deploy/strategy-runtime")
+    source = tmp_path / "collector"
+    for folder in ("disclosures", "market", "ops", "forward", "fundamentals", "reference"):
+        (source / folder).mkdir(parents=True)
+    proof_dir = source / "forward/fw001/sealed/202610.decision"
+    proof_dir.mkdir(parents=True)
+    (proof_dir / "complete.json").write_text("{}\n", encoding="utf-8")
+    os.utime(proof_dir / "complete.json", ns=(1_793_000_000_000_000_000,) * 2)
+    os.utime(proof_dir, ns=(1_793_000_000_123_456_789,) * 2)
+    source.chmod(0o555)
+    fake = tmp_path / "fake-python"
+    fake.write_text("#!/usr/bin/env bash\nprintf 'RAN %s\\n' \"$*\"\n", encoding="utf-8")
+    fake.chmod(0o755)
+    run = project / "deploy/strategy-runtime/morning.sh"
+    try:
+        result = _bash([str(run)], {"HQA_PYTHON": str(fake), "HQA_COLLECTOR_LOCAL_DIR": str(source)}, tmp_path)
+        assert result.returncode == 0, result.stderr
+        assert "RAN -m scripts.ops.strategy_runtime daily --when morning --execute" in result.stdout
+        copied = project / "data/forward/fw001/sealed/202610.decision"
+        assert copied.stat().st_mtime_ns == proof_dir.stat().st_mtime_ns  # FW001 sealed_at evidence kept
+        result = _bash([str(run)], {"HQA_PYTHON": str(fake), "HQA_COLLECTOR_LOCAL_DIR": str(source),
+                                    "HQA_COLLECTOR_HOST": "u@h"}, tmp_path)
+        assert result.returncode == 1 and "only one" in result.stderr and "RAN" not in result.stdout
+        result = _bash([str(run)], {"HQA_PYTHON": str(fake), "HQA_COLLECTOR_LOCAL_DIR": str(tmp_path / "missing")},
+                       tmp_path)
+        assert result.returncode == 1 and "copy failed" in result.stderr and "RAN" not in result.stdout
+    finally:
+        source.chmod(0o755)
+
+
+def test_units_use_the_runtime_checkout_and_read_the_collector_tree_read_only():
+    for name in ("hqa-strategy-runtime-morning.service", "hqa-strategy-runtime-evening.service",
+                 "hqa-strategy-runtime-failure@.service"):
+        text = (DEPLOY / "systemd" / name).read_text(encoding="utf-8")
+        assert "ReadOnlyPaths=/var/lib/hqa/data" in text and "/opt/hqa/" not in text
 
 
 def test_timestamps_are_kst():
