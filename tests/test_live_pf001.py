@@ -329,6 +329,7 @@ def test_submit_due_execute_seals_inputs_posts_nav_and_submits_two_batches(tmp_p
     planned = [o["quantity"] for o in sealed["plans"]["CONT_BUY"]["orders"]]
     assert [o["quantity"] for o in fake.batches[1]["orders"]] == planned  # the sealed quantities, not a rebuild
     assert "costReserveRate" in fake.batches[1]
+    assert all("exemption" not in b for b in fake.batches)  # no exemption outside liquidation
     assert len(list(runtime.batches_dir(ctx.data_dir, "pf001").iterdir())) == 2
 
 
@@ -343,6 +344,7 @@ def test_drawdown_breach_records_termination_and_liquidates(tmp_path):
     assert [b["phase"] for b in fake.batches] == ["CONT_SELL"]
     assert fake.batches[0]["orders"] == [{"seq": 1, "stockCode": A, "side": "SELL", "quantity": 100,
                                           "refPrice": 10000, "adv20Krw": 5e9}]
+    assert fake.batches[0]["exemption"] == "TERMINATION_LIQUIDATION"
     statuses = {s["phase"]: s["status"] for s in _pf(result)}
     assert statuses == {"CONT_SELL": "submitted", "CONT_BUY": "skipped"}
     assert "drawdown_breach" in [a["code"] for a in result["alerts"]["alerts"]] and result["status"] == "failed"
@@ -423,34 +425,6 @@ def test_index_levels_skip_holdout_rows(tmp_path):
     assert runtime.index_levels(tmp_path / "none") is None
 
 
-# ---------------------------------------------------------------- readiness (never scheduled)
-
-
-def test_readiness_buy_then_flatten_only_its_own_fill(tmp_path):
-    ctx = _world(tmp_path, bound=False)
-    now = datetime(2026, 11, 2, 9, 20, tzinfo=KST)
-    dry = runtime.readiness_command(ctx, "op001_readiness", "buy", now=now)
-    order = dry["payload"]["orders"][0]
-    assert dry["payload"]["phase"] == "CONT_BUY" and (order["stockCode"], order["side"], order["quantity"]) == (
-        "005930", "BUY", 1)
-    assert runtime.readiness_command(ctx, "op001_readiness", "flatten", now=now)["reasons"] == [
-        "readiness_buy_record_missing"]
-
-    class Ready(FakeBackend):
-        def accounts(self):
-            return [{"userId": "comp", "strategyId": "op001_readiness"}]
-
-    fake = Ready(holdings={"005930": 7})
-    buy = runtime.readiness_command(ctx, "op001_readiness", "buy", execute=True, client_factory=lambda: fake, now=now)
-    assert buy["status"] == "submitted" and fake.batches[-1]["userId"] == "comp"
-    flat = runtime.readiness_command(ctx, "op001_readiness", "flatten", execute=True, client_factory=lambda: fake,
-                                     now=now.replace(hour=15, minute=20))
-    assert fake.batches[-1]["phase"] == "CLOSE" and fake.batches[-1]["orders"][0]["quantity"] == 1  # not 7
-    assert flat["status"] == "submitted"
-    assert sorted(p.name for p in (ctx.data_dir / "live/op001_readiness").iterdir()) == [
-        "20261102_buy.json", "20261102_flatten.json"]
-
-
 # ---------------------------------------------------------------- deploy
 
 
@@ -474,7 +448,7 @@ def test_submit_and_inputs_units(kind, calendar):
                 "ReadWritePaths", "ReadOnlyPaths", "PrivateTmp", "MemoryMax"):
         assert service["Service"][key] == morning["Service"][key], key
     assert service["Unit"]["OnFailure"] == "hqa-strategy-runtime-failure@%n.service"
-    assert not any("readiness" in p.read_text(encoding="utf-8") for p in (DEPLOY / "systemd").iterdir())
+    assert "readiness" not in service["Service"]["ExecStart"]
 
 
 def test_run_sh_submit_and_inputs_modes(tmp_path):
@@ -635,3 +609,20 @@ def test_activation_requires_the_account_binding_fingerprint(tmp_path):
     out = runtime.activate_command(ctx, "pf001", execute=True, client_factory=lambda: NoBinding())
     assert out["status"] == "refused" and out["reasons"] == ["account_binding_missing"]
     assert pf001.load_activation(ctx.data_dir, "pf001") is None
+
+
+def test_exemption_rules_in_batch_payload():
+    sell, buy = _plan(_decision([A]), {X: 3}, 1_000_000.0)
+    payload = rebalance.batch_payload(sell, user_id="u1", expected_nav_krw=1, dry_run=True,
+                                      exemption="TERMINATION_LIQUIDATION")
+    assert payload["exemption"] == "TERMINATION_LIQUIDATION"
+    with pytest.raises(rebalance.PlanError, match="not allowed"):
+        rebalance.batch_payload(buy, user_id="u1", expected_nav_krw=1, dry_run=True,
+                                exemption="TERMINATION_LIQUIDATION")
+    with pytest.raises(rebalance.PlanError, match="not allowed"):
+        rebalance.batch_payload(sell, user_id="u1", expected_nav_krw=1, dry_run=True, exemption="BB_SCHEDULED_EXIT")
+    with pytest.raises(rebalance.PlanError, match="not allowed"):
+        rebalance.batch_payload(sell, user_id="u1", expected_nav_krw=1, dry_run=True, exemption="CANCEL_ANYTHING")
+    close = dataclasses.replace(sell, phase="CLOSE")
+    assert rebalance.batch_payload(close, user_id="u1", expected_nav_krw=1, dry_run=True,
+                                   exemption="BB_SCHEDULED_EXIT")["exemption"] == "BB_SCHEDULED_EXIT"

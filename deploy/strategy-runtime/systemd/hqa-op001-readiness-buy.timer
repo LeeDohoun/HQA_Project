@@ -1,0 +1,10 @@
+[Unit]
+Description=HQA OP001 readiness buy, 2026-10-27..30 at 09:19:30 KST only (a missed run never fires late)
+
+[Timer]
+OnCalendar=2026-10-27..30 09:19:30 Asia/Seoul
+Persistent=false
+Unit=hqa-op001-readiness-buy.service
+
+[Install]
+WantedBy=timers.target

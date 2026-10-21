@@ -311,7 +311,7 @@ def test_env_example_lists_names_only():
              if line and not line.startswith("#")]
     assert lines == ["HQA_DATA_DIR=", "BACKEND_INTERNAL_BASE_URL=", "HQA_INTERNAL_TOKEN=", "HQA_ALERT_CHANNELS=",
                      "HQA_TELEGRAM_BOT_TOKEN=", "HQA_TELEGRAM_CHAT_ID=", "HQA_COLLECTOR_LOCAL_DIR=", "HQA_COLLECTOR_HOST=",
-                     "HQA_COLLECTOR_SSH_KEY="]
+                     "HQA_COLLECTOR_SSH_KEY=", "HQA_READINESS_USER_ID="]
 
 
 def _bash(args, env, cwd):

@@ -1,0 +1,25 @@
+[Unit]
+Description=HQA OP001 readiness flatten: one CLOSE SELL of exactly the 000660 quantity our buy filled
+Wants=network-online.target
+After=network-online.target
+OnFailure=hqa-strategy-runtime-failure@%n.service
+
+[Service]
+Type=oneshot
+User=hqa
+Group=hqa
+WorkingDirectory=/opt/hqa-runtime
+EnvironmentFile=/etc/hqa/strategy-runtime.env
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=TZ=Asia/Seoul
+ExecStart=/usr/bin/env bash /opt/hqa-runtime/deploy/strategy-runtime/readiness.sh flatten
+MemoryMax=1G
+TimeoutStartSec=10min
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/hqa-runtime/data
+ReadOnlyPaths=/var/lib/hqa/data
+PrivateTmp=true
+UMask=0027

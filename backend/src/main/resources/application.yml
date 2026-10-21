@@ -121,3 +121,5 @@ hqa:
         daily-loss-buy-block: false
         drawdown-buy-block: false
         termination-drawdown-pct: 25
+        # OP001 §5 (user-approved 2026-10-21): scheduled BB exits skip only the cancel-ratio limit.
+        cancel-ratio-exempt-bb-exits: true

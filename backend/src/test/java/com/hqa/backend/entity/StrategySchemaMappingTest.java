@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
 
 /**
- * Offline check that the strategy entities and the V15+V16 migrations name the same columns, as Hibernate's
+ * Offline check that the strategy entities and the V15-V17 migrations name the same columns, as Hibernate's
  * {@code ddl-auto: validate} would require (Postgres itself is exercised only with HQA_TEST_DATABASE_URL).
  */
 class StrategySchemaMappingTest {
@@ -29,7 +29,8 @@ class StrategySchemaMappingTest {
 
     private static Map<String, Set<String>> columnsByTable() throws Exception {
         String sql = new ClassPathResource("db/migration/V15__strategy_runtime.sql").getContentAsString(StandardCharsets.UTF_8)
-                + "\n" + new ClassPathResource("db/migration/V16__strategy_portfolio_runtime.sql").getContentAsString(StandardCharsets.UTF_8);
+                + "\n" + new ClassPathResource("db/migration/V16__strategy_portfolio_runtime.sql").getContentAsString(StandardCharsets.UTF_8)
+                + "\n" + new ClassPathResource("db/migration/V17__strategy_batch_exemption.sql").getContentAsString(StandardCharsets.UTF_8);
         sql = sql.replaceAll("--[^\n]*", "");
         Map<String, Set<String>> tables = new HashMap<>();
         Matcher create = Pattern.compile("CREATE TABLE public\\.(\\w+) \\((.*?)\\n\\);", Pattern.DOTALL).matcher(sql);
@@ -83,6 +84,7 @@ class StrategySchemaMappingTest {
         assertThat(tables.get("strategy_nav_closes")).contains("cash_krw", "holdings_value_krw", "source", "input_hash");
         assertThat(tables.get("strategy_accounts")).contains("activated_at", "activation_nav_krw", "terminated_at", "termination_reason");
         assertThat(tables.get("strategy_batch_orders")).contains("planned_quantity", "ref_price_at_submit");
+        assertThat(tables.get("strategy_batches")).contains("exemption");
     }
 
     @Test

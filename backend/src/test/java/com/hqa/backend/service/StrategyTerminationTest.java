@@ -58,7 +58,8 @@ class StrategyTerminationTest {
         assertThat(state.fullReviewRequired()).isFalse();
         assertThat(state.reasons()).isEmpty();
         assertThat(state.toMap()).containsEntry("terminationState", "active").containsEntry("activationNavKrw", 100_000_000L)
-                .containsEntry("profile", Map.of("dailyLossBuyBlock", false, "drawdownBuyBlock", false, "terminationDrawdownPct", 25.0));
+                .containsEntry("profile", Map.of("dailyLossBuyBlock", false, "drawdownBuyBlock", false, "terminationDrawdownPct", 25.0,
+                        "cancelRatioExemptBbExits", false));
 
         f.accountRows.put("u1", new StrategyAccount("u1", "hf001_f_both", "paper", true, f.now()));
         StrategyRiskGuard.RiskState standard = f.risk.evaluate("u1");

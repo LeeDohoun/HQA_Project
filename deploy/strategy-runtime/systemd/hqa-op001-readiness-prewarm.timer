@@ -1,0 +1,10 @@
+[Unit]
+Description=HQA OP001 readiness prewarm, 2026-10-27..30 at 08:45:00 KST only (a missed run never fires late)
+
+[Timer]
+OnCalendar=2026-10-27..30 08:45:00 Asia/Seoul
+Persistent=false
+Unit=hqa-op001-readiness-prewarm.service
+
+[Install]
+WantedBy=timers.target

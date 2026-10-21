@@ -32,10 +32,12 @@ class StrategyPropertiesBindingTest {
         assertThat(pf001.isDailyLossBuyBlock()).isFalse();
         assertThat(pf001.isDrawdownBuyBlock()).isFalse();
         assertThat(pf001.getTerminationDrawdownPct()).isEqualTo(25.0);
+        assertThat(pf001.isCancelRatioExemptBbExits()).isTrue();
         StrategyProperties.Profile other = properties.profile("hf001_f_both");
         assertThat(other.isDailyLossBuyBlock()).isTrue();
         assertThat(other.isDrawdownBuyBlock()).isTrue();
         assertThat(other.getTerminationDrawdownPct()).isNull();
+        assertThat(other.isCancelRatioExemptBbExits()).isFalse();
         assertThat(properties.isOrdersEnabled()).isFalse();
         assertThat(properties.getDailyLossLimitPct()).isEqualTo(2.0);
         assertThat(properties.getDrawdownStopPct()).isEqualTo(10.0);

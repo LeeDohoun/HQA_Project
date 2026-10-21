@@ -63,7 +63,8 @@ def parser() -> argparse.ArgumentParser:
     act.add_argument("--execute", action="store_true", help="read the backend and write activation.json")
     ready = commands.add_parser("readiness", parents=[common], help="one-off OP001 readiness order (never scheduled)")
     ready.add_argument("--strategy", required=True)
-    ready.add_argument("--step", choices=("buy", "flatten"), required=True)
+    ready.add_argument("--step", choices=("prewarm", "buy", "flatten", "verify"), required=True)
+    ready.add_argument("--user", help="competition account user id (default: $HQA_READINESS_USER_ID)")
     ready.add_argument("--execute", action="store_true")
     alert = commands.add_parser("alerts", parents=[common], help="evaluate and send operator alerts")
     alert.add_argument("--execute", action="store_true", help="append to the alert file and configured channels")
@@ -98,8 +99,8 @@ def main(argv=None) -> int:
         result = runtime.activate_command(ctx, args.strategy, execute=args.execute)
         ok = result["status"] in ("dry_run", "activated", "already_activated")
     elif args.command == "readiness":
-        result = runtime.readiness_command(ctx, args.strategy, args.step, execute=args.execute)
-        ok = result["status"] in ("dry_run", "submitted", "deduplicated", "nothing_to_submit")
+        result = runtime.readiness_command(ctx, args.strategy, args.step, execute=args.execute, user=args.user)
+        ok = result["status"] in ("dry_run", "ok", "submitted", "deduplicated", "nothing_to_submit")
     elif args.command == "alerts":
         result = runtime.alerts_command(ctx, execute=args.execute, failure_unit=args.failure_unit)
         ok = result["status"] == "ok"

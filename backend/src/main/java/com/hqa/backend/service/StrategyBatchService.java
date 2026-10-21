@@ -43,6 +43,7 @@ public class StrategyBatchService {
     public static final String HEX64 = "[0-9a-fA-F]{64}";
     public static final Set<String> PHASES = Set.of("OPEN", "CLOSE", "CONT_SELL", "CONT_BUY");
     public static final double DEFAULT_COST_RESERVE_RATE = 0.003;
+    public static final Set<String> EXEMPTIONS = Set.of("BB_SCHEDULED_EXIT", "TERMINATION_LIQUIDATION");
     public static final double MAX_COST_RESERVE_RATE = 0.05;
     /** Batch states before the executor finished sending. */
     public static final Set<String> UNSENT_BATCH_STATUSES = Set.of("QUEUED", "SUBMITTING");
@@ -147,6 +148,20 @@ public class StrategyBatchService {
                 }
             }
         }
+        boolean exempt = false;
+        if (request.exemption() != null) {
+            // OP001 §5: only the cancel-ratio limit is lifted, and only for these SELL-only batches.
+            boolean sellOnly = !request.orders().isEmpty()
+                    && request.orders().stream().allMatch(order -> order != null && "SELL".equals(order.side()));
+            boolean allowed = sellOnly && switch (request.exemption()) {
+                case "TERMINATION_LIQUIDATION" -> account.get().isTerminated();
+                case "BB_SCHEDULED_EXIT" -> "CLOSE".equals(request.phase())
+                        && properties.profile(request.strategyId()).isCancelRatioExemptBbExits();
+                default -> false;
+            };
+            if (allowed) exempt = true;
+            else reasons.add("INVALID_EXEMPTION");
+        }
         if (account.get().isTerminated() && valid.stream().anyMatch(order -> "BUY".equals(order.side()))) {
             // Terminated (close-to-close drawdown): only SELL batches, i.e. liquidation, are accepted.
             reasons.add("STRATEGY_TERMINATED");
@@ -178,7 +193,7 @@ public class StrategyBatchService {
                         .forEach(order -> rejectedOrders.add(rejectedOrder(order.seq(), reason)));
             }
             if (state.ordersToday() + orderCount > properties.getMaxOrdersPerDay()) reasons.add("DAILY_ORDER_LIMIT_EXCEEDED");
-            if (risk.cancelRatioExceeded(state.ordersToday(), state.cancelsToday())) reasons.add("CANCEL_RATIO_EXCEEDED");
+            if (!exempt && risk.cancelRatioExceeded(state.ordersToday(), state.cancelsToday())) reasons.add("CANCEL_RATIO_EXCEEDED");
         }
         if (!reasons.isEmpty()) return rejected(List.copyOf(reasons), orderCount, rejectedOrders);
         if (dryRun) return response(null, "VALIDATED", false, List.of(), orderCount, List.of());
@@ -216,6 +231,7 @@ public class StrategyBatchService {
         batch.setStatus("QUEUED");
         batch.setIdempotencyKey(key);
         batch.setExpectedNavKrw(request.expectedNavKrw());
+        batch.setExemption(request.exemption());
         if ("CONT_BUY".equals(request.phase())) {
             batch.setCostReserveRate(request.costReserveRate() == null ? DEFAULT_COST_RESERVE_RATE : request.costReserveRate());
         }
@@ -388,6 +404,7 @@ public class StrategyBatchService {
         view.put("submittedAt", batch.getSubmittedAt());
         view.put("completedAt", batch.getCompletedAt());
         view.put("costReserveRate", batch.getCostReserveRate());
+        view.put("exemption", batch.getExemption());
         view.put("sizing", sizings.findById(batch.getId()).map(this::sizingView).orElse(null));
         view.put("orders", batchOrders.findByBatchIdOrderBySeqAsc(batch.getId()).stream().map(StrategyBatchService::orderView).toList());
         return view;

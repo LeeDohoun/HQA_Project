@@ -11,12 +11,14 @@ import com.hqa.backend.dto.TradingHaltRequest;
 import com.hqa.backend.exception.ApiException;
 import com.hqa.backend.service.StrategyAccountService;
 import com.hqa.backend.service.StrategyBatchService;
+import com.hqa.backend.service.StrategyBrokerOrderService;
 import com.hqa.backend.service.StrategyOrderResolver;
 import com.hqa.backend.service.StrategyRiskGuard;
 import com.hqa.backend.service.StrategyStatusService;
 import com.hqa.backend.service.StrategyTerminationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import java.time.LocalDate;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -26,6 +28,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @Tag(name = "내부 API - 전략 실행", description = "전략 계좌·일괄 주문·위험 한도·중단 스위치. X-HQA-Internal-Token 헤더 필요")
@@ -40,10 +43,12 @@ public class InternalStrategyController {
     private final HqaProperties properties;
     private final StrategyOrderResolver resolver;
     private final StrategyTerminationService termination;
+    private final StrategyBrokerOrderService brokerOrders;
 
     public InternalStrategyController(StrategyBatchService batches, StrategyAccountService accounts, StrategyRiskGuard risk,
             StrategyStatusService statuses, StrategyOrderResolver resolver, StrategyTerminationService termination,
-            HqaProperties properties) {
+            StrategyBrokerOrderService brokerOrders, HqaProperties properties) {
+        this.brokerOrders = brokerOrders;
         this.termination = termination;
         this.resolver = resolver;
         this.batches = batches;
@@ -118,6 +123,22 @@ public class InternalStrategyController {
         if (request == null) throw new IllegalArgumentException("request body is required");
         return termination.recordOfficialClose(userId, request.sessionDate(), request.navKrw(), request.cashKrw(),
                 request.holdingsValueKrw(), request.source(), request.inputHash());
+    }
+
+    @Operation(summary = "KIS 주문 내역 조회 (읽기 전용)",
+            description = "전략 계좌의 하루 KIS 모의 주문 내역. strategyBatchOrderId가 null인 행은 이 전략이 낸 주문이 아니다.")
+    @GetMapping("/accounts/{userId}/broker-orders")
+    public Map<String, Object> brokerOrders(@PathVariable String userId,
+            @RequestParam(value = "date", required = false) String date,
+            @RequestHeader(value = TOKEN, required = false) String token) {
+        requireInternalToken(token);
+        LocalDate day;
+        try {
+            day = date == null || date.isBlank() ? null : LocalDate.parse(date);
+        } catch (java.time.format.DateTimeParseException ex) {
+            throw new IllegalArgumentException("INVALID_DATE");
+        }
+        return brokerOrders.brokerOrders(userId, day);
     }
 
     @Operation(summary = "중단 스위치", description = "scope는 GLOBAL 또는 userId. 켜지면 새 일괄 주문 접수와 미전송 주문 전송이 멈춘다.")

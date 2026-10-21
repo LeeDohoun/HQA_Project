@@ -184,6 +184,13 @@ class StrategyBackendClient:
             raise BackendError("unexpected nav-close response")
         return payload
 
+    def broker_orders(self, user_id: str, day: str) -> dict:
+        """KIS order inquiry for one day: {"date", "orders": [...], "openOrders": n} (read-only)."""
+        body = self._get(f"/api/v1/internal/strategies/accounts/{user_id}/broker-orders?date={day}")
+        if not isinstance(body, dict) or not isinstance(body.get("orders"), list):
+            raise BackendError("unexpected broker-orders response")
+        return body
+
     def fetch_account(self, user_id: str) -> AccountState:
         body = self._post("/api/v1/internal/trading/account-snapshots", {"userIds": [user_id]})
         return parse_account_snapshot(body, user_id)

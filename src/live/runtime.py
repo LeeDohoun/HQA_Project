@@ -842,7 +842,9 @@ def _submit_intraday(ctx, entry, session, *, execute, inputs_only, client_factor
         if not plan.orders:
             record(phase, "nothing_to_submit")
             continue
-        payload = rebalance.batch_payload(plan, user_id=uid, expected_nav_krw=account.equity, dry_run=False)
+        exemption = "TERMINATION_LIQUIDATION" if terminated and phase == "CONT_SELL" else None
+        payload = rebalance.batch_payload(plan, user_id=uid, expected_nav_krw=account.equity, dry_run=False,
+                                          exemption=exemption)
         response = client.submit_batch(payload)
         status, reasons = classify_response(response)
         blocking = sorted(set(reasons) & set(pf001.NAV_BLOCKING_REASONS))
@@ -876,58 +878,13 @@ def activate_command(ctx, strategy_id, *, execute=False, client_factory=None, no
         return {"status": "refused", "reasons": [f"activation_exists_with_different_content:{error}"]}
 
 
-READINESS_STOCK = "005930"
+def readiness_command(ctx, strategy_id, step, *, execute=False, user=None, client_factory=None, now=None,
+                      env=None) -> dict:
+    """OP001 readiness test on the competition PAPER account (src/live/readiness.py)."""
+    from . import readiness
 
-
-def readiness_command(ctx, strategy_id, step, *, execute=False, client_factory=None, now=None) -> dict:
-    """One-off OP001 readiness test (never scheduled): 'buy' = one CONT_BUY of 1 share 005930;
-    'flatten' = one CLOSE SELL of exactly the quantity this test's own buy batch filled."""
-    from .backend_client import StrategyBackendClient
-
-    now = now or shadow.now_kst()
-    session = now.date().isoformat()
-    directory = Path(ctx.data_dir) / shadow.LIVE_DIR / strategy_id
-    buy_path = directory / f"{session.replace('-', '')}_buy.json"
-    if step not in ("buy", "flatten"):
-        raise ValueError("readiness step must be buy or flatten")
-    quotes = shadow.load_quotes(ctx.data_dir, shadow.previous_session(session)) or {}
-    ref = quotes.get(READINESS_STOCK)
-    ref_price = ref.close if ref is not None and ref.close else 1.0
-    client = (client_factory or StrategyBackendClient)() if execute else None
-    if step == "buy":
-        quantity, phase = 1, "CONT_BUY"
-    else:
-        if not buy_path.is_file():
-            return {"status": "refused", "reasons": ["readiness_buy_record_missing"]}
-        bought = json.loads(buy_path.read_text(encoding="utf-8"))
-        if not execute:
-            return {"status": "dry_run", "note": "flatten sells exactly the buy batch's filled quantity",
-                    "buyBatchId": bought.get("response", {}).get("batchId")}
-        batch = client.get_batch(bought["response"]["batchId"])
-        quantity = sum(int(o.get("filledQuantity") or 0) for o in batch.get("orders") or []
-                       if o.get("stockCode") == READINESS_STOCK and o.get("side") == "BUY")
-        if quantity <= 0:
-            return {"status": "nothing_to_submit", "reason": "buy_batch_filled_nothing"}
-        phase = "CLOSE"
-    user = None
-    if execute:
-        user = next((a.get("userId") for a in client.accounts() if a.get("strategyId") == strategy_id), None)
-        if user is None:
-            return {"status": "refused", "reasons": ["readiness_account_not_bound"]}
-    side = "BUY" if step == "buy" else "SELL"
-    plan = rebalance.RebalancePlan(
-        strategy_id, "readiness", hashlib_sha(f"op001_readiness|{session}|{step}"), session, session, phase,
-        (rebalance.Order(1, READINESS_STOCK, side, quantity, float(ref_price), float(ref_price * quantity), None,
-                         False, f"readiness_{step}"),), (), (), 0.0, 0.0, 0.0, {"cost_reserve_rate": 0.0})
-    payload = rebalance.batch_payload(plan, user_id=user or "<bound-user>", expected_nav_krw=0, dry_run=not execute)
-    if not execute:
-        return {"status": "dry_run", "payload": payload}
-    response = client.submit_batch(payload)
-    record = {"strategyId": strategy_id, "step": step, "session": session, "payload": payload,
-              "response": response, "recorded_at": now.isoformat()}
-    path = buy_path if step == "buy" else directory / f"{session.replace('-', '')}_flatten.json"
-    shadow.write_immutable(path, record)
-    return {"status": classify_response(response)[0], "record": str(path), "response": response}
+    return readiness.run_step(ctx, strategy_id, step, execute=execute, user=user, client_factory=client_factory,
+                              now=now, env=env)
 
 
 def hashlib_sha(text) -> str:

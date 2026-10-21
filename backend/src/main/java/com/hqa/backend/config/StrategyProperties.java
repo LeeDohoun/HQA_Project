@@ -82,6 +82,8 @@ public class StrategyProperties {
         private boolean dailyLossBuyBlock = true;
         private boolean drawdownBuyBlock = true;
         private Double terminationDrawdownPct;
+        /** Scheduled BB exits (CLOSE phase, SELL only) may skip the cancel-ratio limit. */
+        private boolean cancelRatioExemptBbExits = false;
 
         public boolean isDailyLossBuyBlock() { return dailyLossBuyBlock; }
         public void setDailyLossBuyBlock(boolean value) { this.dailyLossBuyBlock = value; }
@@ -95,11 +97,15 @@ public class StrategyProperties {
             this.terminationDrawdownPct = value;
         }
 
+        public boolean isCancelRatioExemptBbExits() { return cancelRatioExemptBbExits; }
+        public void setCancelRatioExemptBbExits(boolean value) { this.cancelRatioExemptBbExits = value; }
+
         public Map<String, Object> view() {
             Map<String, Object> view = new LinkedHashMap<>();
             view.put("dailyLossBuyBlock", dailyLossBuyBlock);
             view.put("drawdownBuyBlock", drawdownBuyBlock);
             view.put("terminationDrawdownPct", terminationDrawdownPct);
+            view.put("cancelRatioExemptBbExits", cancelRatioExemptBbExits);
             return view;
         }
     }

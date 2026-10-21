@@ -440,7 +440,14 @@ def _number(value):
     return int(value) if isinstance(value, float) and value.is_integer() else value
 
 
-def batch_payload(plan: RebalancePlan, *, user_id: str, expected_nav_krw: float, dry_run: bool) -> dict:
+# Cancel-ratio exemptions (user approval 2026-10-21): SELL-only batches. TERMINATION_LIQUIDATION is
+# sent by pf001 after a D=25% termination; BB_SCHEDULED_EXIT is the December hook for scheduled BB
+# exits in the CLOSE window. No other batch carries an exemption.
+EXEMPTIONS = {"TERMINATION_LIQUIDATION": ("CONT_SELL", "CLOSE"), "BB_SCHEDULED_EXIT": ("CLOSE",)}
+
+
+def batch_payload(plan: RebalancePlan, *, user_id: str, expected_nav_krw: float, dry_run: bool,
+                  exemption: str | None = None) -> dict:
     """POST /api/v1/internal/strategies/batches body (docs/strategy-runtime.md)."""
     if not isinstance(user_id, str) or not user_id:
         raise PlanError("batch payload requires a user id")
@@ -460,6 +467,12 @@ def batch_payload(plan: RebalancePlan, *, user_id: str, expected_nav_krw: float,
     if side is not None and any(o.side != side for o in orders):
         raise PlanError(f"{plan.phase} batches carry only {side} orders")
     extra = {}
+    if exemption is not None:
+        if exemption not in EXEMPTIONS or plan.phase not in EXEMPTIONS[exemption]:
+            raise PlanError(f"exemption {exemption} is not allowed for phase {plan.phase}")
+        if any(o.side != "SELL" for o in orders):
+            raise PlanError("exempted batches carry only SELL orders")
+        extra["exemption"] = exemption
     if plan.phase == "CONT_BUY":
         # The backend re-sizes buys from orderable cash, keeping this reserve for costs.
         extra["costReserveRate"] = float(plan.meta.get("cost_reserve_rate") or 0.0)

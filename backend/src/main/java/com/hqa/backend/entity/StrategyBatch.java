@@ -37,6 +37,8 @@ public class StrategyBatch {
     @Column(columnDefinition = "TEXT")
     private String reasons;
     private Double costReserveRate;
+    /** Cancel-ratio exemption of a SELL-only batch: BB_SCHEDULED_EXIT or TERMINATION_LIQUIDATION; null otherwise. */
+    private String exemption;
     private OffsetDateTime lastReconciledAt;
     @Column(nullable = false)
     private OffsetDateTime createdAt;
@@ -73,6 +75,8 @@ public class StrategyBatch {
     public void setExpectedNavKrw(Long expectedNavKrw) { this.expectedNavKrw = expectedNavKrw; }
     public String getReasons() { return reasons; }
     public Double getCostReserveRate() { return costReserveRate; }
+    public String getExemption() { return exemption; }
+    public void setExemption(String exemption) { this.exemption = exemption; }
     public OffsetDateTime getLastReconciledAt() { return lastReconciledAt; }
     public void setLastReconciledAt(OffsetDateTime lastReconciledAt) { this.lastReconciledAt = lastReconciledAt; }
     public void setCostReserveRate(Double costReserveRate) { this.costReserveRate = costReserveRate; }

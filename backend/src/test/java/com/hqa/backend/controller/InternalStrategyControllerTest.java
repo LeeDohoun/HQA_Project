@@ -19,6 +19,7 @@ import com.hqa.backend.exception.GlobalExceptionHandler;
 import com.hqa.backend.service.AuthService;
 import com.hqa.backend.service.StrategyAccountService;
 import com.hqa.backend.service.StrategyBatchService;
+import com.hqa.backend.service.StrategyBrokerOrderService;
 import com.hqa.backend.service.StrategyOrderResolver;
 import com.hqa.backend.service.StrategyRiskGuard;
 import com.hqa.backend.service.StrategyStatusService;
@@ -46,8 +47,9 @@ class InternalStrategyControllerTest {
     private final StrategyStatusService statuses = mock(StrategyStatusService.class);
     private final StrategyOrderResolver resolver = mock(StrategyOrderResolver.class);
     private final StrategyTerminationService termination = mock(StrategyTerminationService.class);
+    private final StrategyBrokerOrderService brokerOrders = mock(StrategyBrokerOrderService.class);
     private final InternalStrategyController controller = new InternalStrategyController(batches, accounts, risk, statuses,
-            resolver, termination, properties);
+            resolver, termination, brokerOrders, properties);
 
     InternalStrategyControllerTest() {
         properties.setInternalToken("contract-test");
@@ -72,7 +74,8 @@ class InternalStrategyControllerTest {
         assertThatThrownBy(() -> controller.resolveOrder("x", null, "wrong")).isInstanceOf(ApiException.class);
         properties.setInternalToken("");
         assertThatThrownBy(() -> controller.accounts("")).isInstanceOf(ApiException.class);
-        verifyNoInteractions(batches, accounts, risk, statuses, resolver);
+        assertThatThrownBy(() -> controller.brokerOrders("u1", null, "wrong")).isInstanceOf(ApiException.class);
+        verifyNoInteractions(batches, accounts, risk, statuses, resolver, brokerOrders);
     }
 
     @Test
@@ -185,5 +188,16 @@ class InternalStrategyControllerTest {
         verify(batches).create(captor.capture());
         assertThat(captor.getValue().costReserveRate()).isEqualTo(0.004);
         assertThat(captor.getValue().phase()).isEqualTo("CONT_BUY");
+    }
+
+    @Test
+    void brokerOrdersTakeAnOptionalIsoDate() throws Exception {
+        when(brokerOrders.brokerOrders("u1", LocalDate.parse("2026-10-27"))).thenReturn(Map.of("date", "2026-10-27", "openOrders", 0));
+        MockMvc mvc = mvc();
+        mvc.perform(get("/api/v1/internal/strategies/accounts/u1/broker-orders?date=2026-10-27").header("X-HQA-Internal-Token", "contract-test"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.openOrders").value(0));
+        mvc.perform(get("/api/v1/internal/strategies/accounts/u1/broker-orders?date=20261027").header("X-HQA-Internal-Token", "contract-test"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(get("/api/v1/internal/strategies/accounts/u1/broker-orders")).andExpect(status().isUnauthorized());
     }
 }
