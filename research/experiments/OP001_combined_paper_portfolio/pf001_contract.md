@@ -76,12 +76,12 @@ errors) exclude P&L.
 - XO001 order test (10-27..29) and the OP001 readiness test (below) reviewed.
 - `activation.json` sealed with code, config and account-identifier hashes.
 
-## 6. OP001 readiness test (competition PAPER account, not the main account), plan fixed 2026-10-21
+## 6. OP001 readiness test (competition PAPER account, not the main account), plan fixed 2026-10-21, split revised 2026-10-21
 
 - Days: 2026-10-27, 10-28, 10-29, 10-30. Stock 005930.
-- 09:20:00: intraday market buy, 1 share. Record acceptance, order number, fill price/qty from the inquiry, and orderable
-  cash before and after.
-- 09:25:00: limit buy, 1 share, at that session's lower price limit; cancel at 09:26:00; confirm cancelled with remaining
-  0 via the inquiry.
-- 15:20: market sell of any test holdings (flatten).
+- M8 path: an intraday 1-share market buy (CONT_BUY) at 09:20:00. Record acceptance, order number, fill price/qty from the
+  inquiry, and orderable cash before and after. At 15:20, M8 sells exactly its own 1 share (CLOSE phase).
+- The limit-order cancel evidence comes from XO001's sealed order-test plan: a lower-limit limit buy at 09:10, cancelled
+  at 09:11, on 10-27..29 on the same account. It is reused here and recorded as XO001 evidence.
+- Each side flattens only its own quantity; no "sell all holdings" on the shared competition account.
 - Purpose: to inform whether the activation conditions are met. These are not OP001 observations.
