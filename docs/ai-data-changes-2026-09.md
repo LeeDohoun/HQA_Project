@@ -607,6 +607,12 @@ Claude Pro 요금제에는 월 API 크레딧이 없어서(Max·Team 전용), API
 - **변경:** 읽기 전용 조회(잔고·시세·주문 조회)는 이제 1초, 2초, 4초 간격으로 세 번 재시도합니다(대기 합계 약 7초). 계좌 조회 한도 30초 안에 들어갑니다. 주문과 취소는 여전히 재시도하지 않고, 사이클 시작 시각도 그대로입니다.
 - **검증:** 파이썬 테스트 1,448개, 백엔드 테스트 154개(실패 0, 건너뜀 0), 시뮬레이션 205개 검사를 통과했습니다. 장중에는 반영하지 않고 장 마감 뒤 백엔드만 다시 시작해 반영합니다.
 
+### 7.19 사이클 시작 계좌 조회 1회 재시도 (`784a298`, 2026-10-20)
+
+- **배경:** 7.18 반영 뒤 10/20 09:00 사이클은 두 계좌 모두 살았지만, 10:00 사이클에서 ehgns2 잔고 조회가 1·2·4초 재시도까지 모두 HTTP 500으로 끝나 그 계좌의 사이클이 빠졌습니다.
+- **변경:** 사이클 시작 때 계좌 조회가 `account_snapshot_failed`로 실패한 계좌만 5초 뒤 한 번 더 조회합니다. 다른 오류(오래된 잔고 등)는 다시 조회하지 않고, 정상 계좌와 사이클 시작 시각은 그대로입니다. 모델, 프롬프트, 전략 설정은 바꾸지 않았습니다.
+- **검증:** 파이썬 테스트 1,450개, 백엔드 테스트 154개(실패 0, 건너뜀 0), 시뮬레이션 205개 검사를 통과했습니다. 장 마감 뒤 ai-server만 다시 시작해 반영합니다.
+
 ## 부록: 커밋 목록
 
 | 커밋 | 날짜 | 구분 | 제목 |
@@ -697,3 +703,5 @@ Claude Pro 요금제에는 월 API 크레딧이 없어서(Max·Team 전용), API
 | `cda0e6c` | 2026-10-17 | PAPER | fix(paper): keep sells placed in the closing call auction working until the match |
 | `2671f2a` | 2026-10-17 | PAPER | fix(paper): send PAPER orders only at prices on the KRX price grid |
 | `2058d4b` | 2026-10-18 | PAPER | fix(paper): stop offering an account the stocks KIS refused it as untradable |
+| `fbf717b` | 2026-10-19 | PAPER | fix(paper): space KIS read retries 1 s, 2 s, 4 s so a 500 burst cannot swallow them |
+| `784a298` | 2026-10-20 | PAPER | fix(paper): read a failed account snapshot once more 5 s later in the cycle |
