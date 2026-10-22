@@ -2,8 +2,8 @@
 
 Steps (each with --execute only; records are immutable under data/live/op001_readiness/):
 - prewarm (08:45): read-only account snapshot so the backend issues/caches its KIS token. No orders.
-- buy (09:19:30): one CONT_BUY of 1 share of 000660, after the refusal checks below.
-- flatten (15:22+): one CLOSE SELL of exactly the 000660 quantity our own buy batch filled.
+- buy (09:19:30): one CONT_BUY of 1 share of 005380, after the refusal checks below.
+- flatten (15:22+): one CLOSE SELL of exactly the 005380 quantity our own buy batch filled.
 - verify (15:35): balance + broker orders; any leftover raises readiness_leftover. An M8 or unknown
   leftover also writes blocked_YYYYMMDD.json, which makes the next buy refuse.
 005930 belongs to another test on the same account (XO001): it is ignored by the buy checks, never
@@ -19,7 +19,7 @@ from pathlib import Path
 from . import rebalance, shadow
 
 STRATEGY_ID = "op001_readiness"
-STOCK = "000660"
+STOCK = "005380"
 FOREIGN_STOCKS = {"005930": "XO001"}
 USER_ENV = "HQA_READINESS_USER_ID"
 STEPS = ("prewarm", "buy", "flatten", "verify")
@@ -51,7 +51,7 @@ def _hash(text) -> str:
 
 
 def _reference_price(data_dir, day):
-    """Latest verified local KRX close of 000660 within ten sessions before today."""
+    """Latest verified local KRX close of 005380 within ten sessions before today."""
     for session in reversed(shadow.last_sessions(shadow.previous_session(day), 10)):
         quote = (shadow.load_quotes(data_dir, session) or {}).get(STOCK)
         if quote is not None and quote.verified and quote.close:
@@ -129,7 +129,7 @@ def run_step(ctx, strategy_id, step, *, execute=False, user=None, client_factory
         return {"status": "refused", "reasons": ["readiness_user_missing"]}
     if not execute:
         return {"status": "dry_run", "step": step, "user": user, "stock": STOCK,
-                "note": {"prewarm": "read-only account snapshot", "buy": "one CONT_BUY of 1 share 000660",
+                "note": {"prewarm": "read-only account snapshot", "buy": "one CONT_BUY of 1 share 005380",
                          "flatten": "one CLOSE SELL of the quantity our buy filled",
                          "verify": "balance + broker orders; leftovers alert, M8/unknown leftovers block"}[step]}
     client = (client_factory or StrategyBackendClient)()

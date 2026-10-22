@@ -272,12 +272,12 @@ venv/bin/python -m scripts.ops.strategy_runtime submit --strategy hf001_f_both -
   - 취소 비율 한도는 batch `exemption`이 `TERMINATION_LIQUIDATION`(종료 청산, 종료된 계좌·매도 전용)이나 `BB_SCHEDULED_EXIT`(BB 예정 청산, CLOSE·매도 전용·pf001 프로필)일 때만 면제합니다 (OP001 §5, 2026-10-21 사용자 승인).
 - 화면: 계좌 전체 순자산·낙폭·지수만 보입니다 (`sleeveDetailSealed`). 부문별 손익은 저장만 합니다.
 - 활성화 (11-01 23:59까지, 사용자 승인): 계좌 `enabled: true` → 백엔드가 활성화 순자산을 기록하고, `strategy_runtime activate --strategy pf001 --execute`로 `activation.json`을 봉인합니다. 그다음 `HQA_STRATEGY_ORDERS_ENABLED=true`, `hqa-strategy-runtime-inputs.timer`·`-submit.timer`를 켭니다.
-- 준비 시험 (2026-10-21 사용자 승인): 경쟁 PAPER 계좌, 000660 1주, 2026-10-27~30.
+- 준비 시험 (2026-10-21 사용자 승인): 경쟁 PAPER 계좌, 005380 1주, 2026-10-27~30. 처음엔 000660이었으나 1주 가격(10-21 종가 1,294,000원)이 경쟁 계좌 1회 주문 한도(자산 1천만 원의 10%)를 넘어 10-22에 005380으로 바꿨습니다.
   - 일정 (`hqa-op001-readiness-*.timer`, Persistent=false, 날짜 고정):
     - 08:45 `prewarm`: 읽기 전용 조회로 토큰을 미리 받습니다.
     - 09:19:30 `buy`: CONT_BUY를 접수하고, 09:20에 실행하며, 10:00에 미체결 잔량을 취소합니다.
     - 15:22 `flatten`: 자기 체결 수량만 CLOSE로 매도합니다.
     - 15:35 `verify`: 계좌 전체의 보유와 미체결 주문을 확인합니다(`broker-orders`).
-  - 남은 것이 있으면 `readiness_leftover` 경보를 보내고 소유자를 표시합니다 (000660·우리 ODNO = M8, 005930 = XO001). M8 몫이나 소유자를 알 수 없는 것이 남으면 다음 날 매수를 막습니다.
+  - 남은 것이 있으면 `readiness_leftover` 경보를 보내고 소유자를 표시합니다 (005380·우리 ODNO = M8, 005930 = XO001). M8 몫이나 소유자를 알 수 없는 것이 남으면 다음 날 매수를 막습니다.
   - 같은 계좌의 XO001 주문은 건드리지 않습니다. 대조는 우리 주문번호로만 합니다.
   - 사용자 id는 `HQA_READINESS_USER_ID`에 둡니다.

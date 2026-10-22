@@ -91,7 +91,7 @@ git -C HQA_Project switch claude/strategy-paper-runtime
 실제 계좌로 확인한 것: pf001 위험 프로필(2%·10/15% 매수 차단 꺼짐, 25% 종료), KIS 모의투자 D+2 정산 예수금(`prvs_rcdl_excc_amt`) 제공, V16 마이그레이션.
 
 pf001 활성화까지 남은 일 (11-01 23:59:59 KST 기한, OP001 계약 §5):
-1. XO001 시험(10-27~29) 결과를 검토합니다. M8 준비 시험(경쟁 계좌, 000660 1주, 10-27~30)은 사용자 승인(10-21) 후 구현·설치까지 마쳤습니다. 남은 순서: 사용자가 경쟁 계좌용 계정을 만들고 키를 입력 → 그 계정을 `op001_readiness`에 연결(enabled) → `HQA_READINESS_USER_ID` 설정 → `HQA_STRATEGY_ORDERS_ENABLED=true` → `hqa-op001-readiness-*.timer` 켜기 (10-26까지).
+1. XO001 시험(10-27~29) 결과를 검토합니다. M8 준비 시험(경쟁 계좌, 005380 1주, 10-27~30)은 사용자 승인(10-21) 후 구현·설치까지 마쳤습니다. 남은 순서: 사용자가 경쟁 계좌용 계정을 만들고 키를 입력 → 그 계정을 `op001_readiness`에 연결(enabled) → `HQA_READINESS_USER_ID` 설정 → `HQA_STRATEGY_ORDERS_ENABLED=true` → `hqa-op001-readiness-*.timer` 켜기 (10-26까지).
 2. 장중 시장가 주문, 잔량 취소, VTTC8908R 동작 확인.
 3. **[승인]** 활성화: 계좌 `enabled: true` → `strategy_runtime activate --strategy pf001 --execute` → `HQA_STRATEGY_ORDERS_ENABLED=true`(백엔드 재시작) → inputs·submit 타이머 켜기.
 4. 취소 비율 면제(BB 청산·종료 청산 한정): 사용자 승인(10-21) 후 구현·배포를 마쳤습니다(V17 `exemption`).

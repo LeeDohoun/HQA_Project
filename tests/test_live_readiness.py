@@ -53,7 +53,7 @@ class Backend:
         side = "BUY" if batch_id == "b1" else "SELL"
         return {"batchId": batch_id, "status": "COMPLETED", "sizing": {"orderableCashBefore": 1e7,
                                                                        "orderableCashAfter": 9.8e6},
-                "orders": [{"seq": 1, "stockCode": "000660", "side": side, "quantity": self.filled,
+                "orders": [{"seq": 1, "stockCode": "005380", "side": side, "quantity": self.filled,
                             "status": "FILLED", "brokerOrderId": f"odno-{batch_id}", "filledQuantity": self.filled,
                             "averageFillPrice": 200000.0}]}
 
@@ -62,7 +62,7 @@ class Backend:
 def ctx(tmp_path):
     root = make_repo(tmp_path, early_paper=True)
     data = tmp_path / "data"
-    write_flat_days(data, "2026-10-12", "2026-10-26", ["000660", "005930"], price=200000)
+    write_flat_days(data, "2026-10-12", "2026-10-26", ["005380", "005930"], price=200000)
     return runtime.load_context(root, data)
 
 
@@ -74,7 +74,7 @@ def run(ctx, step, fake, hhmm, day=DAY, env=ENV):
 def test_dry_run_user_and_strategy_rules(ctx):
     assert runtime.readiness_command(ctx, "op001_readiness", "buy", env={})["reasons"] == ["readiness_user_missing"]
     dry = runtime.readiness_command(ctx, "op001_readiness", "buy", user="comp", env={})
-    assert dry["status"] == "dry_run" and dry["stock"] == "000660"
+    assert dry["status"] == "dry_run" and dry["stock"] == "005380"
     with pytest.raises(ValueError):
         runtime.readiness_command(ctx, "pf001", "buy", env=ENV)
 
@@ -86,7 +86,7 @@ def test_prewarm_is_read_only(ctx):
     assert json.loads(open(result["record"], encoding="utf-8").read())["holdings"] == ["005930"]
 
 
-def test_buy_one_share_000660_and_ignore_foreign_005930(ctx):
+def test_buy_one_share_005380_and_ignore_foreign_005930(ctx):
     fake = Backend(holdings={"005930": 3}, orders=[{"odno": "x1", "stockCode": "005930", "side": "BUY",
                                                      "orderQty": 1, "filledQty": 0, "remainingQty": 1,
                                                      "cancelled": False}])
@@ -94,7 +94,7 @@ def test_buy_one_share_000660_and_ignore_foreign_005930(ctx):
     assert result["status"] == "submitted"
     (batch,) = fake.batches
     assert batch["phase"] == "CONT_BUY" and batch["userId"] == "comp" and "exemption" not in batch
-    assert batch["orders"] == [{"seq": 1, "stockCode": "000660", "side": "BUY", "quantity": 1, "refPrice": 200000,
+    assert batch["orders"] == [{"seq": 1, "stockCode": "005380", "side": "BUY", "quantity": 1, "refPrice": 200000,
                                 "adv20Krw": None}]
 
 
@@ -102,8 +102,8 @@ def test_buy_one_share_000660_and_ignore_foreign_005930(ctx):
     ("marker", "block_marker:blocked_20261026.json"),
     ("pf001_enabled", "pf001_account_enabled"),
     ("extra_account", "unexpected_strategy_account:hf001_f_both"),
-    ("own_holding", "own_stock_already_held:000660:1"),
-    ("own_open_order", "own_stock_open_orders:000660"),
+    ("own_holding", "own_stock_already_held:005380:1"),
+    ("own_open_order", "own_stock_open_orders:005380"),
     ("not_bound", "readiness_account_not_bound"),
 ])
 def test_buy_refusals_alert_readiness_blocked(ctx, setup, reason):
@@ -117,9 +117,9 @@ def test_buy_refusals_alert_readiness_blocked(ctx, setup, reason):
     elif setup == "extra_account":
         fake.accounts_list.append({"userId": "x", "strategyId": "hf001_f_both", "enabled": False})
     elif setup == "own_holding":
-        fake.holdings["000660"] = 1
+        fake.holdings["005380"] = 1
     elif setup == "own_open_order":
-        fake.orders = [{"odno": "y", "stockCode": "000660", "remainingQty": 1, "cancelled": False}]
+        fake.orders = [{"odno": "y", "stockCode": "005380", "remainingQty": 1, "cancelled": False}]
     else:
         fake.accounts_list = fake.accounts_list[:1]
     result = run(ctx, "buy", fake, "09:19")
@@ -135,7 +135,7 @@ def test_same_day_marker_does_not_block_and_flatten_sells_only_own_fill(ctx):
     flat = run(ctx, "flatten", fake, "15:22")
     assert flat["status"] == "submitted" and flat["quantity"] == 1
     sell = fake.batches[-1]
-    assert sell["phase"] == "CLOSE" and sell["orders"][0]["stockCode"] == "000660"
+    assert sell["phase"] == "CLOSE" and sell["orders"][0]["stockCode"] == "005380"
     assert sell["orders"][0]["quantity"] == 1 and sell["orders"][0]["side"] == "SELL" and "exemption" not in sell
     record = json.loads(open(flat["record"], encoding="utf-8").read())
     assert record["buy"]["orders"][0]["brokerOrderId"] == "odno-b1"
@@ -166,7 +166,7 @@ def test_verify_m8_leftover_blocks_next_buy(ctx):
     fake = Backend()
     run(ctx, "buy", fake, "09:19")
     run(ctx, "flatten", fake, "15:22")
-    fake.holdings = {"000660": 1}
+    fake.holdings = {"005380": 1}
     result = run(ctx, "verify", fake, "15:35")
     assert result["status"] == "leftover" and result["leftovers"][0]["owner"] == "M8"
     assert readiness.marker_path(ctx.data_dir, DAY).is_file()

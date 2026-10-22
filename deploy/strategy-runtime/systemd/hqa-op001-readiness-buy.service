@@ -1,5 +1,5 @@
 [Unit]
-Description=HQA OP001 readiness buy: one CONT_BUY of 1 share 000660
+Description=HQA OP001 readiness buy: one CONT_BUY of 1 share 005380
 Wants=network-online.target
 After=network-online.target
 OnFailure=hqa-strategy-runtime-failure@%n.service

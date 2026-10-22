@@ -1,5 +1,5 @@
 [Unit]
-Description=HQA OP001 readiness flatten: one CLOSE SELL of exactly the 000660 quantity our buy filled
+Description=HQA OP001 readiness flatten: one CLOSE SELL of exactly the 005380 quantity our buy filled
 Wants=network-online.target
 After=network-online.target
 OnFailure=hqa-strategy-runtime-failure@%n.service
