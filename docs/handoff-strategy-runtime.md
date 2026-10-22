@@ -79,19 +79,19 @@ git -C HQA_Project switch claude/strategy-paper-runtime
 4. Claude Code에게는 이 문서와 `AGENTS.md`, `docs/strategy-runtime.md`부터 읽게 합니다. 이전 PC의 메모리(`~/.claude/projects/<프로젝트 경로>/memory/`)를 옮기면 맥락이 더 이어집니다.
 5. 테스트 명령은 `AGENTS.md`의 오프라인 명령을 씁니다. 실시간 KIS, DART, KRX 호출이나 서비스 실행은 하지 않습니다.
 
-## 배포 상태 (2026-10-21 저녁)
+## 배포 상태 (2026-10-22 오후)
 
 | 구성 | 버전·상태 |
 | --- | --- |
-| 실행기 `/opt/hqa-runtime` | 0981b28. 타이머 morning 09:10·evening 16:30 켜짐. inputs 08:57·submit 09:01은 설치만 하고 꺼짐 (pf001 활성화 때 켬) |
-| 백엔드 `hqa-backend` | jar `hqa-backend-0981b28.jar` (V17 적용). 배포마다 DB 백업 `/var/backups/hqa/hqa_runtime-*-pre-<commit>.dump`. `HQA_STRATEGY_ORDERS_ENABLED=false` |
-| 화면 `hqa-frontend` | 096125c, `https://hqa-server.taild9dfb2.ts.net` (Tailnet 전용) |
-| 계좌 | `are01`(메인 PAPER, 모의투자 확인) → `pf001`, `enabled: false`, 현금 1억 원, 보유·대기 주문 없음 |
+| 실행기 `/opt/hqa-runtime` | 4232b58. 타이머 morning 09:10·evening 16:30 켜짐. 준비 시험 타이머 prewarm 08:45·buy 09:19:30·flatten 15:22·verify 15:35 (10-27~30) 켜짐. inputs 08:57·submit 09:01은 설치만 하고 꺼짐 (pf001 활성화 때 켬). `HQA_READINESS_USER_ID=are02` |
+| 백엔드 `hqa-backend` | jar `hqa-backend-0981b28.jar` (V17 적용). 배포마다 DB 백업 `/var/backups/hqa/hqa_runtime-*-pre-<commit>.dump`. `HQA_STRATEGY_ORDERS_ENABLED=true` (10-22, 준비 시험용. 전략 배치에만 적용되고 pf001 계좌는 꺼져 있음). 이전 설정 `/etc/hqa/*.env.bak-20261022` |
+| 화면 `hqa-frontend` | 096125c, Node v22.23.4 (10-22 보안 업데이트, 이전 `/opt/hqa-frontend/node.bak-v22.22.3`), `https://hqa-server.taild9dfb2.ts.net` (Tailnet 전용) |
+| 계좌 | `are01`(메인 PAPER, 모의투자 확인) → `pf001`, `enabled: false`, 현금 1억 원, 보유·대기 주문 없음. `are02`(경쟁 PAPER, 계좌 식별값이 are01과 다름) → `op001_readiness`, `enabled: true`, 활성화 NAV 1천만 원, 10-22 보유·주문 없음 |
 
 실제 계좌로 확인한 것: pf001 위험 프로필(2%·10/15% 매수 차단 꺼짐, 25% 종료), KIS 모의투자 D+2 정산 예수금(`prvs_rcdl_excc_amt`) 제공, V16 마이그레이션.
 
 pf001 활성화까지 남은 일 (11-01 23:59:59 KST 기한, OP001 계약 §5):
-1. XO001 시험(10-27~29) 결과를 검토합니다. M8 준비 시험(경쟁 계좌, 005380 1주, 10-27~30)은 사용자 승인(10-21) 후 구현·설치까지 마쳤습니다. 남은 순서: 사용자가 경쟁 계좌용 계정을 만들고 키를 입력 → 그 계정을 `op001_readiness`에 연결(enabled) → `HQA_READINESS_USER_ID` 설정 → `HQA_STRATEGY_ORDERS_ENABLED=true` → `hqa-op001-readiness-*.timer` 켜기 (10-26까지).
+1. XO001 시험(10-27~29)과 M8 준비 시험(경쟁 계좌 are02, 005380 1주, 10-27~30) 결과를 검토합니다. 준비 시험은 10-22에 모두 켜 두었습니다 (연결·사용자 ID·주문 스위치·타이머, 읽기 전용 매수 점검 거부 사유 없음). 결과 기록은 `data/live/op001_readiness/`.
 2. 장중 시장가 주문, 잔량 취소, VTTC8908R 동작 확인.
 3. **[승인]** 활성화: 계좌 `enabled: true` → `strategy_runtime activate --strategy pf001 --execute` → `HQA_STRATEGY_ORDERS_ENABLED=true`(백엔드 재시작) → inputs·submit 타이머 켜기.
 4. 취소 비율 면제(BB 청산·종료 청산 한정): 사용자 승인(10-21) 후 구현·배포를 마쳤습니다(V17 `exemption`).
