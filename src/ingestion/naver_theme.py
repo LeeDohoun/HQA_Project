@@ -40,6 +40,11 @@ def _first_existing_path(*candidates: str | None, skip_snap: bool = True) -> str
     return None
 
 
+def _warn_alphanumeric(theme_name: str, stock_code: str) -> None:
+    # KRX alphanumeric short codes (recent listings) are not supported by the pipeline yet.
+    print(f"[WARN][THEME] skipped alphanumeric KRX code {stock_code} in theme {theme_name} (not supported yet)")
+
+
 def _resolve_chrome_binary() -> str | None:
     return _first_existing_path(
         os.getenv("CHROME_BINARY"),
@@ -133,10 +138,13 @@ class NaverThemeStockCollector(BaseCollector):
 
                 for a_tag in stock_links:
                     href = a_tag.get("href", "")
-                    code_match = re.search(r"code=(\d{6})", href)
+                    code_match = re.search(r"code=([0-9A-Z]{6})", href)
                     if not code_match:
                         continue
                     stock_code = code_match.group(1)
+                    if not stock_code.isdigit():
+                        _warn_alphanumeric(theme_name, stock_code)
+                        continue
                     if stock_code in seen_codes:
                         continue
                     stock_name = a_tag.get_text(" ", strip=True)
@@ -249,10 +257,13 @@ class NaverThemeStockCollector(BaseCollector):
         )
         for a_tag in stock_links:
             href = a_tag.get("href", "")
-            code_match = re.search(r"code=(\d{6})", href)
+            code_match = re.search(r"code=([0-9A-Z]{6})", href)
             if not code_match:
                 continue
             stock_code = code_match.group(1)
+            if not stock_code.isdigit():
+                _warn_alphanumeric(theme_name, stock_code)
+                continue
             if stock_code in seen_codes:
                 continue
             stock_name = a_tag.get_text(" ", strip=True)

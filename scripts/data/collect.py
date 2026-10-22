@@ -64,10 +64,13 @@ def _ensure_fresh_corp_codes_csv(csv_path: str, *, max_age_days: int = 7) -> boo
     try:
         _refresh_corp_codes_csv(str(path))
     except Exception as exc:
+        # Keep the cause (e.g. "provider error status=800", OpenDART maintenance) without the key.
+        key = (os.getenv("DART_API_KEY") or "").strip()
+        cause = f"{type(exc).__name__}: {str(exc).replace(key, '[REDACTED]') if key else exc}"[:200]
         if exists:
-            print(f"[WARN][DART] corp_codes.csv refresh failed; existing file retained: {type(exc).__name__}")
+            print(f"[WARN][DART] corp_codes.csv refresh failed; existing file retained: {cause}")
         else:
-            print(f"[WARN][DART] corp_codes.csv creation failed: {type(exc).__name__}")
+            print(f"[WARN][DART] corp_codes.csv creation failed: {cause}")
         return False
 
     print(f"[DART] corp_codes.csv 자동 갱신 완료: {path}")
@@ -171,7 +174,8 @@ def main() -> int:
     parser.add_argument(
         "--enabled-sources",
         default=DEFAULT_SOURCES,
-        help="수집 소스 목록(쉼표 구분): news,dart,financials,forum,chart. chart는 KRX OHLCV를 수집합니다.",
+        help=("수집 소스 목록(쉼표 구분): news,dart,financials,forum,chart,kis_chart. chart는 KRX OHLCV를, "
+              "kis_chart는 KRX 키 승인 전 대체용 KIS 일봉(원주가, KIS_PAPER_APP_KEY 필요)을 수집합니다. 둘 중 하나만."),
     )
     parser.add_argument("--general-news-keywords", default="")
     parser.add_argument(

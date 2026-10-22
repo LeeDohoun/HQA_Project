@@ -22,9 +22,13 @@ public interface TradeSignalExecutionRepository extends JpaRepository<TradeSigna
     Optional<TradeSignalExecution> findByTriggerKey(String triggerKey);
     List<TradeSignalExecution> findByStatusInOrderBySubmittedAtAsc(List<String> statuses);
     List<TradeSignalExecution> findByUserIdAndStatusIn(String userId, List<String> statuses);
+    List<TradeSignalExecution> findByUserIdAndOrderId(String userId, String orderId);
     @Query("SELECT COALESCE(SUM(e.reservedCash),0) FROM TradeSignalExecution e WHERE e.userId = :userId")
     long reservedCashForUser(String userId);
     long countByUserIdAndOrderSideAndSubmittedAtAfter(String userId, String orderSide, OffsetDateTime after);
+    @Query("SELECT e FROM TradeSignalExecution e WHERE e.userId = :userId AND e.accountBinding = :accountBinding "
+            + "AND e.orderSide = 'BUY' AND e.status = 'REJECTED' AND e.submittedAt >= :since")
+    List<TradeSignalExecution> rejectedBuysSince(String userId, String accountBinding, OffsetDateTime since);
     @Query("SELECT e.userId FROM TradeSignalExecution e WHERE e.id = :id")
     Optional<String> ownerOf(String id);
 }

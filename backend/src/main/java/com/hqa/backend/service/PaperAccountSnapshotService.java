@@ -142,6 +142,10 @@ public class PaperAccountSnapshotService {
         result.put("monitorCapacity", tradeStore.monitorCapacity());
         result.put("monitorSymbolCount", symbols.size());
         result.put("monitorCapacityExceeded", symbols.size() > tradeStore.monitorCapacity());
+        List<String> untradable = tradeStore.untradableStockCodes(userId, baselineUser, now);
+        // Sent only when nonempty: an account KIS never refused this way gets the snapshot it got
+        // before, also from an AI server that predates the field (its contract refuses unknown fields).
+        if (!untradable.isEmpty()) result.put("untradableStockCodes", untradable);
         return result;
     }
 

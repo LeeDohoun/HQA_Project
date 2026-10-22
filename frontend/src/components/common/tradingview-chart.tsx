@@ -48,12 +48,12 @@ export function TradingViewChart({ candles, timeframe, onScrolledPastHalfLeft }:
     const chart = createChart(containerRef.current, {
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
-        textColor: "#cbd5e1",
+        textColor: "#68745e",
         fontSize: 11
       },
       grid: {
-        vertLines: { color: "rgba(148, 163, 184, 0.08)" },
-        horzLines: { color: "rgba(148, 163, 184, 0.08)" }
+        vertLines: { color: "rgba(104, 116, 94, 0.10)" },
+        horzLines: { color: "rgba(104, 116, 94, 0.10)" }
       },
       crosshair: { mode: CrosshairMode.Normal },
       rightPriceScale: {

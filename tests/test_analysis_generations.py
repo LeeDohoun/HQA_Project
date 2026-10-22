@@ -163,3 +163,149 @@ def test_undated_legacy_prices_are_quarantined_without_republishing_old_chart(tm
     assert quarantined[0]["reason"] == "missing_or_invalid_price_observation_time"
     current = pointer(tmp_path)["generation"]
     assert read_rows(tmp_path / "canonical_index/theme/generations" / current / "chart.jsonl") == []
+
+
+def test_one_unpublished_theme_generation_does_not_stop_other_themes(tmp_path, monkeypatch):
+    now = datetime.now(timezone.utc)
+    write_inputs(tmp_path, now)
+    EvidenceIndexBuilder(str(tmp_path)).rebuild_theme("theme")
+    # A failed first build leaves the marker directory without current.json.
+    write_rows(tmp_path / "raw/theme_targets/broken.jsonl", [{"stock_code": "000660", "stock_name": "SK하이닉스"}])
+    (tmp_path / "canonical_index/broken/generations").mkdir(parents=True)
+    write_rows(tmp_path / "raw/theme_targets/malformed.jsonl", [{"stock_code": "035420", "stock_name": ""}])
+    loader = loader_with_stub_prices(tmp_path, monkeypatch)
+    candidates, errors = loader.load_universe(now)
+    assert [row["stock_code"] for row in candidates] == ["005930"]
+    by_theme = {error["theme_key"]: error for error in errors if error.get("stage") == "theme_data"}
+    assert "unpublished_analysis_generation:broken" in by_theme["broken"]["error"]
+    assert "invalid theme target" in by_theme["malformed"]["error"]
+    assert all(row["stock_code"] not in {"000660", "035420"} for row in candidates)
+    assert by_theme["broken"]["stock_codes"] == ["000660"]
+
+
+def test_preview_of_a_stock_in_a_failed_theme_reports_that_theme_error(tmp_path):
+    from src.runner.shared_analysis import SharedAnalysisService
+
+    now = datetime.now(timezone.utc)
+    write_rows(tmp_path / "raw/theme_targets/broken.jsonl", [{"stock_code": "000660", "stock_name": "SK하이닉스"}])
+    (tmp_path / "canonical_index/broken/generations").mkdir(parents=True)
+    engine = SharedAnalysisService(data=LocalAnalysisData(data_dir=str(tmp_path)), accounts=None, models={},
+                                   clock=lambda: now)
+    with pytest.raises(ValueError, match="preview_price_history_unavailable:000660:unpublished_analysis_generation:broken"):
+        engine.preview_stock("000660")
+
+
+def test_structured_raw_sources_are_not_indexed_as_documents(tmp_path):
+    now = datetime.now(timezone.utc)
+    write_inputs(tmp_path, now)
+    write_rows(tmp_path / "raw/financials/theme.jsonl", [{"source_type": "financials", "stock_code": "005930",
+        "fiscal_year": "2025", "revenue": 1.0, "metadata": {"collected_at": now.isoformat()}}])
+    write_rows(tmp_path / "raw/theme_membership/theme.jsonl", [{"stock_code": "005930", "theme_key": "theme",
+        "first_seen": "2025-01-01"}])
+    EvidenceIndexBuilder(str(tmp_path)).rebuild_theme("theme")
+    documents = read_rows(tmp_path / "canonical_index/theme/documents.jsonl")
+    assert documents and all(row["source_type"] == "news" for row in documents)
+    assert all((row.get("title") or row.get("content")) for row in documents)
+
+
+def test_old_generations_are_pruned_but_current_and_recent_ones_stay(tmp_path, monkeypatch):
+    import os
+    import time
+    from src.evidence.index_builder import _prune_generations
+
+    root = tmp_path / "generations"
+    names = [f"{index:032x}" for index in range(12)]
+    for offset, name in enumerate(names):
+        (root / name).mkdir(parents=True)
+        stamp = time.time() - (200 - offset) * 3600  # oldest first, all older than 24 h
+        os.utime(root / name, (stamp, stamp))
+    fresh = f"{99:032x}"
+    (root / fresh).mkdir()
+    monkeypatch.setenv("HQA_GENERATION_KEEP", "4")
+    removed = _prune_generations(root, keep_generation=names[0])
+    remaining = {path.name for path in root.iterdir()}
+    assert names[0] in remaining and fresh in remaining           # current and young generations stay
+    assert set(names[-3:]) <= remaining and len(removed) == 8     # newest kept, older pruned
+    monkeypatch.setenv("HQA_GENERATION_KEEP", "0")
+    assert _prune_generations(root, keep_generation=names[0]) == []
+
+
+def test_generation_replaced_recently_survives_even_when_old(tmp_path):
+    import os
+    import time
+    from src.evidence.index_builder import _prune_generations
+
+    root = tmp_path / "generations"
+    ages = {"new": 0, "captured": 30, "previous": 50, "oldest": 80}  # hours since creation
+    names = {label: f"{index:032x}" for index, label in enumerate(ages)}
+    for label, hours in ages.items():
+        (root / names[label]).mkdir(parents=True)
+        stamp = time.time() - hours * 3600
+        os.utime(root / names[label], (stamp, stamp))
+    # "captured" was current until "new" was published just now; an analysis may still read it.
+    removed = _prune_generations(root, keep_generation=names["new"], retention=(1, 24.0))
+    assert {path.name for path in root.iterdir()} == {names["new"], names["captured"]}
+    assert sorted(removed) == sorted([names["previous"], names["oldest"]])
+
+
+def test_generation_retention_settings_are_checked_before_publishing(tmp_path, monkeypatch):
+    now = datetime.now(timezone.utc)
+    write_inputs(tmp_path, now)
+    builder = EvidenceIndexBuilder(str(tmp_path))
+    monkeypatch.setenv("HQA_GENERATION_KEEP", "")               # empty .env entry → default
+    monkeypatch.setenv("HQA_GENERATION_MIN_AGE_HOURS", " ")
+    builder.rebuild_theme("theme")
+    before = pointer(tmp_path)
+    write_inputs(tmp_path, now, ("A", "B"))
+    for name, value in (("HQA_GENERATION_KEEP", "eight"), ("HQA_GENERATION_MIN_AGE_HOURS", "-1")):
+        with monkeypatch.context() as scoped:
+            scoped.setenv(name, value)
+            with pytest.raises(ValueError, match=name):
+                builder.rebuild_theme("theme")
+        assert pointer(tmp_path) == before
+
+
+def test_failed_generation_cleanup_does_not_fail_a_published_build(tmp_path, monkeypatch, capsys):
+    now = datetime.now(timezone.utc)
+    write_inputs(tmp_path, now)
+    builder = EvidenceIndexBuilder(str(tmp_path))
+    builder.rebuild_theme("theme")
+    monkeypatch.setenv("HQA_GENERATION_KEEP", "1")
+    monkeypatch.setenv("HQA_GENERATION_MIN_AGE_HOURS", "0")
+
+    def fail_rmtree(path, *args, **kwargs):
+        raise PermissionError("fixture cleanup failure")
+
+    monkeypatch.setattr("shutil.rmtree", fail_rmtree)
+    for versions in (("A", "B"), ("A", "B", "C")):
+        write_inputs(tmp_path, now, versions)
+        assert builder.rebuild_theme("theme")["reused"] is False
+    current = pointer(tmp_path)["generation"]
+    assert (tmp_path / "canonical_index/theme/generations" / current / "documents.jsonl").is_file()
+    assert "generation pruning failed for theme: PermissionError" in capsys.readouterr().out
+
+
+def test_many_unusable_evidence_rows_become_one_gap_per_reason(tmp_path, capsys):
+    now = datetime.now(timezone.utc)
+
+    def row(index, dated):
+        meta = {"collected_at": (now - timedelta(hours=2)).isoformat(), "version_id": f"v{index}"}
+        if not dated:  # search results that only had a relative date ("3시간 전")
+            meta.update(publication_time_status="estimated")
+        return asdict(DocumentRecord(source_type="news", title=f"삼성전자 기사 {index}", url=f"https://news.example/{index}",
+            content="삼성전자는 신규 계약을 발표했다. 계약 규모와 상대방은 공시 원문에 기재되어 있다. " * 3,
+            stock_code="005930", stock_name="삼성전자",
+            published_at=(now - timedelta(days=1)).isoformat() if dated else "", metadata=meta))
+
+    for theme in ("t1", "t2"):
+        write_rows(tmp_path / f"raw/theme_targets/{theme}.jsonl", [{"stock_code": "005930", "stock_name": "삼성전자"}])
+        write_rows(tmp_path / f"raw/news/{theme}.jsonl", [row(0, True)] + [row(index, False) for index in range(1, 121)])
+        EvidenceIndexBuilder(str(tmp_path)).rebuild_theme(theme)
+    capsys.readouterr()
+    loader = LocalAnalysisData(data_dir=str(tmp_path))
+    candidate = {"stock_code": "005930", "stock_name": "삼성전자", "theme_keys": ["t1", "t2"],
+                 "theme_generations": {theme: loader._current_generation(theme) for theme in ("t1", "t2")}}
+    evidence = loader.load_evidence(candidate, now)
+    assert evidence["documents"]
+    assert len(evidence["data_gaps"]) == 1
+    assert evidence["data_gaps"][0].startswith("invalid_evidence:source timestamp is required:count=240:first=")

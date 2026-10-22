@@ -22,136 +22,6 @@ import type {
 /* ============================================================
    디자인 시스템 — /dashboard 와 동일 (에디토리얼 · 다크)
    ============================================================ */
-const CSS = `
-.ed{
-  --paper:#14130d; --paper-2:#1d1b12; --ink:#ece6d3; --ink-2:#a39c84; --ink-3:#6d6753;
-  --card:#1f1c12; --forest:#1c5040; --forest-ink:#e9e4cf;
-  --moss:#36b079; --moss-2:#43c489; --spark:#e0a341;
-  --rule:#322d1f;
-  --up:#d2554a; --down:#5d83d6;
-  --serif:Georgia,"Times New Roman",serif;
-  --sans:-apple-system,BlinkMacSystemFont,"Pretendard","Apple SD Gothic Neo","Noto Sans KR","Segoe UI",sans-serif;
-  --ease:cubic-bezier(.22,1,.36,1);
-  background:var(--paper); color:var(--ink); font-family:var(--sans);
-  font-size:16px; line-height:1.6; -webkit-font-smoothing:antialiased; min-height:100vh;
-}
-.ed *{box-sizing:border-box;}
-.ed-up{color:var(--up);} .ed-down{color:var(--down);}
-.ed-tnum{font-variant-numeric:tabular-nums;}
-.ed-serif{font-family:var(--serif);}
-
-.ed-wrap{max-width:1180px; margin:0 auto; padding:0 clamp(18px,4vw,52px);}
-.ed-rule{height:1px; background:var(--rule); border:0; margin:0;}
-.ed-fine{font-size:.78rem; color:var(--ink-3); line-height:1.7;}
-.ed-hint{color:var(--ink-3); font-size:.92rem; line-height:1.6;}
-.ed-label{font-size:.74rem; font-weight:800; letter-spacing:.16em; text-transform:uppercase; color:var(--moss);}
-
-.ed-btn{
-  display:inline-flex; align-items:center; justify-content:center; gap:8px; cursor:pointer;
-  font-family:var(--sans); font-size:.94rem; font-weight:800; letter-spacing:-.01em;
-  padding:12px 20px; border:1px solid transparent; border-radius:5px; white-space:nowrap;
-  transition:transform .14s var(--ease),background .15s,opacity .15s;
-}
-.ed-btn:active{transform:translateY(1px);}
-.ed-btn:disabled{opacity:.4; cursor:not-allowed;}
-.ed-btn--moss{background:var(--moss); color:#0b2417;}
-.ed-btn--ink{background:var(--ink); color:var(--paper);}
-.ed-btn--line{background:transparent; color:var(--ink); border-color:var(--rule);}
-.ed-btn--line:hover:not(:disabled){border-color:var(--ink-2);}
-.ed-btn--buy{background:var(--up); color:#fff;}
-.ed-btn--sell{background:var(--down); color:#fff;}
-.ed-btn--sm{padding:9px 14px; font-size:.86rem;}
-.ed-tlink{background:none; border:none; cursor:pointer; padding:0; font:inherit; color:var(--ink-2); font-weight:800; text-decoration:underline; text-underline-offset:4px;}
-.ed-tlink:hover{color:var(--ink);}
-
-.ed-nav{position:sticky; top:0; z-index:40; background:rgba(20,19,13,.92); backdrop-filter:saturate(150%) blur(12px); -webkit-backdrop-filter:saturate(150%) blur(12px); border-bottom:1px solid var(--rule);}
-.ed-nav-in{max-width:1180px; margin:0 auto; padding:0 clamp(18px,4vw,52px); height:64px; display:flex; align-items:center; gap:10px;}
-.ed-mark{display:inline-flex; align-items:baseline;}
-.ed-mark b{font-family:var(--serif); font-style:italic; font-weight:700; font-size:1.42rem; letter-spacing:-.02em;}
-.ed-mark i{width:6px; height:6px; border-radius:50%; background:var(--moss); margin-left:3px; align-self:flex-end; margin-bottom:5px;}
-.ed-nav-right{margin-left:auto; display:flex; align-items:center; gap:10px;}
-
-.ed-app{padding:clamp(24px,4vw,44px) 0 110px;}
-.ed-app-head{margin-bottom:20px;}
-.ed-kicker{font-family:var(--serif); font-style:italic; font-size:1.1rem; color:var(--ink-3);}
-.ed-app-h{font-size:clamp(1.5rem,3vw,2.2rem); font-weight:800; letter-spacing:-.03em; margin:3px 0 0;}
-
-.ed-sec{margin-top:34px;}
-.ed-sec-head{display:flex; align-items:baseline; justify-content:space-between; gap:12px; padding-bottom:11px; border-bottom:1.5px solid var(--ink); margin-bottom:2px;}
-.ed-sec-title{font-size:1.1rem; font-weight:800; letter-spacing:-.02em;}
-.ed-sec-meta{font-size:.8rem; color:var(--ink-3); font-weight:700;}
-
-.ed-pricebar{display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; margin:8px 0 0;}
-.ed-price-now{font-family:var(--serif); font-size:2.4rem; font-weight:700;}
-.ed-price-d{font-size:1.05rem; font-weight:800; font-variant-numeric:tabular-nums;}
-.ed-chart-frame{height:380px; border:1px solid var(--rule); background:var(--card); padding:8px; margin-top:14px;}
-.ed-chart-empty{height:100%; display:flex; align-items:center; justify-content:center; color:var(--ink-3); font-size:.9rem;}
-.ed-quotegrid{display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:var(--rule); border:1px solid var(--rule); margin-top:14px;}
-.ed-quote-cell{background:var(--card); padding:11px 13px;}
-.ed-quote-cell small{display:block; font-size:.72rem; color:var(--ink-3); font-weight:700;}
-.ed-quote-cell b{font-family:var(--serif); font-size:1.02rem; font-weight:700;}
-
-.ed-field{display:flex; flex-direction:column; gap:7px;}
-.ed-flabel{font-size:.78rem; font-weight:800; color:var(--ink-2); letter-spacing:.02em;}
-.ed-input{
-  width:100%; background:var(--card); border:1px solid var(--rule); color:var(--ink);
-  font-family:var(--sans); font-size:.95rem; padding:11px 13px; border-radius:5px; outline:none;
-  transition:border-color .14s;
-}
-.ed-input:focus{border-color:var(--moss);}
-.ed-seg{display:inline-flex; border:1px solid var(--rule); border-radius:5px; overflow:hidden;}
-.ed-seg-btn{
-  background:none; border:0; cursor:pointer; font:inherit; font-weight:800; font-size:.86rem;
-  color:var(--ink-3); padding:9px 16px;
-}
-.ed-seg-btn + .ed-seg-btn{border-left:1px solid var(--rule);}
-.ed-seg-btn--on{background:var(--ink); color:var(--paper);}
-.ed-seg-btn--buy.ed-seg-btn--on{background:var(--up); color:#fff;}
-.ed-seg-btn--sell.ed-seg-btn--on{background:var(--down); color:#fff;}
-
-.ed-tablist{display:flex; gap:0; border-bottom:1px solid var(--rule); margin-top:14px;}
-.ed-tab{
-  background:none; border:none; cursor:pointer; font-family:var(--sans);
-  font-size:.94rem; font-weight:800; color:var(--ink-3); padding:11px 4px; margin-right:24px;
-  border-bottom:2px solid transparent; transition:color .14s,border-color .14s;
-}
-.ed-tab--on{color:var(--ink); border-bottom-color:var(--moss);}
-
-.ed-timeline{display:flex; flex-direction:column;}
-.ed-tl-row{
-  display:grid; grid-template-columns:90px 1fr; gap:18px; align-items:start;
-  padding:16px 4px; border-bottom:1px solid var(--rule);
-}
-.ed-tl-row:last-child{border-bottom:0;}
-.ed-tl-date{font-family:var(--serif); font-size:.86rem; color:var(--ink-3); font-weight:700; line-height:1.3; padding-top:2px;}
-.ed-tl-main{min-width:0;}
-.ed-tl-title{
-  font-weight:800; font-size:1rem; color:var(--ink);
-  display:block; line-height:1.4;
-  word-break:break-word;
-}
-.ed-tl-title:hover{color:var(--moss);}
-.ed-tl-sum{margin-top:6px; font-size:.88rem; color:var(--ink-2); line-height:1.55;}
-.ed-tl-meta{margin-top:6px; font-size:.78rem; color:var(--ink-3); font-weight:600;}
-.ed-tl-tag{
-  display:inline-flex; font-size:.7rem; font-weight:800; padding:2px 8px; border-radius:3px;
-  margin-right:8px; vertical-align:middle;
-  background:var(--rule); color:var(--ink-2);
-}
-.ed-tl-tag--dart{background:rgba(54,176,121,.18); color:var(--moss);}
-.ed-tl-tag--news{background:rgba(224,163,65,.2); color:var(--spark);}
-
-.ed-fade{animation:ed-fade .4s var(--ease) both;}
-@keyframes ed-fade{from{opacity:0; transform:translateY(10px);}to{opacity:1; transform:translateY(0);}}
-
-@media (max-width:680px){
-  .ed-quotegrid{grid-template-columns:repeat(2,1fr);}
-  .ed-tl-row{grid-template-columns:1fr; gap:6px;}
-}
-@media (prefers-reduced-motion:reduce){
-  .ed *{animation-duration:.001ms !important; transition-duration:.001ms !important;}
-}
-`;
 
 type OrderSide = "buy" | "sell";
 type ChartTimeframe = "1d" | "1w" | "1M";
@@ -389,8 +259,7 @@ export default function StockDetailPage({ params }: { params: Promise<{ code: st
 
   if (loadingUser) {
     return (
-      <div className="ed">
-        <style dangerouslySetInnerHTML={{ __html: CSS }} />
+      <div className="stock-workspace">
         <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
           <p style={{ color: "var(--ink-3)", fontSize: "0.9rem" }}>불러오는 중...</p>
         </div>
@@ -402,8 +271,7 @@ export default function StockDetailPage({ params }: { params: Promise<{ code: st
   const market = stockMeta?.market;
 
   return (
-    <div className="ed">
-      <style dangerouslySetInnerHTML={{ __html: CSS }} />
+    <div className="stock-workspace">
 
       <nav className="ed-nav">
         <div className="ed-nav-in">

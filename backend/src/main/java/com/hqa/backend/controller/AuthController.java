@@ -4,6 +4,7 @@ import com.hqa.backend.dto.AuthLoginRequest;
 import com.hqa.backend.dto.AuthResponse;
 import com.hqa.backend.dto.AuthSignupRequest;
 import com.hqa.backend.dto.AuthUserResponse;
+import com.hqa.backend.dto.CsrfTokenResponse;
 import com.hqa.backend.dto.KisVerificationResult;
 import com.hqa.backend.dto.UserSecretRequest;
 import com.hqa.backend.dto.UserSecretResponse;
@@ -13,6 +14,12 @@ import com.hqa.backend.service.AuthService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpSession;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.http.CacheControl;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.security.web.csrf.CsrfTokenRepository;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -27,21 +34,40 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final AuthService authService;
+    private final CsrfTokenRepository csrfTokens;
 
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService, CsrfTokenRepository csrfTokens) {
         this.authService = authService;
+        this.csrfTokens = csrfTokens;
+    }
+
+    @GetMapping("/csrf")
+    public ResponseEntity<CsrfTokenResponse> csrf(HttpServletRequest request) {
+        CsrfToken token = (CsrfToken) request.getAttribute(CsrfToken.class.getName());
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(new CsrfTokenResponse(token.getToken()));
+    }
+
+    private void renewSession(HttpServletRequest request, HttpServletResponse response) {
+        request.changeSessionId();
+        csrfTokens.saveToken(null, request, response);
     }
 
     @Operation(summary = "회원가입", description = "신규 사용자를 등록하고 가입 즉시 세션 로그인 처리한다. (공개)")
     @PostMapping("/signup")
-    public AuthResponse signup(@Valid @RequestBody AuthSignupRequest request, HttpSession session) {
-        return authService.signup(request, session);
+    public AuthResponse signup(@Valid @RequestBody AuthSignupRequest request, HttpSession session,
+                               HttpServletRequest servletRequest, HttpServletResponse servletResponse) {
+        AuthResponse result = authService.signup(request, session);
+        renewSession(servletRequest, servletResponse);
+        return result;
     }
 
     @Operation(summary = "로그인", description = "user_id/password로 로그인하고 세션 쿠키를 발급한다. (공개)")
     @PostMapping("/login")
-    public AuthResponse login(@Valid @RequestBody AuthLoginRequest request, HttpSession session) {
-        return authService.login(request, session);
+    public AuthResponse login(@Valid @RequestBody AuthLoginRequest request, HttpSession session,
+                              HttpServletRequest servletRequest, HttpServletResponse servletResponse) {
+        AuthResponse result = authService.login(request, session);
+        renewSession(servletRequest, servletResponse);
+        return result;
     }
 
     @Operation(summary = "로그아웃", description = "현재 세션을 무효화한다.")

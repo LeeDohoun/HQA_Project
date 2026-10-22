@@ -17,7 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from backtesting.leader_backtest import run_leader_backtest
+from backtesting.leader_backtest import EXECUTION_MODEL_VERSION, run_leader_backtest
 from src.config.settings import get_data_dir
 
 
@@ -210,7 +210,27 @@ def _load_completed_result(path: Path, task_id: str) -> Dict[str, Any] | None:
         return None
     if not isinstance(result.get("metrics"), dict):
         return None
+    if _stale_result_reason(result):
+        return None
     return result
+
+
+def _stale_result_reason(result: Dict[str, Any]) -> str:
+    """Why a stored result may not be reused: it came from an older execution model or
+    prompt version, or served scores from pre-v4 (same-day evidence) cache entries."""
+    execution = result.get("execution") if isinstance(result.get("execution"), dict) else {}
+    if execution.get("model_version") != EXECUTION_MODEL_VERSION:
+        return "execution_model_version"
+    llm = (result.get("metadata") or {}).get("llm") or {}
+    if llm:
+        from backtesting.llm_signal import MULTI_AGENT_PROMPT_VERSION, PROMPT_VERSION
+
+        current = MULTI_AGENT_PROMPT_VERSION if llm.get("mode") == "multi_agent" else PROMPT_VERSION
+        if llm.get("prompt_version") != current:
+            return "prompt_version"
+        if llm.get("legacy_cache_hits"):
+            return "legacy_cache_hits"
+    return ""
 
 
 def _skipped_no_rebalance_result(
@@ -314,6 +334,7 @@ def _skipped_no_rebalance_result(
                 "round_trip_cost_bps": (transaction_cost_bps + slippage_bps + market_impact_bps) * 2.0,
             },
             "exit_counts": {},
+            "model_version": EXECUTION_MODEL_VERSION,
         },
         "artifacts": {"result_json": str(result_path)},
         "warnings": [error],

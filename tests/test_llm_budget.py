@@ -88,3 +88,45 @@ def test_unexpected_usage_overrun_is_recorded_and_blocks_more_calls(tmp_path):
 def test_budget_cannot_exceed_authorized_monthly_cap(tmp_path):
     with pytest.raises(ValueError, match="USD 100"):
         LLMBudgetLedger(tmp_path / "spend.sqlite3", monthly_limit_usd="101")
+
+
+def test_claude_reservations_cover_the_fallback_attempt_and_settle_at_claude_rates(tmp_path):
+    ledger = LLMBudgetLedger(tmp_path / "spend.sqlite3")
+    request_id = ledger.reserve("risk_manager", 10_000, 16_000, model="claude-opus-5-5",
+                                fallback_models=("claude-opus-5",))
+    # Opus 5.5 (10k x $5/M cache-write bound + 16k x $20/M) plus Opus 5 (10k x $6.25/M + 16k x $25/M).
+    assert ledger.snapshot()["reserved_usd"] == pytest.approx(0.05 + 0.32 + 0.0625 + 0.4)
+    ledger.mark_sent(request_id)
+    ledger.settle(request_id, input_tokens=10_000, output_tokens=3_000, reasoning_tokens=1_000)
+    assert ledger.snapshot()["spent_usd"] == pytest.approx(0.04 + 0.06)
+    assert ledger.snapshot()["models"] == ["claude-opus-5-5"] and ledger.snapshot()["reserved_usd"] == 0
+
+
+def test_attempts_on_several_models_are_priced_separately(tmp_path):
+    from src.utils.llm_budget import Attempt
+
+    ledger = LLMBudgetLedger(tmp_path / "spend.sqlite3")
+    request_id = ledger.reserve("quant", 1_000, 4_000, model="claude-opus-5-5", fallback_models=("claude-opus-5",))
+    ledger.mark_sent(request_id)
+    ledger.settle_attempts(request_id, [Attempt("claude-opus-5-5", 1_000, 50), Attempt("claude-opus-5", 1_000, 400)],
+                           reasoning_tokens=100)
+    assert ledger.snapshot()["spent_usd"] == pytest.approx(0.004 + 0.001 + 0.005 + 0.01)
+    with pytest.raises(LLMBudgetAccountingError):
+        ledger.settle_attempts(ledger.reserve("quant", 1, 1), [])
+
+
+def test_unpriced_models_are_refused_before_any_spend(tmp_path):
+    ledger = LLMBudgetLedger(tmp_path / "spend.sqlite3")
+    with pytest.raises(LLMBudgetAccountingError, match="price"):
+        ledger.reserve("quant", 1_000, 1_000, model="claude-unlisted")
+    assert ledger.snapshot()["reserved_usd"] == 0 and ledger.unresolved() == []
+
+
+def test_haiku_bills_the_long_context_rate_above_100k_prompt_tokens(tmp_path):
+    ledger = LLMBudgetLedger(tmp_path / "spend.sqlite3")
+    short, long = (ledger.reserve("risk_manager", tokens, 1_000, model="claude-haiku-5-5") for tokens in (100_000, 100_001))
+    for request_id, tokens in ((short, 100_000), (long, 100_001)):
+        ledger.mark_sent(request_id)
+        ledger.settle(request_id, input_tokens=tokens, output_tokens=1_000)
+    # $0.10/$0.50 per MTok up to 100k prompt tokens; $0.50/$2.50 above.
+    assert ledger.snapshot()["spent_usd"] == pytest.approx((0.01 + 0.0005) + (0.0500005 + 0.0025))

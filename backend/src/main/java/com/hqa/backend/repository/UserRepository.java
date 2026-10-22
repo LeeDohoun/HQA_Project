@@ -11,12 +11,14 @@ import jakarta.persistence.LockModeType;
 public interface UserRepository extends JpaRepository<User, String> {
     boolean existsByUserId(String userId);
 
+    boolean existsByNickname(String nickname);
+
     Optional<User> findByUserId(String userId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT u FROM User u WHERE u.userId = :userId")
     Optional<User> lockByUserId(String userId);
 
-    @Query("SELECT u FROM User u JOIN FETCH u.secret JOIN FETCH u.preference WHERE u.active = true")
+    @Query("SELECT u FROM User u JOIN FETCH u.secret LEFT JOIN FETCH u.preference WHERE u.active = true")
     List<User> findAllActiveWithSecretAndPreference();
 }

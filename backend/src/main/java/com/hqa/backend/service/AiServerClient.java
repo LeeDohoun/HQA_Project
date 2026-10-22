@@ -50,10 +50,6 @@ public class AiServerClient {
         return postForMap("/chat", payload, "AI 서버가 채팅 요청을 처리하지 못했습니다");
     }
 
-    public Map<String, Object> getTradingStatus() {
-        return getForMap("/trading/status");
-    }
-
     public Map<String, Object> getTradingOrders(String date, int limit) {
         StringBuilder path = new StringBuilder("/trading/orders?limit=").append(limit);
         if (date != null && !date.isBlank()) {
@@ -63,19 +59,13 @@ public class AiServerClient {
     }
 
     public Map<String, Object> getStockNews(String stockCode, int limit) {
+        validateStockCode(stockCode);
         return getForMap("/stocks/" + stockCode + "/news?limit=" + limit);
     }
 
     public Map<String, Object> getStockDisclosures(String stockCode, int limit) {
+        validateStockCode(stockCode);
         return getForMap("/stocks/" + stockCode + "/disclosures?limit=" + limit);
-    }
-
-    public Map<String, Object> previewTradeDecision(Map<String, Object> payload) {
-        return postForMap("/trading/decision/preview", payload, "AI 서버가 매매 미리보기를 처리하지 못했습니다");
-    }
-
-    public Map<String, Object> executeTradeDecision(Map<String, Object> payload) {
-        return postForMap("/trading/decision/execute", payload, "AI 서버가 매매 실행을 처리하지 못했습니다");
     }
 
     public Map<String, Object> submitMultiThemeTrade(Map<String, Object> payload) {
@@ -109,23 +99,30 @@ public class AiServerClient {
 
 
     private Map<String, Object> getForMap(String path) {
-        HttpRequest request = requestBuilder(path).GET().build();
-        if (privileged(path)) {
-            HttpResponse<String> response = send(request);
-            ensureSuccess(path, response, "AI runtime request failed");
-            return parseMap(response.body());
+        HttpResponse<String> response = send(requestBuilder(path).GET().build());
+        ensureSuccess(path, response, "AI 서버에서 데이터를 불러오지 못했습니다");
+        Map<String, Object> result = parseMap(response.body());
+        if (result.containsKey("error")) {
+            throw new ApiException(ErrorCode.SERVICE_UNAVAILABLE, 503,
+                    "AI 데이터 조회에 실패했습니다. 잠시 후 다시 시도해 주세요", null);
         }
+        return result;
+    }
+
+    /** A bounded readiness probe; never exposes the upstream health payload. */
+    public boolean isAvailable() {
         try {
-            HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() >= 200 && response.statusCode() < 300) {
-                return parseMap(response.body());
-            }
-            return Map.of();
-        } catch (IOException | InterruptedException e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
-            return Map.of();
+            HttpResponse<String> response = send(requestBuilder("/health")
+                    .timeout(Duration.ofSeconds(2)).GET().build());
+            return response.statusCode() == 200 && "ok".equals(parseMap(response.body()).get("status"));
+        } catch (ApiException exception) {
+            return false;
+        }
+    }
+
+    private static void validateStockCode(String stockCode) {
+        if (stockCode == null || !stockCode.matches("[0-9]{6}")) {
+            throw new ApiException(ErrorCode.INVALID_REQUEST, 400, "6자리 종목 코드가 필요합니다", null);
         }
     }
 
@@ -161,11 +158,11 @@ public class AiServerClient {
             return http.send(request, HttpResponse.BodyHandlers.ofString());
         } catch (IOException e) {
             throw new ApiException(ErrorCode.SERVICE_UNAVAILABLE, 503,
-                    "AI 서버에 연결할 수 없습니다", properties.getAiServerUrl());
+                    "AI 서버에 연결할 수 없습니다", null);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new ApiException(ErrorCode.SERVICE_UNAVAILABLE, 503,
-                    "AI 서버 요청이 중단되었습니다", e.getMessage());
+                    "AI 서버 요청이 중단되었습니다", null);
         }
     }
 
@@ -174,9 +171,9 @@ public class AiServerClient {
         if (status >= 200 && status < 300) {
             return;
         }
-        log.warn("[AiServerClient] {} failed: {} {}", path, status, response.body());
+        log.warn("[AiServerClient] {} failed with status {}", path, status);
         throw new ApiException(ErrorCode.ANALYSIS_FAILED, 502,
-                failureMessage, status + " " + response.body());
+                failureMessage, null);
     }
 
     private byte[] serialize(Object payload) {
@@ -190,9 +187,12 @@ public class AiServerClient {
 
     private Map<String, Object> parseMap(String body) {
         try {
-            return objectMapper.readValue(body, new TypeReference<>() {});
+            Map<String, Object> result = objectMapper.readValue(body, new TypeReference<>() {});
+            if (result == null) throw new IOException("Expected a JSON object");
+            return result;
         } catch (Exception ignored) {
-            return Map.of();
+            throw new ApiException(ErrorCode.ANALYSIS_FAILED, 502,
+                    "AI 서버 응답 형식이 올바르지 않습니다", null);
         }
     }
 }
