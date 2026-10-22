@@ -242,3 +242,132 @@ def replicate_agreement(first: list[dict], second: list[dict]) -> dict:
     out["risk_manager_actions"] = {"pairs": len(actions), "same": sum(a == b for _, _, a, b in actions),
                                    "changed": [(d, c, a, b) for d, c, a, b in actions if a != b]}
     return out
+
+
+def ic_series(decisions: list[dict], panel: PricePanel, features: Features, name: str, horizon: int) -> list[tuple]:
+    """(day, score IC, rule IC) per decision day, as in `score_ic`."""
+    out = []
+    for row in decisions:
+        previous = panel.shift(row["day"], -1)
+        ranked = {r["stock_code"]: r["price_score"] for r in features.ranked(
+            DecisionView(row["day"], previous, 0, 0, 0, {}, {c: 1.0 for c in panel.names}))}
+        xs, rules, ys = [], [], []
+        for code, roles in (row.get("specialists") or {}).items():
+            scores = {role: value["score"] for role, value in roles.items() if "score" in value}
+            if name == "leader":
+                if len(scores) < 3:
+                    continue
+                score = sum(scores.values()) / 3
+            elif name in scores:
+                score = scores[name]
+            else:
+                continue
+            future = forward_return(panel, code, row["day"], horizon)
+            if future is None or code not in ranked:
+                continue
+            xs.append(score), rules.append(ranked[code]), ys.append(future)
+        ic, rule_ic = _spearman(xs, ys), _spearman(rules, ys)
+        if ic is not None and rule_ic is not None:
+            out.append((row["day"], ic, rule_ic))
+    return out
+
+
+def newey_west_t(values: np.ndarray, lags: int) -> float | None:
+    """Mean / HAC standard error (Bartlett weights), for overlapping-horizon daily series."""
+    n = len(values)
+    if n < 3:
+        return None
+    centered = values - values.mean()
+    variance = float(centered @ centered) / n
+    for lag in range(1, min(lags, n - 1) + 1):
+        weight = 1 - lag / (lags + 1)
+        variance += 2 * weight * float(centered[lag:] @ centered[:-lag]) / n
+    return float(values.mean() / math.sqrt(variance / n)) if variance > 0 else None
+
+
+def ic_robust(decisions: list[dict], panel: PricePanel, features: Features, horizons=(1, 5, 10, 20)) -> dict:
+    """Daily ICs overlap when the horizon is longer than a day; report HAC t-statistics and the
+    non-overlapping subsample (every `horizon`-th decision day)."""
+    out = {}
+    for horizon in horizons:
+        for name in ("analyst", "quant", "chartist", "leader"):
+            series = ic_series(decisions, panel, features, name, horizon)
+            if len(series) < 3:
+                continue
+            ic = np.array([s[1] for s in series])
+            diff = np.array([s[1] - s[2] for s in series])
+            sparse = ic[::horizon]
+            sparse_diff = diff[::horizon]
+            out[f"{name}_h{horizon}"] = {
+                "days": len(ic), "mean_ic": round(float(ic.mean()), 3),
+                "hac_t": None if (t := newey_west_t(ic, horizon - 1)) is None else round(t, 2),
+                "minus_rule": round(float(diff.mean()), 3),
+                "minus_rule_hac_t": None if (t := newey_west_t(diff, horizon - 1)) is None else round(t, 2),
+                "nonoverlap_days": len(sparse), "nonoverlap_mean_ic": round(float(sparse.mean()), 3),
+                "nonoverlap_minus_rule": round(float(sparse_diff.mean()), 3)}
+    return out
+
+
+def top5_spread(decisions: list[dict], panel: PricePanel, horizon: int = 5) -> dict:
+    """Mean forward return of each day's five highest leader scores (what the RiskManager is shown)
+    minus the other completed stocks, next to the same split by PAPER's rule score."""
+    leader_spreads, rule_spreads = [], []
+    for row in decisions:
+        rows = [(r["stock_code"], r["leader_score"], r.get("price_score")) for r in row["leaders"]
+                if r.get("leader_score") is not None and r.get("price_score") is not None]
+        rets = {code: forward_return(panel, code, row["day"], horizon) for code, _, _ in rows}
+        rows = [r for r in rows if rets[r[0]] is not None]
+        if len(rows) < 7:
+            continue
+        for key, bucket in ((1, leader_spreads), (2, rule_spreads)):
+            ordered = sorted(rows, key=lambda r: -r[key])
+            top = [rets[r[0]] for r in ordered[:5]]
+            rest = [rets[r[0]] for r in ordered[5:]]
+            bucket.append(float(np.mean(top) - np.mean(rest)))
+    leader, rule = np.array(leader_spreads), np.array(rule_spreads)
+    return {"days": len(leader), "horizon": horizon,
+            "leader_top5_minus_rest_pct": round(float(leader.mean()) * 100, 2),
+            "leader_hac_t": None if (t := newey_west_t(leader, horizon - 1)) is None else round(t, 2),
+            "rule_top5_minus_rest_pct": round(float(rule.mean()) * 100, 2),
+            "rule_hac_t": None if (t := newey_west_t(rule, horizon - 1)) is None else round(t, 2)}
+
+
+def gate_difference(decisions: list[dict], panel: PricePanel, horizon: int = 5, samples: int = 5000,
+                    seed: int = 5) -> dict:
+    """BUY minus HOLD mean forward return, with a 95% interval from resampling both groups."""
+    buys, holds = [], []
+    for row in decisions:
+        held = set(row.get("holdings") or [])
+        for plan in row.get("plans") or []:
+            if plan["stock_code"] in held:
+                continue
+            value = forward_return(panel, plan["stock_code"], row["day"], horizon)
+            if value is not None:
+                (buys if plan["action"] == "BUY" else holds).append(value)
+    rng = np.random.default_rng(seed)
+    b, h = np.array(buys), np.array(holds)
+    draws = [rng.choice(b, len(b)).mean() - rng.choice(h, len(h)).mean() for _ in range(samples)]
+    return {"horizon": horizon, "buys": len(b), "holds": len(h),
+            "difference_pct": round(float(b.mean() - h.mean()) * 100, 2),
+            "difference_pct_ci": (round(float(np.percentile(draws, 2.5)) * 100, 2),
+                                  round(float(np.percentile(draws, 97.5)) * 100, 2))}
+
+
+def stops_vs_volatility(decisions: list[dict], panel: PricePanel) -> list[dict]:
+    """Each BUY's stop distance against the stock's daily range before the decision."""
+    out = []
+    for row in decisions:
+        held = set(row.get("holdings") or [])
+        previous = panel.shift(row["day"], -1)
+        for plan in row.get("plans") or []:
+            if plan["action"] != "BUY" or plan["stock_code"] in held:
+                continue
+            history = panel.history(plan["stock_code"], previous).tail(21)
+            daily = history["close"].pct_change().dropna()
+            ranges = ((history["high"] - history["low"]) / history["close"].shift(1)).dropna()
+            entry = float(plan["entry_price"])
+            out.append({"day": row["day"], "code": plan["stock_code"],
+                        "stop_pct": round((float(plan["stop_loss_price"]) / entry - 1) * 100, 2),
+                        "daily_vol_pct": round(float(daily.std()) * 100, 2),
+                        "avg_range_pct": round(float(ranges.mean()) * 100, 2)})
+    return out
