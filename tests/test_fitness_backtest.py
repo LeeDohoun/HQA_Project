@@ -219,9 +219,24 @@ def test_calls_are_refused_in_krx_hours_and_beyond_the_cap(tmp_path):
 def test_summary_metrics_on_a_known_curve():
     curve = [{"day": d, "equity": e, "invested": 0.0, "cash": e, "positions": 0}
              for d, e in zip(DAYS, [100.0, 110.0, 99.0, 99.0, 108.9])]
-    summary = metrics.summarize({"curve": curve, "closed": [], "trades": []}, DAYS[0], DAYS[-1])
+    summary = metrics.summarize({"curve": curve, "closed": [], "trades": [], "initial_cash": 100.0}, DAYS[0], DAYS[-1])
     assert summary["total_return_pct"] == pytest.approx(8.9)
     assert summary["mdd_pct"] == pytest.approx(-10.0)
+
+
+def test_a_round_trip_on_the_first_day_counts_from_the_starting_cash():
+    # Bought at the first open and stopped out the same day: the run ends below its starting cash
+    # although its first close and its last close are equal.
+    bars = {"000001": [(100, 100, 90, 92, 1000)] + flat(92, 4)}
+    plan = Plan("000001", "BUY", size_pct=20.0, exits=[Group("stop", [("current_price", "<=", 95.0)])])
+    result = run(bars, plan, cost_bps=15.0)
+    final = result["curve"][-1]["equity"]
+    assert final == result["curve"][0]["equity"] < result["initial_cash"]
+    summary = metrics.summarize(result, DAYS[0], DAYS[-1])
+    expected = (final / result["initial_cash"] - 1) * 100
+    assert summary["total_return_pct"] == pytest.approx(round(expected, 2))
+    assert summary["mdd_pct"] == pytest.approx(round(expected, 2))
+    assert summary["trades"] == 1 and summary["sharpe"] is not None
 
 
 def test_later_revisions_keep_their_collection_time_so_they_never_conflict():

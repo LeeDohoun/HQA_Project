@@ -11,26 +11,26 @@ PERIODS = {"2024H2": ("2024-08-01", "2024-12-31"), "2025": ("2025-01-01", "2025-
 TRADING_DAYS = 252
 
 
-def _returns(curve: list[dict], start: str, end: str) -> tuple[list[str], np.ndarray, np.ndarray]:
-    """Daily returns inside [start, end], measured from the close before the first day."""
+def _returns(result: dict, start: str, end: str) -> tuple[list[str], np.ndarray, np.ndarray]:
+    """Daily returns inside [start, end], each against the equity at the previous close. A window
+    that begins with the run measures its first day from the run's starting cash: entries fill at
+    that day's open and a same-day stop can close them, so the first day's result counts."""
+    curve = result["curve"]
     days = [row["day"] for row in curve]
     equity = np.array([row["equity"] for row in curve], dtype=float)
     inside = [index for index, day in enumerate(days) if start <= day <= end]
     if not inside:
         return [], np.array([]), np.array([])
     first = inside[0]
-    base = equity[first - 1] if first > 0 else None
+    base = equity[first - 1] if first > 0 else float(result["initial_cash"])
     values = equity[inside]
-    previous = np.concatenate([[base if base is not None else values[0]], values[:-1]])
-    returns = values / previous - 1
-    if base is None:
-        returns[0] = 0.0  # the run starts in cash on its first day; costs show in later days
+    returns = values / np.concatenate([[base], values[:-1]]) - 1
     exposure = np.array([curve[index]["invested"] / curve[index]["equity"] for index in inside])
     return [days[index] for index in inside], returns, exposure
 
 
-def summarize(result: dict, start: str, end: str, initial: float | None = None) -> dict:
-    days, returns, exposure = _returns(result["curve"], start, end)
+def summarize(result: dict, start: str, end: str) -> dict:
+    days, returns, exposure = _returns(result, start, end)
     if not days:
         return {"days": 0}
     growth = np.cumprod(1 + returns)
@@ -90,11 +90,11 @@ def sharpe(returns: np.ndarray) -> float | None:
 def intervals(result: dict, start: str, end: str, benchmark: dict | None = None, **kwargs) -> dict:
     """95% block-bootstrap intervals of annualized return and Sharpe, and of the annualized
     daily excess over the benchmark when one is given (paired on the same days)."""
-    days, returns, _ = _returns(result["curve"], start, end)
+    days, returns, _ = _returns(result, start, end)
     out = {"annualized_return_pct_ci": block_bootstrap(returns, annualized, **kwargs),
            "sharpe_ci": block_bootstrap(returns, sharpe, **kwargs)}
     if benchmark is not None:
-        bench_days, bench, _ = _returns(benchmark["curve"], start, end)
+        bench_days, bench, _ = _returns(benchmark, start, end)
         if bench_days == days:
             out["excess_annualized_pp_ci"] = block_bootstrap(returns - bench,
                                                              lambda r: float(r.mean()) * TRADING_DAYS * 100, **kwargs)
