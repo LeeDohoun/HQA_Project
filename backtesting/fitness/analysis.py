@@ -346,7 +346,9 @@ def gate_difference(decisions: list[dict], panel: PricePanel, horizon: int = 5, 
                 (buys if plan["action"] == "BUY" else holds).append(value)
     rng = np.random.default_rng(seed)
     b, h = np.array(buys), np.array(holds)
-    draws = [rng.choice(b, len(b)).mean() - rng.choice(h, len(h)).mean() for _ in range(samples)]
+    if not len(b) or not len(h):
+        return {"horizon": horizon, "buys": len(b), "holds": len(h), "difference_pct": None, "difference_pct_ci": None}
+    draws =[rng.choice(b, len(b)).mean() - rng.choice(h, len(h)).mean() for _ in range(samples)]
     return {"horizon": horizon, "buys": len(b), "holds": len(h),
             "difference_pct": round(float(b.mean() - h.mean()) * 100, 2),
             "difference_pct_ci": (round(float(np.percentile(draws, 2.5)) * 100, 2),
