@@ -1,5 +1,6 @@
 "use client";
 
+import { BoardMenu } from "@/components/common/board-menu";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { authApi } from "@/lib/api";
@@ -195,6 +196,7 @@ function PreferencePageContent() {
           <div className="wiz-progress-fill" style={{ width: `${progress}%` }} />
         </div>
         <span className="wiz-step-count">{stepIdx + 1} / {totalSteps}</span>
+        <BoardMenu />
       </div>
 
       {/* re-key on step so the card replays its entrance animation */}
@@ -458,11 +460,11 @@ function KisStep({
       <span className="wiz-emoji" aria-hidden>🔑</span>
       <h1 className="wiz-question">증권사 키를 연결해주세요</h1>
       <p className="wiz-hint">
-        AI 분석 결과로 <b>실제 매수·자동매매</b>를 하려면 한국투자증권(KIS) API 키가 필요해요.
+        분석 결과를 바탕으로 <b>계좌 연결·모의 매매</b>를 하려면 한국투자증권(KIS) API 키가 필요해요.
         지금 안 넣어도 둘러보기는 가능해요.
       </p>
 
-      {/* 실전 / 모의 환경 토글 */}
+      {/* 실전 / 모의 환경 토글 — 자동매매·주문은 백엔드가 PAPER 계좌로 제한 */}
       <div className="field">
         <label>투자 환경</label>
         <div className="env-toggle" role="tablist" aria-label="투자 환경">
@@ -487,7 +489,7 @@ function KisStep({
         </div>
         <p className="field-hint">
           {value.kisIsReal
-            ? "⚠️ 실제 자금이 사용돼요. 발급받은 키가 실전용인지 확인해주세요."
+            ? "⚠️ 실계좌는 연결·잔고 조회만 지원해요. 자동매매와 주문은 모의투자 계좌에서만 동작해요."
             : "안전한 모의투자로 먼저 테스트해볼 수 있어요."}
         </p>
       </div>
@@ -508,8 +510,8 @@ function KisStep({
             <div>
               <p className="wiz-explainer-title">왜 필요한가요?</p>
               <p className="wiz-explainer-text">
-                HQA는 직접 주식을 보관하지 않아요. 키를 통해 <b>당신의 증권 계좌</b>에 매수 주문을 대신 넣어주는 구조예요.
-                키가 없으면 AI 분석·차트 조회까지만 사용 가능하고, 실거래/자동매매는 비활성화돼요.
+                HQA는 키를 통해 <b>연결한 계좌</b>의 잔고를 조회해요. 모의투자 계좌라면 모의 주문과 자동매매도 요청해요.
+                키가 없으면 AI 분석·차트 조회까지만 사용 가능하고, 모의 주문과 자동매매는 비활성화돼요.
               </p>
             </div>
           </div>

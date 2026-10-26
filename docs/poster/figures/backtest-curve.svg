@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="440" viewBox="0 0 880 440" font-family="'Apple SD Gothic Neo','Noto Sans KR','Malgun Gothic',system-ui,-apple-system,sans-serif" role="img" aria-label="백테스트 자산 추이">
+<title>백테스트 자산 추이</title>
+<rect width="100%" height="100%" fill="#fcfcfb"/>
+<text x="64.0" y="34.0" font-size="18" fill="#0b0b0b" text-anchor="start" font-weight="700">백테스트 자산 추이 (2026-07-01 ~ 10-16, 시작 = 100)</text>
+<text x="64.0" y="56.0" font-size="13" fill="#898781" text-anchor="start" font-weight="400">같은 24종목·같은 비용. AI는 평균 투자 비중 1.9%로 대부분 현금이었습니다</text>
+<rect x="64" y="70" width="12" height="12" rx="3" fill="#2a78d6"/>
+<text x="82.0" y="80.0" font-size="13" fill="#52514e" text-anchor="start" font-weight="400">AI 파이프라인</text>
+<rect x="179.6" y="70" width="12" height="12" rx="3" fill="#eb6834"/>
+<text x="197.6" y="80.0" font-size="13" fill="#52514e" text-anchor="start" font-weight="400">24종목 동일가중 보유</text>
+<line x1="64.0" y1="390.0" x2="690.0" y2="390.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="54.0" y="394.0" font-size="12" fill="#898781" text-anchor="end" font-weight="400">60</text>
+<line x1="64.0" y1="330.4" x2="690.0" y2="330.4" stroke="#e1e0d9" stroke-width="1"/>
+<text x="54.0" y="334.4" font-size="12" fill="#898781" text-anchor="end" font-weight="400">70</text>
+<line x1="64.0" y1="270.8" x2="690.0" y2="270.8" stroke="#e1e0d9" stroke-width="1"/>
+<text x="54.0" y="274.8" font-size="12" fill="#898781" text-anchor="end" font-weight="400">80</text>
+<line x1="64.0" y1="211.2" x2="690.0" y2="211.2" stroke="#e1e0d9" stroke-width="1"/>
+<text x="54.0" y="215.2" font-size="12" fill="#898781" text-anchor="end" font-weight="400">90</text>
+<line x1="64.0" y1="151.6" x2="690.0" y2="151.6" stroke="#c3c2b7" stroke-width="1"/>
+<text x="54.0" y="155.6" font-size="12" fill="#898781" text-anchor="end" font-weight="400">100</text>
+<line x1="64.0" y1="92.0" x2="690.0" y2="92.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="54.0" y="96.0" font-size="12" fill="#898781" text-anchor="end" font-weight="400">110</text>
+<text x="72.7" y="410.0" font-size="12" fill="#898781" text-anchor="middle" font-weight="400">07/01</text>
+<text x="264.0" y="410.0" font-size="12" fill="#898781" text-anchor="middle" font-weight="400">08/03</text>
+<text x="437.9" y="410.0" font-size="12" fill="#898781" text-anchor="middle" font-weight="400">09/01</text>
+<text x="611.8" y="410.0" font-size="12" fill="#898781" text-anchor="middle" font-weight="400">10/01</text>
+<text x="690.0" y="410.0" font-size="12" fill="#898781" text-anchor="middle" font-weight="400">10/16</text>
+<polyline points="64.0,151.6 72.7,153.7 81.4,153.7 90.1,153.7 98.8,153.7 107.5,153.7 116.2,153.7 124.9,153.7 133.6,153.7 142.2,153.7 150.9,153.7 159.6,153.7 168.3,153.7 177.0,153.7 185.7,153.7 194.4,153.7 203.1,153.7 211.8,155.2 220.5,155.2 229.2,155.2 237.9,155.2 246.6,155.2 255.3,155.2 264.0,155.2 272.7,155.2 281.4,155.2 290.1,155.2 298.8,155.2 307.4,154.5 316.1,155.0 324.8,154.9 333.5,154.1 342.2,152.4 350.9,154.3 359.6,153.8 368.3,153.9 377.0,154.5 385.7,154.4 394.4,155.7 403.1,155.7 411.8,155.7 420.5,155.7 429.2,155.7 437.9,155.7 446.6,155.7 455.2,155.7 463.9,155.7 472.6,155.7 481.3,156.0 490.0,156.0 498.7,156.1 507.4,157.4 516.1,157.4 524.8,157.4 533.5,157.4 542.2,157.7 550.9,152.2 559.6,152.4 568.3,152.7 577.0,152.9 585.7,154.6 594.4,153.8 603.1,154.3 611.8,153.4 620.4,153.8 629.1,151.8 637.8,154.8 646.5,158.8 655.2,160.6 663.9,161.8 672.6,161.8 681.3,161.8 690.0,161.8" fill="none" stroke="#2a78d6" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="690.0" cy="161.8" r="4" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<text x="700.0" y="165.8" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="600">AI 파이프라인 -1.7%</text>
+<polyline points="64.0,151.6 72.7,161.1 81.4,198.1 90.1,194.6 98.8,208.6 107.5,227.8 116.2,255.6 124.9,256.7 133.6,221.0 142.2,246.6 150.9,255.3 159.6,219.8 168.3,243.2 177.0,273.5 185.7,266.2 194.4,253.0 203.1,223.2 211.8,258.8 220.5,260.0 229.2,311.3 237.9,338.5 246.6,342.8 255.3,295.6 264.0,296.8 272.7,273.3 281.4,245.2 290.1,257.1 298.8,246.2 307.4,224.2 316.1,234.9 324.8,222.2 333.5,210.7 342.2,193.5 350.9,209.6 359.6,221.6 368.3,215.8 377.0,231.4 385.7,212.7 394.4,212.3 403.1,216.4 411.8,196.8 420.5,197.5 429.2,188.1 437.9,197.7 446.6,216.5 455.2,220.8 463.9,212.8 472.6,203.5 481.3,203.0 490.0,173.9 498.7,174.6 507.4,185.2 516.1,191.2 524.8,189.7 533.5,182.2 542.2,189.6 550.9,176.1 559.6,181.3 568.3,179.2 577.0,174.7 585.7,168.6 594.4,179.0 603.1,174.2 611.8,164.5 620.4,146.7 629.1,117.6 637.8,136.6 646.5,144.0 655.2,178.5 663.9,189.5 672.6,180.1 681.3,225.9 690.0,212.6" fill="none" stroke="#eb6834" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="690.0" cy="212.6" r="4" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<text x="700.0" y="216.6" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="600">24종목 동일가중 보유 -10.2%</text>
+<circle cx="246.6" cy="342.8" r="4" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"/>
+<text x="256.6" y="346.8" font-size="12" fill="#52514e" text-anchor="start" font-weight="400">최저 -32.1% (07/30)</text>
+</svg>

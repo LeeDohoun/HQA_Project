@@ -76,6 +76,77 @@ class KisClientTest {
         assertThat(transactionIds).hasSize(3);
     }
 
+    @Test
+    void httpErrorRejectionKeepsTheBrokerBodyAndUnsentOrdersAreMarked() {
+        UserSecret secret = PaperTradeStoreTest.user().getSecret();
+        KisClient limited = paperClient(request -> Mono.just(json(HttpStatus.INTERNAL_SERVER_ERROR,
+                "{\"rt_cd\":\"1\",\"msg_cd\":\"EGW00201\",\"msg1\":\"초당 거래건수를 초과하였습니다.\"}")));
+        var rejected = limited.paperOrder("u1", secret, "token", "005930", 1, 100, "SELL");
+        assertThat(rejected).containsEntry("success", false);
+        assertThat(((java.util.Map<?, ?>) rejected.get("response")).get("msg_cd")).isEqualTo("EGW00201");
+        KisClient gateway = paperClient(request -> Mono.just(json(HttpStatus.BAD_GATEWAY, "<html>bad gateway</html>")));
+        assertThat(gateway.paperOrder("u1", secret, "token", "005930", 1, 100, "SELL"))
+                .containsEntry("success", false).doesNotContainKey("response");  // acceptance genuinely unknown
+        KisClient queueFull = paperClient(request -> Mono.error(new IllegalStateException(KisClient.PAPER_RATE_QUEUE_FULL)));
+        assertThat(queueFull.paperOrder("u1", secret, "token", "005930", 1, 100, "SELL"))
+                .containsEntry("success", false).containsEntry("notSent", true);
+    }
+
+    private static final String BALANCE_BODY = "{\"rt_cd\":\"0\",\"output1\":[],\"output2\":[{\"dnca_tot_amt\":\"10000000\","
+            + "\"tot_evlu_amt\":\"10000000\",\"pchs_amt_smtl_amt\":\"0\",\"evlu_pfls_smtl_amt\":\"0\","
+            + "\"scts_evlu_amt\":\"0\",\"nass_amt\":\"10000000\"}]}";
+
+    @Test
+    void readOnlyInquiriesRetryTransientBrokerFailuresButOrdersDoNot() {
+        UserSecret secret = PaperTradeStoreTest.user().getSecret();
+        AtomicInteger balanceCalls = new AtomicInteger();
+        KisClient balance = paperClient(request -> balanceCalls.incrementAndGet() == 1
+                ? Mono.just(json(HttpStatus.INTERNAL_SERVER_ERROR, "{\"rt_cd\":\"1\",\"msg_cd\":\"EGW00201\"}"))
+                : Mono.just(json(HttpStatus.OK, BALANCE_BODY)));
+        assertThat(balance.inquireBalance("u1", secret, "token")).containsEntry("success", true);
+        assertThat(balanceCalls).hasValue(2);
+
+        AtomicInteger priceCalls = new AtomicInteger();
+        KisClient price = paperClient(request -> priceCalls.incrementAndGet() <= KisClient.READ_RETRIES
+                ? Mono.just(json(HttpStatus.BAD_GATEWAY, "<html>bad gateway</html>"))
+                : Mono.just(json(HttpStatus.OK, "{\"rt_cd\":\"0\",\"output\":{\"stck_prpr\":\"12345\"}}")));
+        assertThat(price.inquireCurrentPrice("u1", secret, "token", "005930")).isEqualTo(12345L);
+        assertThat(priceCalls).hasValue(1 + KisClient.READ_RETRIES);
+
+        AtomicInteger downCalls = new AtomicInteger();
+        List<Long> downAt = new ArrayList<>();
+        KisClient down = paperClient(request -> Mono.fromSupplier(() -> {
+            downCalls.incrementAndGet();
+            downAt.add(System.nanoTime());
+            return json(HttpStatus.INTERNAL_SERVER_ERROR, "{}");
+        }));
+        assertThat(down.inquireBalance("u1", secret, "token")).containsEntry("success", false);
+        assertThat(downCalls).hasValue(1 + KisClient.READ_RETRIES);
+        // A burst of 500s lasting several seconds (the 09:00 open) must not swallow every retry.
+        for (int retry = 1; retry < downAt.size(); retry++) {
+            long expectedMillis = Math.min(KisClient.READ_RETRY_DELAY.toMillis() << (retry - 1),
+                    KisClient.READ_RETRY_MAX_DELAY.toMillis());
+            assertThat((downAt.get(retry) - downAt.get(retry - 1)) / 1_000_000).isGreaterThanOrEqualTo(expectedMillis - 50);
+        }
+
+        AtomicInteger refusedCalls = new AtomicInteger();
+        KisClient refused = paperClient(request -> {
+            refusedCalls.incrementAndGet();
+            return Mono.just(json(HttpStatus.FORBIDDEN, "{\"rt_cd\":\"1\"}"));
+        });
+        assertThat(refused.inquireBalance("u1", secret, "token")).containsEntry("success", false);
+        assertThat(refusedCalls).hasValue(1);  // a refusal is not transient
+
+        AtomicInteger orderCalls = new AtomicInteger();
+        KisClient orders = paperClient(request -> {
+            orderCalls.incrementAndGet();
+            return Mono.just(json(HttpStatus.INTERNAL_SERVER_ERROR, "{\"rt_cd\":\"1\",\"msg_cd\":\"EGW00201\"}"));
+        });
+        assertThat(orders.paperOrder("u1", secret, "token", "005930", 1, 100, "BUY")).containsEntry("success", false);
+        assertThat(orders.cancelPaperOrder("u1", secret, "token", "1", "org", 1)).containsEntry("success", false);
+        assertThat(orderCalls).hasValue(2);
+    }
+
     private KisClient paperClient(ExchangeFunction exchange) {
         SecretCipher cipher = mock(SecretCipher.class);
         when(cipher.decrypt(anyString())).thenAnswer(inv -> inv.getArgument(0));

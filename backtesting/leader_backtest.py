@@ -9,10 +9,12 @@ period return.  The output payload is shaped for ``POST /backtest/results``.
 
 import argparse
 import bisect
+import csv
 import json
 import math
+import os
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -25,7 +27,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from backtesting.metrics import max_drawdown as _max_drawdown
+from backtesting.metrics import SleevedEquity, max_drawdown as _max_drawdown, sleeve_count
 from backtesting.temporal_evidence import normalize_ymd
 from src.config.settings import get_data_dir
 from src.ingestion.theme_membership import (
@@ -186,7 +188,9 @@ def run_leader_backtest(
         if not target_by_code:
             raise ValueError(f"theme membership found but no targets matched: theme_key={theme_key}")
     common_calendar = _build_common_calendar(prices, from_ymd, to_ymd, hold_days)
-    rebalance_dates = _select_rebalance_dates(common_calendar, rebalance)
+    market_dates = _market_dates(prices)
+    ineligible_counts: Dict[str, int] = defaultdict(int)
+    rebalance_dates = _evaluable_rebalance_dates(prices, from_ymd, to_ymd, common_calendar, rebalance)
     if not rebalance_dates:
         raise ValueError(f"no rebalance dates in period: {from_ymd}..{to_ymd}")
 
@@ -197,13 +201,15 @@ def run_leader_backtest(
     risk_reject_counts: Dict[str, int] = defaultdict(int)
     equity = 1.0
     benchmark_equity = 1.0
+    strategy_sleeves = SleevedEquity(sleeve_count(rebalance, hold_days))
+    benchmark_sleeves = SleevedEquity(sleeve_count(rebalance, hold_days))
     round_trip_cost = _round_trip_cost_return(
         transaction_cost_bps=transaction_cost_bps,
         slippage_bps=slippage_bps,
         market_impact_bps=market_impact_bps,
     )
 
-    for as_of_ymd in rebalance_dates:
+    for rebalance_index, as_of_ymd in enumerate(rebalance_dates):
         active_target_by_code = _active_target_by_code(target_by_code, memberships, as_of_ymd)
         if len(active_target_by_code) < top_n:
             warnings.append(
@@ -218,7 +224,9 @@ def run_leader_backtest(
             hold_days=hold_days,
             min_history_days=min_history_days,
             exit_config=exit_config,
+            market_dates=market_dates,
         )
+        _add_counts(ineligible_counts, Counter(row["reason"] for row in scored if not row.get("eligible")))
         eligible = [row for row in scored if row.get("eligible")]
         if len(eligible) < top_n:
             warnings.append(f"{as_of_ymd}: eligible stocks {len(eligible)} < top_n {top_n}")
@@ -235,7 +243,7 @@ def run_leader_backtest(
 
         if risk_off_reason:
             warnings.append(f"{as_of_ymd}: {risk_off_reason}")
-            benchmark_equity *= 1.0 + benchmark_net_return
+            benchmark_equity = benchmark_sleeves.add(rebalance_index, benchmark_net_return)
             period_rows.append(
                 {
                     "as_of_date": _fmt_ymd(as_of_ymd),
@@ -283,8 +291,8 @@ def run_leader_backtest(
         selected_net_return = selected_return - round_trip_cost
         portfolio_exit_date = _latest_exit_date(selected)
 
-        equity *= 1.0 + selected_net_return
-        benchmark_equity *= 1.0 + benchmark_net_return
+        equity = strategy_sleeves.add(rebalance_index, selected_net_return)
+        benchmark_equity = benchmark_sleeves.add(rebalance_index, benchmark_net_return)
 
         period_rows.append(
             {
@@ -384,6 +392,7 @@ def run_leader_backtest(
             "rebalance": rebalance,
             "rebalance_count": len(period_rows),
             "hold_days": hold_days,
+            "capital_sleeves": sleeve_count(rebalance, hold_days),
         },
         "strategy": {
             "name": "ai_theme_leader_momentum_v1",
@@ -412,6 +421,7 @@ def run_leader_backtest(
                 "mode": llm_metadata.get("mode", llm_mode if llm_enabled else ""),
                 "candidate_scope": llm_candidate_scope if llm_enabled else "",
                 "horizon": llm_horizon if llm_enabled else "",
+                "agent_score_profile": llm_metadata.get("agent_score_profile", "") if llm_enabled else "",
                 "top_k_meaning": (
                     "all_risk_filtered"
                     if llm_enabled and llm_candidate_scope == "broad" and llm_rerank_top_k <= 0
@@ -461,7 +471,10 @@ def run_leader_backtest(
                 ),
             },
             "exit_counts": _exit_counts(positions),
-            "same_day_ohlc_policy": "stop_or_trailing_stop_before_take_profit",
+            # Why stocks were excluded from the pool and benchmark (summed over rebalances).
+            "ineligible_counts": dict(sorted(ineligible_counts.items())),
+            "same_day_ohlc_policy": SAME_DAY_OHLC_POLICY,
+            "model_version": EXECUTION_MODEL_VERSION,
         },
         "artifacts": {},
         "warnings": warnings + _default_warnings(
@@ -488,14 +501,16 @@ def run_leader_backtest(
         item for item in result["strategy"]["selection_inputs"] if item
     ]
 
-    out_path = _write_result(result, output_dir or data_root / "backtest_results", run_id)
+    resolved_output_dir = output_dir or data_root / "backtest_results"
+    result["artifacts"].update(_write_tabular_artifacts(result, resolved_output_dir, run_id))
+    out_path = _write_result(result, resolved_output_dir, run_id)
     result["artifacts"]["result_json"] = _display_path(out_path)
-    _write_result(result, output_dir or data_root / "backtest_results", run_id)
+    _write_result(result, resolved_output_dir, run_id)
 
     if submit_url:
         submit_status = submit_result(result, submit_url)
         result["artifacts"]["submit_status"] = submit_status
-        _write_result(result, output_dir or data_root / "backtest_results", run_id)
+        _write_result(result, resolved_output_dir, run_id)
 
     return result
 
@@ -539,9 +554,13 @@ def load_price_history(data_dir: Path, theme_key: str) -> Dict[str, pd.DataFrame
         low = _to_float(row.get("low"))
         close = _to_float(row.get("close"))
         volume = _to_float(row.get("volume"))
-        if None in {open_, high, low, close}:
+        if None in {open_, high, low, close} or close <= 0:
             continue
-        if open_ <= 0 or high <= 0 or low <= 0 or close <= 0:
+        if open_ <= 0 and high <= 0 and low <= 0 and not volume:
+            # A halted session (Naver and KRX report 0 open/high/low, the prior close and no
+            # volume) stays as an untradable bar, so a halt is not mistaken for delisting.
+            open_ = high = low = close
+        elif open_ <= 0 or high <= 0 or low <= 0:
             continue
         if high < max(open_, close, low) or low > min(open_, close, high):
             continue
@@ -587,8 +606,10 @@ def load_document_signals(data_dir: Path, theme_key: str) -> List[DocumentSignal
 def submit_result(result: Dict[str, Any], submit_url: str) -> Dict[str, Any]:
     import requests
 
+    token = os.environ.get("HQA_INTERNAL_TOKEN", "").strip()
+    headers = {"X-HQA-Internal-Token": token} if token else {}
     try:
-        response = requests.post(submit_url, json=result, timeout=10)
+        response = requests.post(submit_url, json=result, headers=headers, timeout=10)
         return {
             "ok": response.ok,
             "status_code": response.status_code,
@@ -607,14 +628,17 @@ def _score_universe(
     hold_days: int,
     min_history_days: int,
     exit_config: ExitConfig | None = None,
+    market_dates: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     exit_config = exit_config or ExitConfig()
     raw_rows: List[Dict[str, Any]] = []
+    market_dates = market_dates if market_dates is not None else _market_dates(prices)
     for code, target in target_by_code.items():
         df = prices.get(code)
         if df is None or df.empty:
             continue
         row = _features_for_stock(
+            market_dates=market_dates,
             code=code,
             name=target.stock_name,
             df=df,
@@ -665,8 +689,17 @@ def _score_universe(
     return raw_rows
 
 
+def _market_dates(prices: Dict[str, pd.DataFrame]) -> List[str]:
+    """Union of trading dates across the loaded universe (the market session calendar)."""
+    dates = set()
+    for df in prices.values():
+        dates.update(df["YMD"] if "YMD" in df else df.index.strftime("%Y%m%d"))
+    return sorted(str(value) for value in dates)
+
+
 def _features_for_stock(
     *,
+    market_dates: Optional[List[str]] = None,
     code: str,
     name: str,
     df: pd.DataFrame,
@@ -688,11 +721,31 @@ def _features_for_stock(
     full_pos = df.index.get_loc(known.index[-1])
     if isinstance(full_pos, slice):
         full_pos = full_pos.stop - 1
-    exit_pos = int(full_pos) + hold_days
-    if exit_pos >= len(df):
-        return _ineligible_row(code, name, as_of_ymd, "insufficient_future")
+    full_pos = int(full_pos)
+    entry = df.iloc[full_pos]
+    stock_ymd = df["YMD"] if "YMD" in df else pd.Series(df.index.strftime("%Y%m%d"), index=df.index)
+    if str(stock_ymd.iloc[full_pos]) != as_of_ymd:
+        # No bar on the decision day: entering at an older close is not possible.
+        return _ineligible_row(code, name, as_of_ymd, "no_bar_on_rebalance_date")
+    if float(entry["Volume"] or 0.0) <= 0:
+        return _ineligible_row(code, name, as_of_ymd, "not_traded_on_rebalance_date")
 
-    entry = df.iloc[int(full_pos)]
+    # Hold for N market sessions, not N rows of this stock. A stock whose data stops
+    # early (suspension, delisting) stays in the pool and benchmark and exits at its
+    # last tradable bar; only the end of all data makes a period unevaluable.
+    calendar = market_dates or list(stock_ymd)
+    calendar_pos = bisect.bisect_left(calendar, as_of_ymd)
+    if calendar_pos >= len(calendar) or calendar[calendar_pos] != as_of_ymd:
+        return _ineligible_row(code, name, as_of_ymd, "no_bar_on_rebalance_date")
+    if calendar_pos + hold_days >= len(calendar):
+        return _ineligible_row(code, name, as_of_ymd, "insufficient_future")
+    planned_exit_ymd = calendar[calendar_pos + hold_days]
+    exit_pos = int(bisect.bisect_right(list(stock_ymd), planned_exit_ymd)) - 1
+
+    feature_window = df["Close"].iloc[max(0, full_pos - 150):full_pos + 1]
+    if _has_price_basis_break(feature_window):
+        return _ineligible_row(code, name, as_of_ymd, "price_basis_break_in_features")
+
     closes = known["Close"]
     returns = closes.pct_change().dropna()
     close = float(entry["Close"])
@@ -714,11 +767,16 @@ def _features_for_stock(
     )
     exit_result = _simulate_exit(
         df=df,
-        entry_pos=int(full_pos),
+        entry_pos=full_pos,
         planned_exit_pos=exit_pos,
         entry_price=close,
         exit_config=exit_config,
+        truncated=str(stock_ymd.iloc[exit_pos]) < planned_exit_ymd,
     )
+    if _has_price_basis_break(df["Close"].iloc[full_pos:exit_result["exit_pos"] + 1]):
+        # Unadjusted bars cannot give a return across a split or consolidation, including
+        # one during a halt that delays the exit; the period leaves the pool and benchmark.
+        return _ineligible_row(code, name, as_of_ymd, "price_basis_break_in_holding")
     realized = exit_result["exit_price"] / close - 1.0
 
     return {
@@ -726,7 +784,7 @@ def _features_for_stock(
         "as_of_date": _fmt_ymd(as_of_ymd),
         "entry_date": known.index[-1].strftime("%Y-%m-%d"),
         "exit_date": df.index[exit_result["exit_pos"]].strftime("%Y-%m-%d"),
-        "planned_exit_date": df.index[exit_pos].strftime("%Y-%m-%d"),
+        "planned_exit_date": _fmt_ymd(planned_exit_ymd),
         "exit_reason": exit_result["exit_reason"],
         "stock_name": name,
         "stock_code": code,
@@ -752,6 +810,7 @@ def _simulate_exit(
     planned_exit_pos: int,
     entry_price: float,
     exit_config: ExitConfig,
+    truncated: bool = False,
 ) -> Dict[str, Any]:
     stop_loss = max(0.0, float(exit_config.stop_loss_pct or 0.0)) / 100.0
     take_profit = max(0.0, float(exit_config.take_profit_pct or 0.0)) / 100.0
@@ -762,6 +821,9 @@ def _simulate_exit(
 
     for pos in range(entry_pos + 1, planned_exit_pos + 1):
         row = df.iloc[pos]
+        if float(row["Volume"] or 0.0) <= 0:
+            continue  # halted session: no fills and no new high-water mark
+        open_ = float(row["Open"])
         high = float(row["High"])
         low = float(row["Low"])
         trailing_price = high_water * (1.0 - trailing_stop) if trailing_stop > 0 else None
@@ -778,28 +840,67 @@ def _simulate_exit(
                 active_stop_price = price
                 active_stop_reason = reason
 
+        if take_profit_price is not None and open_ >= take_profit_price:
+            # The first trade of the day is already past the target: it fills at the open,
+            # before any intraday low can reach the stop.
+            return {"exit_pos": pos, "exit_price": float(open_), "exit_reason": "take_profit"}
         if active_stop_price is not None and low <= active_stop_price:
+            # A gap through the stop fills at the open, not at the stop price.
             return {
                 "exit_pos": pos,
-                "exit_price": float(active_stop_price),
+                "exit_price": float(min(open_, active_stop_price)),
                 "exit_reason": active_stop_reason,
             }
 
         if take_profit_price is not None and high >= take_profit_price:
             return {
                 "exit_pos": pos,
-                "exit_price": float(take_profit_price),
+                "exit_price": float(max(open_, take_profit_price)),
                 "exit_reason": "take_profit",
             }
 
         high_water = max(high_water, high)
 
-    exit_ = df.iloc[planned_exit_pos]
+    exit_pos, reason = planned_exit_pos, "holding_period_exit"
+
+    def tradable(pos: int) -> bool:
+        return float(df.iloc[pos]["Volume"] or 0.0) > 0
+
+    if truncated or not tradable(exit_pos):
+        # No trade on the planned exit date (a halt, or no bar that day): sell at the first
+        # tradable close after it. Only when trading never resumes in the data does the
+        # position leave at the last tradable close before it.
+        later = [pos for pos in range(planned_exit_pos + 1, len(df)) if tradable(pos)]
+        earlier = [pos for pos in range(planned_exit_pos, entry_pos, -1) if tradable(pos)]
+        if later:
+            exit_pos, reason = later[0], "exit_delayed_by_halt"
+        else:
+            exit_pos, reason = (earlier[0] if earlier else entry_pos), "stock_data_ended"
     return {
-        "exit_pos": planned_exit_pos,
-        "exit_price": float(exit_["Close"]),
-        "exit_reason": "holding_period_exit",
+        "exit_pos": exit_pos,
+        "exit_price": float(df.iloc[exit_pos]["Close"]),
+        "exit_reason": reason,
     }
+
+
+PRICE_BASIS_BREAK_RETURN = 0.305  # beyond the KRX +/-30% daily limit
+# Bump when fills, exits, eligibility or point-in-time rules change: results written by
+# an older engine must not be resumed as if they were current (proof_validation).
+# overlap-sleeves (2026-10-09): holdings that outlast the rebalance interval share capital
+# through equal sleeves instead of compounding every overlapping cohort on full capital.
+# true-period-ends (2026-10-09): rebalances fall on real week/month ends, never on the data cut-off.
+EXECUTION_MODEL_VERSION = "2026-10-09:prior-day-evidence:halts-kept:gap-fills:open-take-profit:overlap-sleeves:true-period-ends"
+SAME_DAY_OHLC_POLICY = "take_profit_at_open_beyond_target_else_stop_or_trailing_stop_before_take_profit"
+
+
+def _has_price_basis_break(closes: pd.Series) -> bool:
+    """A close-to-close move beyond the daily limit means a price-basis change (split,
+    consolidation, bonus or rights issue) in unadjusted bars."""
+    values = closes.astype(float).to_numpy()
+    if len(values) < 2:
+        return False
+    moves = values[1:] / values[:-1] - 1.0
+    return bool(np.any(np.abs(moves) > PRICE_BASIS_BREAK_RETURN))
 
 
 def _ineligible_row(code: str, name: str, as_of_ymd: str, reason: str) -> Dict[str, Any]:
@@ -821,7 +922,7 @@ def _count_recent_docs(source_index: Dict[str, List[str]], as_of_ymd: str) -> Di
         if lookback is not None:
             lower = (as_of_dt - pd.Timedelta(days=int(lookback))).strftime("%Y%m%d")
         left = bisect.bisect_left(dates, lower) if lower else 0
-        right = bisect.bisect_right(dates, as_of_ymd)
+        right = bisect.bisect_left(dates, as_of_ymd)  # same-day documents are not yet known
         counts[source] = max(0, right - left)
     return counts
 
@@ -865,7 +966,9 @@ def _rerank_with_llm(
         current["llm_candidate_scope"] = llm_candidate_scope
         try:
             llm_result = llm_scorer.score(as_of_ymd=as_of_ymd, row=current)
-            raw_llm_score = float(llm_result.get("llm_score") or deterministic_score)
+            # A genuine 0 is a score; only a missing one falls back to the rule score.
+            missing = llm_result.get("llm_score") is None
+            raw_llm_score = deterministic_score if missing else float(llm_result["llm_score"])
             llm_ranking_score = _effective_llm_ranking_score(llm_result, raw_llm_score)
             current.update(llm_result)
             current["llm_raw_score"] = round(raw_llm_score)
@@ -874,6 +977,11 @@ def _rerank_with_llm(
                 (1.0 - llm_weight) * deterministic_score + llm_weight * llm_ranking_score
             )
         except Exception as exc:
+            # In cache-only mode a miss or error means the stored multi-agent score does
+            # not exist; replacing it with the deterministic score would silently turn an
+            # LLM comparison into a rule-based one.
+            if _env_flag("AGENT_FAIL_ON_LLM_ERROR") or getattr(llm_scorer, "cache_only", False):
+                raise
             current["llm_error"] = str(exc)[:240]
             current["leader_score"] = round(deterministic_score)
             warnings.append(
@@ -898,7 +1006,14 @@ def _top_symbol_payload(row: Dict[str, Any]) -> Dict[str, Any]:
         "leader_score": row["leader_score"],
         "realized_return_pct": _pct(row["realized_return"]),
     }
-    for key in ["deterministic_leader_score", "llm_score", "llm_ranking_score", "llm_confidence"]:
+    for key in [
+        "deterministic_leader_score",
+        "llm_score",
+        "llm_original_score",
+        "llm_ranking_score",
+        "llm_confidence",
+        "llm_score_profile",
+    ]:
         if key in row:
             payload[key] = row[key]
     return payload
@@ -911,9 +1026,11 @@ def _candidate_audit_payload(row: Dict[str, Any]) -> Dict[str, Any]:
         "leader_score",
         "deterministic_leader_score",
         "llm_score",
+        "llm_original_score",
         "llm_raw_score",
         "llm_ranking_score",
         "llm_confidence",
+        "llm_score_profile",
         "llm_candidate_scope",
         "llm_horizon",
         "return_5d",
@@ -942,9 +1059,11 @@ def _optional_prediction_payload(row: Dict[str, Any]) -> Dict[str, Any]:
         for key in [
             "deterministic_leader_score",
             "llm_score",
+            "llm_original_score",
             "llm_raw_score",
             "llm_ranking_score",
             "llm_confidence",
+            "llm_score_profile",
             "llm_theme_fit_score",
             "llm_catalyst_score",
             "llm_risk_score",
@@ -964,6 +1083,8 @@ def _effective_llm_ranking_score(llm_result: Dict[str, Any], raw_llm_score: floa
     horizon = str(llm_result.get("llm_horizon") or "").strip().lower()
     agent_scores = llm_result.get("llm_agent_scores") or {}
     if horizon != "short" or not isinstance(agent_scores, dict):
+        return _clip(raw_llm_score, 0.0, 100.0)
+    if _env_flag("AGENT_DISABLE_SHORT_CHARTIST_FLOOR"):
         return _clip(raw_llm_score, 0.0, 100.0)
 
     chartist = agent_scores.get("chartist") if isinstance(agent_scores.get("chartist"), dict) else {}
@@ -986,6 +1107,10 @@ def _effective_llm_ranking_score(llm_result: Dict[str, Any], raw_llm_score: floa
     )
     short_term_floor = chartist_total - penalty
     return _clip(max(raw_llm_score, short_term_floor), 0.0, 100.0)
+
+
+def _env_flag(name: str) -> bool:
+    return str(os.environ.get(name) or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _score_float(value: Any, default: Any = 50.0) -> float:
@@ -1239,6 +1364,25 @@ def _build_common_calendar(
     return sorted(dates)
 
 
+def _evaluable_rebalance_dates(
+    prices: Dict[str, pd.DataFrame],
+    from_ymd: str,
+    to_ymd: str,
+    common_calendar: List[str],
+    rebalance: str,
+) -> List[str]:
+    """The real last trading day of each week or month that still has hold_days of data after it.
+
+    The common calendar drops each stock's last hold_days bars and stops at to_ymd; picking
+    the "last day" of a period from it made either cut a rebalance (e.g. a September cohort
+    on the 7th that overlapped August's, or December 30 when the run ends on the 31st), so
+    period ends come from the calendar cut at neither end, then must lie in the run."""
+    full = sorted({idx.strftime("%Y%m%d") for df in prices.values() for idx in df.index
+                   if idx.strftime("%Y%m%d") >= from_ymd})
+    evaluable = set(common_calendar)   # already within from_ymd..to_ymd
+    return [ymd for ymd in _select_rebalance_dates(full, rebalance) if ymd in evaluable]
+
+
 def _select_rebalance_dates(calendar: List[str], rebalance: str) -> List[str]:
     if rebalance.upper() in {"D", "DAILY"}:
         return list(calendar)
@@ -1272,6 +1416,52 @@ def _write_result(result: Dict[str, Any], output_dir: str | Path, task_id: str) 
     with path.open("w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
     return path
+
+
+def _write_tabular_artifacts(result: Dict[str, Any], output_dir: str | Path, task_id: str) -> Dict[str, str]:
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    summary_path = out_dir / f"{task_id}-summary.csv"
+    positions_path = out_dir / f"{task_id}-positions.csv"
+    periods_path = out_dir / f"{task_id}-periods.csv"
+
+    summary_row = {
+        "task_id": result.get("task_id", task_id),
+        "theme": result.get("theme", ""),
+        "theme_key": result.get("theme_key", ""),
+        "prediction_model": result.get("prediction_model", ""),
+        **(result.get("metrics") or {}),
+    }
+    _write_csv_rows(summary_path, [summary_row])
+    _write_csv_rows(positions_path, result.get("positions") or [])
+    _write_csv_rows(periods_path, result.get("periods") or [])
+    return {
+        "summary_csv": _display_path(summary_path),
+        "positions_csv": _display_path(positions_path),
+        "periods_csv": _display_path(periods_path),
+    }
+
+
+def _write_csv_rows(path: Path, rows: List[Dict[str, Any]]) -> None:
+    if not rows:
+        path.write_text("", encoding="utf-8")
+        return
+    fieldnames: List[str] = []
+    for row in rows:
+        for key in row.keys():
+            if key not in fieldnames:
+                fieldnames.append(key)
+    with path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, lineterminator="\n")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({key: _csv_value(row.get(key)) for key in fieldnames})
+
+
+def _csv_value(value: Any) -> Any:
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    return value
 
 
 def _display_path(path: str | Path) -> str:

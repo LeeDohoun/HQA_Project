@@ -39,6 +39,7 @@ LLM, 데이터 공급자, 증권사 API를 호출하지 않습니다.
 | `research/backtesting/` | 보존한 과거 실험 산출물과 보고서 |
 
 과거 결과는 [연구 산출물 안내](../research/backtesting/results/README.md)를 참고합니다.
+에이전트 구성 실험(ablation, 비오염 4-agent 재실행)의 원본 산출물은 저장소에 없고 실험 컴퓨터의 `experiment_results/backtesting/agent_architecture_validation/`에 있습니다.
 운영 데이터와 예산/주문 원장은 정리 목적으로 삭제하거나 덮어쓰지 않습니다.
 
 ## 수치 전략
@@ -116,6 +117,32 @@ venv/bin/python -m backtesting validate \
 
 mock 결과는 투자 성능의 근거가 아닙니다. 실제 LLM 실험에는 별도의 비용 승인이 필요합니다.
 
+### 에이전트 구성 실험 옵션
+
+`run`은 결과 JSON 옆에 `<task_id>-summary.csv`, `<task_id>-positions.csv`, `<task_id>-periods.csv`를
+함께 저장합니다. 스프레드시트나 화면에서 바로 읽기 위한 사본이며 JSON이 원본입니다.
+
+`python -m backtesting technical-baseline`은 RSI·볼린저·모멘텀 기준선을 주도주 전략과 같은
+위험 필터·비용 규칙으로 실행합니다. 가격은 로컬 파일에서 읽고 LLM을 호출하지 않습니다.
+`python -m backtesting validation-status`는 저장된 멀티 에이전트 검증 결과를 집계만 하며 API를 호출하지 않습니다.
+
+멀티 에이전트 점수화는 환경변수로 구성 실험을 할 수 있습니다. 모두 기본값은 꺼져 있고, 꺼진 상태의 동작은 이전과 같습니다.
+
+| 환경변수 | 효과 |
+| --- | --- |
+| `AGENT_SCORE_PROFILE` | 저장된 역할별 점수를 다른 조합으로 다시 가중합니다. `current_hybrid_4agent`(기본), `three_agent_no_risk_manager`, `four_agent_supervisor_final`, `four_agent_raw_blend`, `four_agent_risk_adjusted`, `four_agent_plus_liquidity`, `risk_manager_raw_only`, `remove_analyst`, `remove_quant`, `remove_chartist`, `analyst_only`, `quant_only`, `chartist_only`. 결과에 `llm_original_score`, `llm_score_profile`을 남깁니다. |
+| `AGENT_SCORE_CACHE_ONLY=1` | 캐시 미스가 나면 LLM을 호출하지 않고 백테스트 전체를 오류로 중단합니다. 규칙 점수로 대체하지 않습니다. 새 비용 없이 프로필만 비교할 때 사용합니다. |
+| `AGENT_CACHE_LEGACY_KEYS=1` | 과거 실험 재현 전용입니다. 당일 문서가 문맥에 들어가던 시기(프롬프트 v3 이하)에 만든 캐시를 재사용하며, 파일 전체가 현재와 같은 플래그 설정으로 만들어졌을 때만 켭니다. 새 결과에는 쓰지 않습니다. |
+| `AGENT_PURE_FEATURES=1` | 프롬프트에서 수치 `deterministic_leader_score`를 제거합니다. |
+| `AGENT_FREE_RISK_MANAGER=1` | RiskManager가 권장 가중 점수 대신 자체 `final_score`를 산출하고, 그 값을 최종 점수로 사용합니다. |
+| `AGENT_DISABLE_SHORT_CHARTIST_FLOOR=1` | short 구간의 Chartist 하한 보정을 해제합니다. |
+| `AGENT_FAIL_ON_AGENT_FALLBACK=1`, `AGENT_FAIL_ON_LLM_ERROR=1` | 역할 실패나 LLM 오류를 규칙 점수로 대체하지 않고 중단합니다. fallback이 섞인 멀티 에이전트 결과는 플래그와 무관하게 캐시에 저장하지 않습니다. |
+| `LLM_SCHEMA_RETRIES`, `LLM_SCHEMA_TIMEOUT_SECONDS` | 구조화 출력 재시도 횟수(기본 1)와 호출 제한 시간(초, 기본 없음)입니다. 제한 시간은 메인 스레드에서만 적용됩니다. |
+
+멀티 에이전트 캐시 키에는 프롬프트 버전(v4, 리밸런싱 전날까지의 증거)과 프롬프트를 바꾸는 설정(`AGENT_PURE_FEATURES`, `AGENT_FREE_RISK_MANAGER`, 기본값 5가 아닌 `context_docs`)이 포함되어, 설정이 다른 실행끼리 캐시를 공유하지 않습니다. 당일 증거를 쓰던 v3 이전 캐시는 재사용되지 않으며, `AGENT_CACHE_LEGACY_KEYS=1`로 과거 실행을 재현하면 결과 메타데이터의 `legacy_cache_hits`에 그 횟수가 기록됩니다. 연구 실행기는 실행 모델 버전(`execution.model_version`)이나 프롬프트 버전이 다르거나 legacy 캐시를 쓴 저장 결과를 이어받지 않고 다시 실행합니다.
+
+이 옵션으로 만든 결과는 과거 연구 실험이며 현재 PAPER 성능의 근거가 아닙니다. 반복 실행 스크립트는 [scripts/research](../scripts/research/README.md)를 참고합니다.
+
 ## PAPER 관측 평가
 
 ```bash
@@ -131,6 +158,40 @@ buy-and-hold 기록을 직접 제공해야 합니다. 누락된 기준선이나 
 입력 계약과 해석은 [PAPER 운영 안내](../docs/luna-paper-runtime.md)를 참고합니다.
 
 ## 검증 경계
+
+### 체결·시점 규칙 (2026-09-29)
+
+- 문서는 발행 다음 날부터 씁니다. 결정은 기준일 종가에 하고 공시 날짜는 대부분 일 단위라,
+  당일 문서(장 마감 뒤 공시 포함)는 문서 점수와 LLM 문맥에서 모두 제외합니다. 문서에서 추론한
+  테마 편입(`local_corpus_inferred`)도 첫 문서 다음 날부터 유효합니다.
+- 보유 기간은 종목 행 수가 아니라 시장 거래일 기준입니다. 거래정지 봉(네이버·KRX가 시가·고가·저가 0,
+  거래량 0으로 주는 봉)은 버리지 않고 거래 불가 봉으로 둡니다. 청산 예정일에 거래정지이거나 그날 봉이
+  없으면 거래가 재개된 첫 종가(`exit_delayed_by_halt`)에 청산하고, 이후 데이터가 아예 없는 종목만
+  마지막 거래 가능 봉에서 `stock_data_ended`로 청산합니다. 이런 종목도 후보와 벤치마크에 남습니다.
+  모든 종목의 데이터가 끝난 구간만 `insufficient_future`로 평가하지 않습니다.
+- 기준일에 봉이 없거나 거래량이 0인 종목은 진입하지 않습니다. 보유 중 거래량 0 봉에서는 손절·익절이
+  체결되지 않습니다.
+- 시가가 목표가 이상이면 그날 저가와 무관하게 시가로 익절하고, 그 밖에는 손절·트레일링을 익절보다
+  먼저 봅니다. 시가가 손절선을 뚫고 시작하면 시가로 체결합니다.
+- 종가 변화가 ±30.5%를 넘으면 액면분할·병합·무상증자 같은 가격 기준 변경으로 보고, 특성 계산 구간
+  (최근 150거래일)이나 실제 청산 봉까지의 보유 구간(정지로 늦어진 청산 포함)에 걸친 종목을 후보와
+  벤치마크에서 제외합니다. 결과의 `execution.ineligible_counts`에 제외 사유별 건수가 남습니다.
+  수정계수로 보정하지는 않습니다.
+- LLM 점수 0은 유효한 점수이며, 점수가 없을 때만 규칙 점수로 대체합니다.
+- (2026-10-09) 보유 기간이 리밸런싱 간격보다 길면(주간·20일, 월간·60일 등) 자본을 K = ⌈보유일 ÷ 간격⌉개의
+  같은 크기 슬리브로 나누고, i번째 리밸런싱은 슬리브 i mod K에 투자합니다. 결과의 `period.capital_sleeves`에
+  K가 남습니다. 이전에는 겹친 코호트를 모두 원금에 복리로 곱해 수익률·MDD가 크게 왜곡됐습니다. 겹치지 않는
+  설정(주간·5일, 월간·20일)은 결과가 같습니다. 공휴일로 간격이 짧아지면 같은 슬리브의 다음 코호트가 하루에서
+  며칠 일찍 시작할 수 있고, 이 근사는 그대로 둡니다.
+- (2026-10-09) 리밸런싱일은 데이터를 자르기 전 달력의 실제 주·월 마지막 거래일 가운데, 그 뒤로 보유 기간만큼
+  데이터가 남은 날만 씁니다. 이전에는 잘린 달력의 끝(예: 9월 7일)이 월말로 뽑혀 겹치는 코호트가 하나 더 생겼습니다.
+- 진입은 기준일 종가입니다. 신호도 그날 종가·거래량으로 계산하므로 같은 봉에서 신호를 보고 체결하는 가정이며,
+  다음 날 시가 진입보다 낙관적일 수 있습니다.
+
+이 규칙을 적용하기 전의 결과와 LLM 캐시(프롬프트 v3 이하)는 당일 문서와 낙관적 체결을 포함합니다.
+수집 데이터 3종목 주간 리밸런싱 비교에서 총수익이 21.3%에서 13.3%로 낮아졌습니다.
+2026-10-09의 두 수정 뒤에는 실행 모델 버전(`execution.model_version`)이 바뀌어, 저장된 연구 결과는 재사용되지 않고
+다시 실행됩니다. 장기(월간·60일) 비교 수치는 특히 다시 돌려야 합니다.
 
 과거 도구는 공개일/봉 날짜를 필터링하지만, 새 수집 파이프라인의 `available_at`,
 `observed_at`, 정정 버전 이력을 모두 반영하는 재생 엔진은 아닙니다.

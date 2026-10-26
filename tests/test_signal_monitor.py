@@ -4,7 +4,14 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from src.runner.signal_monitor import BackendSignalClient, BackendSnapshotProvider, SignalMonitor, evaluate_condition
+from src.runner.signal_monitor import (BackendSignalClient, BackendSnapshotProvider, SignalMonitor, TriggerRejected,
+                                      evaluate_condition, market_session)
+
+
+@pytest.fixture(autouse=True)
+def market_open(monkeypatch):
+    """Monitor tests run at any hour; the KRX session gate has its own tests below."""
+    monkeypatch.setattr("src.runner.signal_monitor.market_session", lambda at: "open")
 
 
 def test_evaluate_condition_supports_price_comparators():
@@ -421,3 +428,406 @@ def test_enabled_empty_account_requires_no_price_request_or_invented_plan():
     assert not backend.quote_calls
     assert not monitor.last_report["errors"]
     assert not monitor.last_report["uncovered_holdings"]
+
+
+def test_run_forever_keeps_polling_after_transient_backend_errors(monkeypatch):
+    import requests
+    from src.runner import signal_monitor as module
+
+    class FlakyBackend:
+        calls = 0
+
+        def fetch_active_signals(self):
+            FlakyBackend.calls += 1
+            if FlakyBackend.calls == 1:
+                raise requests.ConnectionError("backend restarting")
+            return []
+
+    class Provider:
+        def prepare(self, signals):
+            return {}
+
+    class Audit:
+        events = []
+
+        def append(self, kind, payload):
+            self.events.append((kind, payload))
+            return len(self.events)
+
+    class Stop(Exception):
+        pass
+
+    sleeps = []
+
+    def fake_sleep(seconds):
+        sleeps.append(seconds)
+        if len(sleeps) == 3:
+            raise Stop()
+
+    monkeypatch.setattr(module.time, "sleep", fake_sleep)
+    audit = Audit()
+    monitor = module.SignalMonitor(FlakyBackend(), snapshot_batch_provider=Provider(), audit=audit)
+    with pytest.raises(Stop):
+        monitor.run_forever()
+    assert FlakyBackend.calls == 3
+    failed = [payload for kind, payload in audit.events if kind == "monitor" and payload.get("status") == "failed"]
+    assert len(failed) == 1
+    assert failed[0]["slo_met"] is False and failed[0]["errors"][0]["error_type"] == "ConnectionError"
+    assert monitor.last_report.get("status") != "failed"
+
+
+def test_signal_monitor_import_does_not_load_llm_stack():
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    program = ("import sys\nimport src.runner.signal_monitor\n"
+               "loaded = [m for m in sys.modules if m.startswith(('src.agents', 'src.tools', 'src.utils.llm_queue', 'src.utils.kis_auth'))]\n"
+               "assert not loaded, loaded\n")
+    result = subprocess.run([sys.executable, "-c", program], cwd=Path(__file__).resolve().parents[1],
+                            capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
+
+
+KST = timezone(timedelta(hours=9))
+
+
+@pytest.mark.parametrize("local,expected", [
+    (datetime(2026, 10, 12, 10, 0, tzinfo=KST), "open"),
+    (datetime(2026, 10, 12, 8, 59, tzinfo=KST), "closed"),
+    (datetime(2026, 10, 12, 15, 30, tzinfo=KST), "closed"),     # the close is exclusive
+    (datetime(2026, 10, 9, 10, 0, tzinfo=KST), "closed"),       # Hangul Day
+    (datetime(2026, 10, 10, 10, 0, tzinfo=KST), "closed"),      # Saturday
+    (datetime(2025, 11, 13, 9, 30, tzinfo=KST), "closed"),      # CSAT day with its notice: opens 10:00
+    (datetime(2025, 11, 13, 16, 0, tzinfo=KST), "open"),        # ... and closes 16:30
+    (datetime(2026, 11, 19, 9, 30, tzinfo=KST), "protect"),     # CSAT day, notice still pending
+    (datetime(2026, 11, 19, 16, 0, tzinfo=KST), "protect"),
+    (datetime(2026, 11, 19, 16, 30, tzinfo=KST), "closed"),
+])
+def test_market_session_follows_the_verified_krx_calendar(local, expected):
+    assert market_session(local.astimezone(timezone.utc)) == expected
+
+
+def _two_plan_monitor(session):
+    entry = _v2_signal(signalId="entry")
+    held = protected_signal("u1", "000660")
+    held["signalId"] = "held"
+    backend = RecordingBackend([entry, held])
+    monitor = SignalMonitor(backend, lambda signal: {"current_price": 105 if signal["signalId"] == "entry" else 85,
+                                                     "snapshot_at": NOW.isoformat()},
+                            clock=lambda: NOW, session=lambda at: session)
+    return monitor, backend
+
+
+def test_protective_triggers_go_out_before_entries():
+    monitor, backend = _two_plan_monitor("open")
+    assert monitor.poll_once() == 2
+    assert [(signal_id, trigger["triggerType"]) for signal_id, trigger in backend.triggers] == [
+        ("held", "EXIT"), ("entry", "ENTRY")]
+
+
+def test_unverified_session_hours_send_protection_but_hold_entries():
+    monitor, backend = _two_plan_monitor("protect")
+    assert monitor.poll_once() == 1
+    assert [trigger["triggerType"] for _, trigger in backend.triggers] == ["EXIT"]
+    assert monitor.last_report["deferred"] == 1 and monitor.last_report["session"] == "protect"
+
+
+def test_a_closed_session_evaluates_without_sending_anything():
+    monitor, backend = _two_plan_monitor("closed")
+    assert monitor.poll_once() == 0
+    assert not backend.triggers
+    assert monitor.last_report["deferred"] == 2 and monitor.last_report["checked"] == 2
+
+
+def test_run_forever_makes_no_backend_calls_while_the_market_is_closed(monkeypatch):
+    from src.runner import signal_monitor as module
+
+    class Backend:
+        def fetch_active_signals(self):
+            raise AssertionError("polled while closed")
+
+    class Stop(Exception):
+        pass
+
+    sleeps = []
+
+    def fake_sleep(seconds):
+        sleeps.append(seconds)
+        if len(sleeps) == 2:
+            raise Stop()
+
+    monkeypatch.setattr(module.time, "sleep", fake_sleep)
+    monitor = SignalMonitor(Backend(), lambda _: {}, session=lambda at: "closed")
+    with pytest.raises(Stop):
+        monitor.run_forever()
+    assert monitor.last_report == {}
+
+
+class ScriptedBackend(RecordingBackend):
+    def __init__(self, signals, outcomes):
+        super().__init__(signals)
+        self.outcomes = list(outcomes)
+
+    def trigger_signal(self, signal_id, payload):
+        self.triggers.append((signal_id, payload))
+        outcome = self.outcomes.pop(0) if self.outcomes else {"accepted": True}
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+
+def test_a_settled_rejection_is_not_resent_until_the_plan_changes():
+    signal = _v2_signal()
+    backend = ScriptedBackend([signal], [TriggerRejected("TRIGGER_ALREADY_CONSUMED")])
+    monitor = SignalMonitor(backend, lambda _: {"current_price": 105, "snapshot_at": NOW.isoformat()}, clock=lambda: NOW)
+    assert monitor.poll_once() == 0
+    assert monitor.last_report["rejections"][0]["reason"] == "TRIGGER_ALREADY_CONSUMED"
+    assert monitor.last_report["slo_met"]                 # a refused entry is a decision, not a monitoring failure
+    assert monitor.poll_once() == 0
+    assert len(backend.triggers) == 1
+    assert monitor.last_report["settled"] == [{"signal_id": "s1", "trigger_type": "ENTRY", "group_id": "range",
+                                               "reason": "TRIGGER_ALREADY_CONSUMED"}]
+    signal["planVersion"] = 3
+    assert monitor.poll_once() == 1
+    assert len(backend.triggers) == 2
+
+
+def test_a_refused_sell_is_an_error_and_is_retried_on_the_next_poll():
+    signal = _v2_signal(status="OPEN", conditionPayload={"schema_version": 2, "exit_conditions": [_group("stop", ("<=", 90))]})
+    backend = ScriptedBackend([signal], [TriggerRejected("KIS_RATE_LIMITED")])
+    monitor = SignalMonitor(backend, lambda _: {"current_price": 85, "snapshot_at": NOW.isoformat()}, clock=lambda: NOW)
+    assert monitor.poll_once() == 0
+    assert "KIS_RATE_LIMITED" in monitor.last_report["errors"][0]["error"]
+    assert not monitor.last_report["slo_met"]
+    assert monitor.poll_once() == 1
+    assert len(backend.triggers) == 2
+
+
+def test_an_exit_refused_in_one_plan_state_is_retried_once_the_state_changes():
+    signal = _v2_signal(conditionPayload={"schema_version": 2, "entry_conditions": [_group("range", (">=", 100))],
+                                          "exit_conditions": [_group("stop", ("<=", 90))]})
+    backend = ScriptedBackend([signal], [TriggerRejected("EXIT_STATE_INVALID")])
+    monitor = SignalMonitor(backend, lambda _: {"current_price": 85, "holding_quantity": 3,
+                                                "snapshot_at": NOW.isoformat()}, clock=lambda: NOW)
+    assert monitor.poll_once() == 0
+    assert monitor.poll_once() == 0 and len(backend.triggers) == 1   # still WAITING_ENTRY: not re-sent
+    signal["status"] = "OPEN"                                          # the fill was recorded
+    assert monitor.poll_once() == 1
+    assert [trigger["triggerType"] for _, trigger in backend.triggers] == ["EXIT", "EXIT"]
+
+
+def test_an_accepted_trigger_rests_for_a_quiet_period_before_it_is_sent_again():
+    clock = [NOW]
+    signal = _v2_signal(status="OPEN", conditionPayload={"schema_version": 2, "exit_conditions": [_group("stop", ("<=", 90))]})
+    backend = ScriptedBackend([signal], [])
+    monitor = SignalMonitor(backend, lambda _: {"current_price": 85, "snapshot_at": clock[0].isoformat()},
+                            clock=lambda: clock[0])
+    assert monitor.poll_once() == 1
+    clock[0] = NOW + timedelta(seconds=20)
+    assert monitor.poll_once() == 0
+    assert monitor.last_report["quiet"] == 1
+    clock[0] = NOW + timedelta(seconds=61)
+    assert monitor.poll_once() == 1
+    assert len(backend.triggers) == 2
+
+
+def test_held_shares_under_an_entry_plan_get_their_stop_and_never_a_second_entry():
+    signal = _v2_signal(conditionPayload={"schema_version": 2, "entry_conditions": [_group("range", (">=", 80))],
+                                          "exit_conditions": [_group("stop", ("<=", 90))]})
+    monitor, backend = _monitor(signal, price=85)
+    monitor.price_provider = lambda _: {"current_price": 85, "holding_quantity": 3, "snapshot_at": NOW.isoformat()}
+    assert monitor.poll_once() == 1
+    assert backend.triggers[0][1]["triggerType"] == "EXIT"
+    monitor.price_provider = lambda _: {"current_price": 95, "holding_quantity": 3, "snapshot_at": NOW.isoformat()}
+    assert monitor.poll_once() == 0                     # entry is true at 95, but the shares are already held
+
+
+def test_backend_error_bodies_survive_in_the_raised_error(monkeypatch):
+    import requests
+
+    class Response:
+        status_code = 400
+        text = '{"code":"BAD_REQUEST","message":"UNKNOWN_CONDITION_GROUP"}'
+
+        def raise_for_status(self):
+            raise requests.HTTPError("400 Client Error", response=self)
+
+    monkeypatch.setattr("src.runner.signal_monitor.requests.post", lambda *a, **kw: Response())
+    with pytest.raises(requests.HTTPError, match="UNKNOWN_CONDITION_GROUP"):
+        BackendSignalClient(internal_token="test").trigger_signal("s1", {})
+
+
+def test_internal_token_is_stripped_and_blank_tokens_are_refused():
+    assert BackendSignalClient(internal_token=" token\n").internal_token == "token"
+    with pytest.raises(ValueError, match="HQA_INTERNAL_TOKEN"):
+        BackendSignalClient(internal_token=" \n")
+
+
+def test_an_audit_failure_does_not_turn_a_completed_poll_into_a_failed_one():
+    class BrokenAudit:
+        def append(self, kind, payload):
+            raise OSError("disk full")
+
+    signal = _v2_signal(status="OPEN", conditionPayload={"schema_version": 2, "exit_conditions": [_group("stop", ("<=", 90))]})
+    backend = RecordingBackend([signal])
+    monitor = SignalMonitor(backend, lambda _: {"current_price": 85, "snapshot_at": NOW.isoformat()},
+                            clock=lambda: NOW, audit=BrokenAudit())
+    assert monitor.poll_once() == 1
+    assert monitor.last_report["triggered"] == 1 and "disk full" in monitor.last_report["audit_error"]
+    assert monitor.last_report.get("status") != "failed"
+
+
+def _held_plan(**updates):
+    plan = protected_signal("u1", "000001")
+    plan.update(updates)
+    return plan
+
+
+@pytest.mark.parametrize("plan,reason", [
+    (_held_plan(conditionPayload=None, rejectReason="INVALID_STORED_CONDITIONS"), "plan_conditions_unreadable"),
+    (_held_plan(rejectReason="BROKER_ORDER_ID_NOT_UNIQUE_OR_MISSING"), "protection_blocked:BROKER_ORDER_ID_NOT_UNIQUE_OR_MISSING"),
+    (_held_plan(rejectReason="ORDER_RECONCILIATION_REQUIRED",
+                unresolvedOrders=[{"status": "UNKNOWN", "orderSide": "SELL", "brokerOrderKnown": False}]),
+     "protection_blocked:order_without_broker_id"),
+    (_held_plan(conditionPayload={"schema_version": 2}), "plan_without_exit"),
+    (_held_plan(managedQuantity=1), "partially_managed:1/3"),
+])
+def test_only_a_plan_the_backend_can_sell_counts_as_protection(plan, reason):
+    backend = CoverageBackend(signals=[plan], holdings={"u1": ["000001"]})
+    backend.trigger_signal = lambda *args: {"accepted": True}
+    monitor = SignalMonitor(backend, snapshot_batch_provider=BackendSnapshotProvider(backend))
+    monitor.poll_once()
+    assert [row["reason"] for row in monitor.last_report["uncovered_holdings"]] == [reason]
+    assert {"user_id": "u1", "stock_code": "000001", "error": "missing_protection", "reason": reason} in \
+        monitor.last_report["errors"]
+
+
+def test_a_working_order_with_a_broker_id_still_counts_as_protection():
+    plan = _held_plan(unresolvedOrders=[{"status": "ORDER_SUBMITTED", "orderSide": "SELL", "brokerOrderKnown": True}])
+    backend = CoverageBackend(signals=[plan], holdings={"u1": ["000001"]})
+    monitor = SignalMonitor(backend, snapshot_batch_provider=BackendSnapshotProvider(backend))
+    monitor.poll_once()
+    assert not monitor.last_report["uncovered_holdings"]
+
+
+def test_an_unrecorded_entry_fill_is_reported_only_when_it_outlasts_the_grace_period():
+    plan = _v2_signal(signalId="entry", userId="u1", stockCode="000001")
+    backend = CoverageBackend(signals=[plan], holdings={"u1": ["000001"]})
+    provider = BackendSnapshotProvider(backend)
+    monitor = SignalMonitor(backend, snapshot_batch_provider=provider)
+    monitor.poll_once()
+    assert monitor.last_report["uncovered_holdings"][0]["grace"] is True
+    assert not monitor.last_report["errors"] and not backend.triggers
+    provider._unrecorded_since[("u1", "000001")] = datetime.now(timezone.utc) - timedelta(seconds=61)
+    monitor.poll_once()
+    assert monitor.last_report["errors"] == [{"user_id": "u1", "stock_code": "000001", "error": "missing_protection",
+                                              "reason": "entry_fill_unrecorded"}]
+
+
+def test_capacity_overload_is_reported_while_every_holding_is_still_quoted():
+    backend = CoverageBackend(signals=[protected_signal("u1", code) for code in ("000001", "000002", "000003")],
+                              holdings={"u1": ["000001", "000002", "000003"]})
+    snapshot = backend.fetch_account_snapshot
+    backend.fetch_account_snapshot = lambda user_id: {**snapshot(user_id), "monitorCapacity": 2,
+                                                      "monitorCapacityExceeded": True}
+    monitor = SignalMonitor(backend, snapshot_batch_provider=BackendSnapshotProvider(backend))
+    assert monitor.poll_once() == 3
+    assert backend.quote_calls[-1] == ("u1", ["000001", "000002", "000003"])
+    assert {"user_id": "u1", "error": "monitor_capacity_exceeded:3/2"} in monitor.last_report["errors"]
+
+
+@pytest.mark.parametrize("session,is_error", [("open", True), ("protect", False)])
+def test_market_closed_refusals_are_errors_only_when_the_hours_were_verified(session, is_error):
+    signal = _v2_signal(status="OPEN", conditionPayload={"schema_version": 2, "exit_conditions": [_group("stop", ("<=", 90))]})
+    backend = ScriptedBackend([signal], [TriggerRejected("MARKET_CLOSED")])
+    monitor = SignalMonitor(backend, lambda _: {"current_price": 85, "snapshot_at": NOW.isoformat()},
+                            clock=lambda: NOW, session=lambda at: session)
+    monitor.poll_once()
+    assert monitor.last_report["rejections"][0]["reason"] == "MARKET_CLOSED"
+    assert bool(monitor.last_report["errors"]) is is_error
+
+
+def _tiered_plan(**updates):
+    plan = _v2_signal(status="OPEN", plannedExitAt=(NOW + timedelta(days=3)).isoformat(), conditionPayload={
+        "schema_version": 2, "entry_conditions": [], "invalidation_conditions": [],
+        "exit_conditions": [_group("stop", ("<=", 90))],
+        "reduce_conditions": [
+            {"id": "take-profit-1", "reduce_fraction": 0.5, "all": [{"field": "pnl_rate", "operator": ">=", "value": 5.0}]},
+            {"id": "take-profit-2", "reduce_fraction": 0.5, "all": [{"field": "pnl_rate", "operator": ">=", "value": 10.0}]}]})
+    plan.update(updates)
+    return plan
+
+
+def _priced(price):
+    return lambda _: {"current_price": price, "pnl_rate": (price / 100 - 1) * 100, "holding_quantity": 10,
+                      "snapshot_at": NOW.isoformat()}
+
+
+def test_a_consumed_take_profit_tier_lets_the_next_tier_go_out():
+    backend = ScriptedBackend([_tiered_plan()], [TriggerRejected("TRIGGER_ALREADY_CONSUMED")])
+    monitor = SignalMonitor(backend, _priced(112), clock=lambda: NOW)
+    monitor.poll_once()
+    assert not monitor.last_report["errors"]          # an already-run reduction is not a failure
+    monitor.poll_once()
+    assert [trigger["groupId"] for _, trigger in backend.triggers] == ["take-profit-1", "take-profit-2"]
+    assert monitor.last_report["settled"][0]["group_id"] == "take-profit-1"
+
+
+def test_a_due_planned_exit_never_stands_in_front_of_a_crossed_stop():
+    plan = _tiered_plan(plannedExitAt=(NOW - timedelta(seconds=1)).isoformat())
+    backend = ScriptedBackend([plan], [])
+    monitor = SignalMonitor(backend, _priced(85), clock=lambda: NOW)
+    assert monitor.poll_once() == 1
+    assert backend.triggers[0][1]["groupId"] == "stop"
+
+
+def test_a_refused_planned_exit_is_sent_again_next_poll_while_the_reductions_wait():
+    clock = [NOW]
+    plan = _tiered_plan(plannedExitAt=(NOW - timedelta(seconds=1)).isoformat())
+    backend = ScriptedBackend([plan], [TriggerRejected("ORDER_RECONCILIATION_REQUIRED")])
+    monitor = SignalMonitor(backend, lambda _: {"current_price": 112, "pnl_rate": 12.0, "holding_quantity": 10,
+                                                "snapshot_at": clock[0].isoformat()}, clock=lambda: clock[0])
+    monitor.poll_once()                                 # refused while the backend cancels a working reduction
+    clock[0] = NOW + timedelta(seconds=20)
+    monitor.poll_once()                                 # sent again; the take-profit tiers wait while it is due
+    assert [trigger["groupId"] for _, trigger in backend.triggers] == ["planned-exit", "planned-exit"]
+    assert not monitor.last_report["settled"]
+
+
+def test_a_planned_exit_refused_as_an_unknown_group_is_not_settled():
+    clock = [NOW]
+    plan = _tiered_plan(plannedExitAt=(NOW - timedelta(seconds=1)).isoformat())
+    backend = ScriptedBackend([plan], [TriggerRejected("UNKNOWN_CONDITION_GROUP")])   # backend clock behind
+    monitor = SignalMonitor(backend, lambda _: {"current_price": 100, "pnl_rate": 0.0, "holding_quantity": 10,
+                                                "snapshot_at": clock[0].isoformat()}, clock=lambda: clock[0])
+    monitor.poll_once()
+    clock[0] = NOW + timedelta(seconds=20)
+    monitor.poll_once()
+    assert [trigger["groupId"] for _, trigger in backend.triggers] == ["planned-exit", "planned-exit"]
+
+
+def test_a_crossed_stop_goes_out_ahead_of_a_refused_planned_exit():
+    clock, price = [NOW], [112.0]
+    plan = _tiered_plan(plannedExitAt=(NOW - timedelta(seconds=1)).isoformat())
+    backend = ScriptedBackend([plan], [TriggerRejected("UNKNOWN_CONDITION_GROUP")])
+    monitor = SignalMonitor(backend, lambda _: {"current_price": price[0], "pnl_rate": price[0] - 100, "holding_quantity": 10,
+                                                "snapshot_at": clock[0].isoformat()}, clock=lambda: clock[0])
+    monitor.poll_once()                                 # planned exit refused (backend clock behind)
+    clock[0], price[0] = NOW + timedelta(seconds=20), 85.0
+    monitor.poll_once()
+    assert [trigger["groupId"] for _, trigger in backend.triggers] == ["planned-exit", "stop"]
+
+
+def test_an_order_working_for_one_exit_group_is_not_crowded_by_another_group():
+    clock = [NOW]
+    plan = _v2_signal(status="OPEN", conditionPayload={"schema_version": 2, "exit_conditions": [
+        _group("stop", ("<=", 90)), _group("hard-floor", ("<=", 88))]})
+    backend = ScriptedBackend([plan], [])
+    monitor = SignalMonitor(backend, lambda _: {"current_price": 85, "holding_quantity": 10,
+                                                "snapshot_at": clock[0].isoformat()}, clock=lambda: clock[0])
+    monitor.poll_once()
+    clock[0] = NOW + timedelta(seconds=20)
+    monitor.poll_once()                                 # "stop" rests; "hard-floor" must not cancel its order
+    assert [trigger["groupId"] for _, trigger in backend.triggers] == ["stop"]
+    assert monitor.last_report["quiet"] == 1

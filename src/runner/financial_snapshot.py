@@ -77,8 +77,13 @@ def load_financial_snapshot(data_dir: Path, stock_code: str, as_of: datetime) ->
                         raise ValueError("unsupported financial amount unit")
                     values = {key: _amount(row.get(key), UNITS[unit]) for key in AMOUNTS}
                     fiscal_year, period = int(row["fiscal_year"]), PERIODS[row["report_code"]]
-                    if fiscal_year < as_of.year - 2 or fiscal_year > as_of.year:
-                        raise ValueError("financial reporting year outside allowed window")
+                    if fiscal_year > as_of.year:
+                        raise ValueError("financial reporting year after the analysis date")
+                    if fiscal_year < as_of.year - 2:
+                        # Older statements are collected for history but are outside the
+                        # analysis window; they are not a data problem and must not reach
+                        # the Quant prompt as a gap (it reads them as missing recent data).
+                        continue
                     ratios = {"roe": _ratio(values, "net_income", "equity"),
                               "roa": _ratio(values, "net_income", "assets"),
                               "debt_ratio": _ratio(values, "liabilities", "equity"),

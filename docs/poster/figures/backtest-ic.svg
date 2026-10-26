@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="420" viewBox="0 0 880 420" font-family="'Apple SD Gothic Neo','Noto Sans KR','Malgun Gothic',system-ui,-apple-system,sans-serif" role="img" aria-label="분석 점수의 예측력(IC)">
+<title>분석 점수의 예측력(IC)</title>
+<rect width="100%" height="100%" fill="#fcfcfb"/>
+<text x="24.0" y="34.0" font-size="18" fill="#0b0b0b" text-anchor="start" font-weight="700">분석 점수와 5거래일 뒤 수익의 순위상관 (IC, 2026-07~10)</text>
+<text x="24.0" y="56.0" font-size="13" fill="#898781" text-anchor="start" font-weight="400">0보다 아래 = 점수가 높을수록 이후 수익이 낮았음. 상위 5종목 선정에 쓰는 평균 점수가 가장 낮았습니다</text>
+<line x1="70.0" y1="340.0" x2="850.0" y2="340.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="60.0" y="344.0" font-size="12" fill="#898781" text-anchor="end" font-weight="400">-0.3</text>
+<line x1="70.0" y1="266.9" x2="850.0" y2="266.9" stroke="#e1e0d9" stroke-width="1"/>
+<text x="60.0" y="270.9" font-size="12" fill="#898781" text-anchor="end" font-weight="400">-0.2</text>
+<line x1="70.0" y1="193.7" x2="850.0" y2="193.7" stroke="#e1e0d9" stroke-width="1"/>
+<text x="60.0" y="197.7" font-size="12" fill="#898781" text-anchor="end" font-weight="400">-0.1</text>
+<line x1="70.0" y1="120.6" x2="850.0" y2="120.6" stroke="#c3c2b7" stroke-width="1"/>
+<text x="60.0" y="124.6" font-size="12" fill="#898781" text-anchor="end" font-weight="400">0.0</text>
+<path d="M121.0,120.6 V248.2 Q121.0,252.2 125.0,252.2 H171.0 Q175.0,252.2 175.0,248.2 V120.6 Z" fill="#898781"/>
+<text x="148.0" y="270.2" font-size="13" fill="#0b0b0b" text-anchor="middle" font-weight="500">-0.18</text>
+<text x="148.0" y="366.0" font-size="13" fill="#0b0b0b" text-anchor="middle" font-weight="400">분석가</text>
+<path d="M277.0,120.6 V277.5 Q277.0,281.5 281.0,281.5 H327.0 Q331.0,281.5 331.0,277.5 V120.6 Z" fill="#898781"/>
+<text x="304.0" y="299.5" font-size="13" fill="#0b0b0b" text-anchor="middle" font-weight="500">-0.22</text>
+<text x="304.0" y="366.0" font-size="13" fill="#0b0b0b" text-anchor="middle" font-weight="400">퀀트</text>
+<text x="460.0" y="138.6" font-size="13" fill="#0b0b0b" text-anchor="middle" font-weight="500">0.00</text>
+<text x="460.0" y="366.0" font-size="13" fill="#0b0b0b" text-anchor="middle" font-weight="400">차티스트</text>
+<path d="M589.0,120.6 V299.4 Q589.0,303.4 593.0,303.4 H639.0 Q643.0,303.4 643.0,299.4 V120.6 Z" fill="#2a78d6"/>
+<text x="616.0" y="321.4" font-size="13" fill="#0b0b0b" text-anchor="middle" font-weight="700">-0.25</text>
+<text x="616.0" y="366.0" font-size="13" fill="#0b0b0b" text-anchor="middle" font-weight="600">세 점수 평균</text>
+<text x="616.0" y="382.0" font-size="11" fill="#898781" text-anchor="middle" font-weight="400">(상위 5 선정)</text>
+<text x="772.0" y="138.6" font-size="13" fill="#0b0b0b" text-anchor="middle" font-weight="500">0.00</text>
+<text x="772.0" y="366.0" font-size="13" fill="#0b0b0b" text-anchor="middle" font-weight="400">규칙 가격 점수</text>
+</svg>

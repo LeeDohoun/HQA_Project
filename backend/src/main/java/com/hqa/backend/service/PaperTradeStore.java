@@ -10,8 +10,12 @@ import com.hqa.backend.entity.User;
 import com.hqa.backend.repository.TradePlanReceiptRepository;
 import com.hqa.backend.repository.TradeSignalExecutionRepository;
 import com.hqa.backend.repository.TradeSignalRepository;
+import java.time.Duration;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -24,15 +28,28 @@ import org.springframework.transaction.annotation.Transactional;
 public class PaperTradeStore {
     public static final List<String> ACTIVE = List.of("WAITING_ENTRY", "WAITING_EXIT", "OPEN", "ORDER_SUBMITTED", "PARTIALLY_FILLED");
     public static final List<String> UNRESOLVED = List.of("INTENT", "UNKNOWN", "ORDER_SUBMITTED", "PARTIALLY_FILLED", "CANCEL_REQUESTED");
+    /** Rejections that say nothing about the trade itself; the same trigger may be tried again. */
+    public static final Set<String> TRANSIENT_REJECTIONS = Set.of("KIS_RATE_LIMITED", "ORDER_NOT_SENT_RATE_QUEUE_FULL");
+    /** KIS msg_cd for an order in a stock the account may not trade: 모의투자 주문처리가 안되었습니다(매매불가 종목). */
+    static final String KIS_UNTRADABLE_STOCK = "40070000";
+    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
+    /**
+     * How long after the close a sell placed in the closing call auction keeps working. The match
+     * reaches KIS's order inquiry only some time after the close: on 2026-10-15 KIS paper still
+     * listed the 15:28 sell as unfilled after 15:30:05, and its auction fill was first seen at 15:30:40.
+     */
+    static final Duration CLOSING_MATCH_MARGIN = Duration.ofMinutes(2);
     private final TradeSignalRepository signals;
     private final TradeSignalExecutionRepository executions;
     private final PaperAccountGuard accountGuard;
     private final ObjectMapper mapper;
     private final double quoteCapacity;
     private final TradePlanReceiptRepository receipts;
+    private final KrxSessionCalendar sessions;
 
     public PaperTradeStore(TradeSignalRepository signals, TradeSignalExecutionRepository executions,
             PaperAccountGuard accountGuard, ObjectMapper mapper, TradePlanReceiptRepository receipts,
+            KrxSessionCalendar sessions,
             @Value("${hqa.kis-paper-requests-per-second:1}") double requestsPerSecond,
             @Value("${hqa.paper-account-reserved-requests-per-second:0.5}") double reservedRequests) {
         if (!Double.isFinite(requestsPerSecond) || !Double.isFinite(reservedRequests)
@@ -44,6 +61,7 @@ public class PaperTradeStore {
         this.accountGuard = accountGuard;
         this.mapper = mapper;
         this.receipts = receipts;
+        this.sessions = sessions;
         this.quoteCapacity = Math.floor((requestsPerSecond - reservedRequests) * 20);
     }
 
@@ -166,7 +184,14 @@ public class PaperTradeStore {
         signal.setPlanVersion(version);
         signal.setEntryValidUntil(expiry);
         signal.setExpiresAt(expiry);
-        signal.setPlannedExitAt(request.plannedExitAt());
+        OffsetDateTime plannedExit = request.plannedExitAt();
+        if ("OPEN".equals(signal.getStatus()) && signal.getPlannedExitAt() != null
+                && (plannedExit == null || plannedExit.isAfter(signal.getPlannedExitAt()))) {
+            // A held position's time exit never moves later; re-issued plans would otherwise roll it
+            // forward every analysis cycle. Conditions can still exit earlier.
+            plannedExit = signal.getPlannedExitAt();
+        }
+        signal.setPlannedExitAt(plannedExit);
         signal.setManagedQuantity(held);
         signal.setAccountBinding(accountGuard.binding(user));
         signal.setAnalysisAsOf(request.analysisAsOf());
@@ -177,12 +202,19 @@ public class PaperTradeStore {
         return saved;
     }
 
+    /**
+     * Records the order a trigger is about to send: a limit at {@code orderPrice}, which must be on
+     * the KRX price grid, for a trigger seen at the {@code quote}.
+     */
     @Transactional
     public TradeSignalExecution claim(String signalId, int version, TradeConditions.TriggerType type,
-            String groupId, Map<String, Object> account, long price, long powerCash, long powerQuantity,
+            String groupId, Map<String, Object> account, long quote, long orderPrice, long powerCash, long powerQuantity,
             Double fraction, OffsetDateTime now) {
+        if (!KrxTickSize.isValid(orderPrice)) throw new IllegalArgumentException("ORDER_PRICE_OFF_KRX_TICK");
         User user = lock(signals.ownerOf(signalId).orElseThrow());
-        requireEnabledPaper(user);
+        boolean buy = type == TradeConditions.TriggerType.ENTRY;
+        if (buy) requireEnabledPaper(user);
+        else requireProtectablePaper(user);
         TradeSignal signal = signals.findById(signalId).orElseThrow();
         if (signal.getPlanVersion() != version || !"PAPER".equals(signal.getAccountMode())) {
             throw new IllegalStateException("STALE_PLAN_VERSION");
@@ -194,15 +226,34 @@ public class PaperTradeStore {
         if (capturedAt.isAfter(now.plusSeconds(5)) || capturedAt.isBefore(now.minusSeconds(20))) {
             throw new IllegalStateException("ACCOUNT_SNAPSHOT_STALE");
         }
-        boolean buy = type == TradeConditions.TriggerType.ENTRY;
         if (buy && !"WAITING_ENTRY".equals(signal.getStatus())) throw new IllegalStateException("ENTRY_STATE_INVALID");
         if (!buy && !"OPEN".equals(signal.getStatus())) throw new IllegalStateException("EXIT_STATE_INVALID");
         if (executions.findByUserIdAndStatusIn(signal.getUserId(), UNRESOLVED).stream()
                 .anyMatch(item -> signalId.equals(item.getSignalId()))) throw new IllegalStateException("ORDER_RECONCILIATION_REQUIRED");
         String base = signalId + ":" + version + ":" + type.name() + ":" + groupId;
-        List<TradeSignalExecution> previous = executions.findBySignalId(signalId).stream()
+        List<TradeSignalExecution> history = executions.findBySignalId(signalId);
+        List<TradeSignalExecution> previous = history.stream()
                 .filter(item -> item.getTriggerKey() != null && item.getTriggerKey().startsWith(base + ":")).toList();
-        if (!previous.isEmpty() && (buy || type == TradeConditions.TriggerType.REDUCE)) {
+        String fingerprint = "";
+        if (type == TradeConditions.TriggerType.REDUCE) {
+            // Every analysis cycle re-issues the plan with a new version; a reduction that already
+            // ran must not run again just because the same group arrived in a newer version.
+            TradeConditions.Group group = TradeConditions.groups(conditions(signal), type).stream()
+                    .filter(item -> item.id().equals(groupId)).findFirst().orElse(null);
+            if (group != null) {
+                fingerprint = TradeConditions.fingerprint(group);
+                String marker = ":REDUCE:" + groupId + ":" + fingerprint + ":";
+                if (history.stream().anyMatch(item -> item.getTriggerKey() != null && item.getTriggerKey().contains(marker)
+                        && reductionSpent(item))) {
+                    throw new IllegalStateException("TRIGGER_ALREADY_CONSUMED");
+                }
+            }
+        }
+        boolean consumed = type == TradeConditions.TriggerType.REDUCE
+                ? previous.stream().anyMatch(PaperTradeStore::reductionSpent)
+                : previous.stream().anyMatch(item -> !("REJECTED".equals(item.getStatus())
+                        && TRANSIENT_REJECTIONS.contains(item.getRejectReason())));
+        if (consumed && (buy || type == TradeConditions.TriggerType.REDUCE)) {
             throw new IllegalStateException("TRIGGER_ALREADY_CONSUMED");
         }
         if (previous.stream().anyMatch(item -> !Set.of("CANCELLED", "REJECTED", "FILLED").contains(item.getStatus()))) {
@@ -214,7 +265,7 @@ public class PaperTradeStore {
         if (buy) {
             if (signal.getEntryValidUntil() == null || !signal.getEntryValidUntil().isAfter(now)) throw new IllegalStateException("ENTRY_EXPIRED");
             Double hardStop = TradeConditions.hardStop(conditions(signal));
-            if (hardStop != null && price <= hardStop) throw new IllegalStateException("ENTRY_ALREADY_AT_OR_BELOW_STOP");
+            if (hardStop != null && Math.min(quote, orderPrice) <= hardStop) throw new IllegalStateException("ENTRY_ALREADY_AT_OR_BELOW_STOP");
             if (!Boolean.TRUE.equals(account.get("entryEligible"))) throw new IllegalStateException(String.valueOf(account.get("entryBlockReason")));
             if (actualHeld > 0) throw new IllegalStateException("HOLDING_ALREADY_EXISTS");
             if (executions.countByUserIdAndOrderSideAndSubmittedAtAfter(signal.getUserId(), "BUY",
@@ -227,7 +278,7 @@ public class PaperTradeStore {
             double target = Double.parseDouble(signal.getPositionSize().replace("%", ""));
             long allocation = (long) Math.floor(equity * Math.min(target, PaperAccountSnapshotService.MAX_POSITION_PCT) / 100);
             long spend = Math.max(0, Math.min(allocation, cash - reserved));
-            quantity = Math.toIntExact(Math.min(spend / price, powerQuantity));
+            quantity = Math.toIntExact(Math.min(spend / orderPrice, powerQuantity));
         } else {
             long managed = Math.min(signal.getManagedQuantity(), actualHeld);
             signal.setManagedQuantity(Math.toIntExact(managed));
@@ -241,7 +292,7 @@ public class PaperTradeStore {
         execution.setUserId(signal.getUserId());
         execution.setStockCode(signal.getStockCode());
         execution.setAccountBinding(signal.getAccountBinding());
-        execution.setTriggerKey(base + ":" + previous.size());
+        execution.setTriggerKey(base + ":" + (fingerprint.isEmpty() ? "" : fingerprint + ":") + previous.size());
         execution.setTriggerType(type.name());
         execution.setOrderSide(buy ? "BUY" : "SELL");
         execution.setOrderType("LIMIT");
@@ -249,11 +300,11 @@ public class PaperTradeStore {
         execution.setQuantity(quantity);
         execution.setSubmittedQuantity(quantity);
         execution.setFilledQuantity(0);
-        execution.setOrderPrice(price);
-        execution.setCurrentPrice(price);
+        execution.setOrderPrice(orderPrice);
+        execution.setCurrentPrice(quote);
         execution.setSubmittedAt(now);
-        execution.setOrderExpiresAt(now.plusMinutes(buy ? 5 : 2));
-        execution.setReservedCash(buy ? Math.multiplyExact((long) quantity, price) : 0);
+        execution.setOrderExpiresAt(orderExpiry(buy, now));
+        execution.setReservedCash(buy ? Math.multiplyExact((long) quantity, orderPrice) : 0);
         signal.setRejectReason(null);
         signals.save(signal);
         return executions.saveAndFlush(execution);
@@ -273,11 +324,16 @@ public class PaperTradeStore {
             execution.setOrderId(orderId);
             execution.setOrderOrganization(text(output.get("KRX_FWDG_ORD_ORGNO")));
             execution.setStatus("ORDER_SUBMITTED");
+        } else if (Boolean.TRUE.equals(response.get("notSent"))) {
+            execution.setStatus("REJECTED");
+            execution.setReservedCash(0L);
+            execution.setRejectReason("ORDER_NOT_SENT_RATE_QUEUE_FULL");
         } else if (raw instanceof Map<?, ?> map && map.get("rt_cd") != null
                 && !"0".equals(String.valueOf(map.get("rt_cd")))) {
             execution.setStatus("REJECTED");
             execution.setReservedCash(0L);
-            execution.setRejectReason("KIS_ORDER_REJECTED");
+            // EGW00201: KIS per-second request limit; the order itself was not judged.
+            execution.setRejectReason("EGW00201".equals(String.valueOf(map.get("msg_cd"))) ? "KIS_RATE_LIMITED" : "KIS_ORDER_REJECTED");
         } else {
             execution.setStatus("UNKNOWN");
             execution.setRejectReason("ORDER_ACCEPTANCE_UNKNOWN");
@@ -390,11 +446,92 @@ public class PaperTradeStore {
         signals.save(signal);
     }
 
+    /** Adopts the broker order an operator found for an UNKNOWN submission; reconciliation then resumes. */
+    @Transactional
+    public TradeSignalExecution adoptBrokerOrder(String executionId, String orderId, String organization,
+            String note, OffsetDateTime now) {
+        lock(executions.ownerOf(executionId).orElseThrow());
+        TradeSignalExecution execution = executions.findById(executionId).orElseThrow();
+        requireAwaitingOperator(execution);
+        execution.setOrderId(orderId);
+        if (organization != null && !organization.isBlank()) execution.setOrderOrganization(organization);
+        execution.setStatus("ORDER_SUBMITTED");
+        execution.setRejectReason(null);
+        execution.setKisResponse(operatorRecord(execution, "ADOPTED_BROKER_ORDER", note, now));
+        return releaseFromOperator(execution);
+    }
+
+    /** Records an operator's finding that the broker never received an UNKNOWN submission. */
+    @Transactional
+    public TradeSignalExecution confirmNotSubmitted(String executionId, String note, OffsetDateTime now) {
+        lock(executions.ownerOf(executionId).orElseThrow());
+        TradeSignalExecution execution = executions.findById(executionId).orElseThrow();
+        requireAwaitingOperator(execution);
+        execution.setStatus("REJECTED");
+        execution.setReservedCash(0L);
+        execution.setRejectReason("OPERATOR_CONFIRMED_NOT_SUBMITTED");
+        execution.setKisResponse(operatorRecord(execution, "CONFIRMED_NOT_SUBMITTED", note, now));
+        return releaseFromOperator(execution);
+    }
+
+    /**
+     * A reduction that sold nothing because its limit order expired or was cancelled unfilled, was
+     * never sent, or was confirmed by an operator as never submitted did not happen and may run
+     * again. One that sold, is still in flight, or was judged and refused by the broker counts as
+     * done: a partial fill is not reduced twice, and a refused order is not re-sent every poll.
+     */
+    private static boolean reductionSpent(TradeSignalExecution item) {
+        int filled = item.getFilledQuantity() == null ? 0 : item.getFilledQuantity();
+        if (filled > 0) return true;
+        if ("CANCELLED".equals(item.getStatus())) return false;
+        return !("REJECTED".equals(item.getStatus()) && (TRANSIENT_REJECTIONS.contains(item.getRejectReason())
+                || "OPERATOR_CONFIRMED_NOT_SUBMITTED".equals(item.getRejectReason())));
+    }
+
+    /**
+     * Reconciliation cancels a limit order once it expires: an entry after 5 minutes, a sell after
+     * 2, so that a sell the price has left is placed again at the new price. In the closing call
+     * auction KRX only collects orders, and matches them once at the close, so a sell placed then
+     * works until the match has been reported. Placing it again would not change its price (no
+     * trade moves the price before the match) and could leave the match without an order.
+     */
+    private OffsetDateTime orderExpiry(boolean buy, OffsetDateTime now) {
+        if (buy) return now.plusMinutes(5);
+        return sessions.closingAuctionClose(now).map(close -> close.plus(CLOSING_MATCH_MARGIN)).orElse(now.plusMinutes(2));
+    }
+
+    /** Only an UNKNOWN order without a broker ID waits for an operator; nothing else may be changed this way. */
+    public static void requireAwaitingOperator(TradeSignalExecution execution) {
+        if (!"UNKNOWN".equals(execution.getStatus()) || (execution.getOrderId() != null && !execution.getOrderId().isBlank())) {
+            throw new IllegalStateException("EXECUTION_NOT_AWAITING_OPERATOR");
+        }
+    }
+
+    private TradeSignalExecution releaseFromOperator(TradeSignalExecution execution) {
+        TradeSignalExecution saved = executions.saveAndFlush(execution);
+        TradeSignal signal = signals.findById(execution.getSignalId()).orElseThrow();
+        signal.setRejectReason(null);
+        signals.save(signal);
+        return saved;
+    }
+
+    private String operatorRecord(TradeSignalExecution execution, String action, String note, OffsetDateTime now) {
+        Map<String, Object> record = new LinkedHashMap<>();
+        record.put("operatorResolution", Map.of("action", action, "note", note, "at", now.toString()));
+        record.put("previousResponse", execution.getKisResponse());
+        return json(record);
+    }
+
     private User lock(String userId) {
         return accountGuard.lock(userId);
     }
     private static void requireEnabledPaper(User user) {
         if (!user.isActive() || !user.isAutoTradeEnabled()) throw new IllegalStateException("AUTO_TRADE_DISABLED");
+        if (user.getSecret() == null || user.getSecret().isKisIsReal()) throw new IllegalStateException("PAPER_ACCOUNT_REQUIRED");
+    }
+    /** Protective sells need an active PAPER user; the auto-trade switch only gates new entries. */
+    private static void requireProtectablePaper(User user) {
+        if (!user.isActive()) throw new IllegalStateException("USER_INACTIVE");
         if (user.getSecret() == null || user.getSecret().isKisIsReal()) throw new IllegalStateException("PAPER_ACCOUNT_REQUIRED");
     }
     @Transactional(readOnly = true)
@@ -406,6 +543,38 @@ public class PaperTradeStore {
     }
     public boolean hasReceipt(String key) { return receipts.existsById(key); }
     public int monitorCapacity() { return (int) quoteCapacity; }
+
+    /**
+     * Stocks KIS refused to buy for this account as untradable (msg_cd 40070000). A contest account
+     * trades only a restricted list whose rules are not published: on 2026-10-16 KIS refused three
+     * 046970 buys for one while a regular PAPER account bought the stock. The analysis leaves these
+     * stocks out of the account's new entries.
+     *
+     * <p>A refusal counts for the rest of its trading day and all of the next one (one on Friday
+     * 2026-10-16 counts through Monday 10-19). After that the stock may be proposed again, and a new
+     * refusal counts afresh, so a lifted restriction is noticed within two trading days and a lasting
+     * one costs about one refused order every second trading day.
+     */
+    @Transactional(readOnly = true)
+    public List<String> untradableStockCodes(String userId, String accountBinding, OffsetDateTime now) {
+        LocalDate today = now.atZoneSameInstant(KST).toLocalDate();
+        OffsetDateTime since = sessions.previousTradingDay(today).atStartOfDay(KST).toOffsetDateTime();
+        return executions.rejectedBuysSince(userId, accountBinding, since).stream()
+                .filter(item -> KIS_UNTRADABLE_STOCK.equals(kisMessageCode(item.getKisResponse())))
+                .map(TradeSignalExecution::getStockCode).distinct().sorted().toList();
+    }
+
+    /** KIS's msg_cd in an order response {@link #acknowledge} recorded, or "" when it has none. */
+    private String kisMessageCode(String recorded) {
+        if (recorded == null) return "";
+        try {
+            Map<?, ?> response = mapper.readValue(recorded, Map.class);
+            Object body = response == null ? null : response.get("response");
+            return body instanceof Map<?, ?> map ? text(map.get("msg_cd")).trim() : "";
+        } catch (JsonProcessingException ex) {
+            return "";
+        }
+    }
     private String json(Object value) {
         try { return mapper.writeValueAsString(value); }
         catch (JsonProcessingException ex) { throw new IllegalArgumentException("Invalid JSON payload", ex); }

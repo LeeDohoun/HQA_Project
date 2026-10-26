@@ -19,6 +19,15 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _had_session(day) -> bool:
+    """Whether KRX traded on ``day``; an unverifiable calendar keeps the 08:00 gate closed."""
+    try:
+        from src.runner.trading_calendar import is_trading_day
+        return is_trading_day(day.isoformat())
+    except Exception:
+        return True
+
+
 class KrxChartCollector:
     """KRX Open API 일별매매정보 기반 OHLCV 수집기."""
 
@@ -50,8 +59,14 @@ class KrxChartCollector:
             raise ValueError("KRX chart dates must be YYYYMMDD")
         start = datetime.strptime(from_date, "%Y%m%d").date()
         end = datetime.strptime(to_date, "%Y%m%d").date()
-        if start > end or end >= _now().astimezone(KST).date():
+        now = _now().astimezone(KST)
+        if start > end or end >= now.date():
             raise ValueError("KRX chart range must be ordered and exclude current and future KST dates")
+        yesterday = now.date() - timedelta(days=1)
+        if now.hour < 8 and end >= yesterday and _had_session(yesterday):
+            # Before 08:00 yesterday's session may be unpublished, which would publish a
+            # generation without its bar; after a weekend or holiday every session is out.
+            raise ValueError("KRX daily data for the previous session is published at 08:00 KST; collect after 08:00")
         records: List[MarketRecord] = []
         cursor = start
         while cursor <= end:
@@ -80,10 +95,14 @@ class KrxChartCollector:
             response = self.session.get(url, params={"basDd": bas_dd}, headers={"AUTH_KEY": self.api_key},
                                         timeout=20, allow_redirects=False)
             if type(response.status_code) is not int or not 200 <= response.status_code < 300:
-                raise requests.HTTPError("KRX chart response requires a successful HTTP status")
+                status = response.status_code if type(response.status_code) is int else "invalid"
+                raise requests.HTTPError(f"KRX chart response requires a successful HTTP status status={status}")
         except requests.RequestException as exc:
-            # Provider messages and request URLs can echo authentication material.
-            raise requests.RequestException(f"KRX chart request failed ({type(exc).__name__})") from None
+            # Provider messages and request URLs can echo authentication material; only the
+            # numeric HTTP status is kept so rate limits (status=429) stay detectable.
+            match = re.search(r"status=(\d{3})$", str(exc)) if isinstance(exc, requests.HTTPError) else None
+            status_text = f" status={match.group(1)}" if match else ""
+            raise requests.RequestException(f"KRX chart request failed ({type(exc).__name__}){status_text}") from None
         try:
             payload = response.json()
         except ValueError:

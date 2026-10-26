@@ -66,6 +66,15 @@ class PaperAccountSnapshotServiceTest {
     }
 
     @Test
+    void stocksKisRefusedAsUntradableAreListedOnlyForAnAccountThatHasThem() {
+        when(kis.inquireBalance(anyString(), any(), anyString())).thenReturn(balance(10000L));
+        assertThat(service.snapshot("u1")).containsEntry("success", true).doesNotContainKey("untradableStockCodes");
+        when(store.untradableStockCodes("u1", "binding", now)).thenReturn(List.of("046970"));
+        assertThat(service.snapshot("u1")).containsEntry("success", true)
+                .containsEntry("untradableStockCodes", List.of("046970"));
+    }
+
+    @Test
     void realCredentialsAndMalformedBalancesFailExplicitly() {
         user.getSecret().setKisIsReal(true);
         assertThat(service.snapshot("u1")).containsEntry("success", false).containsEntry("error", "PAPER_ACCOUNT_REQUIRED");

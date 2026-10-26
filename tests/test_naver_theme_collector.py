@@ -65,3 +65,13 @@ def test_save_collected_themes_writes_theme_target_files(tmp_path):
     ]
     meta = json.loads(store.get_meta_path("반도체").read_text(encoding="utf-8"))
     assert meta["theme_name"] == "반도체"
+
+
+def test_alphanumeric_krx_codes_are_reported_not_silently_dropped(capsys):
+    from src.ingestion.naver_theme import NaverThemeStockCollector
+
+    html = ('<a href="/item/main.naver?code=086520">에코프로</a>'
+            '<a href="/item/main.naver?code=0126Z0">삼성에피스홀딩스</a>')
+    stocks = NaverThemeStockCollector.extract_theme_stocks(html, "바이오")
+    assert [stock.stock_code for stock in stocks] == ["086520"]
+    assert "skipped alphanumeric KRX code 0126Z0" in capsys.readouterr().out

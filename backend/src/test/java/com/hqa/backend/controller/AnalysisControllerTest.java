@@ -65,4 +65,18 @@ class AnalysisControllerTest {
                 .andExpect(status().isBadRequest());
         verifyNoInteractions(service);
     }
+
+    @Test
+    void malformedJsonAndParameterTypesAreClientErrors() throws Exception {
+        var service = mock(AnalysisService.class);
+        var auth = mock(AuthService.class);
+        var mvc = MockMvcBuilders.standaloneSetup(new AnalysisController(service, auth))
+                .setControllerAdvice(new GlobalExceptionHandler()).build();
+        mvc.perform(post("/api/v1/analysis").contentType("application/json").content("{broken"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("errorCode").value("INVALID_REQUEST"));
+        mvc.perform(get("/api/v1/analysis/history/list?page=not-a-number"))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(service);
+    }
 }

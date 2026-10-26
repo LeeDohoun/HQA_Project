@@ -6,6 +6,7 @@ export type ApiError = Error & {
 export type AuthUser = {
   id: string;
   userId: string;
+  nickname: string;
   firstName: string;
   lastName: string;
   role: "user" | "admin";
@@ -351,4 +352,117 @@ export type AnalysisProgressPollResponse = {
   taskId: string;
   status: AnalysisStatus;
   events: AnalysisProgressStoredEvent[];
+};
+
+export type BoardType = "FREE" | "STOCK" | "INQUIRY";
+export type InquiryStatus = "OPEN" | "RESOLVED" | "REJECTED";
+
+export type PostAuthor = {
+  id: string;
+  userId: string;
+  firstName: string;
+  lastName: string;
+  nickname: string;
+  level: number;
+  title: string | null;
+};
+
+/** 목록용. 본문(content)은 담기지 않는다 — 서버가 목록에서 제외해 보낸다. */
+export type PostSummary = {
+  id: string;
+  boardType: BoardType;
+  title: string;
+  stockCode: string | null;
+  commentCount: number;
+  recommendationCount: number;
+  inquiryStatus: InquiryStatus | null;
+  author: PostAuthor;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PostComment = {
+  id: string;
+  content: string;
+  author: PostAuthor;
+  mine: boolean;
+  deletable: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CommentPage = {
+  items: PostComment[];
+  nextCursor: string | null;
+  hasMore: boolean;
+  totalItems: number;
+};
+
+export type PostDetail = {
+  id: string;
+  boardType: BoardType;
+  title: string;
+  content: string;
+  stockCode: string | null;
+  commentCount: number;
+  recommendationCount: number;
+  recommended: boolean;
+  recommendable: boolean;
+  author: PostAuthor;
+  /** 서버가 판정한 삭제 가능 여부. 프론트에서 1시간/댓글수를 다시 계산하지 않는다. */
+  deletable: boolean;
+  editable: boolean;
+  deleteRequestable: boolean;
+  inquiryResolvable: boolean;
+  targetPostDeletable: boolean;
+  deleteBlockedReason: string | null;
+  inquiryStatus: InquiryStatus | null;
+  adminReply: string | null;
+  targetPostId: string | null;
+  comments: PostComment[];
+  nextCommentCursor: string | null;
+  hasMoreComments: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PostListResult = {
+  items: PostSummary[];
+  page: number;
+  size: number;
+  totalItems: number;
+  totalPages: number;
+};
+
+export type BoardProgress = {
+  boardType: Exclude<BoardType, "INQUIRY">;
+  points: number;
+  level: number;
+  title: string;
+  currentLevelPoints: number;
+  nextLevelPoints: number | null;
+  pointsToNextLevel: number;
+  postCount: number;
+  commentCount: number;
+  recommendationsReceived: number;
+};
+
+export type PointEvent = {
+  id: string;
+  boardType: Exclude<BoardType, "INQUIRY">;
+  reason: "POST_CREATED" | "COMMENT_CREATED" | "RECOMMEND_RECEIVED";
+  points: number;
+  postId: string;
+  createdAt: string;
+  reversedAt: string | null;
+};
+
+export type MyProfile = {
+  id: string;
+  userId: string;
+  nickname: string;
+  totalPoints: number;
+  createdAt: string;
+  boards: BoardProgress[];
+  recentEvents: PointEvent[];
 };
