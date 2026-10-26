@@ -167,7 +167,7 @@ flowchart LR
 
 ## 5. 백테스트 결과 (요약)
 
-전체 보고서는 이 문서 끝의 **부록**에 있습니다. 코드는 브랜치 [`claude/laughing-gagarin-808e19`](https://github.com/LeeDohoun/HQA_Project/tree/claude/laughing-gagarin-808e19)의 `backtesting/fitness/`에 있습니다.
+전체 보고서는 이 문서 끝의 **부록**에 있습니다. 코드는 [`backtesting/fitness/`](../../backtesting/fitness)에 있고, 테스트는 `tests/test_fitness_backtest.py`입니다.
 
 ### 5.1 방법
 
@@ -273,7 +273,7 @@ flowchart LR
 ## HQA 구조·엔진 적합성 백테스트 (LLM 재생 포함)
 
 - 작성: 2026-10-22. 측정 대상은 PAPER와 같은 코드·모델·프롬프트·설정입니다(`LLM_PROVIDER=claude_plan`, Claude Opus 5.5, 프롬프트 `hqa-fixed-dag-v8-backend-plan-rules`).
-- 코드는 GitHub 브랜치 `claude/laughing-gagarin-808e19`의 `backtesting/fitness/`에 있습니다.
+- 코드는 이 저장소의 `backtesting/fitness/`에 있습니다.
 - 데이터와 결과 파일은 원본 데이터 보호를 위해 저장소에 올리지 않았습니다(작업 컴퓨터의 `.local/fitness/`).
 - 이 보고서는 측정한 것만 적습니다. 앞으로의 수익을 예측하거나 투자를 권하지 않습니다.
 
