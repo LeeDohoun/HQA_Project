@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="380" viewBox="0 0 880 380" font-family="'Apple SD Gothic Neo','Noto Sans KR','Malgun Gothic',system-ui,-apple-system,sans-serif" role="img" aria-label="모의투자 매매별 수익률">
+<title>모의투자 매매별 수익률</title>
+<rect width="100%" height="100%" fill="#fcfcfb"/>
+<text x="24.0" y="34.0" font-size="18" fill="#0b0b0b" text-anchor="start" font-weight="700">모의투자 매매별 수익률 (청산 완료 6건, 수수료·세금 전)</text>
+<text x="24.0" y="56.0" font-size="13" fill="#898781" text-anchor="start" font-weight="400">빨강 = 이익, 파랑 = 손실 (국내 시세 표기 관례). 손절 4건 중 2건은 개장 갭 하락</text>
+<line x1="340.8" y1="78.0" x2="340.8" y2="348.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="340.8" y="366.0" font-size="12" fill="#898781" text-anchor="middle" font-weight="400">-10%</text>
+<line x1="442.9" y1="78.0" x2="442.9" y2="348.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="442.9" y="366.0" font-size="12" fill="#898781" text-anchor="middle" font-weight="400">-5%</text>
+<line x1="545.0" y1="78.0" x2="545.0" y2="348.0" stroke="#c3c2b7" stroke-width="1"/>
+<text x="545.0" y="366.0" font-size="12" fill="#898781" text-anchor="middle" font-weight="400">0%</text>
+<line x1="647.1" y1="78.0" x2="647.1" y2="348.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="647.1" y="366.0" font-size="12" fill="#898781" text-anchor="middle" font-weight="400">+5%</text>
+<line x1="749.2" y1="78.0" x2="749.2" y2="348.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="749.2" y="366.0" font-size="12" fill="#898781" text-anchor="middle" font-weight="400">+10%</text>
+<text x="24.0" y="102.0" font-size="14" fill="#0b0b0b" text-anchor="start" font-weight="400">우리로 · 관찰</text>
+<text x="24.0" y="117.0" font-size="11" fill="#898781" text-anchor="start" font-weight="400">10/16→10/21</text>
+<path d="M545.0,90.0 H752.5 Q756.5,90.0 756.5,94.0 V108.0 Q756.5,112.0 752.5,112.0 H545.0 Z" fill="#e34948"/>
+<text x="764.5" y="106.0" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="600">+10.4%</text>
+<text x="24.0" y="146.0" font-size="14" fill="#0b0b0b" text-anchor="start" font-weight="400">LG에너지솔루션 · 관찰</text>
+<text x="24.0" y="161.0" font-size="11" fill="#898781" text-anchor="start" font-weight="400">10/13→10/15</text>
+<path d="M545.0,134.0 H556.3 Q560.3,134.0 560.3,138.0 V152.0 Q560.3,156.0 556.3,156.0 H545.0 Z" fill="#e34948"/>
+<text x="568.3" y="150.0" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="600">+0.8%</text>
+<text x="24.0" y="190.0" font-size="14" fill="#0b0b0b" text-anchor="start" font-weight="400">LG에너지솔루션 · 보조</text>
+<text x="24.0" y="205.0" font-size="11" fill="#898781" text-anchor="start" font-weight="400">10/19→10/21</text>
+<path d="M545.0,178.0 H529.2 Q525.2,178.0 525.2,182.0 V196.0 Q525.2,200.0 529.2,200.0 H545.0 Z" fill="#2a78d6"/>
+<text x="517.2" y="194.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="600">-1.0%</text>
+<text x="24.0" y="234.0" font-size="14" fill="#0b0b0b" text-anchor="start" font-weight="400">삼성전기 · 관찰</text>
+<text x="24.0" y="249.0" font-size="11" fill="#898781" text-anchor="start" font-weight="400">10/12→10/13</text>
+<path d="M545.0,222.0 H414.7 Q410.7,222.0 410.7,226.0 V240.0 Q410.7,244.0 414.7,244.0 H545.0 Z" fill="#2a78d6"/>
+<text x="402.7" y="238.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="600">-6.6%</text>
+<text x="24.0" y="278.0" font-size="14" fill="#0b0b0b" text-anchor="start" font-weight="400">대덕전자 · 관찰</text>
+<text x="24.0" y="293.0" font-size="11" fill="#898781" text-anchor="start" font-weight="400">10/22 당일</text>
+<path d="M545.0,266.0 H396.9 Q392.9,266.0 392.9,270.0 V284.0 Q392.9,288.0 396.9,288.0 H545.0 Z" fill="#2a78d6"/>
+<text x="384.9" y="282.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="600">-7.4%</text>
+<text x="24.0" y="322.0" font-size="14" fill="#0b0b0b" text-anchor="start" font-weight="400">이수페타시스 · 관찰</text>
+<text x="24.0" y="337.0" font-size="11" fill="#898781" text-anchor="start" font-weight="400">10/12→10/13</text>
+<path d="M545.0,310.0 H330.4 Q326.4,310.0 326.4,314.0 V328.0 Q326.4,332.0 330.4,332.0 H545.0 Z" fill="#2a78d6"/>
+<text x="318.4" y="326.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="600">-10.7%</text>
+</svg>

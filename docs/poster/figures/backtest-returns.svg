@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="520" viewBox="0 0 880 520" font-family="'Apple SD Gothic Neo','Noto Sans KR','Malgun Gothic',system-ui,-apple-system,sans-serif" role="img" aria-label="백테스트 방식별 총수익">
+<title>백테스트 방식별 총수익</title>
+<rect width="100%" height="100%" fill="#fcfcfb"/>
+<text x="24.0" y="34.0" font-size="18" fill="#0b0b0b" text-anchor="start" font-weight="700">백테스트 방식별 총수익 (2026-07-01 ~ 10-16, 비용 15bp)</text>
+<text x="24.0" y="56.0" font-size="13" fill="#898781" text-anchor="start" font-weight="400">파랑 = HQA AI 파이프라인. 7월 급락이 있던 구간이라 많이 투자한 방식일수록 크게 잃었습니다</text>
+<line x1="379.2" y1="78.0" x2="379.2" y2="462.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="379.2" y="480.0" font-size="12" fill="#898781" text-anchor="middle" font-weight="400">-50%</text>
+<line x1="457.5" y1="78.0" x2="457.5" y2="462.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="457.5" y="480.0" font-size="12" fill="#898781" text-anchor="middle" font-weight="400">-40%</text>
+<line x1="535.8" y1="78.0" x2="535.8" y2="462.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="535.8" y="480.0" font-size="12" fill="#898781" text-anchor="middle" font-weight="400">-30%</text>
+<line x1="614.2" y1="78.0" x2="614.2" y2="462.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="614.2" y="480.0" font-size="12" fill="#898781" text-anchor="middle" font-weight="400">-20%</text>
+<line x1="692.5" y1="78.0" x2="692.5" y2="462.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="692.5" y="480.0" font-size="12" fill="#898781" text-anchor="middle" font-weight="400">-10%</text>
+<line x1="770.8" y1="78.0" x2="770.8" y2="462.0" stroke="#c3c2b7" stroke-width="1"/>
+<text x="770.8" y="480.0" font-size="12" fill="#898781" text-anchor="middle" font-weight="400">0%</text>
+<text x="24.0" y="102.0" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="400">계획 템플릿 (매일 규칙 1위·비중 5%)</text>
+<text x="24.0" y="117.0" font-size="11" fill="#898781" text-anchor="start" font-weight="400">계좌 1,000만</text>
+<path d="M770.8,91.0 H781.1 Q785.1,91.0 785.1,95.0 V107.0 Q785.1,111.0 781.1,111.0 H770.8 Z" fill="#898781"/>
+<text x="793.1" y="106.0" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="600">+1.82%</text>
+<text x="24.0" y="144.0" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="400">무작위 종목 (AI와 같은 날·비중, 500회 평균)</text>
+<text x="24.0" y="159.0" font-size="11" fill="#898781" text-anchor="start" font-weight="400">계좌 1,000만</text>
+<path d="M770.8,133.0 H762.1 Q758.1,133.0 758.1,137.0 V149.0 Q758.1,153.0 762.1,153.0 H770.8 Z" fill="#898781"/>
+<text x="750.1" y="148.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="500">-1.62%</text>
+<text x="24.0" y="186.0" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="700">AI 파이프라인 (HQA)</text>
+<text x="24.0" y="201.0" font-size="11" fill="#898781" text-anchor="start" font-weight="400">계좌 1,000만</text>
+<path d="M770.8,175.0 H761.4 Q757.4,175.0 757.4,179.0 V191.0 Q757.4,195.0 761.4,195.0 H770.8 Z" fill="#2a78d6"/>
+<text x="749.4" y="190.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="700">-1.72%</text>
+<text x="24.0" y="228.0" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="400">규칙 1위로 종목만 교체 (AI와 같은 날·비중)</text>
+<text x="24.0" y="243.0" font-size="11" fill="#898781" text-anchor="start" font-weight="400">계좌 1,000만</text>
+<path d="M770.8,217.0 H753.4 Q749.4,217.0 749.4,221.0 V233.0 Q749.4,237.0 753.4,237.0 H770.8 Z" fill="#898781"/>
+<text x="741.4" y="232.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="500">-2.73%</text>
+<text x="24.0" y="270.0" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="400">24종목 동일가중 보유</text>
+<text x="24.0" y="285.0" font-size="11" fill="#898781" text-anchor="start" font-weight="400">계좌 10억</text>
+<path d="M770.8,259.0 H694.7 Q690.7,259.0 690.7,263.0 V275.0 Q690.7,279.0 694.7,279.0 H770.8 Z" fill="#898781"/>
+<text x="682.7" y="274.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="500">-10.23%</text>
+<text x="24.0" y="312.0" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="400">규칙 주도주 월1·상위3 + 손절 −10%</text>
+<text x="24.0" y="327.0" font-size="11" fill="#898781" text-anchor="start" font-weight="400">계좌 10억</text>
+<path d="M770.8,301.0 H655.7 Q651.7,301.0 651.7,305.0 V317.0 Q651.7,321.0 655.7,321.0 H770.8 Z" fill="#898781"/>
+<text x="643.7" y="316.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="500">-15.21%</text>
+<text x="24.0" y="354.0" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="400">20일 모멘텀</text>
+<text x="24.0" y="369.0" font-size="11" fill="#898781" text-anchor="start" font-weight="400">계좌 10억</text>
+<path d="M770.8,343.0 H434.9 Q430.9,343.0 430.9,347.0 V359.0 Q430.9,363.0 434.9,363.0 H770.8 Z" fill="#898781"/>
+<text x="422.9" y="358.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="500">-43.40%</text>
+<text x="24.0" y="396.0" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="400">규칙 주도주 월1·상위3</text>
+<text x="24.0" y="411.0" font-size="11" fill="#898781" text-anchor="start" font-weight="400">계좌 10억</text>
+<path d="M770.8,385.0 H383.6 Q379.6,385.0 379.6,389.0 V401.0 Q379.6,405.0 383.6,405.0 H770.8 Z" fill="#898781"/>
+<text x="371.6" y="400.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="500">-49.95%</text>
+<text x="24.0" y="438.0" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="400">규칙 주도주 주1·상위3</text>
+<text x="24.0" y="453.0" font-size="11" fill="#898781" text-anchor="start" font-weight="400">계좌 10억</text>
+<path d="M770.8,427.0 H372.7 Q368.7,427.0 368.7,431.0 V443.0 Q368.7,447.0 372.7,447.0 H770.8 Z" fill="#898781"/>
+<text x="360.7" y="442.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="500">-51.33%</text>
+<text x="24.0" y="500.0" font-size="12" fill="#898781" text-anchor="start" font-weight="400">1,000만 원 계좌는 PAPER와 같은 크기, 10억 원은 정수 주식 반올림 영향을 없애려는 크기입니다.</text>
+</svg>
