@@ -630,7 +630,9 @@ class SharedAnalysisService:
         def review_target(target):
             user_id = str(target.get("userId") or "")
             try:
-                latest = self.accounts.fetch_accounts([user_id])[user_id]
+                # The review re-reads the account, so it gets the same one-off pause and retry as
+                # the cycle-start read; otherwise a KIS 500 here still loses the account's cycle.
+                latest = self._fetch_account(user_id)[user_id]
                 account_held = {h.stockCode for h in latest.holdings if h.quantity > 0}
                 missing = account_held - set(common)
                 # Without entry eligibility or free monitor capacity a new stock could only be

@@ -252,6 +252,26 @@ def test_failed_account_snapshot_is_read_once_more_after_a_pause():
     assert pauses == [SharedAnalysisService.ACCOUNT_RETRY_DELAY_SECONDS]
 
 
+def test_failed_review_account_read_is_read_once_more_after_a_pause():
+    attempts, pauses = [], []
+
+    class FlakyReviewAccounts(Accounts):
+        def fetch_accounts(self, ids):
+            attempts.append(ids[0])
+            # The cycle-start read succeeds; the account review's re-read fails once.
+            if ids == ["a"] and attempts.count("a") == 2:
+                raise ValueError("account_snapshot_failed:a:KIS_BALANCE_UNAVAILABLE")
+            return super().fetch_accounts(ids)
+
+    engine, _ = service(Data(1), FlakyReviewAccounts())
+    engine.sleep = pauses.append
+    cycle = engine.run_cycle([{"userId": "a"}, {"userId": "b"}])
+    assert cycle["accounts"]["a"]["status"] == "completed"
+    assert cycle["accounts"]["b"]["status"] == "completed"
+    assert attempts.count("a") == 3
+    assert pauses == [SharedAnalysisService.ACCOUNT_RETRY_DELAY_SECONDS]
+
+
 def test_account_snapshot_is_retried_only_once_and_only_for_snapshot_failures():
     attempts, pauses = [], []
 
