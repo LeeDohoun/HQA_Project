@@ -184,7 +184,7 @@ class LLMArm:
 
 def run_llm(args) -> int:
     from backtesting.fitness.pit_data import ReplayAnalysisData, allow_sessions_before_first_bar
-    from backtesting.fitness.replay import (CallCache, CallGuard, CallLog, CallRefused, DryModel, GuardedModel,
+    from backtesting.fitness.replay import (CallCache, CallGuard, CallLog, CallRefused, DryModel, EstimateModel, GuardedModel,
                                             ReplayRunner, UsageLimitStop, in_blocked_hours, paper_role_models,
                                             paper_role_settings)
 
@@ -195,7 +195,7 @@ def run_llm(args) -> int:
         os.environ.pop(name, None)
     if os.environ["LLM_PROVIDER"] != "claude_plan":
         raise SystemExit("the replay uses PAPER's provider: LLM_PROVIDER=claude_plan")
-    if not args.dry and not args.allow_market_hours and in_blocked_hours(datetime.now(timezone.utc)):
+    if not (args.dry or args.estimate) and not args.allow_market_hours and in_blocked_hours(datetime.now(timezone.utc)):
         raise SystemExit("refusing to start: KRX session hours (08:30-15:45 KST on a trading day)")
     pit = Path(args.pit)
     out = Path(args.out)
@@ -214,25 +214,36 @@ def run_llm(args) -> int:
             raise SystemExit("--deadline needs a timezone, e.g. 2026-10-20T03:30:00+09:00")
     guard = CallGuard(max_calls=args.max_calls, allow_market_hours=args.allow_market_hours, deadline=deadline,
                       token_budget=args.token_budget)
+    service_cls, corpus, variant = None, None, None
+    if args.variant == "analyst-rag":
+        from backtesting.fitness.analyst_rag import VARIANT, RetrievalCorpus, make_service_class
+        service_cls, corpus, variant = make_service_class(), RetrievalCorpus.from_pit(pit), VARIANT
+    skip = DecisionRelevance(data) if args.decision_calls_only and not args.dry else None
     if args.dry:
         settings, seen = paper_role_settings(), set()
         models = {role: DryModel(role, settings[role], log, seen) for role in settings}
+    elif args.estimate:
+        settings, cache = paper_role_settings(), CallCache(Path(args.cache))
+        models = {role: EstimateModel(role, settings[role], cache, log, skip=skip,
+                                      variant=variant if role == "analyst" else None) for role in settings}
     else:
         if not os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
             raise SystemExit("CLAUDE_CODE_OAUTH_TOKEN is not set (load it the way run-ai.sh does)")
         cache = CallCache(Path(args.cache))
-        skip = DecisionRelevance(data) if args.decision_calls_only else None
         settings, seen = paper_role_settings(), set()
         real = set(args.real_roles.split(",")) if args.real_roles else set(settings)
-        models = {role: GuardedModel(model, role, cache, guard, log, salt=args.replicate, skip=skip)
+        models = {role: GuardedModel(model, role, cache, guard, log, salt=args.replicate, skip=skip,
+                                     variant=variant if role == "analyst" else None)
                   if role in real else DryModel(role, settings[role], log, seen)
                   for role, model in paper_role_models().items()}
-    runner = ReplayRunner(data=data, models=models, state=lambda at: None,
-                          audit_path=None if args.dry else out / "replay_audit.sqlite3")
+    runner = ReplayRunner(data=data, models=models, state=lambda at: None, service_cls=service_cls,
+                          audit_path=None if args.dry or args.estimate else out / "replay_audit.sqlite3")
+    if corpus is not None:
+        runner.service.corpus = corpus
     days = args.days.split(",") if args.days else schedule(panel, args.start, args.end, args.schedule)
-    arm = LLMArm(runner, panel, out / "decisions.jsonl", guard=None if args.dry else guard,
+    arm = LLMArm(runner, panel, out / "decisions.jsonl", guard=None if args.dry or args.estimate else guard,
                  reserve={**DAY_RESERVE, "tokens": args.day_reserve_tokens})
-    if not args.dry and args.decision_calls_only:
+    if skip is not None:
         skip.arm = arm
     if not args.dry and args.replicate and args.replicate_days:
         # Ask again only on these days; every other day replays its cached answers.
@@ -291,6 +302,9 @@ def main(argv: list[str] | None = None) -> int:
     llm.add_argument("--cache", default=".local/fitness/llm_cache.sqlite3")
     llm.add_argument("--dry", action="store_true", help="no LLM: uninformative answers, to count calls")
     llm.add_argument("--cache-only", action="store_true", help="replay cached answers only; never call")
+    llm.add_argument("--estimate", action="store_true",
+                     help="answer from the cache, count every miss a paid run would make; never call")
+    llm.add_argument("--variant", choices=("analyst-rag",), help="replay a pipeline variant (see analyst_rag.py)")
     llm.add_argument("--decision-calls-only", action="store_true",
                      help="skip chartist/quant calls for stocks that cannot reach the RiskManager")
     llm.add_argument("--replicate", type=int, default=0, help="ask again for answered requests (nondeterminism)")
@@ -312,7 +326,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "llm":
         if args.cache_only:
             args.max_calls = 0  # every answer must come from the cache; a missing one stops the run
-        elif not args.dry and args.max_calls <= 0:
+        elif not (args.dry or args.estimate) and args.max_calls <= 0:
             raise SystemExit("set --max-calls for a paid run")
         return run_llm(args)
     return 2

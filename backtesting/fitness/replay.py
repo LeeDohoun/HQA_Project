@@ -226,15 +226,17 @@ class GuardedModel(_RoleModelBase):
 
     def __init__(self, inner: Any, role: str, cache: CallCache, guard: CallGuard, log: CallLog, *,
                  salt: int | Callable[[], int] = 0,
-                 skip: Callable[[str, dict], bool] | None = None):
+                 skip: Callable[[str, dict], bool] | None = None, variant: str | None = None):
         super().__init__(role, model_name=inner.model_name, effort=inner.reasoning_effort,
                          max_tokens=inner.max_tokens, input_limit=inner.hqa_input_limit)
         self.inner, self.cache, self.guard, self.log, self.salt, self.skip = inner, cache, guard, log, salt, skip
+        self.variant = variant
 
     @property
     def settings(self) -> dict:
         salt = self.salt() if callable(self.salt) else self.salt
-        return {**super().settings, **({"replicate": salt} if salt else {})}
+        return {**super().settings, **({"replicate": salt} if salt else {}),
+                **({"variant": self.variant} if self.variant else {})}
 
     def _call(self, schema, messages, method, strict):
         key = request_key(self.role, self.settings, schema, messages)
@@ -277,6 +279,38 @@ class GuardedModel(_RoleModelBase):
         self.guard.record((meta["usage"].get("input_tokens") or 0) + (meta["usage"].get("output_tokens") or 0))
         self.log.add(role=self.role, key=key, kind="paid", **meta)
         return result["parsed"]
+
+
+class EstimateModel(_RoleModelBase):
+    """Answers from the cache where it can and uninformatively otherwise, never calling a model:
+    every miss is a call a paid run would make, logged with its offline size estimate."""
+
+    def __init__(self, role: str, settings: dict, cache: CallCache, log: CallLog, *, variant: str | None = None,
+                 skip: Callable[[str, dict], bool] | None = None):
+        super().__init__(role, model_name=settings["model"], effort=settings["effort"],
+                         max_tokens=settings["max_tokens"], input_limit=settings["input_limit"])
+        self.cache, self.log, self.variant, self.skip = cache, log, variant, skip
+        self.dry = DryModel(role, settings, CallLog(), set())
+
+    @property
+    def settings(self) -> dict:
+        return {**super().settings, **({"variant": self.variant} if self.variant else {})}
+
+    def _call(self, schema, messages, method, strict):
+        from src.runner.shared_analysis import estimate_tokens
+
+        key = request_key(self.role, self.settings, schema, messages)
+        cached = self.cache.get(key) or self.cache.get(
+            request_key(self.role, self.settings, schema, messages, canonical=False))
+        if cached is not None:
+            self.log.add(role=self.role, key=key, kind="cache_hit")
+            return schema.model_validate_json(cached)
+        if self.skip is not None and self.skip(self.role, json.loads(messages[-1][1])):
+            self.log.add(role=self.role, key=key, kind="skipped")
+            raise SkippedCall(f"{self.role} answer cannot change a decision")
+        self.log.add(role=self.role, key=key, kind="estimated_miss",
+                     estimated_input=estimate_tokens(messages[0][1] + messages[-1][1]))
+        return self.dry._call(schema, messages, method, strict)
 
 
 class DryModel(_RoleModelBase):
@@ -382,9 +416,10 @@ class ReplayRunner:
     """One PAPER analysis cycle per decision day, on the point-in-time data."""
 
     def __init__(self, *, data: Any, models: dict[str, Any], state: Callable, audit_path: Path | None = None,
-                 target: dict | None = None, max_workers: int = 6):
+                 target: dict | None = None, max_workers: int = 6, service_cls: type | None = None):
         from src.runner.shared_analysis import SharedAnalysisService
 
+        SharedAnalysisService = service_cls or SharedAnalysisService
         self.target = dict(target or DOHOON_TARGET)
         self.now: datetime | None = None
         self.accounts = SimAccounts(self.target["userId"], state, lambda: self.now)
