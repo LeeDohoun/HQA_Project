@@ -275,7 +275,9 @@ flowchart LR
 | [`screens/2a-history-rationale.png`](screens/2a-history-rationale.png) | 거래와 AI 판단 · AI 매매근거 | 자동매매 판단 이유, 신뢰도·리스크·비중, 주문 결과 |
 | [`screens/2b-history-orders.png`](screens/2b-history-orders.png) | 거래와 AI 판단 · 주문 내역 | 10/12~10/22 주문 13건(체결 10, 취소 3) |
 | [`screens/4-settings-kis.png`](screens/4-settings-kis.png) | KIS API 키 관리 `/settings/kis` | 모의투자 계좌 연결 상태 |
+| [`screens/5-ops-status.png`](screens/5-ops-status.png) | 운영 환경 (터미널) | launchd 서비스, 자동 재시작 감시 루프 아래 서비스, 10/26 PAPER 감사 로그 26개 사이클 |
 
+- **운영 환경 그림(5번)은 터미널 그대로가 아닙니다.** 2026-10-26 20:50에 `launchctl`, `ps`, AI 서버 `/health`, 수집 로그, 감사 로그(읽기 전용)에서 뽑은 값을 터미널 모양으로 다시 그렸습니다. 사용자 ID는 관찰·보조 계좌로 바꾸고 경로와 해시는 뺐습니다. 그날 관찰 계좌는 26회 중 24회를 완료했습니다. 09:45와 10:00은 KIS 잔고 조회가 실패해 건너뛰었습니다.
 - **분석 리포트(`/analysis/[taskId]`)는 아직 없습니다.** 종목 분석은 당일 일봉을 요구하는데, 일봉 수집은 다음 날에야 그날 봉을 저장합니다. 그래서 장 마감 뒤부터 자정까지는 분석이 `stale_daily_prices`로 실패합니다. 자정 이후 수집이 한 번 돈 다음 찍어 넣습니다.
 
 ---
