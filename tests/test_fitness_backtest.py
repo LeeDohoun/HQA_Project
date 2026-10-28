@@ -401,3 +401,32 @@ def test_structure_comparison_counts_floor_rejections_lowered_stops_and_same_day
     assert (metrics_["buy_plans"], metrics_["filled_buys"], metrics_["held_reviews"]) == (1, 1, 1)
     assert metrics_["same_day_losses"] == 1 and metrics_["unfilled"] == {"buy_open_outside_entry": 1}
     assert metrics_["stops"][0]["stop_pct"] == -5.0
+
+
+def test_reentries_split_the_account_result_at_positions_opened_soon_after_a_stop_out():
+    from backtesting.fitness.compare_structure import reentries
+
+    bars = panel({code: flat(100) for code in ("000001", "000002", "000003", "000004")})
+
+    def closed(code, entry, exit_, reason, pnl):
+        return {"code": code, "entry_day": DAYS[entry], "exit_day": DAYS[exit_], "reason": reason,
+                "return": pnl / 10_000, "pnl": float(pnl)}
+
+    result = {"initial_cash": 10_000.0, "closed": [
+        closed("000001", 0, 1, "exit:stop", -500), closed("000001", 2, 3, "exit:take-profit", 1000),
+        closed("000001", 4, 4, "exit:take-profit", 200),
+        closed("000002", 1, 1, "exit:stop", -200),  # its own stop on the entry day, not an earlier one
+        closed("000003", 0, 1, "exit:stop:open", -300), closed("000003", 1, 4, "exit:stop", -400)]}
+    decisions = [
+        {"day": DAYS[2], "holdings": [], "account_rows": [{"stock_code": "000001"}, {"stock_code": "000004"}],
+         "plans": [{"stock_code": "000001", "action": "BUY"}, {"stock_code": "000004", "action": "HOLD"}]},
+        {"day": DAYS[3], "holdings": ["000003"], "account_rows": [{"stock_code": "000003"}, {"stock_code": "000002"}],
+         "plans": [{"stock_code": "000003", "action": "HOLD"}, {"stock_code": "000002", "action": "HOLD"}]},
+    ]
+    three = reentries(decisions, result, bars, 3)
+    assert (three["shown_after_stop"], three["bought_after_stop"]) == (2, 1)
+    assert (three["reentries"]["positions"], three["reentries"]["pnl"], three["other"]["pnl"]) == (3, 800, -1000)
+    assert three["reentries"]["pnl_pct_of_cash"] + three["other"]["pnl_pct_of_cash"] == -2.0
+    one = reentries(decisions, result, bars, 1)
+    assert (one["shown_after_stop"], one["bought_after_stop"]) == (1, 1)
+    assert (one["reentries"]["positions"], one["reentries"]["pnl"]) == (2, 600)

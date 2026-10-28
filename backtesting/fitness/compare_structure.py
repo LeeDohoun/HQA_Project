@@ -10,6 +10,8 @@ measures what each structural fix is meant to change:
   inside it, and positions stopped out on the day they were bought;
 - the holding reviews: held plans that tried to lower the stop (the simulator kept the old plan;
   v9 rejects them before publishing);
+- the re-entries: positions opened within a few sessions of a stop-out of the same stock (no
+  structure shows the RiskManager its recent exits), and their share of the account's result;
 - what each arm's paid calls cost.
 """
 from __future__ import annotations
@@ -27,6 +29,7 @@ from backtesting.fitness.compare_variant import WINDOW, arm_summary, flips, paid
 from backtesting.fitness.simulate import PricePanel
 
 HORIZONS = (1, 5, 10)
+REENTRY_WINDOWS = (3, 5)
 
 
 def shown_spread(decisions: list[dict], panel: PricePanel, horizon: int) -> dict:
@@ -98,6 +101,42 @@ def structure_metrics(decisions: list[dict], result: dict, panel: PricePanel) ->
     }
 
 
+def after_stop(stops: list[dict], panel: PricePanel, code: str, day: str, window: int) -> bool:
+    """Whether `code` was stopped out in the `window` sessions before `day`, or at `day`'s open.
+
+    A stop later on `day` itself is left out: it may be the stop of the position opened that day.
+    """
+    for stop in stops:
+        if stop["code"] == code:
+            gap = panel.index(day) - panel.index(stop["exit_day"])
+            if 1 <= gap <= window or (gap == 0 and stop["reason"] == "exit:stop:open"):
+                return True
+    return False
+
+
+def reentries(decisions: list[dict], result: dict, panel: PricePanel, window: int) -> dict:
+    """Positions opened soon after a stop-out of the same stock against the rest, and how often the
+    RiskManager bought a just-stopped stock it was shown. Profit is the simulator's per-position
+    result after costs over the starting cash, so the two parts add up to the account's return."""
+    stops = [c for c in result["closed"] if c["reason"].startswith("exit:stop")]
+    shown = bought = 0
+    for row in decisions:
+        held = set(row.get("holdings") or [])
+        shown += sum(1 for r in row.get("account_rows") or [] if r["stock_code"] not in held
+                     and after_stop(stops, panel, r["stock_code"], row["day"], window))
+        bought += sum(1 for plan in row.get("plans") or [] if plan["action"] == "BUY" and plan["stock_code"] not in held
+                      and after_stop(stops, panel, plan["stock_code"], row["day"], window))
+    groups: dict[str, list[dict]] = {"reentries": [], "other": []}
+    for c in result["closed"]:
+        groups["reentries" if after_stop(stops, panel, c["code"], c["entry_day"], window) else "other"].append(c)
+    return {"window_sessions": window, "shown_after_stop": shown, "bought_after_stop": bought,
+            **{name: {"positions": len(rows),
+                      "mean_return_pct": round(float(np.mean([c["return"] for c in rows])) * 100, 2) if rows else None,
+                      "pnl": round(sum(c["pnl"] for c in rows)),
+                      "pnl_pct_of_cash": round(sum(c["pnl"] for c in rows) / result["initial_cash"] * 100, 2)}
+               for name, rows in groups.items()}}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--pit", default=".local/fitness/pitdata")
@@ -114,7 +153,9 @@ def main(argv: list[str] | None = None) -> int:
         summary = arm_summary(Path(directory), panel, features)
         decisions[name] = summary.pop("_decisions")
         result = json.loads((Path(directory) / "result.json").read_text(encoding="utf-8"))
-        report["arms"][name] = {**summary, "structure": structure_metrics(decisions[name], result, panel)}
+        report["arms"][name] = {**summary, "structure": structure_metrics(decisions[name], result, panel),
+                                "reentries": [reentries(decisions[name], result, panel, window)
+                                              for window in REENTRY_WINDOWS]}
     baseline = next(iter(arms))
     report["flips_vs_baseline"] = {name: flips(decisions[baseline], decisions[name]) for name in arms if name != baseline}
     paid: dict = {}
