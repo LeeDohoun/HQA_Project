@@ -416,7 +416,8 @@ class ReplayRunner:
     """One PAPER analysis cycle per decision day, on the point-in-time data."""
 
     def __init__(self, *, data: Any, models: dict[str, Any], state: Callable, audit_path: Path | None = None,
-                 target: dict | None = None, max_workers: int = 6, service_cls: type | None = None):
+                 target: dict | None = None, max_workers: int = 6, service_cls: type | None = None,
+                 service_kwargs: dict | None = None):
         from src.runner.shared_analysis import SharedAnalysisService
 
         SharedAnalysisService = service_cls or SharedAnalysisService
@@ -428,7 +429,8 @@ class ReplayRunner:
             from src.tracing.paper_audit import PaperAudit
             audit = PaperAudit(audit_path)
         self.service = SharedAnalysisService(data=data, accounts=self.accounts, models=models,
-                                             max_workers=max_workers, clock=lambda: self.now, audit=audit)
+                                             max_workers=max_workers, clock=lambda: self.now, audit=audit,
+                                             **(service_kwargs or {}))
         # Every specialist answer of a cycle by (stock, role), including answers the service's own
         # cache supplied, for the per-stock score study.
         self.specialists: dict[str, dict] = {}

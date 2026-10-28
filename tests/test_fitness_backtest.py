@@ -330,3 +330,50 @@ def test_a_segment_counts_only_paid_answers_recorded_inside_its_window(tmp_path)
             db.execute("INSERT INTO calls VALUES (?,?,?,?,?)", (key, "chartist", created, "{}", json.dumps(meta)))
     start = datetime(2026, 10, 20, 19, 15, tzinfo=KST)
     assert spent(tmp_path / "c.sqlite3", start, start + timedelta(hours=1)) == (1, 110)
+
+
+def published(action="BUY", stop=95.0, exit_at="2026-07-06T06:20:00Z"):
+    """A RiskManager plan as the service publishes it."""
+    return {"stock_code": "000001", "action": action, "position_size_pct": 10.0 if action == "BUY" else 0.0,
+            "confidence": 50, "risk_level": "MEDIUM", "entry_price": 100.0 if action == "BUY" else None,
+            "stop_loss_price": stop, "take_profit_price": 110.0 if action == "BUY" else None, "planned_exit_at": exit_at,
+            "condition_payload": {"schema_version": 2, "entry_conditions": [], "reduce_conditions": [],
+                                  "exit_conditions": [{"id": "stop", "all": [{"field": "current_price", "operator": "<=", "value": stop}]}],
+                                  "invalidation_conditions": []}}
+
+
+def test_the_active_plan_view_is_what_the_backend_enforces_after_each_update():
+    from backtesting.fitness.simulate import Position
+    from src.runner.analysis_contracts import Holding
+
+    position = Position("000001", 10, 100.0, DAYS[0], plan_from_trading_plan(published()))
+    first = position.active_plan()
+    assert (first["stopLossPrice"], first["takeProfitPrice"], first["plannedExitAt"]) == (95.0, 110.0, "2026-07-06T06:20:00Z")
+    events = []
+    Simulator._update_plan(position, plan_from_trading_plan(published("HOLD", 90.0)), events, DAYS[1])
+    assert events[-1]["event"] == "plan_update_kept_old_stop" and position.active_plan() == first
+    Simulator._update_plan(position, plan_from_trading_plan(published("HOLD", 97.0, "2026-07-08T06:20:00Z")), events, DAYS[1])
+    raised = position.active_plan()
+    assert (raised["stopLossPrice"], raised["plannedExitAt"]) == (97.0, "2026-07-06T06:20:00Z")  # the exit never moves later
+    holding = {"stockCode": "000001", "stockName": "x", "quantity": 10, "sellableQuantity": 10, "avgPrice": 100.0,
+               "currentPrice": 100.0, "evalAmount": 1000.0, "pnlRate": 0.0, "activePlan": raised}
+    assert Holding.model_validate(holding).activePlan.stopLossPrice == 97.0
+    assert "activePlan" not in Holding.model_validate(holding).model_dump()
+    assert Position("000001", 1, 100.0, DAYS[0], Plan("000001", "BUY")).active_plan() is None
+
+
+@pytest.mark.parametrize("structure,shown", [("v8", False), ("v9-plan-rules", True)])
+def test_the_replayed_account_carries_active_plans_only_for_a_structure_that_shows_them(structure, shown):
+    from backtesting.fitness.cli import LLMArm
+    from backtesting.fitness.simulate import Position
+    from src.runner.shared_analysis import RISK_REVIEW_STRUCTURES
+
+    runner = SimpleNamespace(accounts=SimpleNamespace(state=None),
+                             service=SimpleNamespace(structure=RISK_REVIEW_STRUCTURES[structure]))
+    arm = LLMArm(runner, panel({"000001": flat(100)}), None)
+    arm.view = SimpleNamespace(positions={"000001": Position("000001", 10, 100.0, DAYS[0], plan_from_trading_plan(published()))},
+                               opens={"000001": 101.0}, previous_day=DAYS[0], cash=0.0, equity_at_open=1010.0,
+                               previous_close_equity=1000.0)
+    _, holdings, _ = arm.state(None)
+    assert ("activePlan" in holdings[0]) is shown
+    assert holdings[0]["currentPrice"] == 101.0

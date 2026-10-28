@@ -1366,3 +1366,171 @@ def test_internal_auth_ignores_surrounding_whitespace_in_the_configured_token(mo
     assert client.post("/internal/runtime/analysis-cycle", headers={"X-HQA-Internal-Token": "test-runtime-tokenX"}).status_code == 403
     monkeypatch.setenv("HQA_INTERNAL_TOKEN", " \r\n")
     assert client.post("/internal/runtime/analysis-cycle", headers={"X-HQA-Internal-Token": ""}).status_code == 503
+
+
+def active_plan(stop=97.0):
+    return {"stopLossPrice": stop, "takeProfitPrice": 125.0, "plannedExitAt": (NOW + timedelta(days=3)).isoformat(),
+            "conditionPayload": {"schema_version": 2, "entry_conditions": [], "reduce_conditions": [],
+                                 "exit_conditions": [{"id": "stop", "all": [{"field": "current_price", "operator": "<=", "value": stop}]}],
+                                 "invalidation_conditions": []},
+            "completedReduceIds": []}
+
+
+class PlannedAccounts(Accounts):
+    def __init__(self, stop=97.0):
+        super().__init__()
+        self.stop = stop
+
+    def fetch_accounts(self, ids):
+        return {user: snapshot(user, [{**holding(), "activePlan": active_plan(self.stop)}]) for user in ids}
+
+
+class RangeData(Data):
+    """Bars with a 6% daily range (high 103, low 97 on a 100 close)."""
+
+    def load_universe(self, as_of):
+        rows, errors = super().load_universe(as_of)
+        for row in rows:
+            row["price_history"] = [{"open": 100.0, "high": 103.0, "low": 97.0, "close": 100.0, "volume": 1000.0}] * 21
+        return rows, errors
+
+
+class BuyModel(Model):
+    """Specialists as in Model; the RiskManager buys the first new stock at 110 with the given stop."""
+
+    def __init__(self, role, calls, stop=None):
+        super().__init__(role, calls)
+        self.stop = stop
+
+    def invoke(self, messages):
+        result = super().invoke(messages)
+        if self.role != "risk_manager" or self.stop is None:
+            return result
+        payload = json.loads(messages[-1][1])
+        held = {h["stockCode"] for h in payload["account"]["holdings"]}
+        new = next(row for row in payload["candidates"] if row["stock_code"] not in held)
+        stop = {"id": "stop", "all": [{"field": "current_price", "operator": "<=", "value": self.stop}]}
+        buy = {"stock_code": new["stock_code"], "stock_name": new["stock_name"], "action": "BUY", "holding_quantity": 0,
+               "confidence": 80, "risk_level": "MEDIUM", "position_size_pct": 10.0, "entry_price": 110.0,
+               "stop_loss_price": self.stop, "take_profit_price": 130.0,
+               "entry_valid_until": (NOW + timedelta(minutes=10)).isoformat(),
+               "planned_exit_at": (NOW + timedelta(days=1)).isoformat(),
+               "condition_payload": {"schema_version": 2, "reduce_conditions": [], "exit_conditions": [stop],
+                   "entry_conditions": [{"id": "entry", "all": [{"field": "current_price", "operator": "<=", "value": 110.0}]}],
+                   "invalidation_conditions": [{"id": "invalid", "all": [{"field": "current_price", "operator": "<", "value": self.stop}]}]},
+               "citations": [{"source_id": new["source_ids"][-1], "claim": "Current quote"}], "reasoning": "Entry"}
+        plans = [buy if plan.stock_code == new["stock_code"] else plan.model_dump(mode="json") for plan in result.plans]
+        return self.schema.model_validate({"plans": plans, "reasoning": result.reasoning})
+
+
+def structured(structure, *, data=None, accounts=None, model=Model, **model_kwargs):
+    calls, prompts = [], []
+    models = {role: model(role, calls, **(model_kwargs if role == "risk_manager" else {}))
+              for role in ("analyst", "quant", "chartist", "risk_manager")}
+    invoke = models["risk_manager"].invoke
+
+    def capture(messages):
+        prompts.append(messages[0][1])
+        return invoke(messages)
+
+    models["risk_manager"].invoke = capture
+    engine = SharedAnalysisService(data=data or Data(), accounts=accounts or PlannedAccounts(), models=models,
+                                   clock=lambda: NOW, sleep=lambda seconds: None, structure=structure)
+    return engine, calls, prompts
+
+
+def risk_request(calls):
+    return [payload for role, payload in calls if role == "risk_manager"][0]
+
+
+def test_the_default_review_structure_sends_the_v8_request_even_when_the_backend_sends_active_plans():
+    from src.runner.shared_analysis import PROMPT_SUFFIX, PROMPT_VERSION, RISK_MANAGER_INSTRUCTIONS
+
+    engine, calls, prompts = structured(None, data=RangeData())
+    cycle = engine.run_cycle([{"userId": "a"}])
+    risk = risk_request(calls)
+    assert prompts == [RISK_MANAGER_INSTRUCTIONS + PROMPT_SUFFIX]
+    assert cycle["manifest"]["prompt_version"] == PROMPT_VERSION
+    assert all("active_plan" not in row and "stop_floor" not in row for row in risk["candidates"])
+    assert "activePlan" not in json.dumps(risk["account"])
+
+
+def test_v9_shows_the_rule_prefilters_best_five_instead_of_the_best_specialist_average():
+    from src.runner.shared_analysis import RISK_REVIEW_STRUCTURES
+
+    class Reversed(Model):  # the specialist average now prefers the stocks the rule score ranks lowest
+        def invoke(self, messages):
+            result = super().invoke(messages)
+            return result if self.role == "risk_manager" else result.model_copy(update={"score": 100.0 - result.score})
+
+    orders = {}
+    for name in ("v9-plan-rules", "v9"):
+        engine, calls, _ = structured(RISK_REVIEW_STRUCTURES[name], model=Reversed)
+        engine.run_cycle([{"userId": "a"}])
+        orders[name] = [row["stock_code"] for row in risk_request(calls)["candidates"]]
+    assert orders["v9-plan-rules"] == ["000006", "000007", "000008", "000009", "000010", "000001"]
+    assert orders["v9"] == ["000025", "000024", "000023", "000022", "000021", "000001"]
+
+
+@pytest.mark.parametrize("active_stop,accepted", [(97.0, False), (94.0, True)])
+def test_v9_shows_the_active_plan_and_rejects_a_held_stop_below_it(active_stop, accepted):
+    from src.runner.shared_analysis import RISK_REVIEW_STRUCTURES
+
+    engine, calls, prompts = structured(RISK_REVIEW_STRUCTURES["v9"], accounts=PlannedAccounts(active_stop))
+    account = engine.run_cycle([{"userId": "a"}])["accounts"]["a"]
+    held = next(row for row in risk_request(calls)["candidates"] if row["stock_code"] == "000001")
+    assert held["active_plan"]["stop_loss_price"] == active_stop
+    assert held["active_plan"]["exit_conditions"][0]["all"][0]["value"] == active_stop
+    assert "active_plan" in prompts[0] and list(held["specialists"]) == ["analyst", "chartist", "quant"]
+    rejected = [row for row in account["rejected_plans"] if row["stock_code"] == "000001"]
+    assert ("000001" in {plan["stock_code"] for plan in account["plans"]}) is accepted
+    assert bool(rejected) is not accepted
+    if rejected:
+        assert rejected[0]["reason"] == "held stop 95.0 below the active stop 97.0; the active plan stays"
+
+
+@pytest.mark.parametrize("stop,accepted", [(105.0, False), (103.0, True)])
+def test_v9_rejects_a_buy_whose_stop_sits_inside_the_daily_range(stop, accepted):
+    from src.runner.shared_analysis import RISK_REVIEW_STRUCTURES
+
+    engine, calls, prompts = structured(RISK_REVIEW_STRUCTURES["v9"], data=RangeData(), model=BuyModel, stop=stop)
+    account = engine.run_cycle([{"userId": "a"}])["accounts"]["a"]
+    new = [row for row in risk_request(calls)["candidates"] if row["stock_code"] != "000001"]
+    assert all(row["stop_floor"]["min_stop_distance_pct"] == 6.0 for row in new)
+    assert "stop_floor" in prompts[0]
+    buys = [plan for plan in account["plans"] if plan["action"] == "BUY"]
+    assert bool(buys) is accepted
+    if not accepted:
+        assert [row["reason"] for row in account["rejected_plans"] if row["action"] == "BUY"] == [
+            "BUY stop 4.55% below entry is inside the daily-range floor 6.00%"]
+
+
+def test_the_stop_floor_is_the_mean_daily_range_over_twenty_sessions():
+    from src.runner.shared_analysis import stop_floor
+
+    bars = [{"close": 100.0, "high": 103.0, "low": 97.0, "volume": 1.0}] * 21
+    assert stop_floor(bars, 1.0)["min_stop_distance_pct"] == 6.0
+    assert stop_floor(bars, 1.5)["min_stop_distance_pct"] == 9.0
+    halted = bars[:11] + [{"close": 100.0, "high": 0.0, "low": 0.0, "volume": 0.0}] * 10
+    assert stop_floor(halted, 1.0) == {"min_stop_distance_pct": 6.0,
+                                       "basis": "1 x mean (high - low) / previous close over the last 10 sessions"}
+    assert stop_floor(bars[:10], 1.0) is None
+    assert stop_floor([{"close": 100.0}] * 21, 1.0) is None
+
+
+def test_the_review_structure_comes_from_the_environment(monkeypatch):
+    from src.runner.shared_analysis import (PROMPT_VERSION, RISK_REVIEW_STRUCTURES, RiskReviewStructure,
+                                            risk_review_structure_from_env)
+
+    monkeypatch.delenv("HQA_RISK_REVIEW_STRUCTURE", raising=False)
+    assert risk_review_structure_from_env() == RiskReviewStructure()
+    assert RiskReviewStructure().prompt_version == PROMPT_VERSION
+    monkeypatch.setenv("HQA_RISK_REVIEW_STRUCTURE", "v9")
+    assert risk_review_structure_from_env() is RISK_REVIEW_STRUCTURES["v9"]
+    assert RISK_REVIEW_STRUCTURES["v9"].prompt_version == (
+        PROMPT_VERSION + "+rank-price_score+active-plans+stop-floor-1+sorted-rows")
+    monkeypatch.setenv("HQA_RISK_REVIEW_STRUCTURE", "v10")
+    with pytest.raises(ValueError, match="HQA_RISK_REVIEW_STRUCTURE"):
+        risk_review_structure_from_env()
+    with pytest.raises(ValueError):
+        RiskReviewStructure(candidate_rank="analyst")

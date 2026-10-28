@@ -143,6 +143,11 @@ class LLMArm:
                              "sellableQuantity": position.quantity, "avgPrice": float(position.average),
                              "currentPrice": float(price), "evalAmount": float(position.quantity * price),
                              "pnlRate": round((price / position.average - 1) * 100, 2)})
+            # Only a structure that shows active plans gets them; without one the account is the
+            # one the baseline replay read.
+            active = position.active_plan() if self.runner.service.structure.show_active_plans else None
+            if active is not None:
+                holdings[-1]["activePlan"] = active
         fields = {"orderableCash": float(max(0.0, view.cash)), "equity": float(view.equity_at_open),
                   "dailyPnlPct": (view.equity_at_open / view.previous_close_equity - 1) * 100,
                   "monitorSymbolCount": len(holdings)}
@@ -214,10 +219,15 @@ def run_llm(args) -> int:
             raise SystemExit("--deadline needs a timezone, e.g. 2026-10-20T03:30:00+09:00")
     guard = CallGuard(max_calls=args.max_calls, allow_market_hours=args.allow_market_hours, deadline=deadline,
                       token_budget=args.token_budget)
-    service_cls, corpus, variant = None, None, None
+    service_cls, corpus, variant, service_kwargs = None, None, None, {}
     if args.variant == "analyst-rag":
         from backtesting.fitness.analyst_rag import VARIANT, RetrievalCorpus, make_service_class
         service_cls, corpus, variant = make_service_class(), RetrievalCorpus.from_pit(pit), VARIANT
+    elif args.variant and args.variant.startswith("structure-"):
+        # Only the RiskManager's instructions and rows change, so its requests differ by content and
+        # every specialist request stays the baseline's (answered from the cache).
+        from src.runner.shared_analysis import RISK_REVIEW_STRUCTURES
+        service_kwargs = {"structure": RISK_REVIEW_STRUCTURES[args.variant.removeprefix("structure-")]}
     skip = DecisionRelevance(data) if args.decision_calls_only and not args.dry else None
     if args.dry:
         settings, seen = paper_role_settings(), set()
@@ -237,6 +247,7 @@ def run_llm(args) -> int:
                   if role in real else DryModel(role, settings[role], log, seen)
                   for role, model in paper_role_models().items()}
     runner = ReplayRunner(data=data, models=models, state=lambda at: None, service_cls=service_cls,
+                          service_kwargs=service_kwargs,
                           audit_path=None if args.dry or args.estimate else out / "replay_audit.sqlite3")
     if corpus is not None:
         runner.service.corpus = corpus
@@ -304,7 +315,8 @@ def main(argv: list[str] | None = None) -> int:
     llm.add_argument("--cache-only", action="store_true", help="replay cached answers only; never call")
     llm.add_argument("--estimate", action="store_true",
                      help="answer from the cache, count every miss a paid run would make; never call")
-    llm.add_argument("--variant", choices=("analyst-rag",), help="replay a pipeline variant (see analyst_rag.py)")
+    llm.add_argument("--variant", choices=("analyst-rag", "structure-v9", "structure-v9-plan-rules"),
+                     help="replay a pipeline variant (analyst_rag.py; RISK_REVIEW_STRUCTURES in shared_analysis.py)")
     llm.add_argument("--decision-calls-only", action="store_true",
                      help="skip chartist/quant calls for stocks that cannot reach the RiskManager")
     llm.add_argument("--replicate", type=int, default=0, help="ask again for answered requests (nondeterminism)")

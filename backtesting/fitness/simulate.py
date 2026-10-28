@@ -119,6 +119,8 @@ class Plan:
     take_profit_pct: float | None = None
     hold_sessions: int | None = None  # rule strategies: planned exit at the close of the Nth session
     meta: dict = field(default_factory=dict)
+    source: dict | None = None  # the RiskManager plan as published, for the backend's active-plan view
+    exit_iso: str | None = None  # the planned exit as published (`exit_at` is its daily-bar slot)
 
 
 def _compare(left: Any, operator: str, right: Any) -> bool:
@@ -201,7 +203,8 @@ def plan_from_trading_plan(plan: dict, *, holding_average: float | None = None) 
                 reduces=groups(conditions["reduce_conditions"], fraction=True), exit_at=exit_at, hard_stop=hard,
                 meta={"confidence": plan.get("confidence"), "risk_level": plan.get("risk_level"),
                       "entry_price": plan.get("entry_price"), "stop_loss_price": plan.get("stop_loss_price"),
-                      "take_profit_price": plan.get("take_profit_price")})
+                      "take_profit_price": plan.get("take_profit_price")},
+                source=plan, exit_iso=plan.get("planned_exit_at"))
 
 
 # ---------------------------------------------------------------------------------------------
@@ -217,6 +220,17 @@ class Position:
     done_reduces: set = field(default_factory=set)
     cost: float = 0.0  # buy notional plus costs, for the round-trip return
     proceeds: float = 0.0  # sell notional less costs so far
+
+    def active_plan(self) -> dict | None:
+        """The plan the backend enforces now, in the account snapshot's `activePlan` form: the
+        stop that protects (a rejected update leaves the old one), the latest accepted conditions
+        and the reductions already sold. None for a plan no RiskManager published."""
+        source = self.plan.source
+        if source is None:
+            return None
+        return {"stopLossPrice": self.plan.hard_stop, "takeProfitPrice": source.get("take_profit_price"),
+                "plannedExitAt": self.plan.exit_iso, "conditionPayload": source["condition_payload"],
+                "completedReduceIds": sorted(self.done_reduces)}
 
 
 @dataclass
@@ -375,7 +389,8 @@ class Simulator:
             last = self.panel.shift(day, plan.hold_sessions - 1) or self.panel.calendar[-1]
             exit_at = (last, CLOSE_SLOT)
         return Plan(code=plan.code, action=plan.action, size_pct=plan.size_pct, weight=plan.weight, entry=plan.entry,
-                    exits=exits, reduces=list(plan.reduces), exit_at=exit_at, hard_stop=hard, meta=plan.meta)
+                    exits=exits, reduces=list(plan.reduces), exit_at=exit_at, hard_stop=hard, meta=plan.meta,
+                    source=plan.source, exit_iso=plan.exit_iso)
 
     @staticmethod
     def _update_plan(position: Position, plan: Plan, events: list, day: str) -> None:
@@ -385,12 +400,12 @@ class Simulator:
         if old.hard_stop is not None and (plan.hard_stop is None or plan.hard_stop < old.hard_stop):
             events.append({"day": day, "code": position.code, "event": "plan_update_kept_old_stop"})
             return
-        exit_at = plan.exit_at
+        exit_at, exit_iso = plan.exit_at, plan.exit_iso
         if old.exit_at and (exit_at is None or exit_at > old.exit_at):
-            exit_at = old.exit_at
+            exit_at, exit_iso = old.exit_at, old.exit_iso
         position.plan = Plan(code=plan.code, action="HOLD", size_pct=old.size_pct, weight=old.weight,
                              exits=plan.exits, reduces=plan.reduces, exit_at=exit_at, hard_stop=plan.hard_stop,
-                             meta={**old.meta, "updated": day})
+                             meta={**old.meta, "updated": day}, source=plan.source, exit_iso=exit_iso)
         position.done_reduces = {gid for gid in position.done_reduces if any(g.id == gid for g in plan.reduces)}
 
     def _open_phase(self, position: Position, price: float, day: str, sell) -> None:
