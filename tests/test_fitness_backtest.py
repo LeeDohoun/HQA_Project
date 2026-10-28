@@ -377,3 +377,27 @@ def test_the_replayed_account_carries_active_plans_only_for_a_structure_that_sho
     _, holdings, _ = arm.state(None)
     assert ("activePlan" in holdings[0]) is shown
     assert holdings[0]["currentPrice"] == 101.0
+
+
+def test_structure_comparison_counts_floor_rejections_lowered_stops_and_same_day_losses():
+    from backtesting.fitness.compare_structure import structure_metrics
+
+    bars = panel({"000001": flat(100), "000002": flat(100)})
+    decisions = [
+        {"day": DAYS[1], "holdings": [], "leaders": [], "account_rows": [],
+         "plans": [{"stock_code": "000001", "action": "BUY", "entry_price": 100.0, "stop_loss_price": 95.0}],
+         "rejected": [{"stock_code": "000002", "action": "BUY",
+                       "reason": "BUY stop 4.00% below entry is inside the daily-range floor 6.00%"}]},
+        {"day": DAYS[2], "holdings": ["000001"], "leaders": [], "account_rows": [], "plans": [],
+         "rejected": [{"stock_code": "000001", "action": "HOLD",
+                       "reason": "held stop 90.0 below the active stop 95.0; the active plan stays"}]},
+    ]
+    result = {"events": [{"event": "plan_update_kept_old_stop"}, {"event": "buy_open_outside_entry"}],
+              "closed": [{"entry_day": DAYS[1], "exit_day": DAYS[1], "return": -0.05}],
+              "trades": [{"day": DAYS[1], "code": "000001", "side": "BUY"}]}
+    metrics_ = structure_metrics(decisions, result, bars)
+    assert metrics_["rejected_by_kind"] == {"stop_floor": 1, "held_stop_lowered": 1}
+    assert metrics_["held_stop_lowering"] == {"kept_old_plan_in_simulator": 1, "rejected_before_publishing": 1}
+    assert (metrics_["buy_plans"], metrics_["filled_buys"], metrics_["held_reviews"]) == (1, 1, 1)
+    assert metrics_["same_day_losses"] == 1 and metrics_["unfilled"] == {"buy_open_outside_entry": 1}
+    assert metrics_["stops"][0]["stop_pct"] == -5.0
