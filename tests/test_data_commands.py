@@ -212,7 +212,7 @@ def test_loop_refreshes_market_indices_once_a_day_after_0800(monkeypatch, tmp_pa
         if value is not None:
             raise value
 
-    monkeypatch.setattr(loop.time, "sleep", sleep)
+    monkeypatch.setattr(loop, "_sleep_wall", sleep)
     monkeypatch.setattr(sys, "argv", ["loop", "--market-context"])
     with pytest.raises(KeyboardInterrupt):
         loop.main()

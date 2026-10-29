@@ -29,6 +29,11 @@ def resolve_dates(args) -> None:
     args.from_date, args.to_date = start.strftime("%Y%m%d"), end.strftime("%Y%m%d")
 
 
+# Text sources supplement the verified numbers; their outage (a blocked search, a used-up Claude
+# subscription) must not hold back the prices, disclosures and financials collected with them.
+OPTIONAL_SOURCES = {"news", "general_news", "forum"}
+
+
 def collection_status(reports: list[dict]) -> str:
     failed = False
     succeeded = False
@@ -36,9 +41,12 @@ def collection_status(reports: list[dict]) -> str:
         sources = report.get("enabled_sources", [])
         success = report.get("source_success", {})
         states = report.get("source_status", {})
-        failed = failed or bool(report.get("failures")) or not sources
+        required = [source for source in sources if source not in OPTIONAL_SOURCES]
+        failures = [source for source in report.get("failures") or {} if source not in OPTIONAL_SOURCES]
+        failed = failed or bool(failures) or not sources
         for source in sources:
             passed = success.get(source) is True and states.get(source) in {"success", "no_data", "cached"}
-            failed = failed or not passed
+            if source in required:
+                failed = failed or not passed
             succeeded = succeeded or passed
     return "partial" if failed and succeeded else "error" if failed or not reports else "done"

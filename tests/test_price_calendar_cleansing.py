@@ -42,9 +42,15 @@ def test_single_missing_session_is_not_silently_filled_or_called_a_suspension():
         price_features(rows, NOW)
 
 
-def test_latest_completed_session_missing_is_stale_even_after_one_day():
-    with pytest.raises(ValueError, match="stale_daily_prices"):
-        price_features(prices()[:-1], NOW)
+def test_todays_bar_is_not_required_after_the_close():
+    # NOW is after the 2026-09-04 close; collection ends at the previous KST day.
+    features, known = price_features(prices()[:-1], NOW)
+    assert known[-1]["trade_date"] == "2026-09-03" and features["history_days"] == 159
+
+
+def test_previous_session_missing_is_stale_after_the_close():
+    with pytest.raises(ValueError, match="stale_daily_prices:latest=2026-09-02:expected=2026-09-03"):
+        price_features(prices()[:-2], NOW)
 
 
 def test_holiday_closure_does_not_trigger_four_calendar_day_false_staleness():

@@ -161,8 +161,7 @@ class AnalysisScheduler:
 
     def run_forever(self) -> None:
         while True:
-            delay = seconds_until_next_slot(time.time(), self.interval_seconds)
-            time.sleep(delay)
+            sleep_until_next_slot(self.interval_seconds)
             if self.market_hours_only and not within_analysis_session(datetime.now(timezone.utc)):
                 continue
             run_cycle_safely(self.run_once)
@@ -189,6 +188,14 @@ def _log_calendar_warnings() -> None:
 def seconds_until_next_slot(timestamp: float, interval: int = 900) -> float:
     """Skip missed slots instead of drifting or replaying a backlog."""
     return interval - timestamp % interval
+
+
+def sleep_until_next_slot(interval: int = 900) -> None:
+    """Wait for the next slot by the wall clock: macOS does not count system sleep in time.sleep,
+    so after the Mac wakes a single long sleep would miss the slot it slept through."""
+    deadline = time.time() + seconds_until_next_slot(time.time(), interval)
+    while (left := deadline - time.time()) > 0:
+        time.sleep(min(left, 30))
 
 
 def within_analysis_session(at: datetime) -> bool:
@@ -295,7 +302,7 @@ def main() -> None:
             raise ValueError("An enabled Asia/Seoul analysis schedule is required")
         logging.basicConfig(level=logging.INFO)
         while True:
-            time.sleep(seconds_until_next_slot(time.time()))
+            sleep_until_next_slot()
             if schedule["market_hours_only"] and not within_analysis_session(datetime.now(timezone.utc)):
                 continue
             print(json.dumps(run_cycle_safely(client.run_once), ensure_ascii=False, default=str), flush=True)

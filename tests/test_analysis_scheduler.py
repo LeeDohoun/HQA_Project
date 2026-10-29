@@ -224,7 +224,7 @@ def test_scheduled_cycle_failure_is_reported_and_the_loop_continues(monkeypatch)
         raise ConnectionError("backend down")
 
     scheduler.run_once = run_once
-    monkeypatch.setattr(module.time, "sleep", fake_sleep)
+    monkeypatch.setattr(module, "sleep_until_next_slot", fake_sleep)
     with pytest.raises(Stop):
         scheduler.run_forever()
     assert len(runs) == 2

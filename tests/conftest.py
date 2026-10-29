@@ -21,6 +21,14 @@ def fresh_llm_admission_window(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def default_news_provider(monkeypatch):
+    """The operator's .env may route news through the Claude CLI, a subprocess the socket block
+    below cannot stop; set values win over .env, so tests keep the default provider."""
+    monkeypatch.setenv("HQA_NEWS_PROVIDER", "naver")
+    monkeypatch.setenv("HQA_NEWS_REFRESH_MINUTES", "15")
+
+
+@pytest.fixture(autouse=True)
 def block_outbound_network(monkeypatch, request):
     live_kis_module = Path(__file__).with_name("test_kis_paper_trading.py").resolve()
     if request.node.path.resolve() == live_kis_module and os.getenv("RUN_KIS_LIVE_TESTS") == "1":

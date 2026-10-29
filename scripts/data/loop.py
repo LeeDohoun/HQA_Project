@@ -47,7 +47,15 @@ def _sleep_until_next_day(resume_hour: int, resume_minute: int) -> None:
         f"⛔ API 한도 초과 감지. 다음 날 {wakeup.strftime('%Y-%m-%d %H:%M KST')}까지 대기합니다 "
         f"({wait_seconds // 60}분)."
     )
-    time.sleep(wait_seconds)
+    _sleep_wall(wait_seconds)
+
+
+def _sleep_wall(seconds: float) -> None:
+    """Wait by the wall clock: macOS does not count system sleep in time.sleep, so one long sleep
+    would run late by however long the Mac slept; short naps end soon after it wakes."""
+    deadline = time.time() + seconds
+    while (left := deadline - time.time()) > 0:
+        time.sleep(min(left, 30))
 
 
 def _saved_themes() -> list[str]:
@@ -89,6 +97,13 @@ def _run_market_context(today) -> tuple[int, str]:
     return proc.returncode, f"{proc.stdout}\n{proc.stderr}".strip()
 
 
+def _run_top_value(top: int) -> tuple[int, str]:
+    """Re-select the day's most traded stocks (scripts.data.top_value)."""
+    cmd = [sys.executable, "-m", "scripts.data.top_value", "--top", str(top)]
+    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT)
+    return proc.returncode, f"{proc.stdout}\n{proc.stderr}".strip()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Theme collection loop with next-day pause on API limit")
     parser.add_argument("--themes", type=str, default="",
@@ -105,6 +120,9 @@ def main() -> int:
     )
     parser.add_argument("--market-context", action="store_true",
                         help="Also refresh KOSPI/KOSDAQ indices once per KST day after 08:00 (needs KRX_OPEN_API_KEY)")
+    parser.add_argument("--top-value", type=int, default=0,
+                        help="Also collect the N most traded stocks, re-selected once per KST day after 08:00 "
+                             "(the KIS stock masters are refreshed around 07:30); 0 turns it off")
     args = parser.parse_args()
     # The loop runs for days, usually with stdout sent to a file; without line buffering
     # its progress stays in the buffer for hours (one line per theme every 30 minutes).
@@ -117,6 +135,12 @@ def main() -> int:
     saved = not themes
     if saved:
         themes = _saved_themes()
+    top_value_key = None
+    if args.top_value:
+        from scripts.data.top_value import THEME_KEY as top_value_key
+
+        if top_value_key not in themes:
+            themes.append(top_value_key)
     if not themes:
         print("No themes configured: pass --themes or save targets under raw/theme_targets/ first.")
         return 1
@@ -125,7 +149,7 @@ def main() -> int:
         f"📡 수집 루프 시작: themes={themes}, interval={args.interval_minutes}분, "
         f"enabled_sources={args.enabled_sources}"
     )
-    market_context_day = None
+    market_context_day = top_value_day = None
     while True:
         now = datetime.now(KST)
         if args.market_context and market_context_day != now.date() and now.hour >= 8:
@@ -138,9 +162,21 @@ def main() -> int:
                 tail = "\n".join(output.splitlines()[-5:])
                 if tail:
                     print(tail)
+        if args.top_value and top_value_day != now.date() and now.hour >= 8:
+            code, output = _run_top_value(args.top_value)
+            if code == 0:
+                top_value_day = now.date()
+                print(output.splitlines()[-1] if output else "[TOP_VALUE] 갱신 완료")
+            else:
+                # The previous list stays in place and is collected as usual.
+                print(f"[TOP_VALUE] 거래대금 상위 갱신 실패(code={code}); 다음 주기에 다시 시도")
+                tail = "\n".join(output.splitlines()[-5:])
+                if tail:
+                    print(tail)
         for theme in themes:
             print(f"\n[COLLECT] {theme} 시작")
-            code, output = _run_once(theme, args.enabled_sources, theme_key=theme if saved else "")
+            code, output = _run_once(theme, args.enabled_sources,
+                                     theme_key=theme if saved or theme == top_value_key else "")
             if code == 0:
                 print(f"[COLLECT] {theme} 완료")
                 continue
@@ -155,7 +191,7 @@ def main() -> int:
                     print(tail)
 
         print(f"\n⏳ 루프 대기 {args.interval_minutes}분")
-        time.sleep(max(1, args.interval_minutes) * 60)
+        _sleep_wall(max(1, args.interval_minutes) * 60)
 
 
 if __name__ == "__main__":

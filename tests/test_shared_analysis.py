@@ -656,6 +656,24 @@ def test_canonical_evidence_records_full_source_hash_and_explicit_truncation(tmp
         assert revised["source_text_hash"] != evidence["source_text_hash"]
 
 
+def test_slot_wait_ends_by_the_wall_clock_after_the_mac_wakes(monkeypatch):
+    import src.runner.analysis_scheduler as scheduler
+
+    clock = {"now": 100.0}
+    naps = []
+
+    def nap(seconds):
+        naps.append(seconds)
+        # The Mac slept ten minutes during the first nap; time.sleep does not count it.
+        clock["now"] += seconds + (600 if len(naps) == 1 else 0)
+
+    monkeypatch.setattr(scheduler.time, "time", lambda: clock["now"])
+    monkeypatch.setattr(scheduler.time, "sleep", nap)
+    scheduler.sleep_until_next_slot()
+    # One long sleep would have ended at 1,500; the slot is at 900.
+    assert clock["now"] == 900 and max(naps) <= 30
+
+
 def test_scheduler_is_aligned_and_failed_account_is_not_submitted():
     assert seconds_until_next_slot(901) == 899
     assert seconds_until_next_slot(900) == 900

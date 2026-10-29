@@ -159,6 +159,11 @@ def price_features(rows: list[dict], as_of: datetime) -> tuple[dict, list[dict]]
             and any(row.get("price_basis") != "unadjusted" for row in known)):
         # Unlabeled bars (e.g. adjusted local test prices) would splice two bases into one chart.
         raise ValueError("mixed_price_basis:kis_unadjusted_with_unverified_bars")
+    today = as_of.astimezone(KST).date().isoformat()
+    if sessions and sessions[-1][0] == today and not (known and known[-1]["trade_date"] == today):
+        # Collection ends at the previous KST day, so today's bar is not required after the close;
+        # history is judged through the previous session, and today's bar is used once it is collected.
+        sessions = sessions[:-1]
     if known and sessions:
         if known[-1]["trade_date"] != sessions[-1][0]:
             raise ValueError(f"stale_daily_prices:latest={known[-1]['trade_date']}:expected={sessions[-1][0]}")

@@ -7,6 +7,7 @@ from __future__ import annotations
 import inspect
 import hashlib
 import json
+import os
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -219,7 +220,12 @@ class IngestionService:
 
     def _safe_collect_news(self, request: CollectRequest, docs: List[DocumentRecord], report: IngestionRunReport) -> None:
         try:
-            collector = NaverNewsCollector()
+            if os.getenv("HQA_NEWS_PROVIDER", "naver").strip().lower() == "claude":
+                from .claude_news import ClaudeNewsCollector
+
+                collector = ClaudeNewsCollector()
+            else:
+                collector = NaverNewsCollector()
             sig = inspect.signature(collector.collect)
             kwargs = {"max_items": request.max_news}
             if "from_date" in sig.parameters:

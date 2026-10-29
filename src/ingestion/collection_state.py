@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from dataclasses import asdict, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -29,6 +30,16 @@ def _holds_last_session(payload: dict, to_date: str) -> bool:
                for row in payload.get("market_records") or [])
 
 
+DEFAULT_REUSE = timedelta(minutes=15)
+
+
+def _reuse_window(source: str) -> timedelta:
+    """Claude news searches spend subscription usage, so news can be refreshed less often."""
+    if source == "news":
+        return max(DEFAULT_REUSE, timedelta(minutes=int(os.getenv("HQA_NEWS_REFRESH_MINUTES", "15"))))
+    return DEFAULT_REUSE
+
+
 def collect_shared(request, source: str, collect):
     identity = {"source": source, "stock_code": request.target.stock_code, "schema_version": 2}
     if source in {"dart", "financials"}:
@@ -47,7 +58,7 @@ def collect_shared(request, source: str, collect):
             raise ValueError("collection state identity mismatch")
         if state and state["requested"] == requested:
             age = now - datetime.fromisoformat(state["completed_at"])
-            if timedelta(0) <= age < timedelta(minutes=15):
+            if timedelta(0) <= age < _reuse_window(source):
                 return state["result"], True
             # Bars through to_date do not change once their session closed, and the KIS key is
             # shared with live trading: once a KST day's result holds the last session, later
@@ -64,8 +75,10 @@ def collect_shared(request, source: str, collect):
         result = collect(replace(request, from_date=start, enabled_sources=[source], incremental=False,
                                  theme_key=f"_shared_{request.target.stock_code}"))
         payload = asdict(result)
+        # With a long news refresh interval an empty search is kept too, so it is not repeated every run.
         if (result.report.source_success.get(source)
-                and result.report.source_counts.get(source, 0) > 0):
+                and (result.report.source_counts.get(source, 0) > 0
+                     or source == "news" and _reuse_window(source) > DEFAULT_REUSE)):
             atomic_write(path, json.dumps({"identity": identity, "requested": requested,
                 "completed_at": datetime.now(timezone.utc).isoformat(), "result": payload},
                 ensure_ascii=False, allow_nan=False))

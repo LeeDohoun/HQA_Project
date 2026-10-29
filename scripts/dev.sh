@@ -3,10 +3,11 @@
 # HQA — start backend, frontend, ai-server, and local Ollama when configured.
 #
 # Usage:  ./scripts/dev.sh
+#         HQA_PAPER=1 ./scripts/dev.sh   # also the PAPER workers: collection loop, signal monitor, analysis scheduler
 # Stop:   Ctrl-C (kills all managed children)
 #
-# Logs are prefixed [ollama] [ai] [be] [fe] and streamed to stdout.
-# Per-service log files: logs/dev/{ollama,ai,be,fe}.log
+# Logs are prefixed [ollama] [ai] [be] [fe] [loop] [mon] [sched] and streamed to stdout.
+# Per-service log files: logs/dev/{ollama,ai,be,fe,loop,mon,sched}.log
 # ==========================================
 
 set -uo pipefail
@@ -159,6 +160,7 @@ PYTHONPATH="$ROOT" launch ai 36 "$LOG_DIR/ai.log" \
 # spring-boot:run forks a JVM that does NOT inherit our shell's env vars,
 # so pass everything Spring needs as -D system properties instead.
 BE_JVM_ARGS="-DHQA_KIS_ENC_KEY=${HQA_KIS_ENC_KEY:-} \
+-DHQA_INTERNAL_TOKEN=${HQA_INTERNAL_TOKEN:-} \
 -DDATABASE_URL=${DATABASE_URL} \
 -DDATABASE_USERNAME=${DATABASE_USERNAME} \
 -DDATABASE_PASSWORD=${DATABASE_PASSWORD} \
@@ -178,6 +180,21 @@ launch be 33 "$LOG_DIR/be.log" \
 # Frontend (Next.js dev)
 launch fe 35 "$LOG_DIR/fe.log" \
   bash -c 'cd "$1" && PORT="$2" NEXT_PUBLIC_API_BASE="$3" BACKEND_PROXY_TARGET="$4" npm run dev' _ "$ROOT/frontend" "$FE_PORT" "$FRONTEND_API_BASE" "$BACKEND_PROXY_TARGET"
+
+# PAPER workers (docs/paper-preflight-checklist.md §5): start once the backend and AI server answer.
+if [[ "${HQA_PAPER:-0}" == 1 ]]; then
+  for _ in {1..180}; do
+    curl -fsS "http://localhost:$BE_PORT/actuator/health" >/dev/null 2>&1 \
+      && curl -fsS "http://localhost:$AI_PORT/health" >/dev/null 2>&1 && break
+    sleep 1
+  done
+  info "  paper → loop / mon / sched      logs: $LOG_DIR/{loop,mon,sched}.log"
+  PYTHONPATH="$ROOT" launch loop 32 "$LOG_DIR/loop.log" \
+    "$VENV/bin/python" -m scripts.data.loop --enabled-sources "${HQA_COLLECT_SOURCES:-news,dart,financials,kis_chart}" \
+    --top-value "${HQA_TOP_VALUE:-0}"
+  PYTHONPATH="$ROOT" launch mon 31 "$LOG_DIR/mon.log" "$VENV/bin/python" -u -m src.runner.signal_monitor
+  PYTHONPATH="$ROOT" launch sched 34 "$LOG_DIR/sched.log" "$VENV/bin/python" -u -m src.runner.analysis_scheduler --forever
+fi
 
 # Wait until any child exits, then trigger cleanup. Portable across
 # macOS bash 3.2 (no `wait -n`).
