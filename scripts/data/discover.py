@@ -82,7 +82,7 @@ def save_collected_themes(
 def main() -> None:
     parser = argparse.ArgumentParser(description="네이버 증권 전체 테마와 테마별 종목을 data/theme_catalog에 저장합니다. 분석 대상 목록(theme_targets)은 바꾸지 않습니다.")
     parser.add_argument("--data-dir", default=str(get_data_dir()))
-    parser.add_argument("--max-pages", type=int, default=10)
+    parser.add_argument("--max-pages", type=int, default=10, help="읽을 Naver 테마 목록 페이지 수(페이지당 100개)")
     parser.add_argument("--max-stocks-per-theme", type=int, default=200)
     parser.add_argument("--append", action="store_true", help="--as-targets와 함께: 기존 theme_targets에 append/dedupe로 저장합니다.")
     parser.add_argument("--as-targets", action="store_true",

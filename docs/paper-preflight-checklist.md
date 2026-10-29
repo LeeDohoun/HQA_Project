@@ -90,7 +90,7 @@ venv/bin/python -m scripts.data.market_context --from-date 20250901 --to-date 20
 ```
 
 - 기업코드 목록은 기본으로 `./corp_codes.csv`이고, 수집기가 7일마다 자동으로 갱신합니다(`DART_API_KEY` 필요). OpenDART 점검(`status=800`) 중에는 기존 파일을 그대로 씁니다.
-- 분석 대상 테마는 `data/raw/theme_targets/<key>.jsonl`입니다. 10-10에 수익률이 아닌 데이터 기준(20일 평균 거래대금 10억 원 이상, DART 기업코드, 2차전지와 겹치지 않는 업종)으로 2차전지 8종목, 자율주행차 8종목, 5G 8종목을 정했습니다. 규칙과 결과는 [변경 내역 7.12](ai-data-changes-2026-09.md#712-krx-승인-전-kis-일봉과-종목-확장-2026-10-10)에 있습니다. `scripts.data.discover`는 기본으로 카탈로그에만 저장하고, `--as-targets`일 때만 대상 목록을 바꿉니다. 다만 Naver가 테마 페이지를 새 사이트(`stock.naver.com`, 브라우저에서 그리는 화면)로 옮겨, `discover`와 `collect --refresh-targets`의 파서는 지금 테마를 찾지 못합니다. 저장된 대상 목록으로 수집하는 기본 동작에는 영향이 없습니다.
+- 분석 대상 테마는 `data/raw/theme_targets/<key>.jsonl`입니다. 10-10에 수익률이 아닌 데이터 기준(20일 평균 거래대금 10억 원 이상, DART 기업코드, 2차전지와 겹치지 않는 업종)으로 2차전지 8종목, 자율주행차 8종목, 5G 8종목을 정했습니다. 규칙과 결과는 [변경 내역 7.12](ai-data-changes-2026-09.md#712-krx-승인-전-kis-일봉과-종목-확장-2026-10-10)에 있습니다. `scripts.data.discover`는 기본으로 카탈로그(`data/theme_catalog/`)에만 저장하고, `--as-targets`일 때만 대상 목록을 바꿉니다. 테마 탐색(`discover`, `collect --refresh-targets`)은 Naver 모바일 JSON API를 읽으므로 브라우저나 Selenium이 필요 없고, 전체 카탈로그(테마 264개)는 2분쯤 걸립니다([변경 내역 7.21](ai-data-changes-2026-09.md#721-naver-테마-탐색-복구-ecc0509-2026-10-11)). `--refresh-targets`는 이름에 키워드가 들어간 테마의 종목을 시가총액 순으로 가져와 대상 목록을 덮어쓰므로, 관찰 기간에는 `--refresh-targets`와 `--as-targets`를 쓰지 않습니다.
 - 운영 중에는 수집 루프를 띄워 둡니다. `--themes` 없이 실행하면 저장된 테마 전부를 수집합니다. KRX 승인 전에는 출처를 `kis_chart`로 넘기고, 승인 뒤에는 기본 출처(`chart`)에 `--market-context`를 더해 08:00 이후 하루 한 번 지수를 갱신합니다.
 
   ```bash

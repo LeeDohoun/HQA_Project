@@ -1,0 +1,75 @@
+{
+  "stockListSortType": "THEME",
+  "stocks": [
+    {
+      "stockType": "domestic",
+      "stockEndType": "stock",
+      "itemCode": "012330",
+      "reutersCode": "012330",
+      "stockName": "현대모비스",
+      "sosok": "0",
+      "closePrice": "220,000",
+      "fluctuationsRatio": "1.10",
+      "tradeStopType": {
+        "code": "2",
+        "text": "정지.Halted",
+        "name": "HALTED"
+      },
+      "closePriceRaw": "220000",
+      "accumulatedTradingValueRaw": "100000000000",
+      "marketValueRaw": "20000000000000"
+    },
+    {
+      "stockType": "domestic",
+      "stockEndType": "stock",
+      "itemCode": "005380",
+      "reutersCode": "005380",
+      "stockName": "현대차",
+      "sosok": "0",
+      "closePrice": "240,000",
+      "fluctuationsRatio": "0.20",
+      "tradeStopType": {
+        "code": "1",
+        "text": "운영.Trading",
+        "name": "TRADING"
+      },
+      "closePriceRaw": "240000",
+      "accumulatedTradingValueRaw": "170000000000",
+      "marketValueRaw": "50000000000000"
+    },
+    {
+      "stockType": "domestic",
+      "stockEndType": "stock",
+      "itemCode": "000660",
+      "reutersCode": "000660",
+      "stockName": "SK하이닉스",
+      "sosok": "0",
+      "closePrice": "410,000",
+      "fluctuationsRatio": "-1.50",
+      "tradeStopType": {
+        "code": "1",
+        "text": "운영.Trading",
+        "name": "TRADING"
+      },
+      "closePriceRaw": "410000",
+      "accumulatedTradingValueRaw": "5600000000000",
+      "marketValueRaw": "300000000000000"
+    }
+  ],
+  "groupInfo": {
+    "no": 362,
+    "name": "자율주행차",
+    "totalCount": 3,
+    "changeRate": "-0.52",
+    "riseCount": 0,
+    "fallCount": 0,
+    "steadyCount": 0
+  },
+  "themeDescription": "자율주행차 테마 설명(시험용).",
+  "themeItemInfoMap": {},
+  "totalCount": 3,
+  "page": 1,
+  "pageSize": 100,
+  "localOpenTimeDesc": "",
+  "marketStatus": "CLOSE"
+}

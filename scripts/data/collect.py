@@ -101,7 +101,8 @@ def _resolve_targets(args: argparse.Namespace, theme_key: str) -> List[StockTarg
     if not theme_stocks:
         raise ValueError(
             f"'{args.theme}' 테마에서 종목을 찾지 못했습니다. "
-            "테마 키워드를 바꾸거나 파서 상태를 확인하세요."
+            "이름에 이 키워드가 들어간 Naver 테마가 없거나, 있어도 지원하는 종목이 없습니다. "
+            "테마 키워드를 바꾸세요."
         )
 
     targets = [
@@ -133,7 +134,8 @@ def main() -> int:
         default=str(get_data_dir()),
     )
     parser.add_argument("--theme-max-stocks", type=int, default=30)
-    parser.add_argument("--theme-max-pages", type=int, default=10)
+    parser.add_argument("--theme-max-pages", type=int, default=10,
+                        help="--refresh-targets일 때 읽을 Naver 테마 목록 페이지 수(페이지당 100개)")
     parser.add_argument(
         "--target-mode",
         choices=["overwrite", "append"],
