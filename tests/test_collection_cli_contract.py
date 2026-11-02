@@ -126,7 +126,7 @@ def test_default_pipeline_is_collection_only_even_with_model_key_present(tmp_pat
     monkeypatch.setattr("sys.argv", ["collect", "--theme", "fixture", "--data-dir", str(tmp_path),
                                     "--corp-codes-csv", str(tmp_path / "corp.csv")])
     monkeypatch.setattr(theme_pipeline, "_ensure_fresh_corp_codes_csv", lambda *args, **kwargs: False)
-    sources = ["news", "dart", "financials", "chart"]
+    sources = collection_common.enabled_sources(collection_common.DEFAULT_SOURCES)
     result = CollectResult(report=IngestionRunReport(
         "005930", "Example", sources, source_success={source: True for source in sources},
         source_status={source: "no_data" for source in sources}))

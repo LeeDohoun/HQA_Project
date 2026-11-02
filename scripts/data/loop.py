@@ -114,9 +114,9 @@ def main() -> int:
     parser.add_argument(
         "--enabled-sources",
         type=str,
-        default="news,dart,financials,chart",
+        default="news,dart,financials,chart,forum",
         help=("Sources passed to scripts.data.collect. chart=KRX OHLCV, kis_chart=KIS daily OHLCV on the same "
-              "unadjusted basis until the KRX key is approved (not both), financials=DART statements."),
+              "unadjusted basis until the KRX key is approved (not both), financials=DART statements, forum=Naver+Toss community."),
     )
     parser.add_argument("--market-context", action="store_true",
                         help="Also refresh KOSPI/KOSDAQ indices once per KST day after 08:00 (needs KRX_OPEN_API_KEY)")

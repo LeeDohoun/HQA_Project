@@ -1309,6 +1309,31 @@ def test_a_set_aside_plan_names_the_fields_it_broke():
     assert decision.invalid_plans[0]["reason"] == "plan contract: entry_price: Input should be greater than 0"
 
 
+def test_the_risk_manager_sees_fear_greed_and_a_zero_sized_tilt_refuses_only_that_plan():
+    from types import SimpleNamespace
+
+    engine, calls = service()
+    engine._fear_greed = lambda candidate, as_of: {"status": "ready", "score": 50.0}
+    engine._market_regime = lambda as_of: {"status": "ready", "vkospi_percentile": 50.0}
+    account = engine.run_cycle([{"userId": "a"}])["accounts"]["a"]
+    payload = _risk_payload(calls)
+    assert payload["market_regime"]["status"] == "ready"
+    assert all(row["fear_greed"]["score"] == 50.0 for row in payload["candidates"])
+    assert account["status"] == "completed" and account["fear_greed_tilts"] == []
+
+    engine.fear_greed_sensitivity = 1.0
+    greed = SimpleNamespace(stock_code="000001", action="BUY", position_size_pct=5.0)
+    fear = SimpleNamespace(stock_code="000002", action="BUY", position_size_pct=5.0)
+    plans, rejected = [greed, fear], []
+    expected = {"000001": {"fear_greed": {"status": "ready", "score": 100.0}},
+                "000002": {"fear_greed": {"status": "ready", "score": 0.0}}}
+    tilts = engine._apply_fear_greed_tilt(plans, rejected, expected, SimpleNamespace(maxPositionPct=8.0))
+    assert plans == [fear] and fear.position_size_pct == 8.0   # doubled, then capped
+    assert [row["stock_code"] for row in tilts] == ["000002"]
+    assert rejected == [{"stock_code": "000001", "action": "BUY",
+                         "reason": "fear/greed tilt produced a nonpositive position size"}]
+
+
 def test_internal_auth_ignores_surrounding_whitespace_in_the_configured_token(monkeypatch):
     """Clients strip the token they send; the server must compare the same stripped value."""
     from fastapi.testclient import TestClient

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-DEFAULT_SOURCES = "news,dart,financials,chart"
+DEFAULT_SOURCES = "news,dart,financials,chart,forum"
 # chart is KRX Open API daily prices (primary). kis_chart is KIS daily prices on the same
 # unadjusted basis, opted into while the KRX key awaits approval; never both in one run.
 SUPPORTED_SOURCES = ("news", "dart", "financials", "forum", "chart", "kis_chart")
