@@ -326,6 +326,26 @@ class LocalAnalysisData:
         from src.runner.market_context_data import load_benchmark_context
         return load_benchmark_context(self.data_dir, candidate, as_of)
 
+    def documents_path(self, candidate: dict, theme: str) -> Path | None:
+        """The document file `load_evidence` reads for one of the candidate's themes: the generation
+        captured with the universe (or the current one), None when the theme has no corpus."""
+        captured = candidate.get("theme_generations")
+        if captured is not None:
+            if theme not in captured:
+                raise ValueError(f"missing_captured_analysis_generation:{theme}")
+            generation = captured[theme]
+            if generation is None and self._current_generation(theme) is not None:
+                raise ValueError(f"analysis_generation_changed_from_legacy:{theme}")
+        else:
+            generation = self._current_generation(theme)
+        index_dir = (self._generation_dir(theme, generation) if generation is not None
+                     else self.data_dir / "canonical_index" / theme)
+        path = index_dir / "documents.jsonl"
+        if not path.exists():
+            # Legacy canonical corpora embed the full document in each chunk.
+            path = index_dir / "corpus.jsonl"
+        return path if path.exists() else None
+
     def load_evidence(self, candidate: dict, as_of: datetime) -> dict:
         from src.runner.corporate_actions import build_corporate_action_context, corporate_action_type
         from src.runner.event_evidence import build_event_evidence, select_event_evidence
@@ -334,22 +354,8 @@ class LocalAnalysisData:
         invalid: dict[str, list[str]] = {}
         conflicting_fragments = False
         for theme in candidate["theme_keys"]:
-            captured = candidate.get("theme_generations")
-            if captured is not None:
-                if theme not in captured:
-                    raise ValueError(f"missing_captured_analysis_generation:{theme}")
-                generation = captured[theme]
-                if generation is None and self._current_generation(theme) is not None:
-                    raise ValueError(f"analysis_generation_changed_from_legacy:{theme}")
-            else:
-                generation = self._current_generation(theme)
-            index_dir = (self._generation_dir(theme, generation) if generation is not None
-                         else self.data_dir / "canonical_index" / theme)
-            path = index_dir / "documents.jsonl"
-            if not path.exists():
-                # Legacy canonical corpora embed the full document in each chunk.
-                path = index_dir / "corpus.jsonl"
-            if not path.exists():
+            path = self.documents_path(candidate, theme)
+            if path is None:
                 errors.append(f"missing_canonical_corpus:{theme}")
                 continue
             for row in read_jsonl(path):

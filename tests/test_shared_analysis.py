@@ -1534,3 +1534,165 @@ def test_the_review_structure_comes_from_the_environment(monkeypatch):
         risk_review_structure_from_env()
     with pytest.raises(ValueError):
         RiskReviewStructure(candidate_rank="analyst")
+
+
+def stock_news(code, url, body, published, collected=None, **meta):
+    """A canonical news row as the collector writes it, for the analyst's retrieved context."""
+    return {"source_type": "news", "stock_code": code, "stock_name": "Stock " + code, "url": url, "title": body[:20],
+            "content": body, "published_at": published,
+            "metadata": {"collected_at": collected or published, "entity_match": {"matched": True},
+                         "publication_time_status": "confirmed", **meta}}
+
+
+class RetrievalData(EventData):
+    """Event data whose theme "b" has a document file (the theme "a" has none)."""
+
+    def __init__(self, path, fail=False):
+        super().__init__()
+        self.path, self.fail = path, fail
+
+    def documents_path(self, candidate, theme):
+        if self.fail:
+            raise ValueError("unpublished_analysis_generation:b")
+        return self.path if theme == "b" else None
+
+
+class Audit:
+    def __init__(self):
+        self.events = []
+
+    def append(self, kind, payload):
+        self.events.append((kind, payload))
+        return len(self.events)
+
+
+def write_documents(path, rows):
+    path.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows), encoding="utf-8")
+    return path
+
+
+def rag_documents(tmp_path):
+    event_url = "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260901000001"
+    return write_documents(tmp_path / "documents.jsonl", [
+        stock_news("000001", "https://news.example/old-contract", "Stock 000001 수주 계약 공급 실적 개선",
+                   "2026-08-05T09:00:00+09:00"),
+        stock_news("000001", "https://news.example/old-investment", "Stock 000001 설비 투자 실적 전망",
+                   "2026-08-20T09:00:00+09:00"),
+        stock_news("000001", "https://news.example/old-plain", "Stock 000001 주주총회 소집 수주", "2026-07-20T09:00:00+09:00"),
+        stock_news("000001", "https://news.example/roundup", "시장 마감 수주 계약 공급 실적 투자 Stock 000001 수주 계약 공급 실적 투자",
+                   "2026-08-25T09:00:00+09:00"),
+        stock_news("000001", "https://news.example/too-old", "Stock 000001 수주 계약 공급", "2026-05-01T09:00:00+09:00"),
+        stock_news("000001", "https://news.example/later", "Stock 000001 수주 계약 공급", "2026-09-03T09:00:00+09:00",
+                   collected="2026-09-05T09:00:00+09:00"),
+        stock_news("000001", "https://news.example/unverified", "Stock 000001 수주 계약 공급",
+                   "2026-08-25T09:00:00+09:00", entity_match={"matched": False}),
+        stock_news("000002", "https://news.example/other-stock", "Stock 000002 수주 계약 공급", "2026-08-25T09:00:00+09:00"),
+        {**stock_news("000001", event_url, "단일판매 공급계약 수주", "2026-08-25T09:00:00+09:00"), "source_type": "dart",
+         "metadata": {"collected_at": "2026-08-25T09:00:00+09:00"}},
+    ])
+
+
+def rag_cycle(data, analyst_rag):
+    calls, systems, audit = [], {}, Audit()
+    models = {role: Model(role, calls) for role in ("analyst", "quant", "chartist", "risk_manager")}
+    for role, model in models.items():
+        def capture(messages, role=role, invoke=model.invoke):
+            systems[role] = messages[0][1]
+            return invoke(messages)
+        model.invoke = capture
+    engine = SharedAnalysisService(data=data, accounts=Accounts(), models=models, clock=lambda: NOW, audit=audit,
+                                   sleep=lambda seconds: None, analyst_rag=analyst_rag)
+    cycle = engine.run_cycle([{"userId": "a"}], as_of=NOW)
+    return cycle, {role: payload for role, payload in calls}, systems, audit
+
+
+def test_the_analyst_gets_two_of_its_stocks_older_documents_outside_its_events(tmp_path):
+    from src.runner.analyst_retrieval import STOCK_RAG_NOTE, STOCK_RAG_VARIANT
+    from src.runner.shared_analysis import PROMPT_VERSION, ROLE_INSTRUCTIONS
+
+    path = rag_documents(tmp_path)
+    off, off_calls, off_systems, off_audit = rag_cycle(RetrievalData(path), "off")
+    on, on_calls, on_systems, on_audit = rag_cycle(RetrievalData(path), "stock")
+    assert off["errors"] == [] and on["errors"] == []
+    analyst = on_calls["analyst"]
+    urls = [item["url"] for item in analyst["retrieved_context"]]
+    # Best BM25 first. Left out: a roundup whose title does not name the stock, and items too old, not
+    # yet collected, unverified, another stock's and the event's own.
+    assert urls == ["https://news.example/old-contract", "https://news.example/old-investment"]
+    assert all(item["context_kind"] == "stock" and item["stock_code"] == "000001" for item in analyst["retrieved_context"])
+    assert analyst["source_ids"][-2:] == [item["source_id"] for item in analyst["retrieved_context"]]
+    assert {key: value for key, value in analyst.items() if key not in {"retrieved_context", "source_ids"}} == \
+        {key: value for key, value in off_calls["analyst"].items() if key != "source_ids"}
+    instructions = ROLE_INSTRUCTIONS["analyst"]
+    assert on_systems["analyst"] == off_systems["analyst"].replace(instructions, instructions + STOCK_RAG_NOTE, 1)
+    for role in ("quant", "chartist", "risk_manager"):
+        assert on_calls[role] == off_calls[role] and on_systems[role] == off_systems[role]
+    versions = {payload["role"]: payload["prompt_version"] for kind, payload in on_audit.events if kind == "llm_request"}
+    assert versions["analyst"] == PROMPT_VERSION + "+" + STOCK_RAG_VARIANT and versions["quant"] == PROMPT_VERSION
+    assert on["manifest"]["analyst_prompt_version"] == versions["analyst"]
+    assert "retrieved_context" not in off_calls["analyst"] and "analyst_prompt_version" not in off["manifest"]
+    assert STOCK_RAG_NOTE not in off_systems["analyst"]
+
+
+def test_a_retrieval_failure_leaves_the_analyst_with_its_events(tmp_path):
+    cycle, calls, systems, audit = rag_cycle(RetrievalData(rag_documents(tmp_path), fail=True), "stock")
+    assert cycle["errors"] == [{"stock_code": "000001", "stage": "analyst_retrieval",
+                                "error": "unpublished_analysis_generation:b"}]
+    assert "retrieved_context" not in calls["analyst"] and len(calls["analyst"]["events"]) == 1
+    assert cycle["accounts"]["a"]["status"] == "completed"
+
+
+def test_each_document_file_is_parsed_once_per_version(tmp_path, monkeypatch):
+    from src.runner import analyst_retrieval
+
+    path = rag_documents(tmp_path)
+    reads = []
+    real = analyst_retrieval.read_jsonl
+    monkeypatch.setattr(analyst_retrieval, "read_jsonl", lambda p: reads.append(p) or real(p))
+    data = RetrievalData(path)
+    retrieval = analyst_retrieval.AnalystRetrieval(data)
+    candidate = data.load_universe(NOW)[0][0]
+    payload = {"stock_code": "000001", "stock_name": "Stock 000001", "events": [], "documents": [],
+               "source_ids": ["event:1"], "data_gaps": []}
+    first = retrieval.add_context(candidate, payload, NOW, 12_000)
+    assert retrieval.add_context(candidate, payload, NOW, 12_000) == first and len(reads) == 1
+    write_documents(path, [stock_news("000001", "https://news.example/new", "Stock 000001 신규 수주 계약",
+                                      "2026-09-01T09:00:00+09:00")])
+    assert [item["url"] for item in retrieval.add_context(candidate, payload, NOW, 12_000)["retrieved_context"]] == \
+        ["https://news.example/new"]
+    assert len(reads) == 2
+
+
+def test_the_analyst_retrieval_mode_comes_from_the_environment(monkeypatch):
+    from src.runner.analyst_retrieval import AnalystRetrieval, analyst_rag_from_env
+
+    monkeypatch.delenv("HQA_ANALYST_RAG", raising=False)
+    assert analyst_rag_from_env() == "off"
+    monkeypatch.setenv("HQA_ANALYST_RAG", "stock")
+    assert analyst_rag_from_env() == "stock"
+    monkeypatch.setenv("HQA_ANALYST_RAG", "theme")
+    with pytest.raises(ValueError, match="HQA_ANALYST_RAG"):
+        analyst_rag_from_env()
+    with pytest.raises(ValueError, match="unknown analyst retrieval mode"):
+        AnalystRetrieval(None, mode="theme")
+    assert SharedAnalysisService(data=None, accounts=None, models={}).analyst_retrieval is None
+
+
+def test_a_title_names_the_stock_whatever_its_case_width_and_spacing():
+    from src.runner.analyst_retrieval import names_stock
+
+    assert names_stock("ＬＧ 에너지솔루션, ESS 수주", "LG에너지솔루션") and names_stock("naver 웹툰", "NAVER")
+    assert not names_stock("LG엔솔, ESS 수주", "LG에너지솔루션") and not names_stock("시장 마감", "")
+
+
+def test_a_roundups_excerpt_is_its_paragraph_on_the_stock():
+    from src.runner.analyst_retrieval import EXCERPT_CHARS, _excerpt, tokens
+
+    other = "다른회사 수주 계약 공급 실적 투자 " * 40
+    body = "증권사 리포트 요약 ▶ 대상전자 목표가 상향 " + other + "대상전자는 신규 고객 확보로 대상전자 실적이 개선된다. " + other
+    excerpt, truncated = _excerpt(body, tokens("대상전자 실적 수주 계약 공급 투자"), focus="대상전자")
+    assert truncated and excerpt.count("대상전자") == 2 and len(excerpt) == EXCERPT_CHARS
+    generic, _ = _excerpt(body, tokens("대상전자 실적 수주 계약 공급 투자"))
+    assert "대상전자는 신규 고객" not in generic
+    assert _excerpt(body, tokens("실적"), focus="없는회사") == _excerpt(body, tokens("실적"))
+    assert _excerpt("짧은 글", [], focus="x") == ("짧은 글", False)

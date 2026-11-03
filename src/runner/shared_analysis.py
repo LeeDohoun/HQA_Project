@@ -463,7 +463,7 @@ class SharedAnalysisService:
     def __init__(self, *, data: Any, accounts: Any, models: dict[str, Any] | None = None,
                  max_workers: int = 6, cache_entries: int = 512, clock: Callable[[], datetime] | None = None,
                  audit: Any = None, sleep: Callable[[float], None] | None = None,
-                 structure: RiskReviewStructure | None = None):
+                 structure: RiskReviewStructure | None = None, analyst_rag: str = "off"):
         self.data = data
         self.accounts = accounts
         self.models = models if models is not None else _role_models()
@@ -474,6 +474,16 @@ class SharedAnalysisService:
         self.audit = audit
         self.sleep = sleep or time.sleep
         self.structure = structure or RiskReviewStructure()
+        # Retrieved background for the analyst (`HQA_ANALYST_RAG`, src/runner/analyst_retrieval.py).
+        self.analyst_retrieval = None
+        if analyst_rag != "off":
+            from src.runner.analyst_retrieval import AnalystRetrieval
+            self.analyst_retrieval = AnalystRetrieval(data, mode=analyst_rag)
+
+    def _prompt_version(self, role: str) -> str:
+        if role == "analyst" and self.analyst_retrieval is not None:
+            return PROMPT_VERSION + "+" + self.analyst_retrieval.variant
+        return PROMPT_VERSION if role in ROLE_INSTRUCTIONS else self.structure.prompt_version
 
     def _fetch_account(self, user_id: str) -> dict:
         try:
@@ -487,6 +497,8 @@ class SharedAnalysisService:
     def _invoke(self, role: str, schema: Any, payload: dict, *, critical: bool = False,
                 priority: LLMTaskPriority = LLMTaskPriority.SCHEDULED):
         prompt = ROLE_INSTRUCTIONS[role] if role in ROLE_INSTRUCTIONS else self.structure.risk_manager_instructions()
+        if role == "analyst" and self.analyst_retrieval is not None:
+            prompt += self.analyst_retrieval.note
         if role in ROLE_INSTRUCTIONS:
             # The output schema allows every specialist role, so the request must say which
             # one is expected and what the numeric scales mean; otherwise a model can answer
@@ -499,7 +511,7 @@ class SharedAnalysisService:
         messages = [("system", prompt + PROMPT_SUFFIX),
                     ("human", json.dumps(payload, ensure_ascii=False, allow_nan=False))]
         request_id = self.audit.append("llm_request", {"role": role, "model": self._model_names().get(role, MODEL_VERSION),
-            "prompt_version": PROMPT_VERSION if role in ROLE_INSTRUCTIONS else self.structure.prompt_version,
+            "prompt_version": self._prompt_version(role),
             "input_hash": content_hash(payload),
             "holding_priority": critical,
             "instructions": messages[0][1], "payload": payload, "schema": schema.model_json_schema()}) if self.audit else None
@@ -530,6 +542,9 @@ class SharedAnalysisService:
         names = self._model_names()
         return {"model": names.get("risk_manager", MODEL_VERSION), "role_models": names}
 
+    def _analyst_manifest(self) -> dict:
+        return {"analyst_prompt_version": self._prompt_version("analyst")} if self.analyst_retrieval is not None else {}
+
     def _input_budget(self, role: str) -> int:
         limit = getattr(self.models.get(role), "hqa_input_limit", None) or DEFAULT_SPECIALIST_INPUT_TOKENS
         return max(1_000, int(limit) - SPECIALIST_PROMPT_RESERVE_TOKENS)
@@ -541,7 +556,7 @@ class SharedAnalysisService:
                   "reasoning": getattr(model, "reasoning", None) or getattr(model, "reasoning_effort", "low"),
                   "output_limit": getattr(model, "max_tokens", None),
                   "input_limit": getattr(model, "hqa_input_limit", None)}
-        key = content_hash({"role": role, "input": payload, "prompt": PROMPT_VERSION,
+        key = content_hash({"role": role, "input": payload, "prompt": self._prompt_version(role),
                             "factors": FACTOR_VERSION, "model_config": config})
 
         def calculate():
@@ -598,6 +613,7 @@ class SharedAnalysisService:
                      "prefilter_count": 0, "specialist_stock_count": 0, "completed_stock_count": 0,
                      "global_ranked_leaders": [], "errors": [], "accounts": account_errors,
                      "manifest": {**self._manifest_models(), "prompt_version": self.structure.prompt_version,
+                                  **self._analyst_manifest(),
                                   "factor_version": FACTOR_VERSION, "role_input_hashes": {}},
                      "timings_ms": {"data": elapsed, "specialists": 0, "accounts": 0, "total": elapsed}}
             if self.audit:
@@ -709,6 +725,14 @@ class SharedAnalysisService:
                 del payloads[(code, role)]
                 errors.append({"stock_code": code, "stage": f"{role}_input", "error": str(exc)})
                 common[code]["specialist_errors"].append(f"{role}_input:{exc}")
+        if self.analyst_retrieval is not None:
+            for code in [code for (code, role) in payloads if role == "analyst"]:
+                try:
+                    payloads[(code, "analyst")] = self.analyst_retrieval.add_context(
+                        common[code]["candidate"], payloads[(code, "analyst")], as_of, self._input_budget("analyst"))
+                except Exception as exc:
+                    # Retrieved background is optional: the analyst still gets its events.
+                    errors.append({"stock_code": code, "stage": "analyst_retrieval", "error": str(exc)})
         data_finished = time.monotonic()
         with ThreadPoolExecutor(max_workers=self.max_workers) as pool:
             priority = LLMTaskPriority.UI_ANALYSIS if preview_code is not None else LLMTaskPriority.SCHEDULED
@@ -783,7 +807,7 @@ class SharedAnalysisService:
                 "specialist_stock_count": len(selected_codes), "completed_stock_count": len(completed),
                 "global_ranked_leaders": public_rows, "errors": errors, "accounts": results,
                 "manifest": {**self._manifest_models(), "prompt_version": self.structure.prompt_version,
-                             "factor_version": FACTOR_VERSION,
+                             **self._analyst_manifest(), "factor_version": FACTOR_VERSION,
                              "role_input_hashes": {f"{code}:{role}": content_hash(payload) for (code, role), payload in payloads.items()}},
                 "timings_ms": {"data": round((data_finished - started) * 1000),
                                "specialists": round((specialists_finished - data_finished) * 1000),
@@ -1048,8 +1072,9 @@ class _LazyBackendAccounts:
 
 @lru_cache(maxsize=4)
 def _cached_runtime_analysis_service(config_path: str, data_dir: str) -> SharedAnalysisService:
+    from src.runner.analyst_retrieval import analyst_rag_from_env
     from src.tracing.paper_audit import PaperAudit
     data = LocalAnalysisData(config_path=config_path, data_dir=data_dir)
     return SharedAnalysisService(data=data, accounts=_LazyBackendAccounts(),
                                  audit=PaperAudit(os.getenv("HQA_PAPER_AUDIT_PATH", str(data.data_dir / "paper_audit.sqlite3"))),
-                                 structure=risk_review_structure_from_env())
+                                 structure=risk_review_structure_from_env(), analyst_rag=analyst_rag_from_env())
