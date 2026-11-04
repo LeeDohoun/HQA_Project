@@ -3,7 +3,6 @@
 - 작성: 2026-10-26. 측정 대상은 규칙 주도주 전략(`backtesting run`, `ai_theme_leader_momentum_v1`)입니다. LLM은 쓰지 않았습니다.
 - 엔진은 저장소의 `backtesting/leader_backtest.py`이고, 실행 모델 버전은 `2026-10-09:prior-day-evidence:halts-kept:gap-fills:open-take-profit:overlap-sleeves:true-period-ends`입니다. 엔진 코드는 바꾸지 않았습니다. 다음 날 시가 진입은 실행할 때만 감싸는 스크립트로 쟀습니다(7장).
 - 데이터는 2026-09-13 데이터 백업(`HQA_Project_data_2026-09-13.tar.gz`, SHA-256 `dd8762fffca735d34493324e370f8dd9da3d63c6be5fd717540bf8224aa6bf8f`)을 그대로 썼습니다. 데이터와 결과 파일은 원본 데이터 보호를 위해 저장소에 올리지 않았습니다(작업 컴퓨터의 `C:\hqa_data\data\backtest_results\`).
-- [HQA 구조·엔진 적합성 백테스트](../../docs/poster/README.md#부록-백테스트-보고서-전문)(2026-10-22, 10-25 정정)와 함께 읽습니다. 그 보고서는 24종목·다음 날 시가 진입·2024-08~2026-10이고, 이 보고서는 테마별 50종목 안팎과 320종목 통합·2023-01~2026-06입니다.
 - 이 보고서는 측정한 것만 적습니다. 앞으로의 수익을 예측하거나 투자를 권하지 않습니다.
 
 ## 0. 결론
