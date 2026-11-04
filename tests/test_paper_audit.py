@@ -45,3 +45,54 @@ def test_evaluation_distinguishes_budget_rejections_and_schema_only_responses():
     assert summary["budget_rejections"] == 1
     assert summary["llm_failures"] == 2
     assert summary["llm_schema_valid_responses"] == 1
+
+
+RAG_VERSION = "hqa-fixed-dag-v8-backend-plan-rules+analyst-rag-stock-v1"
+
+
+def analyst_turn(audit, stock, source_ids, score, *, items=None, cited=(), fail=False, version=None):
+    """One analyst request and its response (or failure), as SharedAnalysisService records them."""
+    payload = {"stock_code": stock, "stock_name": "x", "events": [], "source_ids": list(source_ids), "data_gaps": []}
+    if items is not None:
+        payload["retrieved_context"] = [{"source_id": item, "excerpt": "과거 수주 기사"} for item in items]
+        payload["source_ids"] += list(items)
+    request_id = audit.append("llm_request", {"role": "analyst", "prompt_version": version or (
+        RAG_VERSION if items is not None else "hqa-fixed-dag-v8-backend-plan-rules"), "instructions": "Evaluate", "payload": payload})
+    if fail:
+        audit.append("llm_failure", {"request_id": request_id, "role": "analyst", "error_type": "Timeout", "error": "t"})
+    else:
+        citations = [{"source_id": source, "claim": "c"} for source in [*source_ids[:1], *cited]]
+        audit.append("llm_response", {"request_id": request_id, "role": "analyst",
+                                      "output": {"score": score, "citations": citations}})
+
+
+def test_the_retrieval_report_counts_use_citations_cost_and_score_changes_on_unchanged_evidence(tmp_path):
+    from scripts.paper_rag_report import load_events, main
+    from src.tracing.paper_audit import summarize_analyst_retrieval
+
+    path = tmp_path / "audit.sqlite3"
+    audit = PaperAudit(path)
+    analyst_turn(audit, "000001", ["event:a"], 50.0)
+    analyst_turn(audit, "000002", ["event:b"], 40.0)
+    analyst_turn(audit, "000002", ["event:b2"], 70.0)                    # the evidence changed: a different baseline
+    audit.append("llm_request", {"role": "quant", "prompt_version": "v", "instructions": "", "payload": {}})
+    analyst_turn(audit, "000001", ["event:a"], 60.0, items=["retrieved:1", "retrieved:2"], cited=["retrieved:1"])
+    analyst_turn(audit, "000002", ["event:b"], 42.0, items=[])
+    analyst_turn(audit, "000003", ["event:c"], 55.0, items=["retrieved:3"])   # no baseline: no pair
+    analyst_turn(audit, "000004", ["event:d"], 0.0, items=["retrieved:4"], fail=True)
+    audit.append("analysis", {"errors": [{"stock_code": "000005", "stage": "analyst_retrieval", "error": "x"},
+                                         {"stock_code": "000005", "stage": "quant", "error": "y"}]})
+    summary = summarize_analyst_retrieval(load_events(path))
+    rag = summary["by_prompt_version"][RAG_VERSION]
+    assert {key: rag[key] for key in ("requests", "responses", "failures", "with_items", "items", "cited_requests",
+                                      "cited_items")} == {"requests": 4, "responses": 3, "failures": 1, "with_items": 3,
+                                                          "items": 4, "cited_requests": 1, "cited_items": 1}
+    assert rag["mean_retrieved_tokens"] > 0
+    assert rag["mean_input_tokens"] > summary["by_prompt_version"]["hqa-fixed-dag-v8-backend-plan-rules"]["mean_input_tokens"]
+    assert summary["score_change_vs_same_evidence"] == {
+        "with_items": {"pairs": 1, "mean": 10.0, "mean_absolute": 10.0},
+        "without_items": {"pairs": 1, "mean": 2.0, "mean_absolute": 2.0}}
+    assert summary["retrieval_errors"] == 1
+    later = summarize_analyst_retrieval(load_events(path), since="9999")
+    assert later["by_prompt_version"] == {} and later["score_change_vs_same_evidence"]["with_items"]["pairs"] == 0
+    assert main(["--audit", str(path)]) == 0
