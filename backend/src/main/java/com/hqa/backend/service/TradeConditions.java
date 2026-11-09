@@ -125,6 +125,12 @@ public final class TradeConditions {
         }
     }
 
+    /** Whether a group is an unconditional price stop: one current_price <= predicate (see hardStop). */
+    public static boolean isPriceStop(Group group) {
+        return group.all().size() == 1 && "current_price".equals(group.all().get(0).field())
+                && "<=".equals(group.all().get(0).operator());
+    }
+
     public static Double hardStop(Map<String, Object> payload) {
         return java.util.stream.Stream.concat(groups(payload, TriggerType.EXIT).stream(), groups(payload, TriggerType.INVALIDATION).stream())
                 .filter(group -> group.all().size() == 1)

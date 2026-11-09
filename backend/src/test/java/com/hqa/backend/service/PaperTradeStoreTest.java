@@ -19,7 +19,7 @@ class PaperTradeStoreTest {
     private final PaperAccountGuard accountGuard = mock(PaperAccountGuard.class);
     private final TradePlanReceiptRepository receipts = mock(TradePlanReceiptRepository.class);
     private final PaperTradeStore store = new PaperTradeStore(signals, executions, accountGuard, new ObjectMapper(), receipts,
-            KrxSessionCalendar.regular(), 1, 0.5);
+            KrxSessionCalendar.regular(), 1, 0.5, 100);
     private final OffsetDateTime now = OffsetDateTime.parse("2026-09-04T10:00:00+09:00");
     private final User user = user();
     private final Map<String, TradeSignalExecution> savedExecutions = new LinkedHashMap<>();
@@ -228,6 +228,80 @@ class PaperTradeStoreTest {
         assertThat(intent.getStatus()).isEqualTo("INTENT");
         assertThatThrownBy(() -> store.claim(signal.getId(), 1, TradeConditions.TriggerType.ENTRY, "entry", account(0),
                 100, 100, 3000, 30, null, now)).hasMessage("ORDER_RECONCILIATION_REQUIRED");
+    }
+
+    @Test
+    void anEntryRisksAtMostHalfAPercentOfEquityAtItsStop() {
+        PaperTradeStore capped = new PaperTradeStore(signals, executions, accountGuard, new ObjectMapper(), receipts,
+                KrxSessionCalendar.regular(), 1, 0.5, 0.5);
+        // Equity 10,000, so 50 won may be lost at the stop. Uncapped, a 20% plan at 100 buys 20 shares.
+        Map<Double, Integer> sharesByStop = new LinkedHashMap<>(Map.of(90.0, 5, 60.0, 1));
+        int version = 0;
+        for (var expected : sharesByStop.entrySet()) {
+            savedExecutions.clear();
+            TradeSignal signal = capped.save(request("BUY", 20, ++version, "risk-" + version, now.plusSeconds(version),
+                    expected.getKey(), false), account(0), now);
+            assertThat(capped.claim(signal.getId(), version, TradeConditions.TriggerType.ENTRY, "entry", account(0),
+                    100, 100, 10000, 100, null, now).getSubmittedQuantity()).isEqualTo(expected.getValue());
+        }
+        savedExecutions.clear();
+        TradeSignal wide = capped.save(request("BUY", 20, ++version, "risk-wide", now.plusSeconds(version), 40, false), account(0), now);
+        int wideVersion = version;
+        assertThatThrownBy(() -> capped.claim(wide.getId(), wideVersion, TradeConditions.TriggerType.ENTRY, "entry", account(0),
+                100, 100, 10000, 100, null, now)).hasMessage("NO_ORDERABLE_QUANTITY");      // one share would risk 60
+    }
+
+    private static TradeSignalExecution sold(String signalId, String triggerType, String group, String at, int filled) {
+        TradeSignalExecution execution = new TradeSignalExecution();
+        execution.setSignalId(signalId);
+        execution.setUserId("u1");
+        execution.setStockCode("005930");
+        execution.setOrderSide("SELL");
+        execution.setStatus(filled > 0 ? "FILLED" : "CANCELLED");
+        execution.setTriggerType(triggerType);
+        execution.setTriggerKey(signalId + ":3:" + triggerType + ":" + group + ":0");
+        execution.setFilledQuantity(filled);
+        execution.setSubmittedAt(OffsetDateTime.parse(at));
+        return execution;
+    }
+
+    @Test
+    void aStockStoppedOutWithinTenSessionsCannotBeBoughtAgain() {
+        OffsetDateTime cutoff = OffsetDateTime.parse("2026-08-21T00:00+09:00");     // ten sessions before Friday 09-04
+        TradeSignal targetPlan = new TradeSignal();
+        targetPlan.setConditionPayload("{\"schema_version\":2,\"exit_conditions\":[{\"id\":\"target\","
+                + "\"all\":[{\"field\":\"current_price\",\"operator\":\">=\",\"value\":110}]}]}");
+        when(signals.findById("old-target")).thenReturn(Optional.of(targetPlan));
+        List<TradeSignalExecution> allowed = List.of(
+                sold("old", "EXIT", "planned-exit", "2026-09-03T15:20:00+09:00", 3),     // a time exit
+                sold("old-target", "EXIT", "target", "2026-09-03T11:00:00+09:00", 3),   // a take-profit exit
+                sold("old", "EXIT", "carried-stop", "2026-09-03T09:00:00+09:00", 0));   // a stop that sold nothing
+        for (TradeSignalExecution sell : allowed) {
+            when(executions.findByUserIdAndStockCodeAndOrderSideAndSubmittedAtGreaterThanEqual("u1", "005930", "SELL", cutoff))
+                    .thenReturn(List.of(sell));
+            assertThat(store.save(request("BUY", 10, 1, "ok-" + sell.getTriggerKey(), now), account(0), now).getStatus())
+                    .isEqualTo("WAITING_ENTRY");
+        }
+        List<TradeSignalExecution> blocked = List.of(
+                sold("old", "EXIT", "carried-stop", "2026-09-04T09:00:30+09:00", 2),    // stopped out this morning
+                sold("old", "EXIT", "stop", "2026-08-21T10:00:00+09:00", 2),            // ten sessions ago; plan since replaced
+                sold("gone", "INVALIDATION", "stop-loss", "2026-08-27T10:00:00+09:00", 1));
+        for (TradeSignalExecution sell : blocked) {
+            when(executions.findByUserIdAndStockCodeAndOrderSideAndSubmittedAtGreaterThanEqual("u1", "005930", "SELL", cutoff))
+                    .thenReturn(List.of(sell));
+            assertThatThrownBy(() -> store.save(request("BUY", 10, 1, "no-" + sell.getTriggerKey(), now), account(0), now))
+                    .hasMessage("REENTRY_COOLDOWN_AFTER_STOP");
+        }
+        // Protecting a holding is not an entry and is never held back.
+        assertThat(store.save(request("HOLD", 10, 1, "hold", now), account(5), now).getStatus()).isEqualTo("OPEN");
+    }
+
+    @Test
+    void aPartialTakeProfitOnOneShareSellsThatShare() {
+        TradeSignal signal = store.save(reduceHold(1, 0.5, now.plusDays(3)), account(1), now);
+        when(signals.findByUserIdAndStatusIn("u1", PaperTradeStore.ACTIVE)).thenReturn(List.of(signal));
+        assertThat(store.claim(signal.getId(), 1, TradeConditions.TriggerType.REDUCE, "trim", account(1),
+                100, 100, 0, 0, 0.5, now).getSubmittedQuantity()).isEqualTo(1);
     }
 
     @Test

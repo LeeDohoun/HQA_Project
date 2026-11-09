@@ -154,7 +154,7 @@ class PaperLifecycleSimulationTest {
     }
 
     void wire() {
-        store = new PaperTradeStore(signals, executions, guard, json, receipts, KrxSessionCalendar.regular(), 1, 0.5);
+        store = new PaperTradeStore(signals, executions, guard, json, receipts, KrxSessionCalendar.regular(), 1, 0.5, 100);
         lifecycle = new PaperTradeLifecycle(signals, executions, accounts, store, kis, json, clock);
         when(guard.lock("u1")).thenReturn(user);
         when(guard.binding(any())).thenReturn("binding");

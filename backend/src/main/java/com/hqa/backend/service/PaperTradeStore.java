@@ -39,6 +39,12 @@ public class PaperTradeStore {
      * listed the 15:28 sell as unfilled after 15:30:05, and its auction fill was first seen at 15:30:40.
      */
     static final Duration CLOSING_MATCH_MARGIN = Duration.ofMinutes(2);
+    /**
+     * Sessions after a stop-out during which the same stock may not be bought again in that account.
+     * The RiskManager does not see recent exits; in the 2026-11 review a same-day re-entry after a
+     * stop-out was among the largest live losses, and re-entries were the replay's largest loss item.
+     */
+    static final int REENTRY_COOLDOWN_SESSIONS = 10;
     private final TradeSignalRepository signals;
     private final TradeSignalExecutionRepository executions;
     private final PaperAccountGuard accountGuard;
@@ -46,16 +52,23 @@ public class PaperTradeStore {
     private final double quoteCapacity;
     private final TradePlanReceiptRepository receipts;
     private final KrxSessionCalendar sessions;
+    // At most this percentage of equity is lost when an entry's hard stop fills at its level.
+    private final double maxEntryRiskPct;
 
     public PaperTradeStore(TradeSignalRepository signals, TradeSignalExecutionRepository executions,
             PaperAccountGuard accountGuard, ObjectMapper mapper, TradePlanReceiptRepository receipts,
             KrxSessionCalendar sessions,
             @Value("${hqa.kis-paper-requests-per-second:1}") double requestsPerSecond,
-            @Value("${hqa.paper-account-reserved-requests-per-second:0.5}") double reservedRequests) {
+            @Value("${hqa.paper-account-reserved-requests-per-second:0.5}") double reservedRequests,
+            @Value("${hqa.paper-max-entry-risk-pct:0.5}") double maxEntryRiskPct) {
         if (!Double.isFinite(requestsPerSecond) || !Double.isFinite(reservedRequests)
                 || requestsPerSecond <= reservedRequests || reservedRequests < 0) {
             throw new IllegalArgumentException("PAPER request capacity must exceed account request reservation");
         }
+        if (!Double.isFinite(maxEntryRiskPct) || maxEntryRiskPct <= 0) {
+            throw new IllegalArgumentException("PAPER entry risk must be a positive percentage of equity");
+        }
+        this.maxEntryRiskPct = maxEntryRiskPct;
         this.signals = signals;
         this.executions = executions;
         this.accountGuard = accountGuard;
@@ -160,6 +173,9 @@ public class PaperTradeStore {
             long waiting = active.stream().filter(item -> "WAITING_ENTRY".equals(item.getStatus())
                     && !item.getStockCode().equals(request.stockCode())).count();
             if (waiting >= 5) throw new IllegalStateException("MAX_NEW_PLANS_EXCEEDED");
+            if (stoppedOutRecently(request.userId(), request.stockCode(), now)) {
+                throw new IllegalStateException("REENTRY_COOLDOWN_AFTER_STOP");
+            }
             if (monitored.size() > quoteCapacity) throw new IllegalStateException("PAPER_MONITOR_CAPACITY_EXCEEDED");
         }
         signal.setUserId(request.userId());
@@ -278,12 +294,20 @@ public class PaperTradeStore {
             double target = Double.parseDouble(signal.getPositionSize().replace("%", ""));
             long allocation = (long) Math.floor(equity * Math.min(target, PaperAccountSnapshotService.MAX_POSITION_PCT) / 100);
             long spend = Math.max(0, Math.min(allocation, cash - reserved));
-            quantity = Math.toIntExact(Math.min(spend / orderPrice, powerQuantity));
+            long affordable = Math.min(spend / orderPrice, powerQuantity);
+            // The plan's size is a ceiling: a wide stop or a high share price buys fewer shares, so a
+            // stop filled at its level loses at most maxEntryRiskPct of equity (none when one share
+            // would already risk more).
+            long atRisk = hardStop != null && hardStop < orderPrice
+                    ? (long) Math.floor(equity * maxEntryRiskPct / 100 / (orderPrice - hardStop)) : affordable;
+            quantity = Math.toIntExact(Math.min(affordable, atRisk));
         } else {
             long managed = Math.min(signal.getManagedQuantity(), actualHeld);
             signal.setManagedQuantity(Math.toIntExact(managed));
             long sellable = holding == null ? 0 : PaperAccountSnapshotService.nonnegativeLong(holding.get("sellableQuantity"));
-            long desired = type == TradeConditions.TriggerType.REDUCE ? (long) Math.floor(managed * fraction) : managed;
+            // A reduction that rounds to no shares sells one, so a partial take-profit on a small
+            // position (a 50% reduce of one share) still takes profit.
+            long desired = type == TradeConditions.TriggerType.REDUCE ? Math.max(1, (long) Math.floor(managed * fraction)) : managed;
             quantity = Math.toIntExact(Math.min(desired, sellable));
         }
         if (quantity <= 0) throw new IllegalStateException("NO_ORDERABLE_QUANTITY");
@@ -579,6 +603,36 @@ public class PaperTradeStore {
         try { return mapper.writeValueAsString(value); }
         catch (JsonProcessingException ex) { throw new IllegalArgumentException("Invalid JSON payload", ex); }
     }
+    /** Whether this account sold the stock at a stop within the last REENTRY_COOLDOWN_SESSIONS sessions. */
+    private boolean stoppedOutRecently(String userId, String stockCode, OffsetDateTime now) {
+        LocalDate cutoff = now.atZoneSameInstant(KST).toLocalDate();
+        for (int i = 0; i < REENTRY_COOLDOWN_SESSIONS; i++) cutoff = sessions.previousTradingDay(cutoff);
+        return executions.findByUserIdAndStockCodeAndOrderSideAndSubmittedAtGreaterThanEqual(userId, stockCode, "SELL",
+                        cutoff.atStartOfDay(KST).toOffsetDateTime()).stream()
+                .filter(item -> item.getFilledQuantity() != null && item.getFilledQuantity() > 0)
+                .anyMatch(this::stopExit);
+    }
+
+    /** A sell by an exit or invalidation group that is a price stop: the backend's carried stop, a
+     * stored group with a single current_price <= predicate, or, when the plan was since replaced,
+     * a group named as a stop. Planned exits and take-profit exits do not count. */
+    private boolean stopExit(TradeSignalExecution execution) {
+        if (!"EXIT".equals(execution.getTriggerType()) && !"INVALIDATION".equals(execution.getTriggerType())) return false;
+        String[] key = execution.getTriggerKey() == null ? new String[0] : execution.getTriggerKey().split(":");
+        String group = key.length > 3 ? key[3] : "";
+        if ("planned-exit".equals(group)) return false;
+        if ("carried-stop".equals(group)) return true;
+        TradeSignal signal = execution.getSignalId() == null ? null : signals.findById(execution.getSignalId()).orElse(null);
+        if (signal != null && signal.getConditionPayload() != null) {
+            for (TradeConditions.TriggerType type : List.of(TradeConditions.TriggerType.EXIT, TradeConditions.TriggerType.INVALIDATION)) {
+                for (TradeConditions.Group item : TradeConditions.groups(conditions(signal), type)) {
+                    if (item.id().equals(group)) return TradeConditions.isPriceStop(item);
+                }
+            }
+        }
+        return group.toLowerCase(java.util.Locale.ROOT).contains("stop");
+    }
+
     private Map<String, Object> conditions(TradeSignal signal) {
         try { return mapper.readValue(signal.getConditionPayload(), new com.fasterxml.jackson.core.type.TypeReference<>() { }); }
         catch (java.io.IOException ex) { throw new IllegalArgumentException("INVALID_STORED_CONDITIONS", ex); }
