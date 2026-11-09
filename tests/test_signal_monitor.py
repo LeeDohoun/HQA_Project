@@ -500,11 +500,23 @@ KST = timezone(timedelta(hours=9))
     (datetime(2026, 10, 10, 10, 0, tzinfo=KST), "closed"),      # Saturday
     (datetime(2025, 11, 13, 9, 30, tzinfo=KST), "closed"),      # CSAT day with its notice: opens 10:00
     (datetime(2025, 11, 13, 16, 0, tzinfo=KST), "open"),        # ... and closes 16:30
-    (datetime(2026, 11, 19, 9, 30, tzinfo=KST), "protect"),     # CSAT day, notice still pending
-    (datetime(2026, 11, 19, 16, 0, tzinfo=KST), "protect"),
+    (datetime(2026, 11, 19, 9, 30, tzinfo=KST), "closed"),      # 2026 CSAT day (KRX notice of 11-05)
+    (datetime(2026, 11, 19, 16, 0, tzinfo=KST), "open"),
     (datetime(2026, 11, 19, 16, 30, tzinfo=KST), "closed"),
 ])
 def test_market_session_follows_the_verified_krx_calendar(local, expected):
+    assert market_session(local.astimezone(timezone.utc)) == expected
+
+
+@pytest.mark.parametrize("local,expected", [
+    (datetime(2027, 4, 7, 9, 30, tzinfo=KST), "protect"),      # hypothetical day, notice still pending
+    (datetime(2027, 4, 7, 16, 0, tzinfo=KST), "protect"),
+    (datetime(2027, 4, 7, 16, 30, tzinfo=KST), "closed"),
+])
+def test_market_session_protects_on_a_day_whose_notice_is_pending(monkeypatch, local, expected):
+    from src.runner import trading_calendar
+    monkeypatch.setitem(trading_calendar.PENDING_SPECIAL_SESSION_NOTICES, "2027-04-07",
+                        {"reason": "hypothetical special session; KRX notice not yet published", "source_urls": []})
     assert market_session(local.astimezone(timezone.utc)) == expected
 
 

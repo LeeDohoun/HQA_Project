@@ -7,7 +7,7 @@ from src.runner.analysis_data import price_features
 from datetime import date
 
 from src.runner.trading_calendar import (CALENDAR_REVIEWED_THROUGH, CALENDAR_VERSION, PENDING_SPECIAL_SESSION_NOTICES,
-    SPECIAL_CLOSES, calendar_review_warnings, completed_daily_sessions, daily_session_close)
+    SPECIAL_CLOSES, calendar_review_warnings, completed_daily_sessions, daily_session_close, daily_session_open)
 
 NOW = datetime(2026, 9, 4, 8, tzinfo=timezone.utc)
 
@@ -140,10 +140,22 @@ def test_calendar_range_and_naive_as_of_fail_clearly():
         completed_daily_sessions(datetime(2026, 9, 4))
 
 
-@pytest.mark.parametrize("day", ["2021-11-18", "2022-11-17", "2023-11-16", "2026-11-19"])
+@pytest.mark.parametrize("day", ["2021-11-18", "2022-11-17", "2023-11-16"])
 def test_unverified_special_session_periods_fail_instead_of_guessing_normal_close(day):
     with pytest.raises(ValueError, match="calendar_special_session_coverage_unverified"):
         daily_session_close(day)
+
+
+def test_2026_csat_day_uses_the_official_krx_notice_hours():
+    # KRX notice of 2026-11-05 (KOSPI and KOSDAQ): regular session 10:00-16:30 KST.
+    assert "2026-11-19" in SPECIAL_CLOSES and "2026-11-19" not in PENDING_SPECIAL_SESSION_NOTICES
+    assert set(SPECIAL_CLOSES["2026-11-19"]["source_urls"]) == {"KOSPI", "KOSDAQ"}
+    assert daily_session_open("2026-11-19").isoformat() == "2026-11-19T01:00:00+00:00"
+    assert daily_session_close("2026-11-19").isoformat() == "2026-11-19T07:30:00+00:00"
+    sessions = completed_daily_sessions(datetime(2026, 11, 19, 7, 30, tzinfo=timezone.utc))
+    assert sessions[-1] == ("2026-11-19", datetime(2026, 11, 19, 7, 30, tzinfo=timezone.utc))
+    # At the regular 15:30 close the CSAT session is still open, so it is not yet completed.
+    assert completed_daily_sessions(datetime(2026, 11, 19, 6, 30, tzinfo=timezone.utc))[-1][0] == "2026-11-18"
 
 
 def test_reviewed_regular_sessions_after_old_boundary_keep_working():
@@ -153,13 +165,27 @@ def test_reviewed_regular_sessions_after_old_boundary_keep_working():
     assert daily_session_close("2026-11-02").isoformat() == "2026-11-02T06:30:00+00:00"
 
 
-def test_pending_special_session_blocks_from_that_day_until_official_notice_is_added():
-    assert "2026-11-19" in PENDING_SPECIAL_SESSION_NOTICES and "2026-11-19" not in SPECIAL_CLOSES
+# A hypothetical future special day whose KRX notice is not yet published (a Wednesday
+# inside the review horizon); it exercises the pending-notice behavior.
+PENDING_DAY = "2027-04-07"
+PENDING_NOTICE = {"reason": "hypothetical special session; KRX notice not yet published", "source_urls": []}
+
+
+@pytest.fixture
+def pending_day(monkeypatch):
+    assert PENDING_DAY not in SPECIAL_CLOSES
+    monkeypatch.setitem(PENDING_SPECIAL_SESSION_NOTICES, PENDING_DAY, PENDING_NOTICE)
+    return PENDING_DAY
+
+
+def test_pending_special_session_blocks_from_that_day_until_official_notice_is_added(pending_day):
     with pytest.raises(ValueError, match="official_KRX_notice_required"):
-        completed_daily_sessions(datetime(2026, 11, 19, 0, 30, tzinfo=timezone.utc))
+        completed_daily_sessions(datetime(2027, 4, 7, 0, 30, tzinfo=timezone.utc))
     # A later as_of still includes the unverified session in its completed window.
     with pytest.raises(ValueError, match="official_KRX_notice_required"):
-        completed_daily_sessions(datetime(2026, 11, 25, 7, 0, tzinfo=timezone.utc))
+        completed_daily_sessions(datetime(2027, 4, 13, 7, 0, tzinfo=timezone.utc))
+    # The day before is unaffected.
+    assert completed_daily_sessions(datetime(2027, 4, 6, 7, 0, tzinfo=timezone.utc))[-1][0] == "2027-04-06"
 
 
 def test_calendar_review_horizon_blocks_unreviewed_future_sessions():
@@ -168,14 +194,19 @@ def test_calendar_review_horizon_blocks_unreviewed_future_sessions():
     assert CALENDAR_REVIEWED_THROUGH == "2027-09-30"
 
 
-def test_calendar_warnings_announce_pending_notice_and_review_expiry_in_advance():
-    assert calendar_review_warnings(date(2026, 9, 27)) == []
-    soon = calendar_review_warnings(date(2026, 11, 1))
-    assert soon == [f"calendar_notice_required:2026-11-19:blocks_in_18_days:{PENDING_SPECIAL_SESSION_NOTICES['2026-11-19']['reason']}"]
-    assert calendar_review_warnings(date(2026, 11, 19))[0].startswith("calendar_notice_required:2026-11-19:blocked")
+def test_calendar_warnings_are_clear_once_the_csat_notice_is_added():
+    assert calendar_review_warnings(date(2026, 11, 1)) == []
+    assert calendar_review_warnings(date(2026, 11, 19)) == []
+
+
+def test_calendar_warnings_announce_pending_notice_and_review_expiry_in_advance(pending_day):
+    assert calendar_review_warnings(date(2027, 3, 1)) == []
+    soon = calendar_review_warnings(date(2027, 3, 20))
+    assert soon == [f"calendar_notice_required:{PENDING_DAY}:blocks_in_18_days:{PENDING_NOTICE['reason']}"]
+    assert calendar_review_warnings(date(2027, 4, 7))[0].startswith(f"calendar_notice_required:{PENDING_DAY}:blocked")
     later = calendar_review_warnings(date(2027, 9, 20))
     # An unresolved pending notice keeps warning after its date, alongside the review expiry.
-    assert later[0].startswith("calendar_notice_required:2026-11-19:blocked")
+    assert later[0].startswith(f"calendar_notice_required:{PENDING_DAY}:blocked")
     assert later[-1] == "calendar_review_required:2027-09-30:expires_in_10_days"
     assert calendar_review_warnings(date(2027, 10, 2))[-1] == "calendar_review_required:2027-09-30:expired"
 

@@ -7,7 +7,7 @@ from functools import lru_cache
 import exchange_calendars as calendars
 import pandas as pd
 
-CALENDAR_VERSION = "exchange-calendars:" + calendars.__version__ + ":XKRX:krx-notices-2024-2026-v2"
+CALENDAR_VERSION = "exchange-calendars:" + calendars.__version__ + ":XKRX:krx-notices-2024-2026-v3"
 # Review record (2026-09-27): the regular 09:00-15:30 KRX session is unchanged. The
 # KRX after-market that opened in September 2026 does not set the regular close,
 # market value or index, so daily close times stay regular-session times; its volume
@@ -19,12 +19,9 @@ CALENDAR_REVIEWED_THROUGH = "2027-09-30"
 # Dates with a known special schedule whose official KRX session-hour notice is not
 # yet published. They stay blocked, not guessed, until the notice's open and close are
 # added to SPECIAL_CLOSES (KRX usually publishes it about two weeks in advance).
-PENDING_SPECIAL_SESSION_NOTICES = {
-    "2026-11-19": {
-        "reason": "2027 CSAT exam day (Ministry of Education schedule); KRX session-hour notice not yet published",
-        "source_urls": ["https://eiec.kdi.re.kr/policy/materialView.do?num=255989"],
-    },
-}
+# The 2026-11-19 CSAT day left this table on 2026-11-09, when KRX's 2026-11-05 notice
+# was added to SPECIAL_CLOSES.
+PENDING_SPECIAL_SESSION_NOTICES: dict[str, dict] = {}
 CALENDAR_WARNING_DAYS = 21
 # Exchange holidays announced after the pinned exchange-calendars release. KRX
 # announced both closures on 2026-05-20; without them every price history since
@@ -54,6 +51,14 @@ SPECIAL_CLOSES = {
         "source_urls": {
             "KOSPI": "https://kind.krx.co.kr/external/2025/10/30/000102/20251030000137/99303.htm",
             "KOSDAQ": "https://kind.krx.co.kr/external/2025/10/30/000121/20251021000455/70780.htm",
+        },
+    },
+    "2026-11-19": {
+        "open": "2026-11-19T10:00:00+09:00", "close": "2026-11-19T16:30:00+09:00",
+        "published_at": "2026-11-05T10:00:00+09:00",
+        "source_urls": {
+            "KOSPI": "https://kind.krx.co.kr/external/2026/11/05/000141/20261105000216/99303.htm",
+            "KOSDAQ": "https://kind.krx.co.kr/external/2026/11/05/000145/20261104001218/70780.htm",
         },
     },
 }

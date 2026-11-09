@@ -749,7 +749,10 @@ def test_scheduler_korean_weekday_session_boundaries(at, expected):
                                         ("2025-11-13T10:00:00+09:00", True),
                                         ("2025-11-13T16:15:00+09:00", True),    # and closes at 16:30
                                         ("2025-11-13T16:30:00+09:00", False),
-                                        ("2026-11-19T10:30:00+09:00", False)])  # notice still pending
+                                        ("2026-11-19T09:30:00+09:00", False),   # 2026 CSAT day (KRX notice of 11-05)
+                                        ("2026-11-19T10:30:00+09:00", True),
+                                        ("2026-11-19T16:29:00+09:00", True),
+                                        ("2026-11-19T16:30:00+09:00", False)])
 def test_scheduler_follows_special_session_hours(at, expected):
     assert within_analysis_session(datetime.fromisoformat(at)) is expected
 
