@@ -1696,3 +1696,73 @@ def test_a_roundups_excerpt_is_its_paragraph_on_the_stock():
     assert "대상전자는 신규 고객" not in generic
     assert _excerpt(body, tokens("실적"), focus="없는회사") == _excerpt(body, tokens("실적"))
     assert _excerpt("짧은 글", [], focus="x") == ("짧은 글", False)
+
+
+def test_with_change_triggers_an_account_is_reviewed_only_when_more_than_quotes_moved():
+    class MovingAccounts(Accounts):
+        pnl = 10.0
+
+        def fetch_accounts(self, ids):
+            self.calls.append(ids)
+            return {user: snapshot(user, [{**holding(), "pnlRate": self.pnl}]) for user in ids}
+
+    accounts, calls = MovingAccounts(), []
+    models = {role: Model(role, calls) for role in ("analyst", "quant", "chartist", "risk_manager")}
+    engine = SharedAnalysisService(data=Data(3), accounts=accounts, models=models, clock=lambda: NOW,
+                                   sleep=lambda seconds: None, risk_review_trigger="change")
+    reviews = lambda: sum(role == "risk_manager" for role, _ in calls)
+    at = lambda hhmm: datetime.fromisoformat(f"2026-09-04T{hhmm}:00+09:00")
+    first = engine.run_cycle([{"userId": "a"}], as_of=at("13:00"))
+    assert reviews() == 1 and first["manifest"]["risk_review_trigger"] == "change"
+    second = engine.run_cycle([{"userId": "a"}], as_of=at("13:15"))      # only quotes moved
+    assert reviews() == 1
+    assert {key: second["accounts"]["a"][key] for key in ("status", "plans", "reason")} == {
+        "status": "completed", "plans": [], "reason": "review_inputs_unchanged"}
+    accounts.pnl = 12.5                                                   # the holding crossed the 12% step
+    engine.run_cycle([{"userId": "a"}], as_of=at("13:30"))
+    assert reviews() == 2
+    engine.run_cycle([{"userId": "a"}], as_of=at("14:45"))               # the 14:45 window opens
+    assert reviews() == 3
+    engine.run_cycle([{"userId": "a"}], as_of=at("15:00"))
+    assert reviews() == 3
+    with pytest.raises(ValueError, match="unknown risk review trigger"):
+        SharedAnalysisService(data=None, accounts=None, models={}, risk_review_trigger="hourly")
+
+
+def test_the_default_trigger_reviews_every_cycle_and_keeps_the_manifest():
+    engine, calls = service()
+    for minute in ("00", "15"):
+        cycle = engine.run_cycle([{"userId": "a"}], as_of=datetime.fromisoformat(f"2026-09-04T13:{minute}:00+09:00"))
+    assert sum(role == "risk_manager" for role, _ in calls) == 2 and "risk_review_trigger" not in cycle["manifest"]
+
+
+def test_specialist_answers_are_reused_from_disk_after_a_restart(tmp_path):
+    from src.runner.specialist_store import SpecialistResultStore
+
+    clock = {"now": NOW}
+    store = SpecialistResultStore(tmp_path / "specialists.sqlite3", clock=lambda: clock["now"])
+
+    def run():
+        calls = []
+        models = {role: Model(role, calls) for role in ("analyst", "quant", "chartist", "risk_manager")}
+        SharedAnalysisService(data=Data(2), accounts=Accounts(), models=models, clock=lambda: NOW,
+                              sleep=lambda seconds: None, result_store=store).run_cycle([{"userId": "a"}])
+        return [role for role, _ in calls]
+
+    first = run()
+    assert sorted(first) == ["analyst", "analyst", "chartist", "chartist", "quant", "quant", "risk_manager"]
+    assert run() == ["risk_manager"]                     # a new process asks only the RiskManager
+    clock["now"] = NOW + timedelta(days=8)               # answers older than a week are asked again
+    assert run().count("analyst") == 2
+
+
+def test_the_review_trigger_comes_from_the_environment(monkeypatch):
+    from src.runner.shared_analysis import risk_review_trigger_from_env
+
+    monkeypatch.delenv("HQA_RISK_REVIEW_TRIGGER", raising=False)
+    assert risk_review_trigger_from_env() == "cycle"
+    monkeypatch.setenv("HQA_RISK_REVIEW_TRIGGER", "change")
+    assert risk_review_trigger_from_env() == "change"
+    monkeypatch.setenv("HQA_RISK_REVIEW_TRIGGER", "sometimes")
+    with pytest.raises(ValueError, match="HQA_RISK_REVIEW_TRIGGER"):
+        risk_review_trigger_from_env()

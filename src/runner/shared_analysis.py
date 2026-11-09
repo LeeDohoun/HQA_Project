@@ -11,6 +11,7 @@ from collections import OrderedDict
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from datetime import time as time_of_day
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable
@@ -20,6 +21,15 @@ from src.runner.analysis_data import BackendAccountClient, FACTOR_VERSION, Local
 from src.utils.llm_queue import LLMTaskPriority, llm_task_priority
 
 UTC = timezone.utc
+KST = timezone(timedelta(hours=9), "KST")
+# With HQA_RISK_REVIEW_TRIGGER=change an account is reviewed only when something besides quotes moved:
+# the reviewed stocks or their specialist answers, the holdings, a holding's P&L crossing a step of
+# this many percent, or the start of one of these daily windows (KST). The 2026-11 live review found
+# that 88% of RiskManager reviews saw unchanged specialist inputs and that the RiskManager used 76% of
+# input tokens; entries, stops and targets between reviews are the backend's deterministic rules.
+REVIEW_SLOTS = (time_of_day(9, 0), time_of_day(11, 0), time_of_day(13, 0), time_of_day(14, 45))
+REVIEW_PNL_STEP_PCT = 2.0
+RISK_REVIEW_TRIGGERS = ("cycle", "change")
 PROMPT_VERSION = "hqa-fixed-dag-v8-backend-plan-rules"
 MODEL_VERSION = "gpt-5.6-luna"
 ROLE_INSTRUCTIONS = {
@@ -230,6 +240,13 @@ RISK_REVIEW_STRUCTURES = {
     # v9 without the new candidate order: the active plans and the stop floor alone.
     "v9-plan-rules": RiskReviewStructure(show_active_plans=True, stop_floor_range_multiple=1.0, sorted_rows=True),
 }
+
+
+def risk_review_trigger_from_env() -> str:
+    trigger = os.getenv("HQA_RISK_REVIEW_TRIGGER", "cycle")
+    if trigger not in RISK_REVIEW_TRIGGERS:
+        raise ValueError(f"HQA_RISK_REVIEW_TRIGGER must be one of {list(RISK_REVIEW_TRIGGERS)}")
+    return trigger
 
 
 def risk_review_structure_from_env() -> RiskReviewStructure:
@@ -463,7 +480,8 @@ class SharedAnalysisService:
     def __init__(self, *, data: Any, accounts: Any, models: dict[str, Any] | None = None,
                  max_workers: int = 6, cache_entries: int = 512, clock: Callable[[], datetime] | None = None,
                  audit: Any = None, sleep: Callable[[float], None] | None = None,
-                 structure: RiskReviewStructure | None = None, analyst_rag: str = "off"):
+                 structure: RiskReviewStructure | None = None, analyst_rag: str = "off",
+                 risk_review_trigger: str = "cycle", result_store: Any = None):
         self.data = data
         self.accounts = accounts
         self.models = models if models is not None else _role_models()
@@ -479,6 +497,12 @@ class SharedAnalysisService:
         if analyst_rag != "off":
             from src.runner.analyst_retrieval import AnalystRetrieval
             self.analyst_retrieval = AnalystRetrieval(data, mode=analyst_rag)
+        if risk_review_trigger not in RISK_REVIEW_TRIGGERS:
+            raise ValueError(f"unknown risk review trigger: {risk_review_trigger}")
+        self.risk_review_trigger = risk_review_trigger
+        self._last_reviews: dict[str, str] = {}
+        # Specialist answers on disk (src/runner/specialist_store.py), reused across restarts and days.
+        self.result_store = result_store
 
     def _prompt_version(self, role: str) -> str:
         if role == "analyst" and self.analyst_retrieval is not None:
@@ -543,7 +567,9 @@ class SharedAnalysisService:
         return {"model": names.get("risk_manager", MODEL_VERSION), "role_models": names}
 
     def _analyst_manifest(self) -> dict:
-        return {"analyst_prompt_version": self._prompt_version("analyst")} if self.analyst_retrieval is not None else {}
+        """The non-default options a cycle ran with (an unchanged manifest otherwise)."""
+        return ({"analyst_prompt_version": self._prompt_version("analyst")} if self.analyst_retrieval is not None else {}) | \
+            ({"risk_review_trigger": self.risk_review_trigger} if self.risk_review_trigger != "cycle" else {})
 
     def _input_budget(self, role: str) -> int:
         limit = getattr(self.models.get(role), "hqa_input_limit", None) or DEFAULT_SPECIALIST_INPUT_TOKENS
@@ -560,12 +586,18 @@ class SharedAnalysisService:
                             "factors": FACTOR_VERSION, "model_config": config})
 
         def calculate():
-            result = self._invoke(role, SpecialistResult, payload, critical=critical, priority=priority)
+            stored = self.result_store.get(key) if self.result_store is not None else None
+            if stored is not None:
+                result = SpecialistResult.model_validate(stored)
+            else:
+                result = self._invoke(role, SpecialistResult, payload, critical=critical, priority=priority)
             if result.role != role or result.stock_code != payload["stock_code"]:
                 raise ValueError("specialist output role/stock mismatch")
             allowed = set(payload["source_ids"])
             if any(c.source_id not in allowed for c in result.citations):
                 raise ValueError("specialist output contains an unknown citation")
+            if stored is None and self.result_store is not None:
+                self.result_store.put(key, role, result.model_dump(mode="json"))
             return result
         return self.cache.get_or_compute(key, calculate,
                                          rank=int(LLMTaskPriority.RUNTIME if critical else priority))
@@ -788,7 +820,16 @@ class SharedAnalysisService:
                                    "theme_keys": [], "leader_score": None, "analysis": {
                                        "specialists": {}, "specialist_errors": ["new_holding_since_shared_snapshot"],
                                        "source_ids": [], "evidence": {"financial_snapshot": {"status": "blocked"}}}})
+                trigger = self._review_trigger_key(target, latest, review, as_of)
+                if trigger is not None and self._last_reviews.get(user_id) == trigger:
+                    return {"schema_version": 2, "status": "completed", "user_id": user_id,
+                            "strategy_profile": str(target.get("strategyProfile") or "default"),
+                            "as_of": as_of.isoformat(), "analysis_id": content_hash({"target": target, "as_of": as_of.isoformat()}),
+                            "plans": [], "selected_count": 0, "global_ranked_leaders": [],
+                            "reason": "review_inputs_unchanged"}
                 result = self._review_account(target, latest, review)
+                if trigger is not None and result.get("status") == "completed":
+                    self._last_reviews[user_id] = trigger
                 if untradable:
                     result["omitted_candidates"] = ([{"stock_code": code, "reason": "kis_untradable_for_account"}
                                                      for code in untradable] + result.get("omitted_candidates", []))
@@ -826,6 +867,20 @@ class SharedAnalysisService:
         if self.audit:
             self.audit.append("analysis", cycle)
         return cycle
+
+    def _review_trigger_key(self, target: dict, snapshot: Any, rows: list[dict], as_of: datetime) -> str | None:
+        """What an account review depends on apart from quotes (HQA_RISK_REVIEW_TRIGGER=change); the
+        RiskManager is skipped while it stays the same. None reviews every cycle."""
+        if self.risk_review_trigger != "change":
+            return None
+        local = as_of.astimezone(KST)
+        return content_hash({
+            "target": target, "day": local.date().isoformat(),
+            "slot": sum(local.time() >= start for start in REVIEW_SLOTS),
+            "entry_eligible": snapshot.entryEligible,
+            "holdings": sorted([h.stockCode, h.quantity, math.floor(h.pnlRate / REVIEW_PNL_STEP_PCT)]
+                               for h in snapshot.holdings if h.quantity > 0),
+            "rows": [[row["stock_code"], content_hash(row["analysis"]["specialists"])] for row in rows]})
 
     def _review_account(self, target: dict, snapshot: Any, rows: list[dict]) -> dict:
         user_id = str(target["userId"])
@@ -1073,8 +1128,12 @@ class _LazyBackendAccounts:
 @lru_cache(maxsize=4)
 def _cached_runtime_analysis_service(config_path: str, data_dir: str) -> SharedAnalysisService:
     from src.runner.analyst_retrieval import analyst_rag_from_env
+    from src.runner.specialist_store import SpecialistResultStore
     from src.tracing.paper_audit import PaperAudit
     data = LocalAnalysisData(config_path=config_path, data_dir=data_dir)
+    store_path = os.getenv("HQA_SPECIALIST_CACHE_PATH")
     return SharedAnalysisService(data=data, accounts=_LazyBackendAccounts(),
                                  audit=PaperAudit(os.getenv("HQA_PAPER_AUDIT_PATH", str(data.data_dir / "paper_audit.sqlite3"))),
-                                 structure=risk_review_structure_from_env(), analyst_rag=analyst_rag_from_env())
+                                 structure=risk_review_structure_from_env(), analyst_rag=analyst_rag_from_env(),
+                                 risk_review_trigger=risk_review_trigger_from_env(),
+                                 result_store=SpecialistResultStore(store_path) if store_path else None)
