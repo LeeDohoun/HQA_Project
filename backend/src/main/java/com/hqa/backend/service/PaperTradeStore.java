@@ -42,6 +42,14 @@ public class PaperTradeStore {
      */
     static final Duration CLOSING_MATCH_MARGIN = Duration.ofMinutes(2);
     /**
+     * How long a sell placed in the continuous session works before reconciliation cancels it, so
+     * that it is placed again at the new price. Priced below the quote
+     * ({@link PaperTradeLifecycle#SELL_BAND_PCT}), a sell still working after it is one the price
+     * fell past; the monitor sends a condition that stays true again after the same minute. Every
+     * PAPER fill since 2026-10-13 was recorded within 23 s of its order, and within 50 s at the open.
+     */
+    static final Duration SELL_ORDER_LIFE = Duration.ofMinutes(1);
+    /**
      * Sessions after a stop-out during which the same stock may not be bought again in that account.
      * The RiskManager does not see recent exits; in the 2026-11 review a same-day re-entry after a
      * stop-out was among the largest live losses, and re-entries were the replay's largest loss item.
@@ -419,6 +427,15 @@ public class PaperTradeStore {
         return false;
     }
 
+    /**
+     * Records the broker's answer to a cancellation. An accepted one waits for the broker's order
+     * list to confirm it. A refused or unanswered one leaves the order working as far as this
+     * record knows, still unresolved, so its plan sends nothing new: reconciliation reads the
+     * order list first, records the cancellation if it did happen, and otherwise cancels again
+     * while the order is past its expiry. An unanswered cancellation used to keep the order
+     * CANCEL_REQUESTED, which no reconciliation cancelled again, and that held every sell of its
+     * plan, its stop included, back until the session's end.
+     */
     @Transactional
     public void acknowledgeCancellation(String executionId, Map<String, Object> response) {
         lock(executions.ownerOf(executionId).orElseThrow());
@@ -428,9 +445,7 @@ public class PaperTradeStore {
         Object raw = response.get("response");
         boolean rejected = !Boolean.TRUE.equals(response.get("unknown")) && raw instanceof Map<?, ?> body
                 && body.get("rt_cd") != null && !"0".equals(String.valueOf(body.get("rt_cd")));
-        if (rejected) {
-            execution.setStatus(execution.getFilledQuantity() > 0 ? "PARTIALLY_FILLED" : "ORDER_SUBMITTED");
-        }
+        execution.setStatus(execution.getFilledQuantity() > 0 ? "PARTIALLY_FILLED" : "ORDER_SUBMITTED");
         String reason = rejected ? "KIS_CANCEL_REJECTED" : "CANCEL_CONFIRMATION_REQUIRED";
         execution.setRejectReason(reason);
         executions.saveAndFlush(execution);
@@ -535,16 +550,16 @@ public class PaperTradeStore {
 
     /**
      * Reconciliation cancels a limit order once it expires: an entry after 5 minutes, a sell after
-     * 2, so that a sell the price has left is placed again at the new price. In the closing call
-     * auction KRX only collects orders, and matches them once at the close, so a sell placed then
-     * does not expire before the close: placing it again would not change its price (no trade
-     * moves the price before the match) and could leave the match without an order. Whatever the
-     * close leaves unfilled, reconciliation records as expired once the session's fills have been
-     * reported.
+     * {@link #SELL_ORDER_LIFE}, so that a sell the price has left is placed again at the new price.
+     * In the closing call auction KRX only collects orders, and matches them once at the close, so
+     * a sell placed then does not expire before the close: placing it again would not change its
+     * price (no trade moves the price before the match) and could leave the match without an
+     * order. Whatever the close leaves unfilled, reconciliation records as expired once the
+     * session's fills have been reported.
      */
     private OffsetDateTime orderExpiry(boolean buy, OffsetDateTime now) {
         if (buy) return now.plusMinutes(5);
-        return sessions.closingAuctionClose(now).map(close -> close.plus(CLOSING_MATCH_MARGIN)).orElse(now.plusMinutes(2));
+        return sessions.closingAuctionClose(now).map(close -> close.plus(CLOSING_MATCH_MARGIN)).orElse(now.plus(SELL_ORDER_LIFE));
     }
 
     /** Only an UNKNOWN order without a broker ID waits for an operator; nothing else may be changed this way. */

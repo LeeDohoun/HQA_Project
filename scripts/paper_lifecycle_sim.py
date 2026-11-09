@@ -6,8 +6,8 @@ broker, and runs this script with HQA_SIM_BASE_URL set; run it from backend/ wit
 ``HQA_SIM_PYTHON=$PWD/../venv/bin/python mvn -q -o test -Dtest=PaperLifecycleSimulationTest``.
 
 Each poll is 20 simulated seconds. Prices are set per simulated second, and a limit order fills
-once the price reaches it, except in the closing call auction (15:20-15:30), whose orders are
-matched once, after the close. Like KIS, the broker refuses an order priced off the KRX price
+once the price reaches it, at that price (KIS paper fills at the market's trade prices), except in
+the closing call auction (15:20-15:30), whose orders are matched once, after the close. Like KIS, the broker refuses an order priced off the KRX price
 grid. Every scenario runs twice, with the backend's 20-second schedulers
 aligned with the monitor's polls and 10 seconds apart. Names of scenarios given as arguments run
 alone. Exits 1 when a check fails.
@@ -183,7 +183,7 @@ def timeline(run):
     lines = []
     for e in run.final["events"]:
         if e["kind"] in {"order", "fill", "cancel", "trigger", "plan", "broker_refused", "cancel_refused", "server_error",
-                         "rate_limited", "publish", "publish_refused"}:
+                         "rate_limited", "publish", "publish_refused", "cancel_lost"}:
             extra = {k: v for k, v in e.items() if k not in {"t", "kind"} and v is not None}
             lines.append(f"  t={e['t']:>4} {e['kind']:<14} {json.dumps(extra, ensure_ascii=False)}")
     return "\n".join(lines)
@@ -192,8 +192,9 @@ def timeline(run):
 def stop_behind_working_reduction():
     run = Run("stop_behind_working_reduction", price=106, held=10, avg=100)
     run.plan(action="HOLD", stop=90, reduce=[{"id": "trim", "fraction": 0.5, "pnl": 5}])
-    # The reduction's limit order at 106 is left behind at 104, then the price falls through the stop.
-    run.run(lambda t: 106 if t == 0 else 104 if t < 40 else 88, until=200)
+    # The reduction, sent at 104 (2% below its quote of 106), is left behind at 103, then the price
+    # falls through the stop.
+    run.run(lambda t: 106 if t == 0 else 103 if t < 40 else 88, until=200)
     common(run, 10)
     trims, stops = run.orders_for(":REDUCE:trim:"), run.orders_for(":EXIT:stop:")
     check(run, "one reduction order, cancelled unfilled", len(trims) == 1 and trims[0]["filled"] == 0, trims)
@@ -205,20 +206,23 @@ def stop_behind_working_reduction():
 
 def planned_exit_during_working_reduction():
     run = Run("planned_exit_during_working_reduction", price=106, held=10, avg=100)
-    run.plan(action="HOLD", stop=80, reduce=[{"id": "trim", "fraction": 0.5, "pnl": 5}],
+    run.plan(action="HOLD", stop=40, reduce=[{"id": "trim", "fraction": 0.5, "pnl": 5}],
              plannedExitSeconds=60, entrySeconds=30)
 
-    def path(t):  # each poll's price is left behind one tick later, until the market steadies at t=400
+    def path(t):  # a second after each poll the price is 3% lower, past a sell's 2% band, until it steadies at t=400
         if t >= 400:
-            return 106 - 400 // 20
-        return 106 - t // 20 - (1 if t % 20 else 0)
+            return 106 - 3 * (400 // 20)
+        return 106 - 3 * (t // 20) - (3 if t % 20 else 0)
     run.run(path, until=520)
     common(run, 10)
     trims = run.orders_for(":REDUCE:trim:")
     check(run, "the reduction is not re-placed while the planned exit is due", len(trims) == 1, trims)
     check(run, "position closed", run.final["held"] == 0, run.final["held"])
     exits = run.orders_for(":EXIT:planned-exit:")
-    check(run, "planned exit re-quoted at most every 3 minutes", len(exits) >= 2, [(o["submittedAt"][11:19], o["limit"]) for o in exits])
+    placed = [(datetime.fromisoformat(o["submittedAt"]) - run.start).total_seconds() for o in exits]
+    check(run, "planned exit placed again within 100 s each time the price leaves it",
+          len(exits) >= 2 and all(b - a <= 100 for a, b in zip(placed, placed[1:])),
+          [(o["submittedAt"][11:19], o["limit"], o["filled"]) for o in exits])
     return run
 
 
@@ -251,7 +255,9 @@ def entry_then_stop():
 def unfilled_reduction_retries():
     run = Run("unfilled_reduction_retries", price=106, held=10, avg=100)
     run.plan(action="HOLD", stop=90, reduce=[{"id": "trim", "fraction": 0.5, "pnl": 5}])
-    run.run(lambda t: 106 if t == 0 else 105, until=260)
+    # Sent at 104, 2% below its quote, the reduction is left behind at 103 and expires; the price
+    # comes back at t=100.
+    run.run(lambda t: 106 if t == 0 else 103 if t < 100 else 106, until=260)
     common(run, 10)
     trims = run.orders_for(":REDUCE:trim:")
     check(run, "reduction retried after the unfilled expiry and sold once",
@@ -415,15 +421,67 @@ def republished_cycles_replace_plans_in_place():
 def publishing_while_an_order_works_keeps_the_plan():
     run = Run("publishing_while_an_order_works_keeps_the_plan", price=106, held=10, avg=100)
     run.publish([hold_plan("005930", 10, stop=90, take_profit=106)], "cycle-1")
-    run.run(lambda t: 106 if t == 0 else 104, until=20)        # the take-profit order is left working at 106
+    run.run(lambda t: 106 if t == 0 else 103, until=20)        # the take-profit order is left working at 104
     second = run.publish([hold_plan("005930", 10, stop=95, take_profit=106)], "cycle-2")
-    run.run(lambda t: 104, until=60)
+    run.run(lambda t: 103, until=60)
     common(run, 10)
     check(run, "the update is refused while the order works, with the reason",
           second.get("failed") == 1 and "ORDER_RECONCILIATION_REQUIRED_BEFORE_PLAN_UPDATE" in " ".join(second.get("failures", [])),
           second)
     check(run, "the first plan keeps protecting", [(s["version"], s["status"]) for s in run.final["signals"]] == [(1, "OPEN")],
           run.final["signals"])
+    return run
+
+
+def stop_in_a_fast_fall():
+    # The price crosses the stop and falls 1% a second. Sent 2% below its quote (88 against 89),
+    # the stop sells at once at the market's price; sent at the quote it was left behind until it expired.
+    run = Run("stop_in_a_fast_fall", price=100, held=10, avg=100)
+    run.plan(action="HOLD", stop=90)
+    run.run(lambda t: 100 if t < 40 else max(60, 89 - (t - 40)), until=120)
+    common(run, 10)
+    stops = run.orders_for(":EXIT:stop:")
+    fills = [(e["t"], e["qty"], e["price"]) for e in run.events("fill")]
+    check(run, "one stop order at 88 sold all 10 at 88 the second after it was placed",
+          [(o["limit"], o["filled"]) for o in stops] == [(88, 10)] and fills == [(41, 10, 88)], (stops, fills))
+    check(run, "position closed", run.final["held"] == 0, run.final["held"])
+    return run
+
+
+def stop_left_behind_is_placed_again_within_a_minute():
+    # The price gaps 5.6% below the stop's quote the second after it is sent, past its 2% band, then
+    # holds. The order is cancelled once its minute is up and the stop is sent again at the new price.
+    run = Run("stop_left_behind_is_placed_again_within_a_minute", price=100, held=10, avg=100)
+    run.plan(action="HOLD", stop=90)
+    run.run(lambda t: 100 if t < 40 else 89 if t == 40 else 84, until=220)
+    common(run, 10)
+    stops = run.orders_for(":EXIT:stop:")
+    placed = [(datetime.fromisoformat(o["submittedAt"]) - run.start).total_seconds() for o in stops]
+    check(run, "the first stop order was left unfilled and cancelled, the second sold all 10",
+          [(o["limit"], o["filled"], o["cancelled"]) for o in stops] == [(88, 0, 10), (83, 10, 0)], stops)
+    check(run, "sent again within 100 s of the first", len(placed) == 2 and placed[1] - placed[0] <= 100, placed)
+    check(run, "position closed", run.final["held"] == 0, run.final["held"])
+    return run
+
+
+def stop_sent_again_after_a_lost_cancellation():
+    # As above, but the first cancellation never reaches the broker and gets no answer. The backend
+    # finds the order still open and cancels it again, and the stop goes out at the new price. Such an
+    # order used to stay CANCEL_REQUESTED, which held the stop back until the session's end.
+    run = Run("stop_sent_again_after_a_lost_cancellation", price=100, held=10, avg=100)
+    run.plan(action="HOLD", stop=90)
+    call("/sim/control", {"cancelsLost": 1})
+    run.run(lambda t: 100 if t < 40 else 89 if t == 40 else 84, until=260)
+    common(run, 10)
+    stops = run.orders_for(":EXIT:stop:")
+    check(run, "one cancellation was lost and the next one cancelled the first order",
+          len(run.events("cancel_lost")) == 1 and [e["odno"] for e in run.events("cancel")] == [s["odno"] for s in stops[:1]],
+          (run.events("cancel_lost"), run.events("cancel")))
+    check(run, "the stop's second order sold all 10",
+          [(o["limit"], o["filled"], o["cancelled"]) for o in stops] == [(88, 0, 10), (83, 10, 0)], stops)
+    placed = [(datetime.fromisoformat(o["submittedAt"]) - run.start).total_seconds() for o in stops]
+    check(run, "sent again within 140 s of the first", len(placed) == 2 and placed[1] - placed[0] <= 140, placed)
+    check(run, "position closed", run.final["held"] == 0, run.final["held"])
     return run
 
 
@@ -465,11 +523,11 @@ def off_grid_quotes_trade_on_the_price_grid():
     buys, stops = run.orders_for(":ENTRY:entry-band:"), run.orders_for(":EXIT:stop:")
     check(run, "the entry bought at 406,500, the next valid price above the quote",
           len(buys) == 1 and buys[0]["limit"] == 406_500 and buys[0]["filled"] == buys[0]["qty"] > 0, buys)
-    check(run, "the stop sold all of it at 395,000, the valid price below the quote",
-          len(stops) == 1 and stops[0]["limit"] == 395_000 and stops[0]["filled"] == run.bought() and run.final["held"] == 0,
+    check(run, "the stop sold all of it with a limit of 387,500, the valid price 2% below the quote",
+          len(stops) == 1 and stops[0]["limit"] == 387_500 and stops[0]["filled"] == run.bought() and run.final["held"] == 0,
           (stops, run.final["held"]))
     check(run, "each execution keeps its quote next to its order price",
-          [(e["quote"], e["orderPrice"]) for e in run.final["executions"]] == [(406_250, 406_500), (395_250, 395_000)],
+          [(e["quote"], e["orderPrice"]) for e in run.final["executions"]] == [(406_250, 406_500), (395_250, 387_500)],
           run.final["executions"])
     return run
 
@@ -520,7 +578,8 @@ SCENARIOS = [stop_behind_working_reduction, planned_exit_during_working_reductio
              republished_cycles_replace_plans_in_place, publishing_while_an_order_works_keeps_the_plan,
              planned_exit_at_closing_auction_start, planned_exit_late_in_closing_auction,
              planned_exit_auction_clears_below_the_quote, auction_exit_left_unfilled_expires_after_the_close,
-             off_grid_quotes_trade_on_the_price_grid]
+             off_grid_quotes_trade_on_the_price_grid, stop_in_a_fast_fall,
+             stop_left_behind_is_placed_again_within_a_minute, stop_sent_again_after_a_lost_cancellation]
 
 
 def main():

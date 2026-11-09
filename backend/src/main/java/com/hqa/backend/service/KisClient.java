@@ -220,6 +220,12 @@ public class KisClient {
                     .retrieve().bodyToMono(String.class).block(Duration.ofSeconds(20));
             Map<String, Object> payload = objectMapper.readValue(response, new TypeReference<>() { });
             return Map.of("success", "0".equals(String.valueOf(payload.get("rt_cd"))), "response", payload);
+        } catch (WebClientResponseException ex) {
+            // As with orders, KIS answers some refusals (e.g. EGW00201) with an HTTP error status
+            // and an rt_cd body: the cancellation was refused, its outcome is not unknown.
+            Map<String, Object> refusal = rejectionBody(ex.getResponseBodyAsString());
+            return refusal == null ? Map.of("success", false, "unknown", true, "error", "HTTP " + ex.getStatusCode().value())
+                    : Map.of("success", false, "response", refusal);
         } catch (Exception ex) {
             return Map.of("success", false, "unknown", true, "error", ex.getClass().getSimpleName());
         }

@@ -47,10 +47,11 @@ import org.springframework.test.util.ReflectionTestUtils;
  *
  * <pre>HQA_SIM_PYTHON=$PWD/../venv/bin/python mvn -q test -Dtest=PaperLifecycleSimulationTest</pre>
  *
- * The broker fills a limit order once the price reaches it, except in the closing call auction
- * (15:20-15:30), where it only collects orders and matches them once, after the close. Like KIS,
- * it refuses an order priced off the KRX price grid. The scenario report is written to
- * target/paper-lifecycle-sim.txt.
+ * The broker fills a limit order once the price reaches it, at that price, as KIS paper fills at
+ * the market's trade prices (its PAPER sells filled at or above their limits, its entries at or
+ * below), except in the closing call auction (15:20-15:30), where it only collects orders and
+ * matches them once, after the close. Like KIS, it refuses an order priced off the KRX price
+ * grid. The scenario report is written to target/paper-lifecycle-sim.txt.
  */
 @EnabledIfEnvironmentVariable(named = "HQA_SIM_PYTHON", matches = ".+")
 class PaperLifecycleSimulationTest {
@@ -95,6 +96,7 @@ class PaperLifecycleSimulationTest {
     int partial = 0;          // most shares one order fills per second (0: all)
     int pollerPhase = 0;      // second within each 20 s at which the backend's schedulers run
     int rateLimited = 0;      // next order calls KIS answers with EGW00201
+    int cancelsLost = 0;      // next cancellations that never reach the broker and get no answer
     int matchDelay = 0;       // seconds after the close at which the closing call auction matches
     Instant origin = START.toInstant();   // the run's t=0
     int orderSeq = 0, signalSeq = 0, executionSeq = 0;
@@ -268,6 +270,11 @@ class PaperLifecycleSimulationTest {
         }).toList());
         when(kis.cancelPaperOrder(anyString(), any(), anyString(), anyString(), anyString(), anyInt())).thenAnswer(inv -> {
             String odno = inv.getArgument(3);
+            if (cancelsLost > 0) {
+                cancelsLost--;
+                event("cancel_lost", "odno", odno);
+                return Map.of("success", false, "unknown", true, "error", "ReadTimeoutException");
+            }
             Order order = orders.stream().filter(o -> o.odno.equals(odno)).findFirst().orElse(null);
             if (order == null || order.remaining() <= 0) {
                 event("cancel_refused", "odno", odno);
@@ -313,12 +320,13 @@ class PaperLifecycleSimulationTest {
         pollerPhase = ((Number) body.getOrDefault("pollerPhase", 0)).intValue();
         matchDelay = ((Number) body.getOrDefault("matchDelay", 0)).intValue();
         rateLimited = 0;
+        cancelsLost = 0;
     }
 
     /**
-     * One simulated second: before the closing call auction limit orders fill at their limit when
-     * the price reaches them; the auction matches its orders once, matchDelay seconds after the
-     * close, at that second's price. Then the backend's schedulers run every 20 s.
+     * One simulated second: before the closing call auction limit orders fill at the second's price
+     * when it reaches their limit; the auction matches its orders once, matchDelay seconds after
+     * the close, at that second's price. Then the backend's schedulers run every 20 s.
      */
     void tick() {
         clock.now = clock.now.plusSeconds(1);
@@ -331,19 +339,18 @@ class PaperLifecycleSimulationTest {
                 if (partial > 0 && continuous) open = Math.min(open, partial);
                 boolean reaches = "SELL".equals(order.side) ? price >= order.limit : price <= order.limit;
                 if (!reaches) continue;
-                long fillPrice = continuous ? order.limit : price;
                 order.filled += open;
-                order.fillValue += open * fillPrice;
+                order.fillValue += open * price;
                 if ("SELL".equals(order.side)) {
                     held -= open;
-                    cash += open * fillPrice;
+                    cash += open * price;
                     if (held == 0) avg = 0;
                 } else {
-                    avg = (avg * held + fillPrice * (double) open) / (held + open);
+                    avg = (avg * held + price * (double) open) / (held + open);
                     held += open;
-                    cash -= open * fillPrice;
+                    cash -= open * price;
                 }
-                event("fill", "odno", order.odno, "side", order.side, "qty", open, "price", fillPrice);
+                event("fill", "odno", order.odno, "side", order.side, "qty", open, "price", price);
             }
         }
         long elapsed = Duration.between(origin, clock.now).toSeconds();
@@ -492,6 +499,7 @@ class PaperLifecycleSimulationTest {
                 respond(exchange, 200, state());
             } else if (path.equals("/sim/control")) {
                 rateLimited = ((Number) body.getOrDefault("rateLimited", rateLimited)).intValue();
+                cancelsLost = ((Number) body.getOrDefault("cancelsLost", cancelsLost)).intValue();
                 respond(exchange, 200, state());
             } else if (path.equals("/sim/state")) {
                 respond(exchange, 200, state());

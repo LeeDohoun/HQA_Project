@@ -58,7 +58,7 @@ class PaperTradeLifecycleTest {
                 "pnlRate", 2.0, "sellableQuantity", 10)));
         when(accounts.snapshot("u1")).thenReturn(snapshot);
         TradeSignalExecution intent = execution();
-        when(store.claim(eq("s1"), eq(1), eq(TradeConditions.TriggerType.EXIT), eq("stop"), same(snapshot), eq(90L), eq(90L),
+        when(store.claim(eq("s1"), eq(1), eq(TradeConditions.TriggerType.EXIT), eq("stop"), same(snapshot), eq(90L), eq(89L),
                 eq(0L), eq(0L), isNull(), eq(now))).thenReturn(intent);
         when(kis.paperOrder(anyString(), any(), anyString(), anyString(), anyInt(), anyLong(), anyString()))
                 .thenReturn(Map.of("success", true));
@@ -233,7 +233,7 @@ class PaperTradeLifecycleTest {
         TradeConditions.TriggerType exit = TradeConditions.TriggerType.EXIT;
         // 2026-11-09: a sell at the quote, 187,200, missed a match at 187,100.
         assertThat(PaperTradeLifecycle.orderPrice(exit, null, 187_200, true, 131_100L)).isEqualTo(177_900);  // 5% below, on the grid
-        assertThat(PaperTradeLifecycle.orderPrice(exit, null, 187_200, false, 131_100L)).isEqualTo(187_200); // the continuous session keeps the quote
+        assertThat(PaperTradeLifecycle.orderPrice(exit, null, 187_200, false, 131_100L)).isEqualTo(183_500); // the continuous session's 2%
         assertThat(PaperTradeLifecycle.orderPrice(exit, null, 100_000, true, 97_000L)).isEqualTo(97_000);     // never below the day's lower limit
         assertThat(PaperTradeLifecycle.orderPrice(exit, null, 100_000, true, null)).isEqualTo(95_000);        // an answer without the limit
         assertThat(PaperTradeLifecycle.orderPrice(TradeConditions.TriggerType.REDUCE, null, 8_600, true, 6_020L)).isEqualTo(8_170);
@@ -275,9 +275,39 @@ class PaperTradeLifecycleTest {
                 entry(price(">=", 400_000)), 406_250)).isEqualTo(406_500);                       // no upper bound
         for (TradeConditions.TriggerType sell : List.of(TradeConditions.TriggerType.EXIT, TradeConditions.TriggerType.REDUCE,
                 TradeConditions.TriggerType.INVALIDATION)) {
-            assertThat(PaperTradeLifecycle.orderPrice(sell, band, 406_250)).isEqualTo(406_000);
+            assertThat(PaperTradeLifecycle.orderPrice(sell, band, 406_250)).isEqualTo(398_500);  // 398,125 rounded up
         }
-        assertThat(PaperTradeLifecycle.orderPrice(TradeConditions.TriggerType.EXIT, null, 406_250)).isEqualTo(406_000);
+        assertThat(PaperTradeLifecycle.orderPrice(TradeConditions.TriggerType.EXIT, null, 406_250)).isEqualTo(398_500);
+    }
+
+    @Test
+    void aSellInTheContinuousSessionIsPricedUpToTwoPercentBelowTheQuoteOnTheGrid() {
+        TradeConditions.TriggerType exit = TradeConditions.TriggerType.EXIT;
+        assertThat(PaperTradeLifecycle.orderPrice(exit, null, 187_200, false, 131_100L)).isEqualTo(183_500);  // 183,456 rounded up
+        assertThat(PaperTradeLifecycle.orderPrice(exit, null, 114_100, false, null)).isEqualTo(111_900);      // 111,818 rounded up
+        assertThat(PaperTradeLifecycle.orderPrice(exit, null, 1_350_000, false, null)).isEqualTo(1_323_000);
+        assertThat(PaperTradeLifecycle.orderPrice(exit, null, 7_830, false, null)).isEqualTo(7_680);         // 7,673.4 rounded up
+        assertThat(PaperTradeLifecycle.orderPrice(exit, null, 90, false, null)).isEqualTo(89);
+        assertThat(PaperTradeLifecycle.orderPrice(exit, null, 100_000, false, 99_000L)).isEqualTo(99_000);   // never below the day's lower limit
+        assertThat(PaperTradeLifecycle.orderPrice(exit, null, 70_000, false, 70_000L)).isEqualTo(70_000);    // at the lower limit, the quote
+        assertThat(PaperTradeLifecycle.orderPrice(exit, null, 1, false, null)).isEqualTo(1);
+        assertThat(PaperTradeLifecycle.orderPrice(TradeConditions.TriggerType.REDUCE, null, 8_600, false, 6_020L)).isEqualTo(8_430);
+        assertThat(PaperTradeLifecycle.orderPrice(TradeConditions.TriggerType.INVALIDATION, null, 20_500, false, null)).isEqualTo(20_100);  // 20,090 rounded up
+    }
+
+    @Test
+    void aPlannedExitAtTheOpenIsSentBelowTheQuoteWithTheQuoteRecorded() {
+        // 2026-11-10: NAVER's planned exit, carried from the 11-09 close, is sent at the open.
+        signal.setPlannedExitAt(OffsetDateTime.parse("2026-09-03T15:20:00+09:00"));
+        PaperTradeLifecycle open = at("09:00:05");
+        when(kis.inquireQuote("u1", user.getSecret(), "token", "005930")).thenReturn(new KisClient.Quote(187_200L, 131_100L));
+        when(store.claim(eq("s1"), eq(1), eq(TradeConditions.TriggerType.EXIT), eq("planned-exit"), anyMap(),
+                eq(187_200L), eq(183_500L), eq(0L), eq(0L), isNull(), any())).thenReturn(execution());
+        when(kis.paperOrder(anyString(), any(), anyString(), anyString(), anyInt(), anyLong(), anyString()))
+                .thenReturn(Map.of("success", true));
+        open.trigger("s1", request("EXIT", 1, "planned-exit"));
+        verify(kis).paperOrder("u1", user.getSecret(), "token", "005930", 10, 183_500L, "SELL");
+        verify(store, never()).block(anyString(), anyString());
     }
 
     @Test
@@ -307,15 +337,15 @@ class PaperTradeLifecycleTest {
     }
 
     @Test
-    void anOffGridQuoteSendsAProtectiveSellAtTheValidPriceBelowIt() {
+    void anOffGridQuoteSendsAProtectiveSellAtAValidPriceInsideItsBand() {
         signal.setPlannedExitAt(now.minusSeconds(1));
         when(kis.inquireQuote("u1", user.getSecret(), "token", "005930")).thenReturn(new KisClient.Quote(406_250L, null));
         when(store.claim(eq("s1"), eq(1), eq(TradeConditions.TriggerType.EXIT), eq("planned-exit"), anyMap(),
-                eq(406_250L), eq(406_000L), eq(0L), eq(0L), isNull(), eq(now))).thenReturn(execution());
+                eq(406_250L), eq(398_500L), eq(0L), eq(0L), isNull(), eq(now))).thenReturn(execution());
         when(kis.paperOrder(anyString(), any(), anyString(), anyString(), anyInt(), anyLong(), anyString()))
                 .thenReturn(Map.of("success", true));
         lifecycle.trigger("s1", request("EXIT", 1, "planned-exit"));
-        verify(kis).paperOrder("u1", user.getSecret(), "token", "005930", 10, 406_000L, "SELL");
+        verify(kis).paperOrder("u1", user.getSecret(), "token", "005930", 10, 398_500L, "SELL");
         verify(store, never()).block(anyString(), anyString());
     }
 
@@ -408,7 +438,7 @@ class PaperTradeLifecycleTest {
     void autoTradeOffRefusesEntriesButStillSendsProtectiveExits() {
         user.setAutoTradeEnabled(false);
         TradeSignalExecution intent = execution();
-        when(store.claim(eq("s1"), eq(1), eq(TradeConditions.TriggerType.EXIT), eq("stop"), anyMap(), eq(90L), eq(90L),
+        when(store.claim(eq("s1"), eq(1), eq(TradeConditions.TriggerType.EXIT), eq("stop"), anyMap(), eq(90L), eq(89L),
                 eq(0L), eq(0L), isNull(), eq(now))).thenReturn(intent);
         when(kis.paperOrder(anyString(), any(), anyString(), anyString(), anyInt(), anyLong(), anyString()))
                 .thenReturn(Map.of("success", true));

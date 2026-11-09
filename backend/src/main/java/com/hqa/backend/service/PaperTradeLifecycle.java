@@ -40,6 +40,16 @@ public class PaperTradeLifecycle {
      */
     static final long CLOSING_AUCTION_SELL_BAND_PCT = 5;
     /**
+     * How far below the quote a sell in the continuous session may be priced. KIS paper fills a
+     * marketable limit at the market's trade prices, not at the limit: every PAPER sell so far
+     * filled at or above its limit (114,100 at 114,114 on 2026-10-13, 1,350,000 at 1,350,333 on
+     * 11-04) and entries at or below theirs (128,400 at 127,800 on 10-12), as KRX fills an order
+     * against the book. A sell priced below the quote still sells at the market's price, and a
+     * fall in the seconds between the quote and the order no longer leaves a stop behind until
+     * the order expires.
+     */
+    static final long SELL_BAND_PCT = 2;
+    /**
      * How long after its session's close an order's broker state is final. KRX drops what a
      * regular-session order has not filled at the close, and KIS takes no cancellation then; the
      * closing auction's fills reached KIS's order inquiry by 15:30:40 on every PAPER day so far.
@@ -475,31 +485,33 @@ public class PaperTradeLifecycle {
         catch (java.io.IOException ex) { throw new IllegalArgumentException("INVALID_STORED_CONDITIONS", ex); }
     }
     /**
-     * The trigger's limit on the KRX price grid, which the quote may miss. A buy rounds up to the
-     * next valid price, but never past the highest price its entry group allows; a sell rounds
-     * down, so it stays marketable.
+     * The trigger's limit on the KRX price grid, which the quote may miss, in the continuous
+     * session without a known lower price limit. A buy rounds up to the next valid price, but never
+     * past the highest price its entry group allows; a sell is priced up to
+     * {@link #SELL_BAND_PCT} below the quote, so it stays marketable.
      */
     static long orderPrice(TradeConditions.TriggerType type, TradeConditions.Group group, long quote) {
         return orderPrice(type, group, quote, false, null);
     }
 
     /**
-     * As above, except for a sell in the closing call auction. KRX matches that auction once, at a
-     * single price, and every sell priced at or below it fills at that price, so a sell's limit
-     * there only decides whether it takes part. A sell at the quote missed the match on 2026-11-09
-     * when the auction cleared one tick lower (NAVER, 187,100 against 187,200) and the planned
-     * exit was carried overnight. In the auction a sell is priced up to
-     * {@link #CLOSING_AUCTION_SELL_BAND_PCT} below the quote, but never below the day's lower price
-     * limit, which KIS would refuse.
+     * As above, at any time of the session. A sell's limit is the lowest valid price at or above
+     * its band below the quote, never below the day's lower price limit, which KIS would refuse.
+     * The band is {@link #SELL_BAND_PCT} in the continuous session, where a sell fills at the
+     * market's price and the band only bounds how far the price may fall before it does, and
+     * {@link #CLOSING_AUCTION_SELL_BAND_PCT} in the closing call auction. KRX matches that auction
+     * once, at a single price, and every sell priced at or below it fills at that price, so a
+     * sell's limit there only decides whether it takes part. A sell at the quote missed the match
+     * on 2026-11-09 when the auction cleared one tick lower (NAVER, 187,100 against 187,200) and
+     * the planned exit was carried overnight.
      */
     static long orderPrice(TradeConditions.TriggerType type, TradeConditions.Group group, long quote,
             boolean closingAuction, Long lowerLimit) {
         if (type != TradeConditions.TriggerType.ENTRY) {
-            long atQuote = KrxTickSize.roundDown(quote);
-            if (!closingAuction) return atQuote;
-            long floor = KrxTickSize.roundUp(Math.floorDiv(quote * (100 - CLOSING_AUCTION_SELL_BAND_PCT) + 99, 100));
+            long band = closingAuction ? CLOSING_AUCTION_SELL_BAND_PCT : SELL_BAND_PCT;
+            long floor = KrxTickSize.roundUp(Math.floorDiv(quote * (100 - band) + 99, 100));
             if (lowerLimit != null && lowerLimit > 0 && lowerLimit <= quote) floor = Math.max(floor, KrxTickSize.roundUp(lowerLimit));
-            return Math.min(floor, atQuote);
+            return Math.min(floor, KrxTickSize.roundDown(quote));
         }
         long price = KrxTickSize.roundUp(quote);
         Long highest = group == null ? null : TradeConditions.highestPrice(group);

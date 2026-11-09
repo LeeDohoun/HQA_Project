@@ -513,13 +513,14 @@ class PaperTradeStoreTest {
     }
 
     @Test
-    void aSellPlacedInTheClosingAuctionWorksUntilAfterTheCloseInsteadOfTwoMinutes() {
+    void aSellPlacedInTheClosingAuctionWorksUntilAfterTheCloseInsteadOfAMinute() {
         TradeSignal plan = store.save(reduceHold(1, 0.5, now.plusDays(3)), account(10), now);
         OffsetDateTime auction = OffsetDateTime.parse("2026-09-04T15:20:00+09:00");
         OffsetDateTime afterClose = OffsetDateTime.parse("2026-09-04T15:32:00+09:00");
-        assertThat(sellExpiry(plan, TradeConditions.TriggerType.EXIT, "stop", null, now)).isEqualTo(now.plusMinutes(2));
+        assertThat(sellExpiry(plan, TradeConditions.TriggerType.EXIT, "stop", null, now)).isEqualTo(now.plusMinutes(1));
+        assertThat(sellExpiry(plan, TradeConditions.TriggerType.REDUCE, "trim", 0.5, now)).isEqualTo(now.plusMinutes(1));
         assertThat(sellExpiry(plan, TradeConditions.TriggerType.EXIT, "stop", null, auction.minusSeconds(1)))
-                .isEqualTo(auction.plusSeconds(119));                     // placed before the auction: 2 minutes
+                .isEqualTo(auction.plusSeconds(59));                      // placed before the auction: 1 minute
         assertThat(sellExpiry(plan, TradeConditions.TriggerType.EXIT, "planned-exit", null, auction)).isEqualTo(afterClose);
         assertThat(sellExpiry(plan, TradeConditions.TriggerType.EXIT, "stop", null, auction.plusMinutes(7))).isEqualTo(afterClose);
         assertThat(sellExpiry(plan, TradeConditions.TriggerType.REDUCE, "trim", 0.5, auction.plusSeconds(599))).isEqualTo(afterClose);
@@ -604,18 +605,24 @@ class PaperTradeStoreTest {
     }
 
     @Test
-    void unknownCancellationNeverAuthorizesBlindResubmission() {
+    void anUnansweredCancellationLeavesTheOrderUnresolvedAndCancellableAgain() {
         TradeSignal signal = store.save(request("BUY", 20, 1, "a", now), account(0), now);
         var intent = store.claim(signal.getId(), 1, TradeConditions.TriggerType.ENTRY, "entry", account(0),
                 100, 100, 10000, 100, null, now);
         store.acknowledge(intent.getId(), Map.of("success", true, "response", Map.of("rt_cd", "0", "output", Map.of("ODNO", "order1"))));
         store.markCancelRequested(intent.getId());
         store.acknowledgeCancellation(intent.getId(), Map.of("success", false, "unknown", true));
-        assertThat(store.markCancelRequested(intent.getId())).isFalse();
+        // Working as far as the record knows: still unresolved, so the plan sends nothing new, with its
+        // cash still reserved; reconciliation reads the broker's order list before it cancels again.
+        assertThat(intent.getStatus()).isEqualTo("ORDER_SUBMITTED");
+        assertThat(PaperTradeStore.UNRESOLVED).contains(intent.getStatus());
+        assertThat(intent.getRejectReason()).isEqualTo("CANCEL_CONFIRMATION_REQUIRED");
         assertThat(intent.getReservedCash()).isPositive();
-        store.observeFill(intent.getId(), 0, 0, 0, true, "org", now);
+        assertThat(store.markCancelRequested(intent.getId())).isTrue();
+        store.observeFill(intent.getId(), 0, 0, 0, true, "org", now);      // the broker lists it cancelled
         store.acknowledgeCancellation(intent.getId(), Map.of("success", false, "response", Map.of("rt_cd", "1")));
         assertThat(intent.getStatus()).isEqualTo("CANCELLED");
+        assertThat(intent.getReservedCash()).isZero();
     }
 
     @Test
