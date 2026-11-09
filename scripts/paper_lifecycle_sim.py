@@ -428,24 +428,27 @@ def publishing_while_an_order_works_keeps_the_plan():
 
 
 CLOSING_MATCH = 680   # 15:30:20 in a run that starts at 15:19:00
+SESSION_END = 1260    # 15:40:00, when the backend records what the close left unfilled as expired
 
 
-def closing_auction_exit(name, due):
-    """A planned exit falls due `due` seconds after 15:19:00, in the closing call auction from 15:20."""
+def closing_auction_exit(name, due, clears=101):
+    """A planned exit falls due `due` seconds after 15:19:00, in the closing call auction from 15:20.
+    The quote is 100 until the auction clears at `clears`."""
     # The broker matches the auction 20 s after the close: on 2026-10-15 KIS paper still listed
     # that day's 15:28 sell as unfilled after 15:30:05. The monitor stops at the real close.
     run = Run(name, price=100, held=10, avg=100, start="15:19:00", matchDelay=20, session=market_session)
     run.plan(action="HOLD", stop=80, plannedExitSeconds=due, entrySeconds=30)
-    run.run(lambda t: 101 if t >= CLOSING_MATCH else 100, until=840)   # the sell's limit is 100; the auction clears at 101
+    # In the auction the sell is priced 5% below the quote, at 95, and fills at the auction's price.
+    run.run(lambda t: clears if t >= CLOSING_MATCH else 100, until=840)
     common(run, 10)
     exits = run.orders_for(":EXIT:planned-exit:")
-    check(run, "one planned-exit order, placed when due and never cancelled",
-          len(exits) == 1 and run.first_submitted(exits) == due and not run.events("cancel"),
+    check(run, "one planned-exit order at 95, placed when due and never cancelled",
+          len(exits) == 1 and exits[0]["limit"] == 95 and run.first_submitted(exits) == due and not run.events("cancel"),
           (exits, run.events("cancel")))
     fills = [(e["t"], e["qty"], e["price"]) for e in run.events("fill")]
-    check(run, "it sold all 10 at the auction price at the match", fills == [(CLOSING_MATCH, 10, 101)], fills)
+    check(run, "it sold all 10 at the auction price at the match", fills == [(CLOSING_MATCH, 10, clears)], fills)
     check(run, "the backend recorded the fill and closed the plan, leaving no position",
-          [(e["status"], e["avgFill"]) for e in run.final["executions"]] == [("FILLED", 101)]
+          [(e["status"], e["avgFill"]) for e in run.final["executions"]] == [("FILLED", clears)]
           and [(s["status"], s["managed"]) for s in run.final["signals"]] == [("CLOSED", 0)] and run.final["held"] == 0,
           (run.final["executions"], run.final["signals"], run.final["held"]))
     return run
@@ -481,6 +484,34 @@ def planned_exit_late_in_closing_auction():
     return closing_auction_exit("planned_exit_late_in_closing_auction", 520)
 
 
+def planned_exit_auction_clears_below_the_quote():
+    # 2026-11-09: NAVER's planned exit, a sell at the quote (187,200), missed an auction that
+    # cleared one tick lower (187,100), and the position was carried overnight.
+    return closing_auction_exit("planned_exit_auction_clears_below_the_quote", 60, clears=99)
+
+
+def auction_exit_left_unfilled_expires_after_the_close():
+    # The auction clears at 90, below the sell's 95, so nothing fills. KIS takes no cancellation
+    # after the close (the 2026-11-09 one went unconfirmed and held the plan's triggers back), so
+    # none is sent; at 15:40 the backend records the order as expired, and the plan keeps the
+    # position for the next session's exit.
+    run = Run("auction_exit_left_unfilled_expires_after_the_close", price=100, held=10, avg=100, start="15:19:00",
+              matchDelay=20, session=market_session)
+    run.plan(action="HOLD", stop=80, plannedExitSeconds=60, entrySeconds=30)
+    run.run(lambda t: 90 if t >= CLOSING_MATCH else 100, until=SESSION_END + 40)
+    common(run, 10)
+    exits = run.orders_for(":EXIT:planned-exit:")
+    check(run, "one planned-exit order at 95, unfilled and never cancelled",
+          len(exits) == 1 and exits[0]["limit"] == 95 and exits[0]["filled"] == 0
+          and not run.events("cancel") and not run.events("cancel_refused"),
+          (exits, run.events("cancel"), run.events("cancel_refused")))
+    check(run, "the backend recorded it as expired at the close and the plan still manages all 10",
+          [(e["status"], e["reject"]) for e in run.final["executions"]] == [("CANCELLED", "EXPIRED_AT_SESSION_CLOSE")]
+          and [(s["status"], s["managed"]) for s in run.final["signals"]] == [("OPEN", 10)] and run.final["held"] == 10,
+          (run.final["executions"], run.final["signals"], run.final["held"]))
+    return run
+
+
 SCENARIOS = [stop_behind_working_reduction, planned_exit_during_working_reduction, take_profit_tiers,
              entry_then_stop, unfilled_reduction_retries, reissued_version_does_not_repeat_reduction,
              stop_flicker_with_planned_exit_due, entry_partial_fill_then_stop, rate_limited_stop,
@@ -488,6 +519,7 @@ SCENARIOS = [stop_behind_working_reduction, planned_exit_during_working_reductio
              entry_expires_untriggered, working_entry_cancelled_at_expiry, published_plans_trade_end_to_end,
              republished_cycles_replace_plans_in_place, publishing_while_an_order_works_keeps_the_plan,
              planned_exit_at_closing_auction_start, planned_exit_late_in_closing_auction,
+             planned_exit_auction_clears_below_the_quote, auction_exit_left_unfilled_expires_after_the_close,
              off_grid_quotes_trade_on_the_price_grid]
 
 

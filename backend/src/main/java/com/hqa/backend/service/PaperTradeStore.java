@@ -32,9 +32,11 @@ public class PaperTradeStore {
     public static final Set<String> TRANSIENT_REJECTIONS = Set.of("KIS_RATE_LIMITED", "ORDER_NOT_SENT_RATE_QUEUE_FULL");
     /** KIS msg_cd for an order in a stock the account may not trade: 모의투자 주문처리가 안되었습니다(매매불가 종목). */
     static final String KIS_UNTRADABLE_STOCK = "40070000";
+    /** Why an order ended when its session closed with part or all of it unfilled. */
+    public static final String EXPIRED_AT_SESSION_CLOSE = "EXPIRED_AT_SESSION_CLOSE";
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
     /**
-     * How long after the close a sell placed in the closing call auction keeps working. The match
+     * The recorded expiry of a sell placed in the closing call auction, after the close. The match
      * reaches KIS's order inquiry only some time after the close: on 2026-10-15 KIS paper still
      * listed the 15:28 sell as unfilled after 15:30:05, and its auction fill was first seen at 15:30:40.
      */
@@ -437,6 +439,25 @@ public class PaperTradeStore {
         signals.save(signal);
     }
 
+    /**
+     * Notes on an order that its session's close left unfilled, now recorded as cancelled, why it
+     * ended. The plan's reason from an unconfirmed or refused cancellation of it is cleared: that
+     * order no longer holds the plan's triggers back.
+     */
+    @Transactional
+    public void expireAtSessionClose(String executionId) {
+        lock(executions.ownerOf(executionId).orElseThrow());
+        TradeSignalExecution execution = executions.findById(executionId).orElseThrow();
+        if (!"CANCELLED".equals(execution.getStatus())) return;
+        execution.setRejectReason(EXPIRED_AT_SESSION_CLOSE);
+        executions.saveAndFlush(execution);
+        TradeSignal signal = signals.findById(execution.getSignalId()).orElseThrow();
+        if (Set.of("CANCEL_CONFIRMATION_REQUIRED", "KIS_CANCEL_REJECTED").contains(String.valueOf(signal.getRejectReason()))) {
+            signal.setRejectReason(null);
+            signals.save(signal);
+        }
+    }
+
     @Transactional
     public void markUnknown(String executionId) {
         lock(executions.ownerOf(executionId).orElseThrow());
@@ -516,8 +537,10 @@ public class PaperTradeStore {
      * Reconciliation cancels a limit order once it expires: an entry after 5 minutes, a sell after
      * 2, so that a sell the price has left is placed again at the new price. In the closing call
      * auction KRX only collects orders, and matches them once at the close, so a sell placed then
-     * works until the match has been reported. Placing it again would not change its price (no
-     * trade moves the price before the match) and could leave the match without an order.
+     * does not expire before the close: placing it again would not change its price (no trade
+     * moves the price before the match) and could leave the match without an order. Whatever the
+     * close leaves unfilled, reconciliation records as expired once the session's fills have been
+     * reported.
      */
     private OffsetDateTime orderExpiry(boolean buy, OffsetDateTime now) {
         if (buy) return now.plusMinutes(5);

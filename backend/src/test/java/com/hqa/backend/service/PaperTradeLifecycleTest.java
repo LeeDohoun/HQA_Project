@@ -45,7 +45,7 @@ class PaperTradeLifecycleTest {
         when(accounts.binding(user)).thenReturn("binding");
         when(accounts.snapshot("u1")).thenReturn(PaperTradeStoreTest.account(10));
         when(kis.fetchAccessToken("u1", user.getSecret())).thenReturn("token");
-        when(kis.inquireCurrentPrice("u1", user.getSecret(), "token", "005930")).thenReturn(90L);
+        when(kis.inquireQuote("u1", user.getSecret(), "token", "005930")).thenReturn(new KisClient.Quote(90L, null));
         doAnswer(inv -> { signal.setRejectReason(inv.getArgument(1)); return null; }).when(store).block(eq("s1"), anyString());
     }
 
@@ -158,25 +158,102 @@ class PaperTradeLifecycleTest {
     }
 
     @Test
-    void aClosingAuctionSellKeepsWorkingThroughResentTriggersAndOnlyItsLeftoverIsCancelledAfterTheClose() {
+    void aClosingAuctionSellKeepsWorkingThroughResentTriggersAndWhatTheCloseLeavesExpiresWithoutACancellation() {
         signal.setPlannedExitAt(OffsetDateTime.parse("2026-09-04T15:20:00+09:00"));
         TradeSignalExecution working = workingSell("s1:1:EXIT:planned-exit:0", 10);
         working.setSubmittedAt(OffsetDateTime.parse("2026-09-04T15:20:06+09:00"));
         working.setOrderExpiresAt(OffsetDateTime.parse("2026-09-04T15:32:00+09:00"));   // as PaperTradeStore sets it
         when(store.markCancelRequested("e1")).thenReturn(true);
-        when(kis.cancelPaperOrder(anyString(), any(), anyString(), anyString(), anyString(), anyInt()))
-                .thenReturn(Map.of("success", true));
         for (String time : List.of("15:22:30", "15:29:59")) {          // past the 2-minute life, then the last auction second
             PaperTradeLifecycle auction = at(time);
             assertThat(auction.triggerResponse("s1", request("EXIT", 1, "planned-exit"))).containsEntry("accepted", true)
                     .containsEntry("deduplicated", true).containsEntry("executionStatus", "ORDER_SUBMITTED");
             auction.reconcileAccount("u1", null);
         }
-        at("15:31:59").reconcileAccount("u1", null);
+        // Past its recorded expiry, but KIS takes no cancellation after the close (2026-11-09).
+        for (String time : List.of("15:32:00", "15:39:59")) at(time).reconcileAccount("u1", null);
+        verify(store, never()).markCancelRequested(anyString());
         verify(kis, never()).cancelPaperOrder(anyString(), any(), anyString(), anyString(), anyString(), anyInt());
         verify(kis, never()).paperOrder(anyString(), any(), anyString(), anyString(), anyInt(), anyLong(), anyString());
-        at("15:32:00").reconcileAccount("u1", null);
-        verify(kis).cancelPaperOrder("u1", user.getSecret(), "token", "order1", "org", 10);
+        verify(store, never()).expireAtSessionClose(anyString());
+        at("15:40:00").reconcileAccount("u1", null);                  // the session's fills have all been reported
+        verify(store).observeFill("e1", 0, 0, 0, true, "org", OffsetDateTime.parse("2026-09-04T15:40:00+09:00"));
+        verify(store).expireAtSessionClose("e1");
+        verify(kis, never()).cancelPaperOrder(anyString(), any(), anyString(), anyString(), anyString(), anyInt());
+    }
+
+    @Test
+    void anOrderAnEarlierSessionLeftUnfilledIsRecordedAsExpiredSoItNoLongerHoldsThePlanBack() {
+        // 2026-11-09: a 15:20 auction sell missed the match, its 15:32 cancel went unconfirmed, and
+        // the order, CANCEL_REQUESTED, held every trigger of its plan back. However KIS lists it
+        // later (its whole remainder, or none and no cancellation), the next reconciliation ends it.
+        for (String remaining : List.of("2", "0")) {
+            clearInvocations(store, kis);
+            TradeSignalExecution stuck = workingSell("s1:1:EXIT:planned-exit:0", 2);
+            stuck.setStatus("CANCEL_REQUESTED");
+            stuck.setSubmittedAt(OffsetDateTime.parse("2026-09-03T15:20:23+09:00"));
+            stuck.setOrderExpiresAt(OffsetDateTime.parse("2026-09-03T15:32:00+09:00"));
+            when(kis.paperOrders(anyString(), any(), anyString(), any(), any())).thenReturn(List.of(Map.ofEntries(
+                    Map.entry("odno", "order1"), Map.entry("ord_dt", "20260903"), Map.entry("pdno", "005930"),
+                    Map.entry("sll_buy_dvsn_cd", "01"), Map.entry("ord_qty", "2"), Map.entry("tot_ccld_qty", "0"),
+                    Map.entry("rmn_qty", remaining), Map.entry("cncl_cfrm_qty", "0"), Map.entry("rjct_qty", "0"),
+                    Map.entry("cncl_yn", "N"), Map.entry("avg_prvs", "0"), Map.entry("ord_gno_brno", "org"))));
+            lifecycle.reconcileAccount("u1", "s1");
+            verify(store).observeFill("e1", 0, 0, 0, true, "org", now);
+            verify(store).expireAtSessionClose("e1");
+            verify(store, never()).markCancelRequested(anyString());
+            verify(kis, never()).cancelPaperOrder(anyString(), any(), anyString(), anyString(), anyString(), anyInt());
+        }
+    }
+
+    @Test
+    void aPartlyFilledOrderKeepsItsFillWhenTheCloseEndsTheRest() {
+        TradeSignalExecution working = workingSell("s1:1:EXIT:stop:0", 10);
+        working.setSubmittedAt(OffsetDateTime.parse("2026-09-03T15:29:30+09:00"));
+        when(kis.paperOrders(anyString(), any(), anyString(), any(), any())).thenReturn(List.of(Map.ofEntries(
+                Map.entry("odno", "order1"), Map.entry("ord_dt", "20260903"), Map.entry("pdno", "005930"),
+                Map.entry("sll_buy_dvsn_cd", "01"), Map.entry("ord_qty", "10"), Map.entry("tot_ccld_qty", "4"),
+                Map.entry("rmn_qty", "6"), Map.entry("cncl_cfrm_qty", "0"), Map.entry("rjct_qty", "0"),
+                Map.entry("cncl_yn", "N"), Map.entry("avg_prvs", "95"), Map.entry("ord_gno_brno", "org"))));
+        lifecycle.reconcileAccount("u1", null);
+        verify(store).observeFill("e1", 4, 95, 0, true, "org", now);
+        verify(store).expireAtSessionClose("e1");
+    }
+
+    @Test
+    void anOrderOfTheOpenSessionIsNotExpired() {
+        workingSell("s1:1:EXIT:stop:0", 10);
+        lifecycle.reconcileAccount("u1", null);
+        verify(store).observeFill("e1", 0, 0, 10, false, "org", now);
+        verify(store, never()).expireAtSessionClose(anyString());
+    }
+
+    @Test
+    void aSellInTheClosingAuctionIsPricedBelowTheQuoteSoItTakesPartInTheMatch() {
+        TradeConditions.TriggerType exit = TradeConditions.TriggerType.EXIT;
+        // 2026-11-09: a sell at the quote, 187,200, missed a match at 187,100.
+        assertThat(PaperTradeLifecycle.orderPrice(exit, null, 187_200, true, 131_100L)).isEqualTo(177_900);  // 5% below, on the grid
+        assertThat(PaperTradeLifecycle.orderPrice(exit, null, 187_200, false, 131_100L)).isEqualTo(187_200); // the continuous session keeps the quote
+        assertThat(PaperTradeLifecycle.orderPrice(exit, null, 100_000, true, 97_000L)).isEqualTo(97_000);     // never below the day's lower limit
+        assertThat(PaperTradeLifecycle.orderPrice(exit, null, 100_000, true, null)).isEqualTo(95_000);        // an answer without the limit
+        assertThat(PaperTradeLifecycle.orderPrice(TradeConditions.TriggerType.REDUCE, null, 8_600, true, 6_020L)).isEqualTo(8_170);
+        assertThat(PaperTradeLifecycle.orderPrice(TradeConditions.TriggerType.INVALIDATION, null, 20_500, true, null)).isEqualTo(19_480);
+        assertThat(PaperTradeLifecycle.orderPrice(TradeConditions.TriggerType.ENTRY,
+                entry(price(">=", 400_000), price("<=", 410_000)), 406_250, true, 300_000L)).isEqualTo(406_500);  // entries keep their rule
+    }
+
+    @Test
+    void aPlannedExitInTheClosingAuctionIsSentBelowTheQuoteWithTheQuoteRecorded() {
+        signal.setPlannedExitAt(OffsetDateTime.parse("2026-09-04T15:20:00+09:00"));
+        PaperTradeLifecycle auction = at("15:20:23");
+        when(kis.inquireQuote("u1", user.getSecret(), "token", "005930")).thenReturn(new KisClient.Quote(187_200L, 131_100L));
+        when(store.claim(eq("s1"), eq(1), eq(TradeConditions.TriggerType.EXIT), eq("planned-exit"), anyMap(),
+                eq(187_200L), eq(177_900L), eq(0L), eq(0L), isNull(), any())).thenReturn(execution());
+        when(kis.paperOrder(anyString(), any(), anyString(), anyString(), anyInt(), anyLong(), anyString()))
+                .thenReturn(Map.of("success", true));
+        auction.trigger("s1", request("EXIT", 1, "planned-exit"));
+        verify(kis).paperOrder("u1", user.getSecret(), "token", "005930", 10, 177_900L, "SELL");
+        verify(store, never()).block(anyString(), anyString());
     }
 
     private static TradeConditions.Group entry(TradeConditions.Predicate... all) {
@@ -214,7 +291,7 @@ class PaperTradeLifecycleTest {
                         Map.of("field", "current_price", "operator", "<=", "value", 410_000)))),
                 "exit_conditions", List.of(Map.of("id", "stop", "all", List.of(
                         Map.of("field", "current_price", "operator", "<=", "value", 396_000)))))));
-        when(kis.inquireCurrentPrice("u1", user.getSecret(), "token", "005930")).thenReturn(406_250L);
+        when(kis.inquireQuote("u1", user.getSecret(), "token", "005930")).thenReturn(new KisClient.Quote(406_250L, null));
         when(kis.paperPurchasingPower("u1", user.getSecret(), "token", "005930", 406_500L))
                 .thenReturn(Map.of("cash", 10_000_000L, "quantity", 24L));
         TradeSignalExecution intent = execution();
@@ -232,7 +309,7 @@ class PaperTradeLifecycleTest {
     @Test
     void anOffGridQuoteSendsAProtectiveSellAtTheValidPriceBelowIt() {
         signal.setPlannedExitAt(now.minusSeconds(1));
-        when(kis.inquireCurrentPrice("u1", user.getSecret(), "token", "005930")).thenReturn(406_250L);
+        when(kis.inquireQuote("u1", user.getSecret(), "token", "005930")).thenReturn(new KisClient.Quote(406_250L, null));
         when(store.claim(eq("s1"), eq(1), eq(TradeConditions.TriggerType.EXIT), eq("planned-exit"), anyMap(),
                 eq(406_250L), eq(406_000L), eq(0L), eq(0L), isNull(), eq(now))).thenReturn(execution());
         when(kis.paperOrder(anyString(), any(), anyString(), anyString(), anyInt(), anyLong(), anyString()))

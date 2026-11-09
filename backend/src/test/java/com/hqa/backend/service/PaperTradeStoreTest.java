@@ -617,4 +617,34 @@ class PaperTradeStoreTest {
         store.acknowledgeCancellation(intent.getId(), Map.of("success", false, "response", Map.of("rt_cd", "1")));
         assertThat(intent.getStatus()).isEqualTo("CANCELLED");
     }
+
+    @Test
+    void anOrderItsSessionLeftUnfilledEndsAsExpiredAndNoLongerHoldsItsPlanBack() {
+        TradeSignal plan = store.save(reduceHold(1, 0.5, now.plusDays(3)), account(10), now);
+        var exit = store.claim(plan.getId(), 1, TradeConditions.TriggerType.EXIT, "stop", account(10), 100, 100, 0, 0, null, now);
+        store.acknowledge(exit.getId(), Map.of("success", true, "response", Map.of("rt_cd", "0", "output", Map.of("ODNO", "o1"))));
+        assertThat(store.markCancelRequested(exit.getId())).isTrue();
+        store.acknowledgeCancellation(exit.getId(), Map.of("success", false, "unknown", true));   // never confirmed (2026-11-09)
+        assertThat(plan.getRejectReason()).isEqualTo("CANCEL_CONFIRMATION_REQUIRED");
+        store.observeFill(exit.getId(), 0, 0, 0, true, "org", now);    // as reconciliation records the session's end
+        store.expireAtSessionClose(exit.getId());
+        assertThat(exit.getStatus()).isEqualTo("CANCELLED");
+        assertThat(exit.getRejectReason()).isEqualTo(PaperTradeStore.EXPIRED_AT_SESSION_CLOSE);
+        assertThat(plan.getRejectReason()).isNull();
+        assertThat(plan.getStatus()).isEqualTo("OPEN");
+        assertThat(plan.getManagedQuantity()).isEqualTo(10);
+        assertThat(store.claim(plan.getId(), 1, TradeConditions.TriggerType.EXIT, "stop", account(10), 100, 100, 0, 0, null,
+                now.plusSeconds(1)).getSubmittedQuantity()).isEqualTo(10);    // the next exit is sent again
+    }
+
+    @Test
+    void onlyACancelledOrderIsMarkedAsExpiredAtTheClose() {
+        TradeSignal plan = store.save(reduceHold(1, 0.5, now.plusDays(3)), account(10), now);
+        var exit = store.claim(plan.getId(), 1, TradeConditions.TriggerType.EXIT, "stop", account(10), 100, 100, 0, 0, null, now);
+        store.acknowledge(exit.getId(), Map.of("success", true, "response", Map.of("rt_cd", "0", "output", Map.of("ODNO", "o1"))));
+        store.observeFill(exit.getId(), 10, 100, 0, false, "org", now);
+        store.expireAtSessionClose(exit.getId());
+        assertThat(exit.getStatus()).isEqualTo("FILLED");
+        assertThat(exit.getRejectReason()).isNull();
+    }
 }

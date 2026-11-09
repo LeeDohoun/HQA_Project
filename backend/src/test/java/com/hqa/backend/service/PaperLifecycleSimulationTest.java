@@ -209,7 +209,7 @@ class PaperLifecycleSimulationTest {
                 .mapToLong(e -> e.getReservedCash() == null ? 0 : e.getReservedCash()).sum());
 
         when(kis.fetchAccessToken(anyString(), any())).thenReturn("token");
-        when(kis.inquireCurrentPrice(anyString(), any(), anyString(), anyString())).thenAnswer(inv -> quote(inv.getArgument(3)));
+        when(kis.inquireQuote(anyString(), any(), anyString(), anyString())).thenAnswer(inv -> new KisClient.Quote(quote(inv.getArgument(3)), null));
         when(kis.paperPurchasingPower(anyString(), any(), anyString(), anyString(), anyLong())).thenAnswer(inv ->
                 Map.of("cash", cash, "quantity", cash / (long) inv.getArgument(4)));
         when(kis.paperOrder(anyString(), any(), anyString(), anyString(), anyInt(), anyLong(), anyString())).thenAnswer(inv -> {

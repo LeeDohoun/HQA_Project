@@ -79,6 +79,12 @@ public class KrxSessionCalendar {
         return at.isBefore(close.minus(CLOSING_AUCTION)) ? Optional.empty() : Optional.of(close);
     }
 
+    /** The close of {@code day}'s session (16:30 on a CSAT day), or empty on a weekend or closure. */
+    public Optional<OffsetDateTime> close(LocalDate day) {
+        LocalTime[] hours = hours(day);
+        return hours == null ? Optional.empty() : Optional.of(day.atTime(hours[1]).atZone(KST).toOffsetDateTime());
+    }
+
     /** The last trading day before {@code day}, skipping weekends and closures. */
     public LocalDate previousTradingDay(LocalDate day) {
         LocalDate previous = day.minusDays(1);

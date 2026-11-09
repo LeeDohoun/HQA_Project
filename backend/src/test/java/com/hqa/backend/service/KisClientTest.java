@@ -97,6 +97,21 @@ class KisClientTest {
             + "\"scts_evlu_amt\":\"0\",\"nass_amt\":\"10000000\"}]}";
 
     @Test
+    void aQuoteCarriesTheDaysLowerPriceLimitWhenKisGivesOne() {
+        UserSecret secret = PaperTradeStoreTest.user().getSecret();
+        KisClient withLimit = paperClient(request -> Mono.just(json(HttpStatus.OK,
+                "{\"rt_cd\":\"0\",\"output\":{\"stck_prpr\":\"187200\",\"stck_llam\":\"131100\"}}")));
+        assertThat(withLimit.inquireQuote("u1", secret, "token", "035420")).isEqualTo(new KisClient.Quote(187_200L, 131_100L));
+        assertThat(withLimit.inquireCurrentPrice("u1", secret, "token", "035420")).isEqualTo(187_200L);
+        KisClient withoutLimit = paperClient(request -> Mono.just(json(HttpStatus.OK,
+                "{\"rt_cd\":\"0\",\"output\":{\"stck_prpr\":\"187200\"}}")));
+        assertThat(withoutLimit.inquireQuote("u1", secret, "token", "035420")).isEqualTo(new KisClient.Quote(187_200L, null));
+        KisClient noPrice = paperClient(request -> Mono.just(json(HttpStatus.OK,
+                "{\"rt_cd\":\"0\",\"output\":{\"stck_prpr\":\"0\",\"stck_llam\":\"131100\"}}")));
+        assertThat(noPrice.inquireQuote("u1", secret, "token", "035420")).isNull();
+    }
+
+    @Test
     void readOnlyInquiriesRetryTransientBrokerFailuresButOrdersDoNot() {
         UserSecret secret = PaperTradeStoreTest.user().getSecret();
         AtomicInteger balanceCalls = new AtomicInteger();

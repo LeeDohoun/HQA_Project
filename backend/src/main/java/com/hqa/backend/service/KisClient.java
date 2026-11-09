@@ -449,9 +449,21 @@ public class KisClient {
     }
 
     /**
+     * A stock's current price and the day's lower price limit (하한가, {@code stck_llam}), which
+     * KIS refuses a sell below; {@code lowerLimit} is null when the answer has none.
+     */
+    public record Quote(long price, Long lowerLimit) { }
+
+    /**
      * 국내주식 현재가 조회. inquire-price.
      */
     public Long inquireCurrentPrice(String userId, UserSecret secret, String token, String stockCode) {
+        Quote quote = inquireQuote(userId, secret, token, stockCode);
+        return quote == null ? null : quote.price();
+    }
+
+    /** The current price and lower price limit from inquire-price, or null when the price is unavailable. */
+    public Quote inquireQuote(String userId, UserSecret secret, String token, String stockCode) {
         try {
             String appKey = secretCipher.decrypt(secret.getKisAppKey());
             String appSecret = secretCipher.decrypt(secret.getKisAppSecret());
@@ -482,7 +494,8 @@ public class KisClient {
             Object output = body.get("output");
             if (!(output instanceof Map<?, ?> row)) return null;
             long price = parseLong(row.get("stck_prpr"));
-            return price > 0 ? price : null;
+            long lowerLimit = parseLong(row.get("stck_llam"));
+            return price > 0 ? new Quote(price, lowerLimit > 0 ? lowerLimit : null) : null;
         } catch (Exception e) {
             errorLogger.log("KisClient", userId, stockCode, "inquire-current-price failed", e.getMessage());
             return null;
