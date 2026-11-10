@@ -32,6 +32,29 @@ import org.springframework.stereotype.Service;
 public class PaperTradeLifecycle {
     private static final Logger log = LoggerFactory.getLogger(PaperTradeLifecycle.class);
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
+    /**
+     * How far below the quote a sell in the closing call auction may be priced. The three PAPER
+     * auction exits that filled (2026-10-15, 10-21, 10-29) cleared 0.1-0.4% above their quotes and
+     * the one that missed (2026-11-09) cleared 0.05% below. 5% is room for a far larger closing
+     * move, while a sell still stays out of a match far below the market.
+     */
+    static final long CLOSING_AUCTION_SELL_BAND_PCT = 5;
+    /**
+     * How far below the quote a sell in the continuous session may be priced. KIS paper fills a
+     * marketable limit at the market's trade prices, not at the limit: every PAPER sell so far
+     * filled at or above its limit (114,100 at 114,114 on 2026-10-13, 1,350,000 at 1,350,333 on
+     * 11-04) and entries at or below theirs (128,400 at 127,800 on 10-12), as KRX fills an order
+     * against the book. A sell priced below the quote still sells at the market's price, and a
+     * fall in the seconds between the quote and the order no longer leaves a stop behind until
+     * the order expires.
+     */
+    static final long SELL_BAND_PCT = 2;
+    /**
+     * How long after its session's close an order's broker state is final. KRX drops what a
+     * regular-session order has not filled at the close, and KIS takes no cancellation then; the
+     * closing auction's fills reached KIS's order inquiry by 15:30:40 on every PAPER day so far.
+     */
+    static final Duration SESSION_END_MARGIN = Duration.ofMinutes(10);
     private final TradeSignalRepository signals;
     private final TradeSignalExecutionRepository executions;
     private final PaperAccountSnapshotService accounts;
@@ -106,8 +129,9 @@ public class PaperTradeLifecycle {
             if (!marketOpen()) throw new IllegalStateException("MARKET_CLOSED");
             Map<String, Object> account = account(signal.getUserId());
             String token = token(user);
-            Long price = kis.inquireCurrentPrice(user.getUserId(), user.getSecret(), token, signal.getStockCode());
-            if (price == null || price <= 0) throw new IllegalStateException("CURRENT_PRICE_UNAVAILABLE");
+            KisClient.Quote quote = kis.inquireQuote(user.getUserId(), user.getSecret(), token, signal.getStockCode());
+            if (quote == null || quote.price() <= 0) throw new IllegalStateException("CURRENT_PRICE_UNAVAILABLE");
+            long price = quote.price();
             Map<?, ?> holding = PaperTradeStore.holding(account, signal.getStockCode());
             Map<String, Object> snapshot = new LinkedHashMap<>();
             snapshot.put("current_price", price);
@@ -142,7 +166,7 @@ public class PaperTradeLifecycle {
                 if (type != TradeConditions.TriggerType.ENTRY) reconcileAccount(user.getUserId(), keepWorkingSell ? null : signalId);
                 throw new IllegalStateException("ORDER_RECONCILIATION_REQUIRED");
             }
-            long orderPrice = orderPrice(type, group, price);
+            long orderPrice = orderPrice(type, group, price, sessions.closingAuctionClose(now()).isPresent(), quote.lowerLimit());
             long powerCash = 0;
             long powerQuantity = 0;
             if (type == TradeConditions.TriggerType.ENTRY) {
@@ -386,11 +410,23 @@ public class PaperTradeLifecycle {
                     || filled + cancelledQuantity + rejectedQuantity == execution.getSubmittedQuantity());
             long average = Math.round(decimal(row.get("avg_prvs")));
             String organization = String.valueOf(row.get("ord_gno_brno"));
+            // KRX drops what a regular-session order has not filled at its session's close, and KIS
+            // takes no cancellation after it: on 2026-11-09 the 15:32 cancel of an unfilled auction
+            // sell went unconfirmed, and the order held every trigger of its plan back. Once the
+            // session's last fills have been reported, the rest is recorded as expired.
+            OffsetDateTime close = sessionClose(execution);
+            boolean expired = !cancelled && filled < execution.getSubmittedQuantity()
+                    && !now.isBefore(close.plus(SESSION_END_MARGIN));
+            if (expired) {
+                remaining = 0;
+                cancelled = true;
+            }
             store.observeFill(execution.getId(), filled, average, remaining, cancelled, organization, now);
+            if (expired) store.expireAtSessionClose(execution.getId());
             TradeSignal plan = signals.findById(execution.getSignalId()).orElseThrow();
             boolean entryExpired = "BUY".equals(execution.getOrderSide()) && plan.getEntryValidUntil() != null
                     && !plan.getEntryValidUntil().isAfter(now);
-            if (remaining > 0 && (execution.getSignalId().equals(cancelSignalId)
+            if (remaining > 0 && now.isBefore(close) && (execution.getSignalId().equals(cancelSignalId)
                     || entryExpired || (execution.getOrderExpiresAt() != null && !execution.getOrderExpiresAt().isAfter(now)))) {
                 if (store.markCancelRequested(execution.getId())) {
                     Map<String, Object> response = kis.cancelPaperOrder(userId, user.getSecret(), token,
@@ -449,15 +485,42 @@ public class PaperTradeLifecycle {
         catch (java.io.IOException ex) { throw new IllegalArgumentException("INVALID_STORED_CONDITIONS", ex); }
     }
     /**
-     * The trigger's limit on the KRX price grid, which the quote may miss. A buy rounds up to the
-     * next valid price, but never past the highest price its entry group allows; a sell rounds
-     * down, so it stays marketable.
+     * The trigger's limit on the KRX price grid, which the quote may miss, in the continuous
+     * session without a known lower price limit. A buy rounds up to the next valid price, but never
+     * past the highest price its entry group allows; a sell is priced up to
+     * {@link #SELL_BAND_PCT} below the quote, so it stays marketable.
      */
     static long orderPrice(TradeConditions.TriggerType type, TradeConditions.Group group, long quote) {
-        if (type != TradeConditions.TriggerType.ENTRY) return KrxTickSize.roundDown(quote);
+        return orderPrice(type, group, quote, false, null);
+    }
+
+    /**
+     * As above, at any time of the session. A sell's limit is the lowest valid price at or above
+     * its band below the quote, never below the day's lower price limit, which KIS would refuse.
+     * The band is {@link #SELL_BAND_PCT} in the continuous session, where a sell fills at the
+     * market's price and the band only bounds how far the price may fall before it does, and
+     * {@link #CLOSING_AUCTION_SELL_BAND_PCT} in the closing call auction. KRX matches that auction
+     * once, at a single price, and every sell priced at or below it fills at that price, so a
+     * sell's limit there only decides whether it takes part. A sell at the quote missed the match
+     * on 2026-11-09 when the auction cleared one tick lower (NAVER, 187,100 against 187,200) and
+     * the planned exit was carried overnight.
+     */
+    static long orderPrice(TradeConditions.TriggerType type, TradeConditions.Group group, long quote,
+            boolean closingAuction, Long lowerLimit) {
+        if (type != TradeConditions.TriggerType.ENTRY) {
+            long band = closingAuction ? CLOSING_AUCTION_SELL_BAND_PCT : SELL_BAND_PCT;
+            long floor = KrxTickSize.roundUp(Math.floorDiv(quote * (100 - band) + 99, 100));
+            if (lowerLimit != null && lowerLimit > 0 && lowerLimit <= quote) floor = Math.max(floor, KrxTickSize.roundUp(lowerLimit));
+            return Math.min(floor, KrxTickSize.roundDown(quote));
+        }
         long price = KrxTickSize.roundUp(quote);
         Long highest = group == null ? null : TradeConditions.highestPrice(group);
         return highest != null && price > highest ? KrxTickSize.roundDown(highest) : price;
+    }
+    /** The close of the session the order was placed in; an order from a day without one ends with that day. */
+    private OffsetDateTime sessionClose(TradeSignalExecution execution) {
+        LocalDate day = execution.getSubmittedAt().atZoneSameInstant(KST).toLocalDate();
+        return sessions.close(day).orElseGet(() -> day.plusDays(1).atStartOfDay(KST).toOffsetDateTime());
     }
     private OffsetDateTime now() { return OffsetDateTime.now(clock); }
     private boolean marketOpen() {

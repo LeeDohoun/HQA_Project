@@ -10,6 +10,7 @@ import com.hqa.backend.entity.UserSecret;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
@@ -97,6 +98,21 @@ class KisClientTest {
             + "\"scts_evlu_amt\":\"0\",\"nass_amt\":\"10000000\"}]}";
 
     @Test
+    void aQuoteCarriesTheDaysLowerPriceLimitWhenKisGivesOne() {
+        UserSecret secret = PaperTradeStoreTest.user().getSecret();
+        KisClient withLimit = paperClient(request -> Mono.just(json(HttpStatus.OK,
+                "{\"rt_cd\":\"0\",\"output\":{\"stck_prpr\":\"187200\",\"stck_llam\":\"131100\"}}")));
+        assertThat(withLimit.inquireQuote("u1", secret, "token", "035420")).isEqualTo(new KisClient.Quote(187_200L, 131_100L));
+        assertThat(withLimit.inquireCurrentPrice("u1", secret, "token", "035420")).isEqualTo(187_200L);
+        KisClient withoutLimit = paperClient(request -> Mono.just(json(HttpStatus.OK,
+                "{\"rt_cd\":\"0\",\"output\":{\"stck_prpr\":\"187200\"}}")));
+        assertThat(withoutLimit.inquireQuote("u1", secret, "token", "035420")).isEqualTo(new KisClient.Quote(187_200L, null));
+        KisClient noPrice = paperClient(request -> Mono.just(json(HttpStatus.OK,
+                "{\"rt_cd\":\"0\",\"output\":{\"stck_prpr\":\"0\",\"stck_llam\":\"131100\"}}")));
+        assertThat(noPrice.inquireQuote("u1", secret, "token", "035420")).isNull();
+    }
+
+    @Test
     void readOnlyInquiriesRetryTransientBrokerFailuresButOrdersDoNot() {
         UserSecret secret = PaperTradeStoreTest.user().getSecret();
         AtomicInteger balanceCalls = new AtomicInteger();
@@ -143,8 +159,13 @@ class KisClientTest {
             return Mono.just(json(HttpStatus.INTERNAL_SERVER_ERROR, "{\"rt_cd\":\"1\",\"msg_cd\":\"EGW00201\"}"));
         });
         assertThat(orders.paperOrder("u1", secret, "token", "005930", 1, 100, "BUY")).containsEntry("success", false);
-        assertThat(orders.cancelPaperOrder("u1", secret, "token", "1", "org", 1)).containsEntry("success", false);
+        // A cancellation KIS refused this way is refused, not of unknown outcome.
+        assertThat(orders.cancelPaperOrder("u1", secret, "token", "1", "org", 1)).containsEntry("success", false)
+                .doesNotContainKey("unknown").containsEntry("response", Map.of("rt_cd", "1", "msg_cd", "EGW00201"));
         assertThat(orderCalls).hasValue(2);
+        KisClient silent = paperClient(request -> Mono.just(json(HttpStatus.BAD_GATEWAY, "<html>gateway</html>")));
+        assertThat(silent.cancelPaperOrder("u1", secret, "token", "1", "org", 1)).containsEntry("success", false)
+                .containsEntry("unknown", true);
     }
 
     private KisClient paperClient(ExchangeFunction exchange) {

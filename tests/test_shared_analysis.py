@@ -749,7 +749,10 @@ def test_scheduler_korean_weekday_session_boundaries(at, expected):
                                         ("2025-11-13T10:00:00+09:00", True),
                                         ("2025-11-13T16:15:00+09:00", True),    # and closes at 16:30
                                         ("2025-11-13T16:30:00+09:00", False),
-                                        ("2026-11-19T10:30:00+09:00", False)])  # notice still pending
+                                        ("2026-11-19T09:30:00+09:00", False),   # 2026 CSAT day (KRX notice of 11-05)
+                                        ("2026-11-19T10:30:00+09:00", True),
+                                        ("2026-11-19T16:29:00+09:00", True),
+                                        ("2026-11-19T16:30:00+09:00", False)])
 def test_scheduler_follows_special_session_hours(at, expected):
     assert within_analysis_session(datetime.fromisoformat(at)) is expected
 
@@ -1366,3 +1369,403 @@ def test_internal_auth_ignores_surrounding_whitespace_in_the_configured_token(mo
     assert client.post("/internal/runtime/analysis-cycle", headers={"X-HQA-Internal-Token": "test-runtime-tokenX"}).status_code == 403
     monkeypatch.setenv("HQA_INTERNAL_TOKEN", " \r\n")
     assert client.post("/internal/runtime/analysis-cycle", headers={"X-HQA-Internal-Token": ""}).status_code == 503
+
+
+def active_plan(stop=97.0):
+    return {"stopLossPrice": stop, "takeProfitPrice": 125.0, "plannedExitAt": (NOW + timedelta(days=3)).isoformat(),
+            "conditionPayload": {"schema_version": 2, "entry_conditions": [], "reduce_conditions": [],
+                                 "exit_conditions": [{"id": "stop", "all": [{"field": "current_price", "operator": "<=", "value": stop}]}],
+                                 "invalidation_conditions": []},
+            "completedReduceIds": []}
+
+
+class PlannedAccounts(Accounts):
+    def __init__(self, stop=97.0):
+        super().__init__()
+        self.stop = stop
+
+    def fetch_accounts(self, ids):
+        return {user: snapshot(user, [{**holding(), "activePlan": active_plan(self.stop)}]) for user in ids}
+
+
+class RangeData(Data):
+    """Bars with a 6% daily range (high 103, low 97 on a 100 close)."""
+
+    def load_universe(self, as_of):
+        rows, errors = super().load_universe(as_of)
+        for row in rows:
+            row["price_history"] = [{"open": 100.0, "high": 103.0, "low": 97.0, "close": 100.0, "volume": 1000.0}] * 21
+        return rows, errors
+
+
+class BuyModel(Model):
+    """Specialists as in Model; the RiskManager buys the first new stock at 110 with the given stop."""
+
+    def __init__(self, role, calls, stop=None):
+        super().__init__(role, calls)
+        self.stop = stop
+
+    def invoke(self, messages):
+        result = super().invoke(messages)
+        if self.role != "risk_manager" or self.stop is None:
+            return result
+        payload = json.loads(messages[-1][1])
+        held = {h["stockCode"] for h in payload["account"]["holdings"]}
+        new = next(row for row in payload["candidates"] if row["stock_code"] not in held)
+        stop = {"id": "stop", "all": [{"field": "current_price", "operator": "<=", "value": self.stop}]}
+        buy = {"stock_code": new["stock_code"], "stock_name": new["stock_name"], "action": "BUY", "holding_quantity": 0,
+               "confidence": 80, "risk_level": "MEDIUM", "position_size_pct": 10.0, "entry_price": 110.0,
+               "stop_loss_price": self.stop, "take_profit_price": 130.0,
+               "entry_valid_until": (NOW + timedelta(minutes=10)).isoformat(),
+               "planned_exit_at": (NOW + timedelta(days=1)).isoformat(),
+               "condition_payload": {"schema_version": 2, "reduce_conditions": [], "exit_conditions": [stop],
+                   "entry_conditions": [{"id": "entry", "all": [{"field": "current_price", "operator": "<=", "value": 110.0}]}],
+                   "invalidation_conditions": [{"id": "invalid", "all": [{"field": "current_price", "operator": "<", "value": self.stop}]}]},
+               "citations": [{"source_id": new["source_ids"][-1], "claim": "Current quote"}], "reasoning": "Entry"}
+        plans = [buy if plan.stock_code == new["stock_code"] else plan.model_dump(mode="json") for plan in result.plans]
+        return self.schema.model_validate({"plans": plans, "reasoning": result.reasoning})
+
+
+def structured(structure, *, data=None, accounts=None, model=Model, **model_kwargs):
+    calls, prompts = [], []
+    models = {role: model(role, calls, **(model_kwargs if role == "risk_manager" else {}))
+              for role in ("analyst", "quant", "chartist", "risk_manager")}
+    invoke = models["risk_manager"].invoke
+
+    def capture(messages):
+        prompts.append(messages[0][1])
+        return invoke(messages)
+
+    models["risk_manager"].invoke = capture
+    engine = SharedAnalysisService(data=data or Data(), accounts=accounts or PlannedAccounts(), models=models,
+                                   clock=lambda: NOW, sleep=lambda seconds: None, structure=structure)
+    return engine, calls, prompts
+
+
+def risk_request(calls):
+    return [payload for role, payload in calls if role == "risk_manager"][0]
+
+
+def test_the_default_review_structure_sends_the_v8_request_even_when_the_backend_sends_active_plans():
+    from src.runner.shared_analysis import PROMPT_SUFFIX, PROMPT_VERSION, RISK_MANAGER_INSTRUCTIONS
+
+    engine, calls, prompts = structured(None, data=RangeData())
+    cycle = engine.run_cycle([{"userId": "a"}])
+    risk = risk_request(calls)
+    assert prompts == [RISK_MANAGER_INSTRUCTIONS + PROMPT_SUFFIX]
+    assert cycle["manifest"]["prompt_version"] == PROMPT_VERSION
+    assert all("active_plan" not in row and "stop_floor" not in row for row in risk["candidates"])
+    assert "activePlan" not in json.dumps(risk["account"])
+
+
+def test_v9_shows_the_rule_prefilters_best_five_instead_of_the_best_specialist_average():
+    from src.runner.shared_analysis import RISK_REVIEW_STRUCTURES
+
+    class Reversed(Model):  # the specialist average now prefers the stocks the rule score ranks lowest
+        def invoke(self, messages):
+            result = super().invoke(messages)
+            return result if self.role == "risk_manager" else result.model_copy(update={"score": 100.0 - result.score})
+
+    orders = {}
+    for name in ("v9-plan-rules", "v9"):
+        engine, calls, _ = structured(RISK_REVIEW_STRUCTURES[name], model=Reversed)
+        engine.run_cycle([{"userId": "a"}])
+        orders[name] = [row["stock_code"] for row in risk_request(calls)["candidates"]]
+    assert orders["v9-plan-rules"] == ["000006", "000007", "000008", "000009", "000010", "000001"]
+    assert orders["v9"] == ["000025", "000024", "000023", "000022", "000021", "000001"]
+
+
+@pytest.mark.parametrize("active_stop,accepted", [(97.0, False), (94.0, True)])
+def test_v9_shows_the_active_plan_and_rejects_a_held_stop_below_it(active_stop, accepted):
+    from src.runner.shared_analysis import RISK_REVIEW_STRUCTURES
+
+    engine, calls, prompts = structured(RISK_REVIEW_STRUCTURES["v9"], accounts=PlannedAccounts(active_stop))
+    account = engine.run_cycle([{"userId": "a"}])["accounts"]["a"]
+    held = next(row for row in risk_request(calls)["candidates"] if row["stock_code"] == "000001")
+    assert held["active_plan"]["stop_loss_price"] == active_stop
+    assert held["active_plan"]["exit_conditions"][0]["all"][0]["value"] == active_stop
+    assert "active_plan" in prompts[0] and list(held["specialists"]) == ["analyst", "chartist", "quant"]
+    rejected = [row for row in account["rejected_plans"] if row["stock_code"] == "000001"]
+    assert ("000001" in {plan["stock_code"] for plan in account["plans"]}) is accepted
+    assert bool(rejected) is not accepted
+    if rejected:
+        assert rejected[0]["reason"] == "held stop 95.0 below the active stop 97.0; the active plan stays"
+
+
+@pytest.mark.parametrize("stop,accepted", [(105.0, False), (103.0, True)])
+def test_v9_rejects_a_buy_whose_stop_sits_inside_the_daily_range(stop, accepted):
+    from src.runner.shared_analysis import RISK_REVIEW_STRUCTURES
+
+    engine, calls, prompts = structured(RISK_REVIEW_STRUCTURES["v9"], data=RangeData(), model=BuyModel, stop=stop)
+    account = engine.run_cycle([{"userId": "a"}])["accounts"]["a"]
+    new = [row for row in risk_request(calls)["candidates"] if row["stock_code"] != "000001"]
+    assert all(row["stop_floor"]["min_stop_distance_pct"] == 6.0 for row in new)
+    assert "stop_floor" in prompts[0]
+    buys = [plan for plan in account["plans"] if plan["action"] == "BUY"]
+    assert bool(buys) is accepted
+    if not accepted:
+        assert [row["reason"] for row in account["rejected_plans"] if row["action"] == "BUY"] == [
+            "BUY stop 4.55% below entry is inside the daily-range floor 6.00%"]
+
+
+def test_the_stop_floor_is_the_mean_daily_range_over_twenty_sessions():
+    from src.runner.shared_analysis import stop_floor
+
+    bars = [{"close": 100.0, "high": 103.0, "low": 97.0, "volume": 1.0}] * 21
+    assert stop_floor(bars, 1.0)["min_stop_distance_pct"] == 6.0
+    assert stop_floor(bars, 1.5)["min_stop_distance_pct"] == 9.0
+    halted = bars[:11] + [{"close": 100.0, "high": 0.0, "low": 0.0, "volume": 0.0}] * 10
+    assert stop_floor(halted, 1.0) == {"min_stop_distance_pct": 6.0,
+                                       "basis": "1 x mean (high - low) / previous close over the last 10 sessions"}
+    assert stop_floor(bars[:10], 1.0) is None
+    assert stop_floor([{"close": 100.0}] * 21, 1.0) is None
+
+
+def test_the_review_structure_comes_from_the_environment(monkeypatch):
+    from src.runner.shared_analysis import (PROMPT_VERSION, RISK_REVIEW_STRUCTURES, RiskReviewStructure,
+                                            risk_review_structure_from_env)
+
+    monkeypatch.delenv("HQA_RISK_REVIEW_STRUCTURE", raising=False)
+    assert risk_review_structure_from_env() == RiskReviewStructure()
+    assert RiskReviewStructure().prompt_version == PROMPT_VERSION
+    monkeypatch.setenv("HQA_RISK_REVIEW_STRUCTURE", "v9")
+    assert risk_review_structure_from_env() is RISK_REVIEW_STRUCTURES["v9"]
+    assert RISK_REVIEW_STRUCTURES["v9"].prompt_version == (
+        PROMPT_VERSION + "+rank-price_score+active-plans+stop-floor-1+sorted-rows")
+    monkeypatch.setenv("HQA_RISK_REVIEW_STRUCTURE", "v10")
+    with pytest.raises(ValueError, match="HQA_RISK_REVIEW_STRUCTURE"):
+        risk_review_structure_from_env()
+    with pytest.raises(ValueError):
+        RiskReviewStructure(candidate_rank="analyst")
+
+
+def stock_news(code, url, body, published, collected=None, **meta):
+    """A canonical news row as the collector writes it, for the analyst's retrieved context."""
+    return {"source_type": "news", "stock_code": code, "stock_name": "Stock " + code, "url": url, "title": body[:20],
+            "content": body, "published_at": published,
+            "metadata": {"collected_at": collected or published, "entity_match": {"matched": True},
+                         "publication_time_status": "confirmed", **meta}}
+
+
+class RetrievalData(EventData):
+    """Event data whose theme "b" has a document file (the theme "a" has none)."""
+
+    def __init__(self, path, fail=False):
+        super().__init__()
+        self.path, self.fail = path, fail
+
+    def documents_path(self, candidate, theme):
+        if self.fail:
+            raise ValueError("unpublished_analysis_generation:b")
+        return self.path if theme == "b" else None
+
+
+class Audit:
+    def __init__(self):
+        self.events = []
+
+    def append(self, kind, payload):
+        self.events.append((kind, payload))
+        return len(self.events)
+
+
+def write_documents(path, rows):
+    path.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows), encoding="utf-8")
+    return path
+
+
+def rag_documents(tmp_path):
+    event_url = "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260901000001"
+    return write_documents(tmp_path / "documents.jsonl", [
+        stock_news("000001", "https://news.example/old-contract", "Stock 000001 수주 계약 공급 실적 개선",
+                   "2026-08-05T09:00:00+09:00"),
+        stock_news("000001", "https://news.example/old-investment", "Stock 000001 설비 투자 실적 전망",
+                   "2026-08-20T09:00:00+09:00"),
+        stock_news("000001", "https://news.example/old-plain", "Stock 000001 주주총회 소집 수주", "2026-07-20T09:00:00+09:00"),
+        stock_news("000001", "https://news.example/roundup", "시장 마감 수주 계약 공급 실적 투자 Stock 000001 수주 계약 공급 실적 투자",
+                   "2026-08-25T09:00:00+09:00"),
+        stock_news("000001", "https://news.example/too-old", "Stock 000001 수주 계약 공급", "2026-05-01T09:00:00+09:00"),
+        stock_news("000001", "https://news.example/later", "Stock 000001 수주 계약 공급", "2026-09-03T09:00:00+09:00",
+                   collected="2026-09-05T09:00:00+09:00"),
+        stock_news("000001", "https://news.example/unverified", "Stock 000001 수주 계약 공급",
+                   "2026-08-25T09:00:00+09:00", entity_match={"matched": False}),
+        stock_news("000002", "https://news.example/other-stock", "Stock 000002 수주 계약 공급", "2026-08-25T09:00:00+09:00"),
+        {**stock_news("000001", event_url, "단일판매 공급계약 수주", "2026-08-25T09:00:00+09:00"), "source_type": "dart",
+         "metadata": {"collected_at": "2026-08-25T09:00:00+09:00"}},
+    ])
+
+
+def rag_cycle(data, analyst_rag):
+    calls, systems, audit = [], {}, Audit()
+    models = {role: Model(role, calls) for role in ("analyst", "quant", "chartist", "risk_manager")}
+    for role, model in models.items():
+        def capture(messages, role=role, invoke=model.invoke):
+            systems[role] = messages[0][1]
+            return invoke(messages)
+        model.invoke = capture
+    engine = SharedAnalysisService(data=data, accounts=Accounts(), models=models, clock=lambda: NOW, audit=audit,
+                                   sleep=lambda seconds: None, analyst_rag=analyst_rag)
+    cycle = engine.run_cycle([{"userId": "a"}], as_of=NOW)
+    return cycle, {role: payload for role, payload in calls}, systems, audit
+
+
+def test_the_analyst_gets_two_of_its_stocks_older_documents_outside_its_events(tmp_path):
+    from src.runner.analyst_retrieval import STOCK_RAG_NOTE, STOCK_RAG_VARIANT
+    from src.runner.shared_analysis import PROMPT_VERSION, ROLE_INSTRUCTIONS
+
+    path = rag_documents(tmp_path)
+    off, off_calls, off_systems, off_audit = rag_cycle(RetrievalData(path), "off")
+    on, on_calls, on_systems, on_audit = rag_cycle(RetrievalData(path), "stock")
+    assert off["errors"] == [] and on["errors"] == []
+    analyst = on_calls["analyst"]
+    urls = [item["url"] for item in analyst["retrieved_context"]]
+    # Best BM25 first. Left out: a roundup whose title does not name the stock, and items too old, not
+    # yet collected, unverified, another stock's and the event's own.
+    assert urls == ["https://news.example/old-contract", "https://news.example/old-investment"]
+    assert all(item["context_kind"] == "stock" and item["stock_code"] == "000001" for item in analyst["retrieved_context"])
+    assert analyst["source_ids"][-2:] == [item["source_id"] for item in analyst["retrieved_context"]]
+    assert {key: value for key, value in analyst.items() if key not in {"retrieved_context", "source_ids"}} == \
+        {key: value for key, value in off_calls["analyst"].items() if key != "source_ids"}
+    instructions = ROLE_INSTRUCTIONS["analyst"]
+    assert on_systems["analyst"] == off_systems["analyst"].replace(instructions, instructions + STOCK_RAG_NOTE, 1)
+    for role in ("quant", "chartist", "risk_manager"):
+        assert on_calls[role] == off_calls[role] and on_systems[role] == off_systems[role]
+    versions = {payload["role"]: payload["prompt_version"] for kind, payload in on_audit.events if kind == "llm_request"}
+    assert versions["analyst"] == PROMPT_VERSION + "+" + STOCK_RAG_VARIANT and versions["quant"] == PROMPT_VERSION
+    assert on["manifest"]["analyst_prompt_version"] == versions["analyst"]
+    assert "retrieved_context" not in off_calls["analyst"] and "analyst_prompt_version" not in off["manifest"]
+    assert STOCK_RAG_NOTE not in off_systems["analyst"]
+
+
+def test_a_retrieval_failure_leaves_the_analyst_with_its_events(tmp_path):
+    cycle, calls, systems, audit = rag_cycle(RetrievalData(rag_documents(tmp_path), fail=True), "stock")
+    assert cycle["errors"] == [{"stock_code": "000001", "stage": "analyst_retrieval",
+                                "error": "unpublished_analysis_generation:b"}]
+    assert "retrieved_context" not in calls["analyst"] and len(calls["analyst"]["events"]) == 1
+    assert cycle["accounts"]["a"]["status"] == "completed"
+
+
+def test_each_document_file_is_parsed_once_per_version(tmp_path, monkeypatch):
+    from src.runner import analyst_retrieval
+
+    path = rag_documents(tmp_path)
+    reads = []
+    real = analyst_retrieval.read_jsonl
+    monkeypatch.setattr(analyst_retrieval, "read_jsonl", lambda p: reads.append(p) or real(p))
+    data = RetrievalData(path)
+    retrieval = analyst_retrieval.AnalystRetrieval(data)
+    candidate = data.load_universe(NOW)[0][0]
+    payload = {"stock_code": "000001", "stock_name": "Stock 000001", "events": [], "documents": [],
+               "source_ids": ["event:1"], "data_gaps": []}
+    first = retrieval.add_context(candidate, payload, NOW, 12_000)
+    assert retrieval.add_context(candidate, payload, NOW, 12_000) == first and len(reads) == 1
+    write_documents(path, [stock_news("000001", "https://news.example/new", "Stock 000001 신규 수주 계약",
+                                      "2026-09-01T09:00:00+09:00")])
+    assert [item["url"] for item in retrieval.add_context(candidate, payload, NOW, 12_000)["retrieved_context"]] == \
+        ["https://news.example/new"]
+    assert len(reads) == 2
+
+
+def test_the_analyst_retrieval_mode_comes_from_the_environment(monkeypatch):
+    from src.runner.analyst_retrieval import AnalystRetrieval, analyst_rag_from_env
+
+    monkeypatch.delenv("HQA_ANALYST_RAG", raising=False)
+    assert analyst_rag_from_env() == "off"
+    monkeypatch.setenv("HQA_ANALYST_RAG", "stock")
+    assert analyst_rag_from_env() == "stock"
+    monkeypatch.setenv("HQA_ANALYST_RAG", "theme")
+    with pytest.raises(ValueError, match="HQA_ANALYST_RAG"):
+        analyst_rag_from_env()
+    with pytest.raises(ValueError, match="unknown analyst retrieval mode"):
+        AnalystRetrieval(None, mode="theme")
+    assert SharedAnalysisService(data=None, accounts=None, models={}).analyst_retrieval is None
+
+
+def test_a_title_names_the_stock_whatever_its_case_width_and_spacing():
+    from src.runner.analyst_retrieval import names_stock
+
+    assert names_stock("ＬＧ 에너지솔루션, ESS 수주", "LG에너지솔루션") and names_stock("naver 웹툰", "NAVER")
+    assert not names_stock("LG엔솔, ESS 수주", "LG에너지솔루션") and not names_stock("시장 마감", "")
+
+
+def test_a_roundups_excerpt_is_its_paragraph_on_the_stock():
+    from src.runner.analyst_retrieval import EXCERPT_CHARS, _excerpt, tokens
+
+    other = "다른회사 수주 계약 공급 실적 투자 " * 40
+    body = "증권사 리포트 요약 ▶ 대상전자 목표가 상향 " + other + "대상전자는 신규 고객 확보로 대상전자 실적이 개선된다. " + other
+    excerpt, truncated = _excerpt(body, tokens("대상전자 실적 수주 계약 공급 투자"), focus="대상전자")
+    assert truncated and excerpt.count("대상전자") == 2 and len(excerpt) == EXCERPT_CHARS
+    generic, _ = _excerpt(body, tokens("대상전자 실적 수주 계약 공급 투자"))
+    assert "대상전자는 신규 고객" not in generic
+    assert _excerpt(body, tokens("실적"), focus="없는회사") == _excerpt(body, tokens("실적"))
+    assert _excerpt("짧은 글", [], focus="x") == ("짧은 글", False)
+
+
+def test_with_change_triggers_an_account_is_reviewed_only_when_more_than_quotes_moved():
+    class MovingAccounts(Accounts):
+        pnl = 10.0
+
+        def fetch_accounts(self, ids):
+            self.calls.append(ids)
+            return {user: snapshot(user, [{**holding(), "pnlRate": self.pnl}]) for user in ids}
+
+    accounts, calls = MovingAccounts(), []
+    models = {role: Model(role, calls) for role in ("analyst", "quant", "chartist", "risk_manager")}
+    engine = SharedAnalysisService(data=Data(3), accounts=accounts, models=models, clock=lambda: NOW,
+                                   sleep=lambda seconds: None, risk_review_trigger="change")
+    reviews = lambda: sum(role == "risk_manager" for role, _ in calls)
+    at = lambda hhmm: datetime.fromisoformat(f"2026-09-04T{hhmm}:00+09:00")
+    first = engine.run_cycle([{"userId": "a"}], as_of=at("13:00"))
+    assert reviews() == 1 and first["manifest"]["risk_review_trigger"] == "change"
+    second = engine.run_cycle([{"userId": "a"}], as_of=at("13:15"))      # only quotes moved
+    assert reviews() == 1
+    assert {key: second["accounts"]["a"][key] for key in ("status", "plans", "reason")} == {
+        "status": "completed", "plans": [], "reason": "review_inputs_unchanged"}
+    accounts.pnl = 12.5                                                   # the holding crossed the 12% step
+    engine.run_cycle([{"userId": "a"}], as_of=at("13:30"))
+    assert reviews() == 2
+    engine.run_cycle([{"userId": "a"}], as_of=at("14:45"))               # the 14:45 window opens
+    assert reviews() == 3
+    engine.run_cycle([{"userId": "a"}], as_of=at("15:00"))
+    assert reviews() == 3
+    with pytest.raises(ValueError, match="unknown risk review trigger"):
+        SharedAnalysisService(data=None, accounts=None, models={}, risk_review_trigger="hourly")
+
+
+def test_the_default_trigger_reviews_every_cycle_and_keeps_the_manifest():
+    engine, calls = service()
+    for minute in ("00", "15"):
+        cycle = engine.run_cycle([{"userId": "a"}], as_of=datetime.fromisoformat(f"2026-09-04T13:{minute}:00+09:00"))
+    assert sum(role == "risk_manager" for role, _ in calls) == 2 and "risk_review_trigger" not in cycle["manifest"]
+
+
+def test_specialist_answers_are_reused_from_disk_after_a_restart(tmp_path):
+    from src.runner.specialist_store import SpecialistResultStore
+
+    clock = {"now": NOW}
+    store = SpecialistResultStore(tmp_path / "specialists.sqlite3", clock=lambda: clock["now"])
+
+    def run():
+        calls = []
+        models = {role: Model(role, calls) for role in ("analyst", "quant", "chartist", "risk_manager")}
+        SharedAnalysisService(data=Data(2), accounts=Accounts(), models=models, clock=lambda: NOW,
+                              sleep=lambda seconds: None, result_store=store).run_cycle([{"userId": "a"}])
+        return [role for role, _ in calls]
+
+    first = run()
+    assert sorted(first) == ["analyst", "analyst", "chartist", "chartist", "quant", "quant", "risk_manager"]
+    assert run() == ["risk_manager"]                     # a new process asks only the RiskManager
+    clock["now"] = NOW + timedelta(days=8)               # answers older than a week are asked again
+    assert run().count("analyst") == 2
+
+
+def test_the_review_trigger_comes_from_the_environment(monkeypatch):
+    from src.runner.shared_analysis import risk_review_trigger_from_env
+
+    monkeypatch.delenv("HQA_RISK_REVIEW_TRIGGER", raising=False)
+    assert risk_review_trigger_from_env() == "cycle"
+    monkeypatch.setenv("HQA_RISK_REVIEW_TRIGGER", "change")
+    assert risk_review_trigger_from_env() == "change"
+    monkeypatch.setenv("HQA_RISK_REVIEW_TRIGGER", "sometimes")
+    with pytest.raises(ValueError, match="HQA_RISK_REVIEW_TRIGGER"):
+        risk_review_trigger_from_env()

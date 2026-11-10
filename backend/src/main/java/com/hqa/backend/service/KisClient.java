@@ -220,6 +220,12 @@ public class KisClient {
                     .retrieve().bodyToMono(String.class).block(Duration.ofSeconds(20));
             Map<String, Object> payload = objectMapper.readValue(response, new TypeReference<>() { });
             return Map.of("success", "0".equals(String.valueOf(payload.get("rt_cd"))), "response", payload);
+        } catch (WebClientResponseException ex) {
+            // As with orders, KIS answers some refusals (e.g. EGW00201) with an HTTP error status
+            // and an rt_cd body: the cancellation was refused, its outcome is not unknown.
+            Map<String, Object> refusal = rejectionBody(ex.getResponseBodyAsString());
+            return refusal == null ? Map.of("success", false, "unknown", true, "error", "HTTP " + ex.getStatusCode().value())
+                    : Map.of("success", false, "response", refusal);
         } catch (Exception ex) {
             return Map.of("success", false, "unknown", true, "error", ex.getClass().getSimpleName());
         }
@@ -449,9 +455,21 @@ public class KisClient {
     }
 
     /**
+     * A stock's current price and the day's lower price limit (하한가, {@code stck_llam}), which
+     * KIS refuses a sell below; {@code lowerLimit} is null when the answer has none.
+     */
+    public record Quote(long price, Long lowerLimit) { }
+
+    /**
      * 국내주식 현재가 조회. inquire-price.
      */
     public Long inquireCurrentPrice(String userId, UserSecret secret, String token, String stockCode) {
+        Quote quote = inquireQuote(userId, secret, token, stockCode);
+        return quote == null ? null : quote.price();
+    }
+
+    /** The current price and lower price limit from inquire-price, or null when the price is unavailable. */
+    public Quote inquireQuote(String userId, UserSecret secret, String token, String stockCode) {
         try {
             String appKey = secretCipher.decrypt(secret.getKisAppKey());
             String appSecret = secretCipher.decrypt(secret.getKisAppSecret());
@@ -482,7 +500,8 @@ public class KisClient {
             Object output = body.get("output");
             if (!(output instanceof Map<?, ?> row)) return null;
             long price = parseLong(row.get("stck_prpr"));
-            return price > 0 ? price : null;
+            long lowerLimit = parseLong(row.get("stck_llam"));
+            return price > 0 ? new Quote(price, lowerLimit > 0 ? lowerLimit : null) : null;
         } catch (Exception e) {
             errorLogger.log("KisClient", userId, stockCode, "inquire-current-price failed", e.getMessage());
             return null;

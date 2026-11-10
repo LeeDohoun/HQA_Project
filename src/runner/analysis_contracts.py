@@ -182,6 +182,16 @@ class AccountDecision(Contract):
         return self._invalid_plans
 
 
+class ActivePlan(Contract):
+    """The plan the backend enforces for a holding now: its unconditional stop, target, time exit
+    and conditions, and the reductions already filled."""
+    stopLossPrice: StrictFloat | None = Field(default=None, gt=0)
+    takeProfitPrice: StrictFloat | None = Field(default=None, gt=0)
+    plannedExitAt: AwareDatetime | None = None
+    conditionPayload: ConditionPayload
+    completedReduceIds: list[str] = Field(default_factory=list)
+
+
 class Holding(Contract):
     stockCode: str = Field(pattern=r"^[0-9]{6}$")
     stockName: str = Field(min_length=1)
@@ -191,6 +201,9 @@ class Holding(Contract):
     currentPrice: StrictFloat = Field(gt=0)
     evalAmount: StrictFloat = Field(ge=0)
     pnlRate: StrictFloat
+    # Shown on the holding's RiskManager row when the review structure asks for it, never in the
+    # account the RiskManager sees, so an account without it reads exactly as before.
+    activePlan: ActivePlan | None = Field(default=None, exclude=True)
 
 
 class AccountSnapshot(Contract):

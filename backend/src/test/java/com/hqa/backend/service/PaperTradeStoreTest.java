@@ -19,7 +19,7 @@ class PaperTradeStoreTest {
     private final PaperAccountGuard accountGuard = mock(PaperAccountGuard.class);
     private final TradePlanReceiptRepository receipts = mock(TradePlanReceiptRepository.class);
     private final PaperTradeStore store = new PaperTradeStore(signals, executions, accountGuard, new ObjectMapper(), receipts,
-            KrxSessionCalendar.regular(), 1, 0.5);
+            KrxSessionCalendar.regular(), 1, 0.5, 100);
     private final OffsetDateTime now = OffsetDateTime.parse("2026-09-04T10:00:00+09:00");
     private final User user = user();
     private final Map<String, TradeSignalExecution> savedExecutions = new LinkedHashMap<>();
@@ -231,6 +231,80 @@ class PaperTradeStoreTest {
     }
 
     @Test
+    void anEntryRisksAtMostHalfAPercentOfEquityAtItsStop() {
+        PaperTradeStore capped = new PaperTradeStore(signals, executions, accountGuard, new ObjectMapper(), receipts,
+                KrxSessionCalendar.regular(), 1, 0.5, 0.5);
+        // Equity 10,000, so 50 won may be lost at the stop. Uncapped, a 20% plan at 100 buys 20 shares.
+        Map<Double, Integer> sharesByStop = new LinkedHashMap<>(Map.of(90.0, 5, 60.0, 1));
+        int version = 0;
+        for (var expected : sharesByStop.entrySet()) {
+            savedExecutions.clear();
+            TradeSignal signal = capped.save(request("BUY", 20, ++version, "risk-" + version, now.plusSeconds(version),
+                    expected.getKey(), false), account(0), now);
+            assertThat(capped.claim(signal.getId(), version, TradeConditions.TriggerType.ENTRY, "entry", account(0),
+                    100, 100, 10000, 100, null, now).getSubmittedQuantity()).isEqualTo(expected.getValue());
+        }
+        savedExecutions.clear();
+        TradeSignal wide = capped.save(request("BUY", 20, ++version, "risk-wide", now.plusSeconds(version), 40, false), account(0), now);
+        int wideVersion = version;
+        assertThatThrownBy(() -> capped.claim(wide.getId(), wideVersion, TradeConditions.TriggerType.ENTRY, "entry", account(0),
+                100, 100, 10000, 100, null, now)).hasMessage("NO_ORDERABLE_QUANTITY");      // one share would risk 60
+    }
+
+    private static TradeSignalExecution sold(String signalId, String triggerType, String group, String at, int filled) {
+        TradeSignalExecution execution = new TradeSignalExecution();
+        execution.setSignalId(signalId);
+        execution.setUserId("u1");
+        execution.setStockCode("005930");
+        execution.setOrderSide("SELL");
+        execution.setStatus(filled > 0 ? "FILLED" : "CANCELLED");
+        execution.setTriggerType(triggerType);
+        execution.setTriggerKey(signalId + ":3:" + triggerType + ":" + group + ":0");
+        execution.setFilledQuantity(filled);
+        execution.setSubmittedAt(OffsetDateTime.parse(at));
+        return execution;
+    }
+
+    @Test
+    void aStockStoppedOutWithinTenSessionsCannotBeBoughtAgain() {
+        OffsetDateTime cutoff = OffsetDateTime.parse("2026-08-21T00:00+09:00");     // ten sessions before Friday 09-04
+        TradeSignal targetPlan = new TradeSignal();
+        targetPlan.setConditionPayload("{\"schema_version\":2,\"exit_conditions\":[{\"id\":\"target\","
+                + "\"all\":[{\"field\":\"current_price\",\"operator\":\">=\",\"value\":110}]}]}");
+        when(signals.findById("old-target")).thenReturn(Optional.of(targetPlan));
+        List<TradeSignalExecution> allowed = List.of(
+                sold("old", "EXIT", "planned-exit", "2026-09-03T15:20:00+09:00", 3),     // a time exit
+                sold("old-target", "EXIT", "target", "2026-09-03T11:00:00+09:00", 3),   // a take-profit exit
+                sold("old", "EXIT", "carried-stop", "2026-09-03T09:00:00+09:00", 0));   // a stop that sold nothing
+        for (TradeSignalExecution sell : allowed) {
+            when(executions.findByUserIdAndStockCodeAndOrderSideAndSubmittedAtGreaterThanEqual("u1", "005930", "SELL", cutoff))
+                    .thenReturn(List.of(sell));
+            assertThat(store.save(request("BUY", 10, 1, "ok-" + sell.getTriggerKey(), now), account(0), now).getStatus())
+                    .isEqualTo("WAITING_ENTRY");
+        }
+        List<TradeSignalExecution> blocked = List.of(
+                sold("old", "EXIT", "carried-stop", "2026-09-04T09:00:30+09:00", 2),    // stopped out this morning
+                sold("old", "EXIT", "stop", "2026-08-21T10:00:00+09:00", 2),            // ten sessions ago; plan since replaced
+                sold("gone", "INVALIDATION", "stop-loss", "2026-08-27T10:00:00+09:00", 1));
+        for (TradeSignalExecution sell : blocked) {
+            when(executions.findByUserIdAndStockCodeAndOrderSideAndSubmittedAtGreaterThanEqual("u1", "005930", "SELL", cutoff))
+                    .thenReturn(List.of(sell));
+            assertThatThrownBy(() -> store.save(request("BUY", 10, 1, "no-" + sell.getTriggerKey(), now), account(0), now))
+                    .hasMessage("REENTRY_COOLDOWN_AFTER_STOP");
+        }
+        // Protecting a holding is not an entry and is never held back.
+        assertThat(store.save(request("HOLD", 10, 1, "hold", now), account(5), now).getStatus()).isEqualTo("OPEN");
+    }
+
+    @Test
+    void aPartialTakeProfitOnOneShareSellsThatShare() {
+        TradeSignal signal = store.save(reduceHold(1, 0.5, now.plusDays(3)), account(1), now);
+        when(signals.findByUserIdAndStatusIn("u1", PaperTradeStore.ACTIVE)).thenReturn(List.of(signal));
+        assertThat(store.claim(signal.getId(), 1, TradeConditions.TriggerType.REDUCE, "trim", account(1),
+                100, 100, 0, 0, 0.5, now).getSubmittedQuantity()).isEqualTo(1);
+    }
+
+    @Test
     void reductionIsBoundedByHoldingAndSellableQuantity() {
         TradeSignal signal = store.save(request("HOLD", 10, 1, "a", now), account(11), now);
         var intent = store.claim(signal.getId(), 1, TradeConditions.TriggerType.REDUCE, "reduce", account(11),
@@ -439,13 +513,14 @@ class PaperTradeStoreTest {
     }
 
     @Test
-    void aSellPlacedInTheClosingAuctionWorksUntilAfterTheCloseInsteadOfTwoMinutes() {
+    void aSellPlacedInTheClosingAuctionWorksUntilAfterTheCloseInsteadOfAMinute() {
         TradeSignal plan = store.save(reduceHold(1, 0.5, now.plusDays(3)), account(10), now);
         OffsetDateTime auction = OffsetDateTime.parse("2026-09-04T15:20:00+09:00");
         OffsetDateTime afterClose = OffsetDateTime.parse("2026-09-04T15:32:00+09:00");
-        assertThat(sellExpiry(plan, TradeConditions.TriggerType.EXIT, "stop", null, now)).isEqualTo(now.plusMinutes(2));
+        assertThat(sellExpiry(plan, TradeConditions.TriggerType.EXIT, "stop", null, now)).isEqualTo(now.plusMinutes(1));
+        assertThat(sellExpiry(plan, TradeConditions.TriggerType.REDUCE, "trim", 0.5, now)).isEqualTo(now.plusMinutes(1));
         assertThat(sellExpiry(plan, TradeConditions.TriggerType.EXIT, "stop", null, auction.minusSeconds(1)))
-                .isEqualTo(auction.plusSeconds(119));                     // placed before the auction: 2 minutes
+                .isEqualTo(auction.plusSeconds(59));                      // placed before the auction: 1 minute
         assertThat(sellExpiry(plan, TradeConditions.TriggerType.EXIT, "planned-exit", null, auction)).isEqualTo(afterClose);
         assertThat(sellExpiry(plan, TradeConditions.TriggerType.EXIT, "stop", null, auction.plusMinutes(7))).isEqualTo(afterClose);
         assertThat(sellExpiry(plan, TradeConditions.TriggerType.REDUCE, "trim", 0.5, auction.plusSeconds(599))).isEqualTo(afterClose);
@@ -530,17 +605,53 @@ class PaperTradeStoreTest {
     }
 
     @Test
-    void unknownCancellationNeverAuthorizesBlindResubmission() {
+    void anUnansweredCancellationLeavesTheOrderUnresolvedAndCancellableAgain() {
         TradeSignal signal = store.save(request("BUY", 20, 1, "a", now), account(0), now);
         var intent = store.claim(signal.getId(), 1, TradeConditions.TriggerType.ENTRY, "entry", account(0),
                 100, 100, 10000, 100, null, now);
         store.acknowledge(intent.getId(), Map.of("success", true, "response", Map.of("rt_cd", "0", "output", Map.of("ODNO", "order1"))));
         store.markCancelRequested(intent.getId());
         store.acknowledgeCancellation(intent.getId(), Map.of("success", false, "unknown", true));
-        assertThat(store.markCancelRequested(intent.getId())).isFalse();
+        // Working as far as the record knows: still unresolved, so the plan sends nothing new, with its
+        // cash still reserved; reconciliation reads the broker's order list before it cancels again.
+        assertThat(intent.getStatus()).isEqualTo("ORDER_SUBMITTED");
+        assertThat(PaperTradeStore.UNRESOLVED).contains(intent.getStatus());
+        assertThat(intent.getRejectReason()).isEqualTo("CANCEL_CONFIRMATION_REQUIRED");
         assertThat(intent.getReservedCash()).isPositive();
-        store.observeFill(intent.getId(), 0, 0, 0, true, "org", now);
+        assertThat(store.markCancelRequested(intent.getId())).isTrue();
+        store.observeFill(intent.getId(), 0, 0, 0, true, "org", now);      // the broker lists it cancelled
         store.acknowledgeCancellation(intent.getId(), Map.of("success", false, "response", Map.of("rt_cd", "1")));
         assertThat(intent.getStatus()).isEqualTo("CANCELLED");
+        assertThat(intent.getReservedCash()).isZero();
+    }
+
+    @Test
+    void anOrderItsSessionLeftUnfilledEndsAsExpiredAndNoLongerHoldsItsPlanBack() {
+        TradeSignal plan = store.save(reduceHold(1, 0.5, now.plusDays(3)), account(10), now);
+        var exit = store.claim(plan.getId(), 1, TradeConditions.TriggerType.EXIT, "stop", account(10), 100, 100, 0, 0, null, now);
+        store.acknowledge(exit.getId(), Map.of("success", true, "response", Map.of("rt_cd", "0", "output", Map.of("ODNO", "o1"))));
+        assertThat(store.markCancelRequested(exit.getId())).isTrue();
+        store.acknowledgeCancellation(exit.getId(), Map.of("success", false, "unknown", true));   // never confirmed (2026-11-09)
+        assertThat(plan.getRejectReason()).isEqualTo("CANCEL_CONFIRMATION_REQUIRED");
+        store.observeFill(exit.getId(), 0, 0, 0, true, "org", now);    // as reconciliation records the session's end
+        store.expireAtSessionClose(exit.getId());
+        assertThat(exit.getStatus()).isEqualTo("CANCELLED");
+        assertThat(exit.getRejectReason()).isEqualTo(PaperTradeStore.EXPIRED_AT_SESSION_CLOSE);
+        assertThat(plan.getRejectReason()).isNull();
+        assertThat(plan.getStatus()).isEqualTo("OPEN");
+        assertThat(plan.getManagedQuantity()).isEqualTo(10);
+        assertThat(store.claim(plan.getId(), 1, TradeConditions.TriggerType.EXIT, "stop", account(10), 100, 100, 0, 0, null,
+                now.plusSeconds(1)).getSubmittedQuantity()).isEqualTo(10);    // the next exit is sent again
+    }
+
+    @Test
+    void onlyACancelledOrderIsMarkedAsExpiredAtTheClose() {
+        TradeSignal plan = store.save(reduceHold(1, 0.5, now.plusDays(3)), account(10), now);
+        var exit = store.claim(plan.getId(), 1, TradeConditions.TriggerType.EXIT, "stop", account(10), 100, 100, 0, 0, null, now);
+        store.acknowledge(exit.getId(), Map.of("success", true, "response", Map.of("rt_cd", "0", "output", Map.of("ODNO", "o1"))));
+        store.observeFill(exit.getId(), 10, 100, 0, false, "org", now);
+        store.expireAtSessionClose(exit.getId());
+        assertThat(exit.getStatus()).isEqualTo("FILLED");
+        assertThat(exit.getRejectReason()).isNull();
     }
 }

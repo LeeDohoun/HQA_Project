@@ -31,6 +31,15 @@ class KrxSessionCalendarTest {
     }
 
     @Test
+    void eachTradingDaysSessionClosesAtItsOwnHour() {
+        KrxSessionCalendar calendar = new KrxSessionCalendar("2026-12-25", "2026-11-19@10:00-16:30");
+        assertThat(calendar.close(LocalDate.parse("2026-11-09"))).contains(kst("2026-11-09T15:30:00"));
+        assertThat(calendar.close(LocalDate.parse("2026-11-19"))).contains(kst("2026-11-19T16:30:00"));   // CSAT day
+        assertThat(calendar.close(LocalDate.parse("2026-12-25"))).isEmpty();
+        assertThat(calendar.close(LocalDate.parse("2026-11-07"))).isEmpty();   // Saturday
+    }
+
+    @Test
     void theClosingCallAuctionIsTheSessionsLastTenMinutes() {
         KrxSessionCalendar calendar = new KrxSessionCalendar("2026-12-25", "2026-11-19@10:00-16:30");
         assertThat(calendar.closingAuctionClose(kst("2026-10-15T15:19:59"))).isEmpty();
