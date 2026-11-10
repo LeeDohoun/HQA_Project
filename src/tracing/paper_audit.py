@@ -78,3 +78,67 @@ def summarize_runtime(events: list[dict]) -> dict:
             "monitor_errors": sum(len(row["errors"]) for row in monitors),
             "monitor_p95_seconds": percentile([row["elapsed_seconds"] for row in monitors], .95),
             "investment_performance": "Requires observed fills and cost-adjusted equity; latency is not trading performance."}
+
+
+def _mean(values: list[float]) -> float | None:
+    return round(sum(values) / len(values), 2) if values else None
+
+
+def summarize_analyst_retrieval(events: list[dict], since: str | None = None) -> dict:
+    """What the analyst's retrieved context (`HQA_ANALYST_RAG`) costs and changes, from audit events.
+
+    Per analyst prompt version: how many requests carried retrieved items, how many the analyst
+    cited, and the input it added (offline token estimate; the subscription provider reports no
+    usage). Score changes pair each request carrying `retrieved_context` with the latest earlier
+    request of the same stock on the same evidence that carried none, so with and without items
+    the pairs differ only by retrieval, the prompt note and the model's own variation (the pairs
+    without items measure the last two). `since` (ISO time) limits the requests counted; earlier
+    ones still serve as pair baselines."""
+    from src.runner.shared_analysis import estimate_tokens
+
+    requests = [event for event in events if event["kind"] == "llm_request" and event["payload"].get("role") == "analyst"]
+    scores = {event["payload"]["request_id"]: event["payload"]["output"] for event in events
+              if event["kind"] == "llm_response" and event["payload"].get("role") == "analyst"}
+    failed = {event["payload"].get("request_id") for event in events
+              if event["kind"] == "llm_failure" and event["payload"].get("role") == "analyst"}
+    versions: dict[str, dict] = {}
+    pairs = {"with_items": [], "without_items": []}
+    baselines: dict[tuple, dict] = {}
+    for event in sorted(requests, key=lambda row: row["id"]):
+        payload = event["payload"]["payload"]
+        items = payload.get("retrieved_context")
+        offered = {item["source_id"] for item in items or []}
+        evidence = (payload["stock_code"], tuple(sorted(set(payload.get("source_ids") or []) - offered)))
+        output = scores.get(event["id"])
+        if items is None:
+            if output is not None:
+                baselines[evidence] = output
+        elif output is not None and evidence in baselines and (since is None or event["recorded_at"] >= since):
+            pairs["with_items" if items else "without_items"].append(output["score"] - baselines[evidence]["score"])
+        if since is not None and event["recorded_at"] < since:
+            continue
+        row = versions.setdefault(event["payload"].get("prompt_version") or "unknown", {
+            "requests": 0, "responses": 0, "failures": 0, "with_items": 0, "items": 0, "cited_requests": 0,
+            "cited_items": 0, "_input": [], "_retrieved": []})
+        row["requests"] += 1
+        row["responses"] += output is not None
+        row["failures"] += event["id"] in failed
+        row["_input"].append(estimate_tokens(event["payload"].get("instructions", "")
+                                             + json.dumps(payload, ensure_ascii=False, allow_nan=False)))
+        if items:
+            row["with_items"] += 1
+            row["items"] += len(items)
+            row["_retrieved"].append(estimate_tokens(json.dumps(items, ensure_ascii=False, allow_nan=False)))
+            cited = offered & {citation["source_id"] for citation in (output or {}).get("citations") or []}
+            row["cited_requests"] += bool(cited)
+            row["cited_items"] += len(cited)
+    for row in versions.values():
+        row["mean_input_tokens"] = _mean(row.pop("_input"))
+        row["mean_retrieved_tokens"] = _mean(row.pop("_retrieved"))
+    retrieval_errors = sum(1 for event in events if event["kind"] == "analysis"
+                           and (since is None or event["recorded_at"] >= since)
+                           for error in event["payload"].get("errors") or [] if error.get("stage") == "analyst_retrieval")
+    return {"by_prompt_version": versions, "retrieval_errors": retrieval_errors,
+            "score_change_vs_same_evidence": {name: {"pairs": len(deltas), "mean": _mean(deltas),
+                                                     "mean_absolute": _mean([abs(delta) for delta in deltas])}
+                                              for name, deltas in pairs.items()}}

@@ -1,0 +1,57 @@
+{
+  "stockListSortType": "THEME",
+  "stocks": [
+    {
+      "stockType": "domestic",
+      "stockEndType": "stock",
+      "itemCode": "005070",
+      "reutersCode": "005070",
+      "stockName": "코스모신소재",
+      "sosok": "0",
+      "closePrice": "90,000",
+      "fluctuationsRatio": "9.80",
+      "tradeStopType": {
+        "code": "1",
+        "text": "운영.Trading",
+        "name": "TRADING"
+      },
+      "closePriceRaw": "90000",
+      "accumulatedTradingValueRaw": "80000000000",
+      "marketValueRaw": "3000000000000"
+    },
+    {
+      "stockType": "domestic",
+      "stockEndType": "stock",
+      "itemCode": "373220",
+      "reutersCode": "373220",
+      "stockName": "LG에너지솔루션",
+      "sosok": "0",
+      "closePrice": "385,000",
+      "fluctuationsRatio": "1.20",
+      "tradeStopType": {
+        "code": "1",
+        "text": "운영.Trading",
+        "name": "TRADING"
+      },
+      "closePriceRaw": "385000",
+      "accumulatedTradingValueRaw": "150000000000",
+      "marketValueRaw": "90000000000000"
+    }
+  ],
+  "groupInfo": {
+    "no": 579,
+    "name": "2차전지(나트륨이온)",
+    "totalCount": 2,
+    "changeRate": "7.24",
+    "riseCount": 0,
+    "fallCount": 0,
+    "steadyCount": 0
+  },
+  "themeDescription": "2차전지(나트륨이온) 테마 설명(시험용).",
+  "themeItemInfoMap": {},
+  "totalCount": 2,
+  "page": 1,
+  "pageSize": 100,
+  "localOpenTimeDesc": "",
+  "marketStatus": "CLOSE"
+}

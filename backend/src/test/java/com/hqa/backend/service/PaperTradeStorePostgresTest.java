@@ -36,7 +36,9 @@ import org.springframework.transaction.annotation.Transactional;
  * claims: no double sell, no cash reserved twice, one plan per stock. Each call commits on its
  * own (no test transaction), so concurrent callers see each other the way production does.
  */
-@DataJpaTest(properties = {"spring.jpa.hibernate.ddl-auto=validate", "hqa.kis-enc-key=postgres-test-only-key"})
+// The entry risk cap never binds here: these checks are about locking and cash reservations.
+@DataJpaTest(properties = {"spring.jpa.hibernate.ddl-auto=validate", "hqa.kis-enc-key=postgres-test-only-key",
+        "hqa.paper-max-entry-risk-pct=100"})
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @EnabledIfEnvironmentVariable(named = "HQA_TEST_DATABASE_URL", matches = "jdbc:postgresql:.*")
 @Transactional(propagation = Propagation.NOT_SUPPORTED)

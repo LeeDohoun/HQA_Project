@@ -70,6 +70,9 @@ hqa:
   kis-account-no: ${KIS_ACCOUNT_NO:}
   kis-enc-key: ${HQA_KIS_ENC_KEY:}
   historical-data-dir: ${HQA_HISTORICAL_DATA_DIR:}
+  # A new entry buys at most the shares whose loss at the plan's hard stop is this percentage of
+  # equity (the plan's own size stays the ceiling).
+  paper-max-entry-risk-pct: ${HQA_PAPER_MAX_ENTRY_RISK_PCT:0.5}
   # KRX weekday closures and official special sessions for PAPER order gating; keep in step
   # with src/runner/trading_calendar.py, e.g. HQA_KRX_SPECIAL_SESSIONS=2026-11-19@10:00-16:30
   # Unset or blank uses KrxSessionCalendar.DEFAULT_CLOSED_DATES (that calendar's weekday

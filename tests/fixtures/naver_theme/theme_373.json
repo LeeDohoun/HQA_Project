@@ -1,0 +1,57 @@
+{
+  "stockListSortType": "THEME",
+  "stocks": [
+    {
+      "stockType": "domestic",
+      "stockEndType": "stock",
+      "itemCode": "010170",
+      "reutersCode": "010170",
+      "stockName": "대한광통신",
+      "sosok": "1",
+      "closePrice": "3,100",
+      "fluctuationsRatio": "2.30",
+      "tradeStopType": {
+        "code": "1",
+        "text": "운영.Trading",
+        "name": "TRADING"
+      },
+      "closePriceRaw": "3100",
+      "accumulatedTradingValueRaw": "260000000000",
+      "marketValueRaw": "800000000000"
+    },
+    {
+      "stockType": "domestic",
+      "stockEndType": "stock",
+      "itemCode": "017670",
+      "reutersCode": "017670",
+      "stockName": "SK텔레콤",
+      "sosok": "0",
+      "closePrice": "56,000",
+      "fluctuationsRatio": "-0.40",
+      "tradeStopType": {
+        "code": "1",
+        "text": "운영.Trading",
+        "name": "TRADING"
+      },
+      "closePriceRaw": "56000",
+      "accumulatedTradingValueRaw": "60000000000",
+      "marketValueRaw": "12000000000000"
+    }
+  ],
+  "groupInfo": {
+    "no": 373,
+    "name": "5G(5세대 이동통신)",
+    "totalCount": 2,
+    "changeRate": "0.41",
+    "riseCount": 0,
+    "fallCount": 0,
+    "steadyCount": 0
+  },
+  "themeDescription": "5G(5세대 이동통신) 테마 설명(시험용).",
+  "themeItemInfoMap": {},
+  "totalCount": 2,
+  "page": 1,
+  "pageSize": 100,
+  "localOpenTimeDesc": "",
+  "marketStatus": "CLOSE"
+}
