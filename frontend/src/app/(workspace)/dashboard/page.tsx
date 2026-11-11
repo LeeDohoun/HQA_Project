@@ -1357,6 +1357,55 @@ function AssetsTab({
    홈 탭 — 로그인 직후 보는 메인 대시보드
    자산 한 줄 · 보유 종목 Top · 최근 거래 · 빠른 이동
    ============================================================ */
+// A mostly-cash account should explain itself: the live cash/stock split and the rules that keep
+// entries small. 0.5% is the backend's hqa.paper-max-entry-risk-pct (PaperTradeStore).
+function CashShareNote({ total, stockEval }: { total: number | null; stockEval: number | null }) {
+  if (total == null || stockEval == null || !(total > 0)) return null;
+  const stockShare = Math.max(0, Math.min(100, (stockEval / total) * 100));
+  const cashShare = 100 - stockShare;
+  return (
+    <div
+      style={{
+        marginTop: 14,
+        padding: "12px 14px",
+        border: "1px solid var(--rule, var(--line))",
+        background: "var(--paper, var(--surface-2))"
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 8,
+          flexWrap: "wrap",
+          fontSize: ".86rem",
+          fontWeight: 800,
+          color: "var(--ink, var(--text-bright))"
+        }}
+      >
+        <span>{cashShare >= 50 ? "자동매매가 현금을 많이 남기는 이유" : "자동매매가 비중을 정하는 방식"}</span>
+        <span style={{ color: "var(--ink-2, var(--text))", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+          현금 {cashShare.toFixed(1)}% · 주식 {stockShare.toFixed(1)}%
+        </span>
+      </div>
+      <div
+        aria-hidden="true"
+        style={{ height: 8, marginTop: 8, background: "var(--rule, var(--line))", borderRadius: 4, overflow: "hidden" }}
+      >
+        <span style={{ display: "block", width: `${stockShare}%`, height: "100%", background: "var(--moss, var(--accent))" }} />
+      </div>
+      <ul style={{ margin: "10px 0 0", paddingLeft: 18, color: "var(--ink-2, var(--text))", fontSize: ".86rem", lineHeight: 1.65 }}>
+        <li>AI가 매수 근거가 충분하다고 본 종목만 삽니다. 근거가 약하면 사지 않고 현금으로 기다립니다.</li>
+        <li>한 종목은 손절가에 닿아도 계좌 손실이 0.5%를 넘지 않는 크기까지만 삽니다. AI도 근거가 약하면 비중을 더 줄입니다.</li>
+        <li>정한 가격까지 내려올 때만 사는 조건부 주문이라, 가격이 오지 않으면 매수 계획이 만료됩니다.</li>
+      </ul>
+      <p style={{ margin: "6px 0 0", color: "var(--ink-3, var(--muted))", fontSize: ".8rem", lineHeight: 1.6 }}>
+        종목별 판단 이유는 아래 AI 운용 요약에서 볼 수 있습니다.
+      </p>
+    </div>
+  );
+}
+
 function HomeTab(props: {
   user: AuthUser | null;
   balance: Balance | null;
@@ -1509,6 +1558,9 @@ function HomeTab(props: {
             </div>
           </div>
         )}
+        {kisConfigured && !balanceLoading && !balanceError && autoTradeEnabled ? (
+          <CashShareNote total={totalEval} stockEval={summary?.stockEvalAmount ?? null} />
+        ) : null}
       </section>
 
       {/* AI 운용 요약 — multi-theme 주도주 선별 */}
