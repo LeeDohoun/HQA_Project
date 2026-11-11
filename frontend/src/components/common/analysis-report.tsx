@@ -102,22 +102,29 @@ function agreementText(scores: ScoreDetail[]): string | null {
 
 export function AnalysisSummaryCard({ result }: { result: AnalysisResult }) {
   if (result.finalDecision == null) {
-    const scores = result.scores.filter((score) => Number.isFinite(score.totalScore));
-    const average = scores.length ? scores.reduce((sum, score) => sum + score.totalScore, 0) / scores.length : null;
+    const scores = (result.scores ?? []).filter((score) => Number.isFinite(score.totalScore));
+    if (!scores.length) {
+      // While the experts are still working there is no score yet; say so instead of showing "- / 100".
+      const finished = result.status === "completed" || result.status === "failed";
+      return (
+        <p style={{ margin: "16px 0 0", color: INK3, lineHeight: 1.6, fontSize: ".9rem" }}>
+          {finished ? "전문가 점수가 없습니다." : "분석이 끝나면 전문가 점수가 여기에 표시됩니다."}
+        </p>
+      );
+    }
+    const average = scores.reduce((sum, score) => sum + score.totalScore, 0) / scores.length;
     const agreement = agreementText(scores);
     return (
       <div style={{ marginTop: 16 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
           <span style={{ fontSize: "2.4rem", fontWeight: 800, lineHeight: 1, color: INK, fontVariantNumeric: "tabular-nums" }}>
-            {average != null ? average.toFixed(1) : "-"}
+            {average.toFixed(1)}
           </span>
           <span style={{ color: INK3, fontWeight: 700 }}>/ 100 · 전문가 평균 점수</span>
         </div>
-        {scores.length ? (
-          <div style={{ display: "grid", gap: 10, marginTop: 16 }}>
-            {scores.map((score) => <ScoreBar key={score.agent} score={score} />)}
-          </div>
-        ) : null}
+        <div style={{ display: "grid", gap: 10, marginTop: 16 }}>
+          {scores.map((score) => <ScoreBar key={score.agent} score={score} />)}
+        </div>
         {agreement ? (
           <p style={{ margin: "14px 0 0", color: INK2, lineHeight: 1.7, fontSize: ".95rem" }}>{agreement}</p>
         ) : null}
@@ -208,10 +215,13 @@ export function AgentDetailSections({ scores }: { scores: ScoreDetail[] }) {
           >
             <summary style={{ cursor: "pointer", fontWeight: 800, color: INK, fontSize: ".98rem" }}>
               {agentLabel(score.agent)}
-              {agentFocus(score.agent) ? <span style={{ color: INK3, fontWeight: 600 }}> · {agentFocus(score.agent)}</span> : null}
-              <span style={{ marginLeft: 8 }}>{score.totalScore} / {score.maxScore}</span>
+              {/* nowrap keeps "58 / 100" and "확신 55" whole on narrow phones; each group wraps as a unit. */}
+              {agentFocus(score.agent) ? (
+                <span style={{ color: INK3, fontWeight: 600, whiteSpace: "nowrap" }}> · {agentFocus(score.agent)}</span>
+              ) : null}
+              <span style={{ marginLeft: 8, whiteSpace: "nowrap" }}>{score.totalScore} / {score.maxScore}</span>
               {confidence != null ? (
-                <span style={{ marginLeft: 8, color: INK3, fontWeight: 600, fontSize: ".85rem" }}>확신 {confidence}</span>
+                <span style={{ marginLeft: 8, color: INK3, fontWeight: 600, fontSize: ".85rem", whiteSpace: "nowrap" }}>확신 {confidence}</span>
               ) : null}
               {score.grade ? ` · ${score.grade}` : ""}
             </summary>
