@@ -1817,3 +1817,68 @@ def test_specialists_are_told_to_write_formal_korean_and_back_every_number():
     assert "market_valuation" in prompts["quant"]
     assert engine._prompt_version("quant") == SPECIALIST_PROMPT_VERSION
     assert engine._prompt_version("risk_manager") != SPECIALIST_PROMPT_VERSION
+
+
+class _WordyModel(Model):
+    """Answers like Model but writes two-decimal percentages, as a real model sometimes does."""
+
+    def invoke(self, messages):
+        result = super().invoke(messages)
+        if self.role == "risk_manager":
+            result.reasoning = "계좌 수익률은 -0.42%입니다."
+            for plan in result.plans:
+                plan.reasoning = "보유 수익률은 -1.47%이고 손절가는 95.0원입니다."
+            return result
+        return result.model_copy(update={
+            "thesis": "시가배당률은 1.56%이고 코스피 대비 -13.25%p였습니다. PER은 31.69배입니다.",
+            "risks": ["20일 변동성이 76.54%입니다."], "data_gaps": ["차이가 0.04%p뿐입니다."],
+            "citations": [citation.model_copy(update={"claim": "배당률 1.56%"}) for citation in result.citations]})
+
+
+class _Store:
+    def __init__(self):
+        self.rows = {}
+
+    def get(self, key):
+        return self.rows.get(key)
+
+    def put(self, key, role, value):
+        self.rows[key] = value
+
+
+def _wordy_service(store=None, calls=None):
+    calls = [] if calls is None else calls
+    models = {role: _WordyModel(role, calls) for role in ("analyst", "quant", "chartist", "risk_manager")}
+    return SharedAnalysisService(data=Data(), accounts=Accounts(), models=models, clock=lambda: NOW,
+                                 sleep=lambda seconds: None, result_store=store), calls
+
+
+def test_specialist_percentages_reach_readers_with_one_decimal_while_the_store_keeps_the_model_words():
+    store = _Store()
+    engine, calls = _wordy_service(store)
+    result = engine.preview_stock("000001")
+    assert set(result["specialists"]) == {"analyst", "quant", "chartist"}
+    for out in result["specialists"].values():
+        assert out["thesis"] == "시가배당률은 1.6%이고 코스피 대비 -13.3%p였습니다. PER은 31.69배입니다."
+        assert out["risks"] == ["20일 변동성이 76.5%입니다."]
+        assert out["data_gaps"] == ["차이가 0.04%p뿐입니다."]
+        assert [citation["claim"] for citation in out["citations"]] == ["배당률 1.6%"]
+    assert {row["thesis"] for row in store.rows.values()} == {"시가배당률은 1.56%이고 코스피 대비 -13.25%p였습니다. PER은 31.69배입니다."}
+
+    # A stored answer read back by a fresh service is rounded the same way, without a new model call.
+    fresh, fresh_calls = _wordy_service(store)
+    again = fresh.preview_stock("000001")
+    assert fresh_calls == []
+    assert {out["thesis"] for out in again["specialists"].values()} == {"시가배당률은 1.6%이고 코스피 대비 -13.3%p였습니다. PER은 31.69배입니다."}
+
+
+def test_risk_manager_reasoning_gets_one_decimal_percentages_and_plans_keep_their_numbers():
+    engine, _ = _wordy_service()
+    cycle = engine.run_cycle([{"userId": "a", "themeKeys": ["a"]}])
+    account = cycle["accounts"]["a"]
+    assert account["status"] == "completed"
+    assert account["reasoning"] == "계좌 수익률은 -0.4%입니다."
+    assert account["plans"]
+    assert {plan["reasoning"] for plan in account["plans"]} == {"보유 수익률은 -1.5%이고 손절가는 95.0원입니다."}
+    held = [plan for plan in account["plans"] if plan["holding_quantity"]]
+    assert all(plan["stop_loss_price"] == 95.0 for plan in held)
