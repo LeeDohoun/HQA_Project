@@ -1611,7 +1611,7 @@ def rag_cycle(data, analyst_rag):
 
 def test_the_analyst_gets_two_of_its_stocks_older_documents_outside_its_events(tmp_path):
     from src.runner.analyst_retrieval import STOCK_RAG_NOTE, STOCK_RAG_VARIANT
-    from src.runner.shared_analysis import PROMPT_VERSION, ROLE_INSTRUCTIONS
+    from src.runner.shared_analysis import SPECIALIST_PROMPT_VERSION, ROLE_INSTRUCTIONS
 
     path = rag_documents(tmp_path)
     off, off_calls, off_systems, off_audit = rag_cycle(RetrievalData(path), "off")
@@ -1631,7 +1631,8 @@ def test_the_analyst_gets_two_of_its_stocks_older_documents_outside_its_events(t
     for role in ("quant", "chartist", "risk_manager"):
         assert on_calls[role] == off_calls[role] and on_systems[role] == off_systems[role]
     versions = {payload["role"]: payload["prompt_version"] for kind, payload in on_audit.events if kind == "llm_request"}
-    assert versions["analyst"] == PROMPT_VERSION + "+" + STOCK_RAG_VARIANT and versions["quant"] == PROMPT_VERSION
+    assert versions["analyst"] == SPECIALIST_PROMPT_VERSION + "+" + STOCK_RAG_VARIANT
+    assert versions["quant"] == SPECIALIST_PROMPT_VERSION
     assert on["manifest"]["analyst_prompt_version"] == versions["analyst"]
     assert "retrieved_context" not in off_calls["analyst"] and "analyst_prompt_version" not in off["manifest"]
     assert STOCK_RAG_NOTE not in off_systems["analyst"]
@@ -1769,3 +1770,50 @@ def test_the_review_trigger_comes_from_the_environment(monkeypatch):
     monkeypatch.setenv("HQA_RISK_REVIEW_TRIGGER", "sometimes")
     with pytest.raises(ValueError, match="HQA_RISK_REVIEW_TRIGGER"):
         risk_review_trigger_from_env()
+
+
+def test_the_quant_gets_valuation_at_the_completed_close_and_may_cite_it():
+    class ValuedData(Data):
+        def load_universe(self, as_of):
+            rows, errors = super().load_universe(as_of)
+            for row in rows:
+                row["price_history"] = [{"trade_date": "2026-09-03", "close": 100.0},
+                                        {"trade_date": "2026-09-04", "close": 110.0}]
+            return rows, errors
+
+        def load_evidence(self, candidate, as_of):
+            evidence = super().load_evidence(candidate, as_of)
+            evidence["valuation_snapshot"] = {"status": "ready", "schema_version": 1,
+                "stock_code": candidate["stock_code"], "observed_at": (NOW - timedelta(hours=1)).isoformat(),
+                "quote": 112.0, "eps": 10.0, "per": 11.2, "pbr": 2.0, "bps": 56.0, "listed_shares": 1000}
+            return evidence
+
+    engine, calls = service(ValuedData(1))
+    result = engine.run_cycle([])
+    assert result["errors"] == []
+    quant = next(payload for role, payload in calls if role == "quant")
+    valuation = quant["market_valuation"]
+    assert (valuation["close_date"], valuation["close"], valuation["per"], valuation["pbr"],
+            valuation["market_cap_krw"]) == ("2026-09-04", 110.0, 11.0, 1.96, 110000)
+    assert valuation["source_id"] in quant["source_ids"]
+
+
+def test_specialists_are_told_to_write_formal_korean_and_back_every_number():
+    from src.runner.shared_analysis import SPECIALIST_PROMPT_VERSION, SPECIALIST_STYLE_RULES
+
+    calls, prompts = [], {}
+    models = {role: Model(role, calls) for role in ("analyst", "quant", "chartist", "risk_manager")}
+    for role in ("analyst", "quant", "chartist"):
+        def capture(messages, role=role, invoke=models[role].invoke):
+            prompts[role] = messages[0][1]
+            return invoke(messages)
+        models[role].invoke = capture
+    engine = SharedAnalysisService(data=Data(1), accounts=Accounts(), models=models, clock=lambda: NOW,
+                                   sleep=lambda seconds: None)
+    assert engine.run_cycle([])["errors"] == []
+    assert set(prompts) == {"analyst", "quant", "chartist"}
+    assert all(SPECIALIST_STYLE_RULES in prompt for prompt in prompts.values())
+    assert "합니다체" in SPECIALIST_STYLE_RULES and "VKOSPI" in SPECIALIST_STYLE_RULES
+    assert "market_valuation" in prompts["quant"]
+    assert engine._prompt_version("quant") == SPECIALIST_PROMPT_VERSION
+    assert engine._prompt_version("risk_manager") != SPECIALIST_PROMPT_VERSION
