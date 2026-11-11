@@ -743,7 +743,7 @@ function AnalysisTab(props: {
       prev.includes(code) ? prev.filter((item) => item !== code) : [...prev, code]
     );
   };
-  const currentTaskLabel = task?.message.replace(/\s*analysis queued\s*$/i, "");
+  const currentTaskLabel = analysisTitle(task, result);
 
   return (
     <>
@@ -763,7 +763,7 @@ function AnalysisTab(props: {
           </h2>
           <p className="ed-console-sub">
             {task
-              ? `${task.taskId.slice(0, 8)} 작업의 상태와 완료된 분석 결과를 표시합니다.`
+              ? "선택한 종목의 진행 상태와 세 전문가의 분석 결과를 아래에 표시합니다."
               : selectedCount > 0
                 ? `${selectedCount}개 종목이 선택됐습니다. 공통 종목 분석으로 실행할 수 있습니다.`
                 : "워치리스트에서 분석할 종목을 체크한 뒤 선택 종목 실행을 누르세요."}
@@ -787,7 +787,7 @@ function AnalysisTab(props: {
                   {selectedCount}개 종목을 공통 종목 분석으로 실행합니다
                 </div>
                 <p className="ed-confirm-copy">
-                  Analyst, Quant, Chartist가 공시·재무·가격을 분석합니다. 완료 시간은 데이터와 요청 대기 상황에 따라 달라집니다.
+                  애널리스트·퀀트·차티스트가 공시·뉴스, 재무, 주가 흐름을 분석합니다. 완료 시간은 데이터와 요청 대기 상황에 따라 달라집니다.
                 </p>
               </div>
               <div className="ed-confirm-actions">
@@ -822,15 +822,15 @@ function AnalysisTab(props: {
           <div className="ed-console-title">실행 요약</div>
           <div className="ed-console-stats">
             <div className="ed-console-stat">
-              <small>WATCHLIST</small>
+              <small>워치리스트</small>
               <b>{watchlistLoading ? "-" : watchlist.length}</b>
             </div>
             <div className="ed-console-stat">
-              <small>SELECTED</small>
+              <small>선택</small>
               <b>{selectedCount}</b>
             </div>
             <div className="ed-console-stat">
-              <small>QUEUE</small>
+              <small>작업</small>
               <b>{bulkTasks.length}</b>
             </div>
           </div>
@@ -856,7 +856,7 @@ function AnalysisTab(props: {
                   {watchlistLoading ? "불러오는 중" : `${selectedCount}/${watchlist.length} 선택`}
                 </div>
               </div>
-              <span className="ed-tag ed-tag--neutral">WATCHLIST</span>
+              <span className="ed-tag ed-tag--neutral">워치리스트</span>
             </div>
 
             {watchlist.length === 0 ? (
@@ -922,7 +922,7 @@ function AnalysisTab(props: {
                   <div className="ed-panel-title">라이브 분석</div>
                   <div className="ed-panel-meta">대기 중</div>
                 </div>
-                <span className="ed-tag ed-tag--neutral">IDLE</span>
+                <span className="ed-tag ed-tag--neutral">대기</span>
               </div>
               <div className="ed-empty-panel" style={{ marginTop: 14 }}>
                 분석을 실행하면 이 영역에 작업 상태와 세 전문가의 분석 결과가 표시됩니다.
@@ -951,14 +951,14 @@ function BulkAnalysisPanel({
           <div className="ed-panel-title">작업 큐</div>
           <div className="ed-panel-meta">{tasks.length}건 접수</div>
         </div>
-        <span className="ed-tag ed-tag--warn">QUEUE</span>
+        <span className="ed-tag ed-tag--warn">작업</span>
       </div>
       <p className="ed-hint" style={{ marginTop: 12 }}>
         항목을 선택하면 위 분석 결과 영역에서 해당 종목의 최신 상태와 결과를 확인할 수 있습니다.
       </p>
       <div className="ed-task-list">
         {tasks.map((item) => {
-          const stockLabel = item.message.replace(/\s*analysis queued\s*$/i, "");
+          const stockLabel = taskStockName(item.message);
           const active = activeTaskId === item.taskId;
           return (
             <button
@@ -973,7 +973,7 @@ function BulkAnalysisPanel({
               <span className="ed-row-main">
                 <span className="ed-row-name">{stockLabel}</span>
                 <span className="ed-row-meta">
-                  {item.taskId.slice(0, 8)}
+                  공통 종목 분석
                   {item.estimatedTimeSeconds != null ? ` · 예상 ${Math.ceil(item.estimatedTimeSeconds / 60)}분` : ""}
                 </span>
               </span>
@@ -986,6 +986,20 @@ function BulkAnalysisPanel({
       </div>
     </section>
   );
+}
+
+// The backend names a task "<stock> 공통 종목 분석을 시작했습니다" (older ones "... analysis queued").
+function taskStockName(message?: string | null): string {
+  return (message ?? "").replace(/\s*(공통 종목 분석을 시작했습니다|analysis queued)\s*$/i, "").trim();
+}
+
+function analysisTitle(task: AnalysisTaskResponse | null, result: AnalysisResult | null): string | null {
+  const name = result?.stock?.name || taskStockName(task?.message);
+  if (!name) return null;
+  const status = result?.status ?? task?.status;
+  if (status === "completed") return `${name} 분석 완료`;
+  if (status === "failed") return `${name} 분석 실패`;
+  return `${name} 분석 중`;
 }
 
 function translateAnalysisStatus(status?: string | null) {
@@ -1020,7 +1034,7 @@ function AnalysisPanel({
   const status = result?.status ?? task?.status ?? "pending";
   const isFinished = status === "completed" || status === "failed";
   const percent = progress ? Math.round(progress.progress * 100) : null;
-  const taskLabel = task?.message.replace(/\s*analysis queued\s*$/i, "");
+  const taskLabel = analysisTitle(task, result);
   const modeLabel = result?.mode === "quick" ? "빠른 분석" : "공통 종목 분석";
 
   return (
@@ -1030,7 +1044,6 @@ function AnalysisPanel({
           <p className="ed-live-name">{taskLabel ?? result?.stock.name ?? "분석 결과"}</p>
           <p className="ed-live-id">
             {modeLabel}
-            {task?.taskId ? ` · ${task.taskId.slice(0, 8)}` : ""}
           </p>
         </div>
         <span className={`ed-tag ed-tag--${analysisStatusTone(status)}`}>
@@ -1057,8 +1070,8 @@ function AnalysisPanel({
 
       {result?.qualityWarnings?.length ? (
         <div style={{ marginTop: 20 }}>
-          <p className="ed-label" style={{ marginBottom: 8, color: "var(--spark)" }}>경고</p>
-          <ul style={{ margin: 0, paddingLeft: 18, color: "var(--spark)", fontSize: ".86rem", lineHeight: 1.7 }}>
+          <p className="ed-label" style={{ marginBottom: 8, color: "var(--ink-3)" }}>참고</p>
+          <ul style={{ margin: 0, paddingLeft: 18, color: "var(--ink-2)", fontSize: ".86rem", lineHeight: 1.7 }}>
             {result.qualityWarnings.map((w) => <li key={w}>{w}</li>)}
           </ul>
         </div>
