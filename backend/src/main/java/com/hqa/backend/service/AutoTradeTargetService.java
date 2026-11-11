@@ -2,9 +2,7 @@ package com.hqa.backend.service;
 
 import com.hqa.backend.entity.User;
 import com.hqa.backend.entity.UserPreference;
-import com.hqa.backend.entity.WatchlistItem;
 import com.hqa.backend.repository.UserRepository;
-import com.hqa.backend.repository.WatchlistItemRepository;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -15,11 +13,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class AutoTradeTargetService {
 
     private final UserRepository userRepository;
-    private final WatchlistItemRepository watchlistRepository;
 
-    public AutoTradeTargetService(UserRepository userRepository, WatchlistItemRepository watchlistRepository) {
+    public AutoTradeTargetService(UserRepository userRepository) {
         this.userRepository = userRepository;
-        this.watchlistRepository = watchlistRepository;
     }
 
     @Transactional(readOnly = true)
@@ -32,24 +28,16 @@ public class AutoTradeTargetService {
     }
 
     private Map<String, Object> targetFor(User user) {
-        List<Map<String, Object>> symbols = watchlistRepository.findByUserOrderByCreatedAtDesc(user).stream()
-                .map(this::symbol)
-                .toList();
         Map<String, Object> target = new HashMap<>();
         target.put("userId", user.getUserId());
         target.put("strategyProfile", strategyProfile(user.getPreference()));
         target.put("investorProfile", investorProfile(user.getPreference()));
-        target.put("symbols", symbols);
+        // The watchlist is for following and analysing stocks, not a limit on auto-trading. Sending it
+        // here restricted every cycle to the listed stocks, so adding one to run an analysis silently
+        // narrowed trading to it. With no symbols the AI server reviews its top candidates and holdings.
+        target.put("symbols", List.of());
         target.put("themeKeys", List.of());
         return target;
-    }
-
-    private Map<String, Object> symbol(WatchlistItem item) {
-        Map<String, Object> symbol = new HashMap<>();
-        symbol.put("stockCode", item.getStockCode());
-        symbol.put("stockName", item.getStockName());
-        symbol.put("market", item.getMarket());
-        return symbol;
     }
 
     private Map<String, Object> investorProfile(UserPreference p) {
