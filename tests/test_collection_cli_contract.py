@@ -50,6 +50,25 @@ def test_default_dates_roll_and_explicit_windows_do_not_enable_incremental(monke
     assert (args.from_date, args.to_date, args.incremental) == ("20250101", "20251231", False)
 
 
+def test_default_end_includes_today_once_its_session_has_closed(monkeypatch):
+    from src.runner.trading_calendar import daily_session_close
+
+    def clock_at(moment):
+        class Clock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return moment.astimezone(tz) if tz else moment.replace(tzinfo=None)
+        return Clock
+
+    monday_close = daily_session_close("2026-09-07")
+    for moment, expected in ((monday_close - timedelta(minutes=1), "20260906"),
+                             (monday_close + timedelta(minutes=5), "20260907")):
+        monkeypatch.setattr(collection_common, "datetime", clock_at(moment))
+        args = Namespace(from_date=None, to_date=None)
+        collection_common.resolve_dates(args)
+        assert (args.to_date, args.incremental) == (expected, True)
+
+
 def test_unknown_sources_fail_instead_of_silently_disappearing():
     with pytest.raises(ValueError):
         theme_pipeline._parse_enabled_sources("news,typo")
