@@ -474,8 +474,10 @@ class LocalAnalysisData:
         financial = load_financial_snapshot(self.data_dir, candidate["stock_code"], as_of)
         if not selected and financial["status"] != "ready":
             raise ValueError("no_dated_dart_or_news_evidence:" + ";".join(errors[:3]))
+        from src.runner.valuation_snapshot import load_valuation_snapshot
         return {"documents": selected, "events": events, "corporate_actions": corporate_actions, "data_gaps": errors,
-                "financial_snapshot": financial}
+                "financial_snapshot": financial,
+                "valuation_snapshot": load_valuation_snapshot(self.data_dir, candidate["stock_code"], as_of)}
 
 
 class BackendAccountClient:

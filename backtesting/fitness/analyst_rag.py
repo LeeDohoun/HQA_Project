@@ -18,7 +18,8 @@ from src.runner.analyst_retrieval import (  # noqa: F401  (re-exported for the r
     bm25_scores, document, event_urls, fit_context, tokens)
 
 VARIANT = "analyst-rag-v1"
-RAG_PROMPT_VERSION = "hqa-fixed-dag-v8-backend-plan-rules+" + VARIANT
+# Follows the live specialist prompt version (shared_analysis.SPECIALIST_PROMPT_VERSION).
+RAG_PROMPT_VERSION = "hqa-fixed-dag-v8-backend-plan-rules+specialist-ko-formal-cited-valuation-r2+" + VARIANT
 ANALYST_RAG_NOTE = (" retrieved_context lists background documents found by search: theme items about other stocks of"
                     " the same theme and older items about this stock. They are dated, may be less relevant than the"
                     " events, are not this stock's current events, and may be cited by their source_id.")
@@ -73,7 +74,7 @@ def make_service_class():
                        " Cite only IDs listed in source_ids."
                        " score is a number from 0 (strongly unfavorable) to 100 (strongly favorable) for a new long"
                        " position based only on this role's evidence; confidence is an integer from 0 to 100 for how"
-                       " well the supplied evidence supports that score.")
+                       " well the supplied evidence supports that score." + shared_analysis.SPECIALIST_STYLE_RULES)
             messages = [("system", prompt + shared_analysis.PROMPT_SUFFIX),
                         ("human", json.dumps(payload, ensure_ascii=False, allow_nan=False))]
             request_id = self.audit.append("llm_request", {

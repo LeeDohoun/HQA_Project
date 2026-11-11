@@ -89,6 +89,17 @@ def _run_market_context(today) -> tuple[int, str]:
     return proc.returncode, f"{proc.stdout}\n{proc.stderr}".strip()
 
 
+def _run_kis_market_context() -> tuple[int, str]:
+    """Refresh KOSPI/KOSDAQ closes and market mappings from KIS. It calls KIS only when they are behind
+    the latest completed session, and its failure never stops theme collection."""
+    cmd = [sys.executable, "-m", "scripts.data.kis_market_context"]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT, timeout=600)
+    except subprocess.TimeoutExpired:
+        return 124, "kis_market_context timed out after 600 s"
+    return proc.returncode, f"{proc.stdout}\n{proc.stderr}".strip()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Theme collection loop with next-day pause on API limit")
     parser.add_argument("--themes", type=str, default="",
@@ -105,6 +116,9 @@ def main() -> int:
     )
     parser.add_argument("--market-context", action="store_true",
                         help="Also refresh KOSPI/KOSDAQ indices once per KST day after 08:00 (needs KRX_OPEN_API_KEY)")
+    parser.add_argument("--kis-market-context", action="store_true",
+                        help=("After each pass, refresh KOSPI/KOSDAQ closes and theme stocks' market mappings from "
+                              "KIS (paper app key) when they lack the latest completed session"))
     args = parser.parse_args()
     # The loop runs for days, usually with stdout sent to a file; without line buffering
     # its progress stays in the buffer for hours (one line per theme every 30 minutes).
@@ -153,6 +167,11 @@ def main() -> int:
                 tail = "\n".join(output.splitlines()[-10:])
                 if tail:
                     print(tail)
+
+        if args.kis_market_context:
+            code, output = _run_kis_market_context()
+            last = output.splitlines()[-1] if output else ""
+            print(f"[MARKET-KIS] {'완료' if code == 0 else f'실패(code={code})'}: {last[:300]}")
 
         print(f"\n⏳ 루프 대기 {args.interval_minutes}분")
         time.sleep(max(1, args.interval_minutes) * 60)

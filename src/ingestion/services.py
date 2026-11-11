@@ -19,7 +19,7 @@ from .krx_chart import KrxChartCollector
 from .naver_forum import NaverStockForumCollector
 from .naver_news import NaverNewsCollector
 from .types import CollectRequest, DocumentRecord, FinancialSnapshot, MarketRecord
-from .storage import read_rows, save_episodes, write_rows, file_lock
+from .storage import atomic_write, read_rows, save_episodes, write_rows, file_lock
 
 
 # Sources whose rows live in another source's raw folder: KIS daily bars are chart rows.
@@ -426,6 +426,8 @@ class IngestionService:
                 from_date=from_date,
                 to_date=request.to_date,
             )
+            self._save_market_valuation(request, getattr(self.kis_chart_collector, "valuations", {})
+                                        .get(request.target.stock_code))
             for row in rows:
                 row.metadata["theme_key"] = request.theme_key
             market_records.extend(rows)
@@ -441,6 +443,22 @@ class IngestionService:
             report.source_success["kis_chart"] = False
             report.failures["kis_chart"] = str(e)
             print(f"[WARN][{request.target.stock_name}] kis_chart collect failed: {e}")
+
+    @staticmethod
+    def _save_market_valuation(request: CollectRequest, valuation: Dict | None) -> None:
+        """Keep the latest KIS valuation snapshot per stock for the quant's market valuation.
+
+        It is supplementary evidence, so a failure is reported and never fails the price collection.
+        """
+        if not valuation:
+            return
+        try:
+            folder = Path(request.raw_output_dir).parent / "market_context" / "valuation"
+            folder.mkdir(parents=True, exist_ok=True)
+            atomic_write(folder / f"{request.target.stock_code}.json",
+                         json.dumps(valuation, ensure_ascii=False, allow_nan=False, sort_keys=True))
+        except Exception as exc:  # noqa: BLE001 - never let the snapshot block price collection
+            print(f"[WARN][{request.target.stock_name}] valuation snapshot not saved: {type(exc).__name__}")
 
     @staticmethod
     def _attach_stock_info(
