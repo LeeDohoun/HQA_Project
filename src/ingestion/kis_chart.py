@@ -32,6 +32,16 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _session_closed(day: date) -> bool:
+    """Whether day's KRX session has closed, so its daily bar is final and can be collected."""
+    from src.runner.trading_calendar import completed_daily_sessions
+    try:
+        sessions = completed_daily_sessions(_now(), count=1)
+    except ValueError:
+        return False
+    return bool(sessions) and sessions[-1][0] == day.isoformat()
+
+
 class KisChartCollector:
     """KIS 모의투자 도메인의 국내주식 기간별시세(일봉, 원주가) 수집기."""
 
@@ -44,6 +54,8 @@ class KisChartCollector:
     MIN_INTERVAL_SECONDS = 1.1  # About one call per second per app key, shared with the backend.
     TOKEN_RETRY_SECONDS = 61  # KIS issues one token per minute per app key (EGW00133).
     RATE_LIMIT_RETRIES = 2  # EGW00201 is the per-second limit, usually a collision with the backend.
+    # The daily chart's summary block (output1) carries these with every page, so they cost no extra call.
+    VALUATION_FIELDS = {"quote": "stck_prpr", "eps": "eps", "per": "per", "pbr": "pbr", "listed_shares": "lstn_stcn"}
 
     def __init__(self, app_key: str | None = None, app_secret: str | None = None,
                  session: requests.Session | None = None, sleep: Callable[[float], None] = time.sleep,
@@ -56,6 +68,8 @@ class KisChartCollector:
         self._clock = clock
         self._last_call: float | None = None
         self._token: str | None = None
+        # Latest valuation snapshot per stock code, from the newest page of each collect_daily call.
+        self.valuations: Dict[str, Dict[str, Any]] = {}
 
     def collect_daily(self, stock_name: str, stock_code: str, from_date: str, to_date: str) -> List[MarketRecord]:
         if not self.app_key or not self.app_secret:
@@ -66,9 +80,12 @@ class KisChartCollector:
             raise ValueError("KIS chart dates must be YYYYMMDD")
         start = datetime.strptime(from_date, "%Y%m%d").date()
         end = datetime.strptime(to_date, "%Y%m%d").date()
-        if start > end or end >= _now().astimezone(KST).date():
-            # Today's bar is still forming; only completed earlier sessions are collected.
-            raise ValueError("KIS chart range must be ordered and exclude current and future KST dates")
+        today = _now().astimezone(KST).date()
+        if start > end or end > today or (end == today and not _session_closed(today)):
+            # Until today's session closes its bar is still forming. After the close it is final,
+            # and analysis expects it, so it is collected the same evening.
+            raise ValueError("KIS chart range must be ordered and exclude current and future KST dates "
+                             "until their session closes")
         bars: Dict[str, tuple[Dict[str, str], datetime]] = {}
         name = stock_name
         cursor = end
@@ -76,6 +93,10 @@ class KisChartCollector:
         for _ in range((end - start).days // self.PAGE_ROWS + 2):
             output1, page, observed = self._fetch_page(stock_code, start, cursor)
             name = name or str(output1.get("hts_kor_isnm") or "").strip()
+            if cursor == end:
+                valuation = self.valuation_from_summary(stock_code, output1, observed)
+                if valuation is not None:
+                    self.valuations[stock_code] = valuation
             if not page:
                 break
             for day, content in page:
@@ -91,6 +112,30 @@ class KisChartCollector:
         else:
             raise ValueError("KIS chart pagination did not reach the requested start date")
         return [self._to_market_record(name, stock_code, day, *bars[day]) for day in sorted(bars)]
+
+    def valuation_from_summary(self, stock_code: str, output1: Dict[str, Any],
+                               observed: datetime) -> Dict[str, Any] | None:
+        """EPS, PER, PBR and listed shares from a daily chart summary block, or None if any is unusable.
+
+        KIS computes PER and PBR at its quote (stck_prpr), which after the close can include after-hours
+        trades; BPS is implied from that pair so analysis can recompute both at the completed close.
+        """
+        values: Dict[str, float] = {}
+        for key, field in self.VALUATION_FIELDS.items():
+            try:
+                number = float(str(output1.get(field) or "").replace(",", "").strip())
+            except ValueError:
+                return None
+            if not math.isfinite(number):
+                return None
+            values[key] = number
+        if values["quote"] <= 0 or values["listed_shares"] <= 0:
+            return None
+        bps = values["quote"] / values["pbr"] if values["pbr"] > 0 else None
+        return {"schema_version": 1, "stock_code": stock_code, "source": "kis", "source_url": self.DAILY_URL,
+                "tr_id": self.TR_ID, "observed_at": observed.astimezone(timezone.utc).isoformat(),
+                "quote": values["quote"], "eps": values["eps"], "per": values["per"], "pbr": values["pbr"],
+                "bps": round(bps, 2) if bps is not None else None, "listed_shares": int(values["listed_shares"])}
 
     def _fetch_page(self, stock_code: str, start: date, end: date
                     ) -> tuple[Dict[str, Any], List[tuple[str, Dict[str, str]]], datetime]:

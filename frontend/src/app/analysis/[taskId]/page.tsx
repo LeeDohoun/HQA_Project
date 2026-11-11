@@ -114,17 +114,17 @@ export default function AnalysisPage() {
 
         {/* Warnings */}
         <section className="panel" style={{ gridColumn: "span 6" }}>
-          <h3 className="section-title">경고</h3>
+          <h3 className="section-title">참고</h3>
           {result?.qualityWarnings?.length ? (
             <div className="detail-list">
               {result.qualityWarnings.map((warning) => (
-                <div className="detail-item" key={warning} style={{ borderColor: "rgba(245,158,11,0.2)", background: "var(--warn-dim)" }}>
-                  <span style={{ fontSize: "0.85rem", color: "var(--warn)" }}>{warning}</span>
+                <div className="detail-item" key={warning}>
+                  <span style={{ fontSize: "0.85rem", color: "var(--text)" }}>{warning}</span>
                 </div>
               ))}
             </div>
           ) : (
-            <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>경고 없음</p>
+            <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>참고 사항 없음</p>
           )}
         </section>
 

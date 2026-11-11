@@ -193,6 +193,24 @@ def test_credentials_dates_and_codes_are_checked_before_any_call(at_now, monkeyp
     assert fake.calls == []
 
 
+def test_todays_bar_is_requested_only_after_its_session_closes(monkeypatch):
+    from src.ingestion import kis_chart
+    close = daily_session_close("2026-09-07")
+    monkeypatch.setattr(kis_chart, "_now", lambda: close - timedelta(minutes=1))
+    fake = FakeKis()
+    with pytest.raises(ValueError, match="exclude current"):
+        collector(fake).collect_daily("삼성전자", "005930", "20260801", "20260907")
+    assert fake.calls == []
+    monkeypatch.setattr(kis_chart, "_now", lambda: close + timedelta(minutes=5))
+    with pytest.raises(ValueError, match="exclude current"):
+        collector(fake).collect_daily("삼성전자", "005930", "20260801", "20260908")
+    try:
+        collector(fake).collect_daily("삼성전자", "005930", "20260801", "20260907")
+    except ValueError as exc:
+        assert "exclude current" not in str(exc)
+    assert fake.calls, "after the close, today's bar must be requested from KIS"
+
+
 @pytest.mark.parametrize("mutate, message", [
     (lambda payload: payload["output2"][0].update(stck_bsop_date="20260907"), "outside the requested dates"),
     (lambda payload: payload["output2"][0].update(stck_clpr="50,000"), "nonnegative finite"),
@@ -355,3 +373,38 @@ def test_collect_with_kis_chart_publishes_a_generation_the_analysis_accepts(tmp_
     features, known = price_features(rows, NOW)
     assert features["history_days"] == 300 and {row["source"] for row in known} == {"kis"}
     assert KEY not in (tmp_path / "reports/fixture_ingestion_report.json").read_text(encoding="utf-8")
+
+
+def _valuation_fields(payload):
+    payload["output1"].update(stck_prpr="208,000", eps="6564.00", per="31.69", pbr="3.25", lstn_stcn="5846278608")
+
+
+def test_the_newest_page_yields_a_valuation_snapshot_without_extra_calls(at_now):
+    fake = FakeKis(mutate=_valuation_fields)
+    kis = collector(fake)
+    kis.collect_daily("삼성전자", "005930", "20250305", "20260904")
+    assert len(fake.gets()) > 1  # several pages, one snapshot taken from the newest
+    assert kis.valuations["005930"] == {
+        "schema_version": 1, "stock_code": "005930", "source": "kis", "source_url": KisChartCollector.DAILY_URL,
+        "tr_id": KisChartCollector.TR_ID, "observed_at": OBSERVED.isoformat(), "quote": 208000.0,
+        "eps": 6564.0, "per": 31.69, "pbr": 3.25, "bps": 64000.0, "listed_shares": 5846278608}
+
+
+@pytest.mark.parametrize("change", [{}, {"eps": ""}, {"lstn_stcn": "0"}, {"stck_prpr": "nan"}, {"pbr": "n/a"}])
+def test_an_unusable_summary_gives_no_valuation_snapshot(at_now, change):
+    def mutate(payload):
+        if change:
+            _valuation_fields(payload)
+            payload["output1"].update(change)
+    kis = collector(FakeKis(mutate=mutate))
+    kis.collect_daily("삼성전자", "005930", "20260801", "20260904")
+    assert kis.valuations == {}
+
+
+def test_a_zero_pbr_keeps_the_snapshot_without_book_value(at_now):
+    def mutate(payload):
+        _valuation_fields(payload)
+        payload["output1"]["pbr"] = "0.00"
+    kis = collector(FakeKis(mutate=mutate))
+    kis.collect_daily("삼성전자", "005930", "20260801", "20260904")
+    assert kis.valuations["005930"]["bps"] is None

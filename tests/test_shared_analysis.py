@@ -1611,7 +1611,7 @@ def rag_cycle(data, analyst_rag):
 
 def test_the_analyst_gets_two_of_its_stocks_older_documents_outside_its_events(tmp_path):
     from src.runner.analyst_retrieval import STOCK_RAG_NOTE, STOCK_RAG_VARIANT
-    from src.runner.shared_analysis import PROMPT_VERSION, ROLE_INSTRUCTIONS
+    from src.runner.shared_analysis import SPECIALIST_PROMPT_VERSION, ROLE_INSTRUCTIONS
 
     path = rag_documents(tmp_path)
     off, off_calls, off_systems, off_audit = rag_cycle(RetrievalData(path), "off")
@@ -1631,7 +1631,8 @@ def test_the_analyst_gets_two_of_its_stocks_older_documents_outside_its_events(t
     for role in ("quant", "chartist", "risk_manager"):
         assert on_calls[role] == off_calls[role] and on_systems[role] == off_systems[role]
     versions = {payload["role"]: payload["prompt_version"] for kind, payload in on_audit.events if kind == "llm_request"}
-    assert versions["analyst"] == PROMPT_VERSION + "+" + STOCK_RAG_VARIANT and versions["quant"] == PROMPT_VERSION
+    assert versions["analyst"] == SPECIALIST_PROMPT_VERSION + "+" + STOCK_RAG_VARIANT
+    assert versions["quant"] == SPECIALIST_PROMPT_VERSION
     assert on["manifest"]["analyst_prompt_version"] == versions["analyst"]
     assert "retrieved_context" not in off_calls["analyst"] and "analyst_prompt_version" not in off["manifest"]
     assert STOCK_RAG_NOTE not in off_systems["analyst"]
@@ -1769,3 +1770,115 @@ def test_the_review_trigger_comes_from_the_environment(monkeypatch):
     monkeypatch.setenv("HQA_RISK_REVIEW_TRIGGER", "sometimes")
     with pytest.raises(ValueError, match="HQA_RISK_REVIEW_TRIGGER"):
         risk_review_trigger_from_env()
+
+
+def test_the_quant_gets_valuation_at_the_completed_close_and_may_cite_it():
+    class ValuedData(Data):
+        def load_universe(self, as_of):
+            rows, errors = super().load_universe(as_of)
+            for row in rows:
+                row["price_history"] = [{"trade_date": "2026-09-03", "close": 100.0},
+                                        {"trade_date": "2026-09-04", "close": 110.0}]
+            return rows, errors
+
+        def load_evidence(self, candidate, as_of):
+            evidence = super().load_evidence(candidate, as_of)
+            evidence["valuation_snapshot"] = {"status": "ready", "schema_version": 1,
+                "stock_code": candidate["stock_code"], "observed_at": (NOW - timedelta(hours=1)).isoformat(),
+                "quote": 112.0, "eps": 10.0, "per": 11.2, "pbr": 2.0, "bps": 56.0, "listed_shares": 1000}
+            return evidence
+
+    engine, calls = service(ValuedData(1))
+    result = engine.run_cycle([])
+    assert result["errors"] == []
+    quant = next(payload for role, payload in calls if role == "quant")
+    valuation = quant["market_valuation"]
+    assert (valuation["close_date"], valuation["close"], valuation["per"], valuation["pbr"],
+            valuation["market_cap_krw"]) == ("2026-09-04", 110.0, 11.0, 1.96, 110000)
+    assert valuation["source_id"] in quant["source_ids"]
+
+
+def test_specialists_are_told_to_write_formal_korean_and_back_every_number():
+    from src.runner.shared_analysis import SPECIALIST_PROMPT_VERSION, SPECIALIST_STYLE_RULES
+
+    calls, prompts = [], {}
+    models = {role: Model(role, calls) for role in ("analyst", "quant", "chartist", "risk_manager")}
+    for role in ("analyst", "quant", "chartist"):
+        def capture(messages, role=role, invoke=models[role].invoke):
+            prompts[role] = messages[0][1]
+            return invoke(messages)
+        models[role].invoke = capture
+    engine = SharedAnalysisService(data=Data(1), accounts=Accounts(), models=models, clock=lambda: NOW,
+                                   sleep=lambda seconds: None)
+    assert engine.run_cycle([])["errors"] == []
+    assert set(prompts) == {"analyst", "quant", "chartist"}
+    assert all(SPECIALIST_STYLE_RULES in prompt for prompt in prompts.values())
+    assert "합니다체" in SPECIALIST_STYLE_RULES and "VKOSPI" in SPECIALIST_STYLE_RULES
+    assert "market_valuation" in prompts["quant"]
+    assert engine._prompt_version("quant") == SPECIALIST_PROMPT_VERSION
+    assert engine._prompt_version("risk_manager") != SPECIALIST_PROMPT_VERSION
+
+
+class _WordyModel(Model):
+    """Answers like Model but writes two-decimal percentages, as a real model sometimes does."""
+
+    def invoke(self, messages):
+        result = super().invoke(messages)
+        if self.role == "risk_manager":
+            result.reasoning = "계좌 수익률은 -0.42%입니다."
+            for plan in result.plans:
+                plan.reasoning = "보유 수익률은 -1.47%이고 손절가는 95.0원입니다."
+            return result
+        return result.model_copy(update={
+            "thesis": "시가배당률은 1.56%이고 코스피 대비 -13.25%p였습니다. PER은 31.69배입니다.",
+            "risks": ["20일 변동성이 76.54%입니다."], "data_gaps": ["차이가 0.04%p뿐입니다."],
+            "citations": [citation.model_copy(update={"claim": "배당률 1.56%"}) for citation in result.citations]})
+
+
+class _Store:
+    def __init__(self):
+        self.rows = {}
+
+    def get(self, key):
+        return self.rows.get(key)
+
+    def put(self, key, role, value):
+        self.rows[key] = value
+
+
+def _wordy_service(store=None, calls=None):
+    calls = [] if calls is None else calls
+    models = {role: _WordyModel(role, calls) for role in ("analyst", "quant", "chartist", "risk_manager")}
+    return SharedAnalysisService(data=Data(), accounts=Accounts(), models=models, clock=lambda: NOW,
+                                 sleep=lambda seconds: None, result_store=store), calls
+
+
+def test_specialist_percentages_reach_readers_with_one_decimal_while_the_store_keeps_the_model_words():
+    store = _Store()
+    engine, calls = _wordy_service(store)
+    result = engine.preview_stock("000001")
+    assert set(result["specialists"]) == {"analyst", "quant", "chartist"}
+    for out in result["specialists"].values():
+        assert out["thesis"] == "시가배당률은 1.6%이고 코스피 대비 -13.3%p였습니다. PER은 31.69배입니다."
+        assert out["risks"] == ["20일 변동성이 76.5%입니다."]
+        assert out["data_gaps"] == ["차이가 0.04%p뿐입니다."]
+        assert [citation["claim"] for citation in out["citations"]] == ["배당률 1.6%"]
+    assert {row["thesis"] for row in store.rows.values()} == {"시가배당률은 1.56%이고 코스피 대비 -13.25%p였습니다. PER은 31.69배입니다."}
+
+    # A stored answer read back by a fresh service is rounded the same way, without a new model call.
+    fresh, fresh_calls = _wordy_service(store)
+    again = fresh.preview_stock("000001")
+    assert fresh_calls == []
+    assert {out["thesis"] for out in again["specialists"].values()} == {"시가배당률은 1.6%이고 코스피 대비 -13.3%p였습니다. PER은 31.69배입니다."}
+
+
+def test_risk_manager_reasoning_gets_one_decimal_percentages_and_plans_keep_their_numbers():
+    engine, _ = _wordy_service()
+    cycle = engine.run_cycle([{"userId": "a", "themeKeys": ["a"]}])
+    account = cycle["accounts"]["a"]
+    assert account["status"] == "completed"
+    assert account["reasoning"] == "계좌 수익률은 -0.4%입니다."
+    assert account["plans"]
+    assert {plan["reasoning"] for plan in account["plans"]} == {"보유 수익률은 -1.5%이고 손절가는 95.0원입니다."}
+    held = [plan for plan in account["plans"] if plan["holding_quantity"]]
+    assert all(plan["stop_loss_price"] == 95.0 for plan in held)

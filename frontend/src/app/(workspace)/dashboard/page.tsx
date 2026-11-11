@@ -743,7 +743,7 @@ function AnalysisTab(props: {
       prev.includes(code) ? prev.filter((item) => item !== code) : [...prev, code]
     );
   };
-  const currentTaskLabel = task?.message.replace(/\s*analysis queued\s*$/i, "");
+  const currentTaskLabel = analysisTitle(task, result);
 
   return (
     <>
@@ -763,7 +763,7 @@ function AnalysisTab(props: {
           </h2>
           <p className="ed-console-sub">
             {task
-              ? `${task.taskId.slice(0, 8)} 작업의 상태와 완료된 분석 결과를 표시합니다.`
+              ? "선택한 종목의 진행 상태와 세 전문가의 분석 결과를 아래에 표시합니다."
               : selectedCount > 0
                 ? `${selectedCount}개 종목이 선택됐습니다. 공통 종목 분석으로 실행할 수 있습니다.`
                 : "워치리스트에서 분석할 종목을 체크한 뒤 선택 종목 실행을 누르세요."}
@@ -787,7 +787,7 @@ function AnalysisTab(props: {
                   {selectedCount}개 종목을 공통 종목 분석으로 실행합니다
                 </div>
                 <p className="ed-confirm-copy">
-                  Analyst, Quant, Chartist가 공시·재무·가격을 분석합니다. 완료 시간은 데이터와 요청 대기 상황에 따라 달라집니다.
+                  애널리스트·퀀트·차티스트가 공시·뉴스, 재무, 주가 흐름을 분석합니다. 완료 시간은 데이터와 요청 대기 상황에 따라 달라집니다.
                 </p>
               </div>
               <div className="ed-confirm-actions">
@@ -822,15 +822,15 @@ function AnalysisTab(props: {
           <div className="ed-console-title">실행 요약</div>
           <div className="ed-console-stats">
             <div className="ed-console-stat">
-              <small>WATCHLIST</small>
+              <small>워치리스트</small>
               <b>{watchlistLoading ? "-" : watchlist.length}</b>
             </div>
             <div className="ed-console-stat">
-              <small>SELECTED</small>
+              <small>선택</small>
               <b>{selectedCount}</b>
             </div>
             <div className="ed-console-stat">
-              <small>QUEUE</small>
+              <small>작업</small>
               <b>{bulkTasks.length}</b>
             </div>
           </div>
@@ -856,7 +856,7 @@ function AnalysisTab(props: {
                   {watchlistLoading ? "불러오는 중" : `${selectedCount}/${watchlist.length} 선택`}
                 </div>
               </div>
-              <span className="ed-tag ed-tag--neutral">WATCHLIST</span>
+              <span className="ed-tag ed-tag--neutral">워치리스트</span>
             </div>
 
             {watchlist.length === 0 ? (
@@ -922,7 +922,7 @@ function AnalysisTab(props: {
                   <div className="ed-panel-title">라이브 분석</div>
                   <div className="ed-panel-meta">대기 중</div>
                 </div>
-                <span className="ed-tag ed-tag--neutral">IDLE</span>
+                <span className="ed-tag ed-tag--neutral">대기</span>
               </div>
               <div className="ed-empty-panel" style={{ marginTop: 14 }}>
                 분석을 실행하면 이 영역에 작업 상태와 세 전문가의 분석 결과가 표시됩니다.
@@ -951,14 +951,14 @@ function BulkAnalysisPanel({
           <div className="ed-panel-title">작업 큐</div>
           <div className="ed-panel-meta">{tasks.length}건 접수</div>
         </div>
-        <span className="ed-tag ed-tag--warn">QUEUE</span>
+        <span className="ed-tag ed-tag--warn">작업</span>
       </div>
       <p className="ed-hint" style={{ marginTop: 12 }}>
         항목을 선택하면 위 분석 결과 영역에서 해당 종목의 최신 상태와 결과를 확인할 수 있습니다.
       </p>
       <div className="ed-task-list">
         {tasks.map((item) => {
-          const stockLabel = item.message.replace(/\s*analysis queued\s*$/i, "");
+          const stockLabel = taskStockName(item.message);
           const active = activeTaskId === item.taskId;
           return (
             <button
@@ -973,7 +973,7 @@ function BulkAnalysisPanel({
               <span className="ed-row-main">
                 <span className="ed-row-name">{stockLabel}</span>
                 <span className="ed-row-meta">
-                  {item.taskId.slice(0, 8)}
+                  공통 종목 분석
                   {item.estimatedTimeSeconds != null ? ` · 예상 ${Math.ceil(item.estimatedTimeSeconds / 60)}분` : ""}
                 </span>
               </span>
@@ -986,6 +986,20 @@ function BulkAnalysisPanel({
       </div>
     </section>
   );
+}
+
+// The backend names a task "<stock> 공통 종목 분석을 시작했습니다" (older ones "... analysis queued").
+function taskStockName(message?: string | null): string {
+  return (message ?? "").replace(/\s*(공통 종목 분석을 시작했습니다|analysis queued)\s*$/i, "").trim();
+}
+
+function analysisTitle(task: AnalysisTaskResponse | null, result: AnalysisResult | null): string | null {
+  const name = result?.stock?.name || taskStockName(task?.message);
+  if (!name) return null;
+  const status = result?.status ?? task?.status;
+  if (status === "completed") return `${name} 분석 완료`;
+  if (status === "failed") return `${name} 분석 실패`;
+  return `${name} 분석 중`;
 }
 
 function translateAnalysisStatus(status?: string | null) {
@@ -1020,7 +1034,7 @@ function AnalysisPanel({
   const status = result?.status ?? task?.status ?? "pending";
   const isFinished = status === "completed" || status === "failed";
   const percent = progress ? Math.round(progress.progress * 100) : null;
-  const taskLabel = task?.message.replace(/\s*analysis queued\s*$/i, "");
+  const taskLabel = analysisTitle(task, result);
   const modeLabel = result?.mode === "quick" ? "빠른 분석" : "공통 종목 분석";
 
   return (
@@ -1030,7 +1044,6 @@ function AnalysisPanel({
           <p className="ed-live-name">{taskLabel ?? result?.stock.name ?? "분석 결과"}</p>
           <p className="ed-live-id">
             {modeLabel}
-            {task?.taskId ? ` · ${task.taskId.slice(0, 8)}` : ""}
           </p>
         </div>
         <span className={`ed-tag ed-tag--${analysisStatusTone(status)}`}>
@@ -1057,8 +1070,8 @@ function AnalysisPanel({
 
       {result?.qualityWarnings?.length ? (
         <div style={{ marginTop: 20 }}>
-          <p className="ed-label" style={{ marginBottom: 8, color: "var(--spark)" }}>경고</p>
-          <ul style={{ margin: 0, paddingLeft: 18, color: "var(--spark)", fontSize: ".86rem", lineHeight: 1.7 }}>
+          <p className="ed-label" style={{ marginBottom: 8, color: "var(--ink-3)" }}>참고</p>
+          <ul style={{ margin: 0, paddingLeft: 18, color: "var(--ink-2)", fontSize: ".86rem", lineHeight: 1.7 }}>
             {result.qualityWarnings.map((w) => <li key={w}>{w}</li>)}
           </ul>
         </div>
@@ -1344,6 +1357,55 @@ function AssetsTab({
    홈 탭 — 로그인 직후 보는 메인 대시보드
    자산 한 줄 · 보유 종목 Top · 최근 거래 · 빠른 이동
    ============================================================ */
+// A mostly-cash account should explain itself: the live cash/stock split and the rules that keep
+// entries small. 0.5% is the backend's hqa.paper-max-entry-risk-pct (PaperTradeStore).
+function CashShareNote({ total, stockEval }: { total: number | null; stockEval: number | null }) {
+  if (total == null || stockEval == null || !(total > 0)) return null;
+  const stockShare = Math.max(0, Math.min(100, (stockEval / total) * 100));
+  const cashShare = 100 - stockShare;
+  return (
+    <div
+      style={{
+        marginTop: 14,
+        padding: "12px 14px",
+        border: "1px solid var(--rule, var(--line))",
+        background: "var(--paper, var(--surface-2))"
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 8,
+          flexWrap: "wrap",
+          fontSize: ".86rem",
+          fontWeight: 800,
+          color: "var(--ink, var(--text-bright))"
+        }}
+      >
+        <span>{cashShare >= 50 ? "자동매매가 현금을 많이 남기는 이유" : "자동매매가 비중을 정하는 방식"}</span>
+        <span style={{ color: "var(--ink-2, var(--text))", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+          현금 {cashShare.toFixed(1)}% · 주식 {stockShare.toFixed(1)}%
+        </span>
+      </div>
+      <div
+        aria-hidden="true"
+        style={{ height: 8, marginTop: 8, background: "var(--rule, var(--line))", borderRadius: 4, overflow: "hidden" }}
+      >
+        <span style={{ display: "block", width: `${stockShare}%`, height: "100%", background: "var(--moss, var(--accent))" }} />
+      </div>
+      <ul style={{ margin: "10px 0 0", paddingLeft: 18, color: "var(--ink-2, var(--text))", fontSize: ".86rem", lineHeight: 1.65 }}>
+        <li>AI가 매수 근거가 충분하다고 본 종목만 삽니다. 근거가 약하면 사지 않고 현금으로 기다립니다.</li>
+        <li>한 종목은 손절가에 닿아도 계좌 손실이 0.5%를 넘지 않는 크기까지만 삽니다. AI도 근거가 약하면 비중을 더 줄입니다.</li>
+        <li>정한 가격까지 내려올 때만 사는 조건부 주문이라, 가격이 오지 않으면 매수 계획이 만료됩니다.</li>
+      </ul>
+      <p style={{ margin: "6px 0 0", color: "var(--ink-3, var(--muted))", fontSize: ".8rem", lineHeight: 1.6 }}>
+        종목별 판단 이유는 아래 AI 운용 요약에서 볼 수 있습니다.
+      </p>
+    </div>
+  );
+}
+
 function HomeTab(props: {
   user: AuthUser | null;
   balance: Balance | null;
@@ -1496,6 +1558,9 @@ function HomeTab(props: {
             </div>
           </div>
         )}
+        {kisConfigured && !balanceLoading && !balanceError && autoTradeEnabled ? (
+          <CashShareNote total={totalEval} stockEval={summary?.stockEvalAmount ?? null} />
+        ) : null}
       </section>
 
       {/* AI 운용 요약 — multi-theme 주도주 선별 */}

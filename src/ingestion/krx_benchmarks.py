@@ -60,9 +60,8 @@ def _close(value: object) -> float:
     return number
 
 
-def _record(series: str, name: str, day: date, close: float, observed: datetime) -> dict:
-    if not isinstance(series, str) or series not in ENDPOINTS:
-        raise ValueError("unsupported benchmark series")
+def _build(series: str, name: str, day: date, close: float, observed: datetime,
+           source_url: str, prefix: str) -> dict:
     if not isinstance(name, str) or not name.strip():
         raise ValueError("IDX_NM must be a nonempty exact provider index name")
     bar = datetime.combine(day, time(15, 30), KST)
@@ -71,11 +70,32 @@ def _record(series: str, name: str, day: date, close: float, observed: datetime)
         raise ValueError("benchmark observation precedes the completed market close")
     content = {"schema_version": 1, "series": series, "index_name": name,
                "trade_date": day.isoformat(), "close": close, "bar_at": bar.isoformat(),
-               "source_url": f"{ENDPOINTS[series]}?basDd={day:%Y%m%d}", "price_basis": "price_index"}
+               "source_url": source_url, "price_basis": "price_index"}
     version = hashlib.sha256(json.dumps(content, sort_keys=True, ensure_ascii=False,
                                        separators=(",", ":"), allow_nan=False).encode()).hexdigest()
     return {**content, "available_at": observed.isoformat(),
-            "version": version, "source_id": "krx-benchmark:" + version}
+            "version": version, "source_id": prefix + version}
+
+
+def _record(series: str, name: str, day: date, close: float, observed: datetime) -> dict:
+    if not isinstance(series, str) or series not in ENDPOINTS:
+        raise ValueError("unsupported benchmark series")
+    return _build(series, name, day, close, observed, f"{ENDPOINTS[series]}?basDd={day:%Y%m%d}", "krx-benchmark:")
+
+
+# The same KOSPI/KOSDAQ price indices from KIS, reachable with the paper app key while the KRX Open API
+# key awaits approval (it answers 401). Records keep the KRX schema; the source URL and ID name KIS.
+KIS_INDEX_URL = "https://openapivts.koreainvestment.com:29443/uapi/domestic-stock/v1/quotations/inquire-daily-indexchartprice"
+KIS_INDEX_CODES = {"KOSPI": "0001", "KOSDAQ": "1001"}
+KIS_INDEX_NAMES = {"KOSPI": "코스피", "KOSDAQ": "코스닥"}
+
+
+def kis_benchmark_record(series: str, day: date, close: float, observed: datetime) -> dict:
+    if not isinstance(series, str) or series not in KIS_INDEX_CODES:
+        raise ValueError("unsupported benchmark series")
+    url = (f"{KIS_INDEX_URL}?FID_COND_MRKT_DIV_CODE=U&FID_INPUT_ISCD={KIS_INDEX_CODES[series]}"
+           f"&FID_INPUT_DATE_1={day:%Y%m%d}")
+    return _build(series, KIS_INDEX_NAMES[series], day, close, observed, url, "kis-benchmark:")
 
 
 def validate_benchmark_record(row: dict) -> dict:
@@ -84,7 +104,10 @@ def validate_benchmark_record(row: dict) -> dict:
     if type(row["close"]) not in (int, float):
         raise ValueError("stored benchmark close must be numeric")
     observed, day = _aware(row["available_at"]), _date(row["trade_date"])
-    expected = _record(row["series"], row["index_name"], day, _close(row["close"]), observed)
+    if isinstance(row["source_id"], str) and row["source_id"].startswith("kis-benchmark:"):
+        expected = kis_benchmark_record(row["series"], day, _close(row["close"]), observed)
+    else:
+        expected = _record(row["series"], row["index_name"], day, _close(row["close"]), observed)
     if row != expected:
         raise ValueError("benchmark record provenance or content hash mismatch")
     return expected

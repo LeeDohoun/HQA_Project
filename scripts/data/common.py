@@ -19,10 +19,24 @@ def enabled_sources(raw: str) -> list[str]:
     return values
 
 
+def _today_session_closed(now: datetime) -> bool:
+    """Whether today's KRX session has already closed at now (an aware time)."""
+    try:
+        from src.runner.trading_calendar import completed_daily_sessions
+        sessions = completed_daily_sessions(now, count=1)
+    except Exception:
+        return False
+    return bool(sessions) and sessions[-1][0] == now.astimezone(KST).date().isoformat()
+
+
 def resolve_dates(args) -> None:
     args.incremental = args.from_date is None and args.to_date is None
-    yesterday = datetime.now(KST).date() - timedelta(days=1)
-    end = datetime.strptime(args.to_date, "%Y%m%d").date() if args.to_date else yesterday
+    now = datetime.now(timezone.utc)
+    today = now.astimezone(KST).date()
+    # After today's close its daily bar is final and analysis expects it, so default runs
+    # collect through today; before the close they stop at yesterday as before.
+    default_end = today if _today_session_closed(now) else today - timedelta(days=1)
+    end = datetime.strptime(args.to_date, "%Y%m%d").date() if args.to_date else default_end
     start = datetime.strptime(args.from_date, "%Y%m%d").date() if args.from_date else end - timedelta(days=400)
     if start > end:
         raise ValueError("from_date must not be after to_date")
