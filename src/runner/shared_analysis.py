@@ -18,6 +18,7 @@ from typing import Any, Callable
 
 from src.runner.analysis_contracts import AccountDecision, SpecialistResult
 from src.runner.analysis_data import BackendAccountClient, FACTOR_VERSION, LocalAnalysisData, content_hash, rank_price_candidates
+from src.runner.prose_numbers import round_percentages
 from src.utils.llm_queue import LLMTaskPriority, llm_task_priority
 
 UTC = timezone.utc
@@ -361,6 +362,29 @@ def _payload_tokens(payload: dict) -> int:
     return estimate_tokens(json.dumps(payload, ensure_ascii=False, allow_nan=False))
 
 
+def _tidy_specialist(result: SpecialistResult) -> SpecialistResult:
+    """Apply the one-decimal percentage rule to everything a specialist wrote for people to read."""
+    try:
+        data = result.model_dump(mode="json")
+        data["thesis"] = round_percentages(data["thesis"])
+        data["risks"] = [round_percentages(item) for item in data["risks"]]
+        data["data_gaps"] = [round_percentages(item) for item in data["data_gaps"]]
+        data["citations"] = [{**citation, "claim": round_percentages(citation["claim"])} for citation in data["citations"]]
+        return SpecialistResult.model_validate(data)
+    except Exception:
+        return result  # Wording must never cost an analysis.
+
+
+def _tidy_decision(decision: AccountDecision) -> None:
+    """The same rule for the RiskManager's account and plan reasoning; actions, prices and conditions stay as they are."""
+    try:
+        decision.reasoning = round_percentages(decision.reasoning)
+        for plan in decision.plans:
+            plan.reasoning = round_percentages(plan.reasoning)
+    except Exception:
+        pass
+
+
 def fit_specialist_payload(role: str, payload: dict, budget: int) -> dict:
     """Keep the highest-priority evidence that fits the role's input budget."""
     if role == "analyst":
@@ -632,7 +656,8 @@ class SharedAnalysisService:
                 raise ValueError("specialist output contains an unknown citation")
             if stored is None and self.result_store is not None:
                 self.result_store.put(key, role, result.model_dump(mode="json"))
-            return result
+            # The store keeps the model's own words; readers get the one-decimal percentages.
+            return _tidy_specialist(result)
         return self.cache.get_or_compute(key, calculate,
                                          rank=int(LLMTaskPriority.RUNTIME if critical else priority))
 
@@ -989,6 +1014,7 @@ class SharedAnalysisService:
             raise ValueError(f"risk_manager_input_budget_exceeded:{input_estimate}>{budget}")
         payload_rows = payload["candidates"]
         decision = self._invoke("risk_manager", AccountDecision, payload, critical=bool(snapshot.holdings))
+        _tidy_decision(decision)
         expected = {r["stock_code"]: r for r in payload_rows}
         returned = {p.stock_code for p in decision.plans} | {p["stock_code"] for p in decision.invalid_plans}
         if returned != set(expected):
