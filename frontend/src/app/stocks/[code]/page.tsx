@@ -448,7 +448,7 @@ export default function StockDetailPage({ params }: { params: Promise<{ code: st
                       title: n.title,
                       url: n.url,
                       summary: n.summary,
-                      meta: n.source ?? "",
+                      meta: newsSource(n.source),
                       tag: "뉴스",
                       tagKind: "news" as const
                     }))}
@@ -476,6 +476,15 @@ export default function StockDetailPage({ params }: { params: Promise<{ code: st
       </main>
     </div>
   );
+}
+
+// Some collected news carry the listing's "1시간 전" label in `source`. That label was true only when
+// the item was collected, so next to the publish date it misleads; show real source names only.
+const RELATIVE_TIME_LABEL = /^\s*\d+\s*(초|분|시간|일|주|개월|달|년)\s*전\s*$/;
+
+function newsSource(source: string | null | undefined): string {
+  const value = (source ?? "").trim();
+  return RELATIVE_TIME_LABEL.test(value) ? "" : value;
 }
 
 /* ============================================================
