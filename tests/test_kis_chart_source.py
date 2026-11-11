@@ -193,6 +193,24 @@ def test_credentials_dates_and_codes_are_checked_before_any_call(at_now, monkeyp
     assert fake.calls == []
 
 
+def test_todays_bar_is_requested_only_after_its_session_closes(monkeypatch):
+    from src.ingestion import kis_chart
+    close = daily_session_close("2026-09-07")
+    monkeypatch.setattr(kis_chart, "_now", lambda: close - timedelta(minutes=1))
+    fake = FakeKis()
+    with pytest.raises(ValueError, match="exclude current"):
+        collector(fake).collect_daily("삼성전자", "005930", "20260801", "20260907")
+    assert fake.calls == []
+    monkeypatch.setattr(kis_chart, "_now", lambda: close + timedelta(minutes=5))
+    with pytest.raises(ValueError, match="exclude current"):
+        collector(fake).collect_daily("삼성전자", "005930", "20260801", "20260908")
+    try:
+        collector(fake).collect_daily("삼성전자", "005930", "20260801", "20260907")
+    except ValueError as exc:
+        assert "exclude current" not in str(exc)
+    assert fake.calls, "after the close, today's bar must be requested from KIS"
+
+
 @pytest.mark.parametrize("mutate, message", [
     (lambda payload: payload["output2"][0].update(stck_bsop_date="20260907"), "outside the requested dates"),
     (lambda payload: payload["output2"][0].update(stck_clpr="50,000"), "nonnegative finite"),

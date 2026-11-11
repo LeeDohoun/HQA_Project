@@ -32,6 +32,16 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _session_closed(day: date) -> bool:
+    """Whether day's KRX session has closed, so its daily bar is final and can be collected."""
+    from src.runner.trading_calendar import completed_daily_sessions
+    try:
+        sessions = completed_daily_sessions(_now(), count=1)
+    except ValueError:
+        return False
+    return bool(sessions) and sessions[-1][0] == day.isoformat()
+
+
 class KisChartCollector:
     """KIS 모의투자 도메인의 국내주식 기간별시세(일봉, 원주가) 수집기."""
 
@@ -66,9 +76,12 @@ class KisChartCollector:
             raise ValueError("KIS chart dates must be YYYYMMDD")
         start = datetime.strptime(from_date, "%Y%m%d").date()
         end = datetime.strptime(to_date, "%Y%m%d").date()
-        if start > end or end >= _now().astimezone(KST).date():
-            # Today's bar is still forming; only completed earlier sessions are collected.
-            raise ValueError("KIS chart range must be ordered and exclude current and future KST dates")
+        today = _now().astimezone(KST).date()
+        if start > end or end > today or (end == today and not _session_closed(today)):
+            # Until today's session closes its bar is still forming. After the close it is final,
+            # and analysis expects it, so it is collected the same evening.
+            raise ValueError("KIS chart range must be ordered and exclude current and future KST dates "
+                             "until their session closes")
         bars: Dict[str, tuple[Dict[str, str], datetime]] = {}
         name = stock_name
         cursor = end
