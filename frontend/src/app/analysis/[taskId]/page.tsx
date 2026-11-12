@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { AgentDetailSections, AnalysisSummaryCard } from "@/components/common/analysis-report";
+import { AgentDetailSections, AnalysisErrorNotes, AnalysisSummaryCard } from "@/components/common/analysis-report";
 import { AppShell } from "@/components/common/app-shell";
 import { StatusPill } from "@/components/common/status-pill";
 import { analysisApi } from "@/lib/api";
@@ -130,19 +130,12 @@ export default function AnalysisPage() {
 
         {/* Errors */}
         <section className="panel" style={{ gridColumn: "span 6" }}>
-          <h3 className="section-title">오류</h3>
+          <h3 className="section-title">알림</h3>
           {result?.errors && Object.keys(result.errors).length > 0 ? (
-            <div className="detail-list">
-              {Object.entries(result.errors).map(([key, value]) => (
-                <div className="detail-item" key={key} style={{ borderColor: "rgba(239,83,80,0.2)", background: "var(--bad-dim)" }}>
-                  <span style={{ fontSize: "0.75rem", color: "var(--bad)", fontWeight: 500 }}>{key}</span>
-                  <div style={{ marginTop: 4, fontSize: "0.85rem", color: "var(--text)" }}>{value}</div>
-                </div>
-              ))}
-            </div>
+            <AnalysisErrorNotes errors={result.errors} />
           ) : (
             <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>
-              {loading ? "로딩 중..." : "오류 없음"}
+              {loading ? "로딩 중..." : "알림 없음"}
             </p>
           )}
         </section>

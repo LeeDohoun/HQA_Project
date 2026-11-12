@@ -9,7 +9,7 @@ import { readWorkspaceTab, workspaceTabUrl } from "@/lib/workspace-navigation";
 import type { WorkspaceTab } from "@/lib/workspace-navigation";
 import { redirect, useRouter, useSearchParams } from "next/navigation";
 import { Dispatch, FormEvent, SetStateAction, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AgentDetailSections, AnalysisSummaryCard } from "@/components/common/analysis-report";
+import { AgentDetailSections, AnalysisErrorNotes, AnalysisSummaryCard } from "@/components/common/analysis-report";
 import { analysisApi, authApi, stockApi, tradingApi, watchlistApi } from "@/lib/api";
 import type {
   AnalysisHistoryItem,
@@ -1077,16 +1077,7 @@ function AnalysisPanel({
         </div>
       ) : null}
 
-      {result?.errors && Object.keys(result.errors).length > 0 ? (
-        <div style={{ marginTop: 20 }}>
-          <p className="ed-label" style={{ marginBottom: 8, color: "var(--up)" }}>오류</p>
-          {Object.entries(result.errors).map(([key, value]) => (
-            <div key={key} className="ed-msg" style={{ borderLeftColor: "var(--up)", marginTop: 8 }}>
-              <strong style={{ color: "var(--up)" }}>{key}</strong> · {value}
-            </div>
-          ))}
-        </div>
-      ) : null}
+      {result?.errors && Object.keys(result.errors).length > 0 ? <AnalysisErrorNotes errors={result.errors} /> : null}
 
       {status === "failed" && !result?.scores?.length && !result?.errors && !error ? (
         <p className="ed-hint" style={{ marginTop: 14 }}>표시할 결과가 없습니다.</p>
