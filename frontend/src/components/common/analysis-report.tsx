@@ -16,6 +16,59 @@ const AGENTS: Record<string, { label: string; focus: string }> = {
 // Fields shown in their own sections; the thesis is already the opinion paragraph.
 const SHOWN_DETAIL_KEYS = new Set(["stock_code", "role", "score", "confidence", "thesis", "risks", "data_gaps", "citations"]);
 
+// Failures arrive as runtime codes such as "preview_price_history_unavailable:454910:not_in_theme_universe".
+// People should read what happened and what they can try instead.
+const ANALYZABLE_EXAMPLES = "삼성전자, SK하이닉스, NAVER, 현대차, LG에너지솔루션, 삼성SDI";
+
+export function friendlyAnalysisError(value: unknown): { text: string; notice: boolean; detail: string | null } {
+  const raw = String(value ?? "").trim();
+  if (raw.includes("not_in_theme_universe")) {
+    return {
+      notice: true,
+      detail: null,
+      text: `이 종목은 아직 AI 분석용 데이터(가격·공시·뉴스)를 모으지 않는 종목이라 분석할 수 없습니다. 지금은 테마 후보 종목만 분석할 수 있습니다(예: ${ANALYZABLE_EXAMPLES}).`
+    };
+  }
+  if (raw.includes("preview_price_history_unavailable")) {
+    return { notice: true, detail: null, text: "이 종목의 가격 데이터를 지금 쓸 수 없어 분석하지 못했습니다. 잠시 뒤 다시 시도해 주세요." };
+  }
+  return { notice: false, detail: raw ? raw.slice(0, 160) : null, text: "분석 중 문제가 생겼습니다. 잠시 뒤 다시 시도해 주세요." };
+}
+
+export function AnalysisErrorNotes({ errors }: { errors: Record<string, string> }) {
+  const items = Object.entries(errors).map(([key, value]) => ({ key, ...friendlyAnalysisError(value) }));
+  if (!items.length) return null;
+  const allNotices = items.every((item) => item.notice);
+  return (
+    <div style={{ marginTop: 20 }}>
+      <p style={{ margin: "0 0 8px", fontSize: ".8rem", fontWeight: 800, color: allNotices ? INK3 : "var(--up, var(--bad))" }}>
+        {allNotices ? "안내" : "오류"}
+      </p>
+      {items.map((item) => (
+        <div
+          key={item.key}
+          style={{
+            marginTop: 8,
+            padding: "10px 12px",
+            borderLeft: `3px solid ${item.notice ? "var(--rule, var(--line))" : "var(--up, var(--bad))"}`,
+            background: "var(--paper, var(--surface-2))",
+            color: INK2,
+            fontSize: ".9rem",
+            lineHeight: 1.65
+          }}
+        >
+          {item.text}
+          {item.detail ? (
+            <span style={{ display: "block", marginTop: 4, color: INK3, fontSize: ".76rem", overflowWrap: "anywhere" }}>
+              기술 정보: {item.detail}
+            </span>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function agentLabel(agent: string) {
   return AGENTS[agent]?.label ?? agent.charAt(0).toUpperCase() + agent.slice(1);
 }

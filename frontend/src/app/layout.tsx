@@ -4,6 +4,7 @@ import "@/styles/workspace.css";
 import "@/styles/stock.css";
 import "@/styles/login.css";
 import "@/styles/luna.css";
+import { SessionKeepAlive } from "@/components/common/session-keep-alive";
 
 export const metadata: Metadata = {
   title: "HQA — 나의 투자, 더 선명하게",
@@ -13,7 +14,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ko">
-      <body>{children}</body>
+      <body>
+        <SessionKeepAlive />
+        {children}
+      </body>
     </html>
   );
 }

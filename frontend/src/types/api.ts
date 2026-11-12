@@ -246,6 +246,8 @@ export type MarketIndex = {
   change: number;
   changeRate: number;
   sign: string | null;
+  /** Set by the dashboard when it shows the last good value because KIS failed this time. */
+  stale?: boolean;
 };
 
 export type MarketIndexResponse = {
