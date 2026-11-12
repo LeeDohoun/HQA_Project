@@ -351,12 +351,25 @@ function DashboardPageContent() {
   }, []);
 
   const loadIndices = useCallback(async () => {
-    try {
-      const res = await stockApi.indices();
-      setIndices(res.items ?? []);
-    } catch {
-      setIndices([]);
+    const fetchItems = async (): Promise<MarketIndex[]> => {
+      try {
+        return (await stockApi.indices()).items ?? [];
+      } catch {
+        return [];
+      }
+    };
+    let items = await fetchItems();
+    if (EXPECTED_INDEX_CODES.some((code) => !items.some((item) => item.code === code))) {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      const retry = await fetchItems();
+      items = [...new Map([...items, ...retry].map((item) => [item.code, item] as const)).values()];
     }
+    writeCachedIndices(items);
+    const cached = readCachedIndices();
+    const shown = EXPECTED_INDEX_CODES
+      .map((code) => items.find((item) => item.code === code) ?? (cached[code] ? { ...cached[code], stale: true } : null))
+      .filter((item): item is MarketIndex => item != null);
+    setIndices([...shown, ...items.filter((item) => !EXPECTED_INDEX_CODES.includes(item.code))]);
   }, []);
 
   useEffect(() => {
@@ -1348,6 +1361,32 @@ function AssetsTab({
    홈 탭 — 로그인 직후 보는 메인 대시보드
    자산 한 줄 · 보유 종목 Top · 최근 거래 · 빠른 이동
    ============================================================ */
+// KIS's paper server sometimes answers one index with a 500 (four times on 11-11 and 11-12, twice within
+// two minutes at 09:31), which dropped KOSPI or KOSDAQ from the bar. The dashboard asks once more, then
+// shows the last good value marked "직전 값". Storage can be unavailable; then it simply shows less.
+const EXPECTED_INDEX_CODES = ["0001", "1001"];
+const INDEX_CACHE_KEY = "hqa:last-indices";
+
+function readCachedIndices(): Record<string, MarketIndex> {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(INDEX_CACHE_KEY) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeCachedIndices(items: MarketIndex[]) {
+  if (!items.length) return;
+  try {
+    const cache = readCachedIndices();
+    for (const item of items) cache[item.code] = { ...item, stale: false };
+    window.localStorage.setItem(INDEX_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // Private windows and blocked storage: nothing to keep.
+  }
+}
+
 // A mostly-cash account should explain itself: the live cash/stock split and the rules that keep
 // entries small. 0.5% is the backend's hqa.paper-max-entry-risk-pct (PaperTradeStore).
 function CashShareNote({ total, stockEval }: { total: number | null; stockEval: number | null }) {
@@ -1485,6 +1524,9 @@ function HomeTab(props: {
                   >
                     {pos ? "+" : ""}{idx.change.toFixed(2)} ({pos ? "+" : ""}{idx.changeRate.toFixed(2)}%)
                   </span>
+                  {idx.stale ? (
+                    <span style={{ fontSize: ".72rem", fontWeight: 700, color: "var(--ink-3)" }}>직전 값</span>
+                  ) : null}
                 </div>
               );
             })}
